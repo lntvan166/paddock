@@ -1,4 +1,4 @@
-import { compareAgents, type Agent } from "@shared/types";
+import { carryAcknowledged, compareAgents, type Agent } from "@shared/types";
 
 export interface Delta {
   upserted: Agent[];
@@ -56,11 +56,9 @@ export class AgentStore {
         ...next,
         stateSince: next.state === prev.state ? prev.stateSince : now,
         updatedAt: now,
-        // Carried like stateSince, and for the same reason: the 30s reconcile
-        // rebuilds every agent from herdr, which knows nothing about this flag.
-        // Dropping it would resurrect an acknowledged card within half a minute.
-        // Cleared on leaving `done`, because a fresh finish is fresh news.
-        acknowledgedAt: next.state === "done" ? prev.acknowledgedAt : null,
+        // Same carry rule as the push path (applyStatusEvent) — see
+        // carryAcknowledged in @shared/types for why there is only one copy.
+        acknowledgedAt: carryAcknowledged(prev, next.state),
       };
       this.agents.set(next.agentId, merged);
       if (differs(prev, merged)) upserted.push(merged);

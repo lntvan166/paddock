@@ -1,4 +1,4 @@
-import type { Agent, AgentState } from "@shared/types";
+import { carryAcknowledged, type Agent, type AgentState } from "@shared/types";
 import type { HerdrAgentRaw, HerdrStatusChanged, HerdrWorkspaceRaw } from "@shared/herdr-api";
 
 export interface AdaptContext {
@@ -57,6 +57,13 @@ export function toAgent(rawAgent: HerdrAgentRaw, ctx: AdaptContext): Agent | nul
  * The event carries no `name`, so the previous value is preserved. `stateSince`
  * is refreshed only when the state actually changes, so elapsed time means
  * "how long in this state" rather than "time since last event".
+ *
+ * This is the PRIMARY path that moves an agent's state, so `acknowledgedAt`
+ * must be carried/cleared here with the same rule the 30s reconcile uses
+ * (`carryAcknowledged`) — not just on the reconcile's healing path. Otherwise
+ * an agent whose run is shorter than the reconcile interval (acknowledge →
+ * leaves `done` → returns to `done`, all via events) would keep a stale flag
+ * forever, permanently hiding every future finish.
  */
 export function applyStatusEvent(prev: Agent, data: HerdrStatusChanged, now: number): Agent {
   const state = toState(data.agent_status) ?? prev.state;
@@ -67,5 +74,6 @@ export function applyStatusEvent(prev: Agent, data: HerdrStatusChanged, now: num
     task: title,
     stateSince: state === prev.state ? prev.stateSince : now,
     updatedAt: now,
+    acknowledgedAt: carryAcknowledged(prev, state),
   };
 }

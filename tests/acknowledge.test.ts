@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { AgentStore } from "@server/state/store";
+import { applyStatusEvent } from "@server/herdr/adapter";
 import { sectionFor, type Agent } from "@shared/types";
 
 const NOW = 1_700_000_000_000;
@@ -61,4 +62,26 @@ test("leaving done clears the acknowledge flag", () => {
   store.acknowledge("w1:p1", NOW + 5);
   store.replaceAll([agent({ state: "working" })], NOW + 10);
   expect(store.snapshot()[0]!.acknowledgedAt).toBeNull();
+});
+
+// THE user-visible bug: push (applyStatusEvent) is the PRIMARY path that
+// moves an agent's state, not just the 30s reconcile. Acknowledge, then let
+// the agent leave and re-enter `done` entirely via events — no reconcile in
+// between — and the new finish must still surface in Needs you, not be
+// silently suppressed by the stale flag.
+test("acknowledge, then off-done and back to done via push events, resurfaces in needs-you", () => {
+  const store = new AgentStore("dev-box");
+  store.replaceAll([agent()], NOW);
+  store.acknowledge("w1:p1", NOW + 5);
+
+  store.applyEvent("w1:p1", (prev) =>
+    applyStatusEvent(prev, { pane_id: "w1:p1", workspace_id: "w1", agent_status: "working" }, NOW + 10),
+  );
+  store.applyEvent("w1:p1", (prev) =>
+    applyStatusEvent(prev, { pane_id: "w1:p1", workspace_id: "w1", agent_status: "done" }, NOW + 20),
+  );
+
+  const finished = store.snapshot()[0]!;
+  expect(finished.acknowledgedAt).toBeNull();
+  expect(sectionFor(finished)).toBe("needs-you");
 });

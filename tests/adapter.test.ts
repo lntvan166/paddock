@@ -80,3 +80,12 @@ test("a status event updates the task when it carries a title", () => {
   );
   expect(next.task).toBe("Rename the module");
 });
+
+// The push path is PRIMARY, not just the 30s reconcile: an agent acknowledged
+// while done, then moved off done by a live event (not a reconcile), must not
+// carry a stale flag into its next finish.
+test("a status event moving an acknowledged agent off done clears the flag", () => {
+  const prev = { ...toAgent(raw({ agent_status: "done" }), ctx)!, acknowledgedAt: NOW };
+  const next = applyStatusEvent(prev, { pane_id: "w1:p1", workspace_id: "w1", agent_status: "working" }, NOW + 5000);
+  expect(next.acknowledgedAt).toBeNull();
+});

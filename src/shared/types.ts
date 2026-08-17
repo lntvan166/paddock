@@ -26,6 +26,25 @@ export interface Agent {
   acknowledgedAt: number | null;
 }
 
+/**
+ * The one rule for carrying `acknowledgedAt` across a state update: preserved
+ * while the agent is still `done`, cleared the moment it is not.
+ *
+ * Used on BOTH paths that can move an agent's state — the 30s reconcile
+ * (`AgentStore.replaceAll`) and the real-time push event
+ * (`applyStatusEvent`) — for the same reason `compareAgents` and `sectionFor`
+ * are each a single function: two copies of a state rule are free to drift,
+ * and push is the PRIMARY path here, not reconcile. A rule that only lived on
+ * the healing (reconcile) side would leave any agent whose run is shorter
+ * than the reconcile interval to slip through: acknowledge → done leaves via
+ * a push event → done returns via a push event, all without an intervening
+ * reconcile, and a stale flag would permanently suppress every future finish
+ * for that agent.
+ */
+export function carryAcknowledged(prev: Agent, nextState: AgentState): number | null {
+  return nextState === "done" ? prev.acknowledgedAt : null;
+}
+
 export interface PromptOption {
   /** The option's text EXACTLY as the agent rendered it. Never rewritten. */
   label: string;
