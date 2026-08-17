@@ -37,10 +37,40 @@ export function readInstallEnv(installEventSeen: boolean): InstallEnv {
     standalone,
     installEventSeen,
     iosSafari,
-    dismissed: localStorage.getItem(DISMISS_KEY) === "1",
+    dismissed: readDismissed(),
   };
 }
 
+function readDismissed(): boolean {
+  try {
+    return localStorage.getItem(DISMISS_KEY) === "1";
+  } catch {
+    // localStorage access can throw outright — Safari private mode throws on
+    // write, and an enterprise policy or blocked-storage setting can throw a
+    // SecurityError on mere property access. Fail open: a hint that
+    // reappears next session is a trivial annoyance; a crashed dashboard
+    // (this read happens in render) is not.
+    return false;
+  }
+}
+
 export function dismissInstall(): void {
-  localStorage.setItem(DISMISS_KEY, "1");
+  try {
+    localStorage.setItem(DISMISS_KEY, "1");
+  } catch {
+    // Best-effort only — see readDismissed above.
+  }
+}
+
+/**
+ * The `beforeinstallprompt` event's shape. Not declared in lib.dom.d.ts, so we
+ * name only the member we use.
+ */
+export interface InstallPromptEvent {
+  prompt(): void | Promise<void>;
+}
+
+/** Trigger the browser's native install dialog from a captured event. */
+export function installNow(event: InstallPromptEvent | null): void {
+  event?.prompt();
 }
