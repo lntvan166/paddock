@@ -28,6 +28,16 @@ export interface SupervisorOptions {
   /** Healing reconcile interval. Push is the primary mechanism. */
   reconcileMs?: number;
   now?: () => number;
+  /**
+   * A background refresh or healing reconcile failed.
+   *
+   * These are the calls nobody is awaiting — the three event-driven
+   * `refresh()`es and the 30s timer — so their rejections used to end in a
+   * `console.error` and nothing else. Wired to the reconnect keeper, a
+   * failure now arms recovery instead of being logged and forgotten. Errors
+   * are still logged; this is additional, not a replacement.
+   */
+  onBackgroundFailure?: (err: unknown) => void;
 }
 
 // Delivered names, not subscribe names — see src/server/herdr/socket.ts.
@@ -51,6 +61,11 @@ export class Supervisor {
   // resubscribe() skip the teardown/reopen when the set hasn't changed.
   private openPaneKey: string | null = null;
 
+  // Bumped by every invalidateSubscription(). resubscribe() captures it before
+  // awaiting openStream() and refuses to record a subscription as live if it
+  // moved during that await — see resubscribe().
+  private subscriptionGeneration = 0;
+
   constructor(private readonly opts: SupervisorOptions) {
     this.now = opts.now ?? Date.now;
     this.reconcileMs = opts.reconcileMs ?? 30_000;
@@ -69,7 +84,7 @@ export class Supervisor {
     await this.reconcile();
     await this.resubscribe();
     this.timer = setInterval(() => {
-      this.reconcile().catch((err) => console.error("reconcile failed", err));
+      this.reconcile().catch((err) => this.backgroundFailed("healing reconcile", err));
     }, this.reconcileMs);
   }
 
@@ -88,35 +103,69 @@ export class Supervisor {
    * later resubscribe() computing the same pane set would then hit the early
    * return and skip openStream() forever, with nothing — not even the 30s
    * timer, which only reconciles — ever noticing or retrying.
+   *
+   * ...and it is recorded only if NOTHING invalidated the subscription while
+   * that await was in flight. An invalidateSubscription() landing mid-open
+   * (a genuine drop reported while an unrelated event's refresh is between
+   * its openStream() and its post-await write) was otherwise simply
+   * overwritten: the follow-up pass then took the unchanged-pane-set early
+   * return, refresh() resolved successfully, and the keeper logged "event
+   * stream recovered" for a stream that was never reopened.
    */
   private async resubscribe(): Promise<void> {
     const paneIds = this.opts.store.snapshot().map((a) => a.agentId);
     const key = JSON.stringify([...paneIds].sort());
     if (key === this.openPaneKey) return;
 
+    const generation = this.subscriptionGeneration;
     await this.opts.client.openStream([
       ...statusSubscriptions(paneIds),
       ...GLOBAL_SUBSCRIPTIONS,
     ]);
+    if (generation !== this.subscriptionGeneration) {
+      // Something learned the stream was dead while this open was in flight.
+      // Whether this brand-new stream outlived that news is unknowable from
+      // here, so do not claim it as live: leaving the key clear costs one
+      // extra reopen, claiming it wrongly costs every future one.
+      console.info("herdr: subscription invalidated mid-open; not recorded as live");
+      return;
+    }
     this.openPaneKey = key;
     console.info("herdr: subscribed", { panes: paneIds.length });
   }
 
   /**
    * Clear the recorded subscription key. Call this whenever the stream is
-   * known to be closed (e.g. Task 16's drop-recovery), so the next refresh()
+   * known to be closed (e.g. drop-recovery), so the next refresh()
    * re-subscribes rather than taking resubscribe()'s unchanged-pane-set early
    * return — which would otherwise believe the (now-dead) stream is still
    * live and skip re-opening it, even though the pane set itself never
    * changed.
+   *
+   * Synchronous and unconditional. The generation bump is what makes it
+   * durable against an in-flight resubscribe() overwriting it after the fact.
    */
   invalidateSubscription(): void {
     this.openPaneKey = null;
+    this.subscriptionGeneration++;
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /**
+   * A refresh or reconcile that nobody is awaiting failed.
+   *
+   * Logging it and moving on is how a system stops healing without saying so:
+   * these are exactly the paths that discover herdr is gone, and every one of
+   * them used to end here. The failure is still logged, and now also reaches
+   * whoever can do something about it (the reconnect keeper).
+   */
+  private backgroundFailed(what: string, err: unknown): void {
+    console.error(`herdr: ${what} failed`, err);
+    this.opts.onBackgroundFailure?.(err);
   }
 
   async reconcile(): Promise<Delta> {
@@ -195,7 +244,7 @@ export class Supervisor {
     if (e.event === EVENT_AGENT_DETECTED) {
       this.eventAt = this.now();
       console.info("herdr: new agent detected, resubscribing", (e.data as any).pane_id);
-      this.refresh().catch((err) => console.error("refresh failed", err));
+      this.refresh().catch((err) => this.backgroundFailed("refresh", err));
       return;
     }
 
@@ -208,7 +257,7 @@ export class Supervisor {
         this.opts.onDelta(delta);
       }
       // The closed pane is still named in the live subscription set.
-      this.refresh().catch((err) => console.error("refresh failed", err));
+      this.refresh().catch((err) => this.backgroundFailed("refresh", err));
       return;
     }
 
@@ -218,7 +267,7 @@ export class Supervisor {
 
     if (!this.opts.store.has(data.pane_id)) {
       console.info("herdr: event for unknown agent, reconciling", data.pane_id);
-      this.refresh().catch((err) => console.error("refresh failed", err));
+      this.refresh().catch((err) => this.backgroundFailed("refresh", err));
       return;
     }
 

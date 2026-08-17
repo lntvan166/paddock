@@ -196,6 +196,83 @@ test("invalidateSubscription() forces the next refresh to re-open the stream eve
   sup.stop();
 });
 
+test("an invalidateSubscription() landing MID-OPEN is not overwritten by that open", async () => {
+  // The narrow race the reviewer left standing: a genuine drop is reported
+  // while an UNRELATED refresh is already between its openStream() await and
+  // its post-await `openPaneKey` write. That write used to clobber the
+  // invalidation, after which the follow-up pass took the unchanged-pane-set
+  // early return, refresh() resolved happily, and the keeper logged "event
+  // stream recovered" for a stream that was never reopened.
+  const client = fakeClient();
+  const store = new AgentStore("dev-box");
+  const sup = new Supervisor({ client, store, onDelta: () => {}, now: () => NOW });
+  await sup.start();
+
+  // Hold the next openStream() open so a drop can land in the middle of it.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let heldOnce = false;
+  const realOpenStream = client.openStream.bind(client);
+  client.openStream = async (subs) => {
+    if (!heldOnce) { heldOnce = true; await held; }
+    return realOpenStream(subs);
+  };
+
+  sup.invalidateSubscription();       // an earlier drop starts this refresh
+  const inFlight = sup.refresh();
+  await Bun.sleep(10);                // now parked inside openStream()
+  sup.invalidateSubscription();       // a SECOND drop lands mid-open
+  release();
+  await inFlight;
+
+  const before = client.streams.length;
+  await sup.refresh(); // the pane set is unchanged; only the invalidation forces this
+
+  expect(client.streams.length).toBe(before + 1);
+  sup.stop();
+});
+
+test("a background refresh failure is reported, not swallowed into a log line", async () => {
+  const client = fakeClient();
+  const store = new AgentStore("dev-box");
+  const failures: unknown[] = [];
+  const sup = new Supervisor({
+    client, store, onDelta: () => {}, now: () => NOW,
+    onBackgroundFailure: (err) => failures.push(err),
+  });
+  await sup.start();
+
+  // herdr goes away after startup: the refresh a lifecycle event triggers now
+  // rejects, and nothing is awaiting it.
+  client.request = async () => { throw new Error("herdr: connection refused"); };
+
+  sup.handleEvent({ event: "pane_agent_detected", data: { pane_id: "w1:p2", workspace_id: "w1", agent: "claude" } });
+  await Bun.sleep(20);
+
+  // Without this, the only trace is a console line and nothing arms recovery.
+  expect(failures).toHaveLength(1);
+  expect((failures[0] as Error).message).toMatch(/connection refused/);
+  sup.stop();
+});
+
+test("a failing healing reconcile also reports, so a stuck timer is not silent", async () => {
+  const client = fakeClient();
+  const store = new AgentStore("dev-box");
+  const failures: unknown[] = [];
+  const sup = new Supervisor({
+    client, store, onDelta: () => {}, now: () => NOW,
+    reconcileMs: 10,
+    onBackgroundFailure: (err) => failures.push(err),
+  });
+  await sup.start();
+  client.request = async () => { throw new Error("herdr: gone"); };
+
+  await Bun.sleep(40);
+  sup.stop();
+
+  expect(failures.length).toBeGreaterThan(0);
+});
+
 test("pane_closed removes the agent immediately, without waiting for reconcile", async () => {
   const store = new AgentStore("dev-box");
   const client = fakeClient();

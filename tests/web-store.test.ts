@@ -95,7 +95,7 @@ test("a heartbeat counts as a received message without disturbing agent state", 
 test("heartbeats keep a quiet-but-live link out of the stale state", () => {
   // The end-to-end point of the heartbeat: at 20s intervals, a session where
   // no agent moves for hours never crosses the 60s threshold.
-  let s = { ...EMPTY, connected: true, lastMessageAt: NOW };
+  let s: ClientState = { ...EMPTY, connected: true, lastMessageAt: NOW };
   expect(isStale(s, NOW + 61_000)).toBe(true); // without one, it would
 
   for (const tick of [20_000, 40_000, 60_000, 80_000]) {

@@ -33,9 +33,12 @@ const hostId = DEMO ? DEMO_HOST_ID : (process.env.PADDOCK_HOST_ID ?? "local");
 const store = new AgentStore(hostId);
 const hub = new Hub();
 
-let herdrConnected = false;
 let supervisor: Supervisor | null = null;
 let demo: DemoSource | null = null;
+// Health reads the stream itself rather than a cached boolean: a flag can go
+// stale (and did — a failed reopen left it saying `true` with no stream at
+// all), whereas `stream.connected` cannot disagree with reality.
+let stream: HerdrStream | null = null;
 
 if (DEMO) {
   // Every tick goes through the store, so `/api/agents` and a browser that
@@ -43,31 +46,39 @@ if (DEMO) {
   demo = createDemoSource({ store, onDelta: (d) => hub.queue(d) });
   store.replaceAll(demo.snapshot(), Date.now());
   demo.start();
-  herdrConnected = true;
   console.info("paddock: demo mode — synthetic agents, no herdr connection");
 } else {
   // The stream is the only long-lived connection. Requests each open their own.
   let keeper: StreamKeeper | null = null;
 
-  const stream = new HerdrStream({
+  const herdrStream = new HerdrStream({
     path: socketPath,
     onEvent: (e) => supervisor?.handleEvent(e),
     onStateChange: (up) => {
-      herdrConnected = up;
       console.info(`herdr event stream ${up ? "connected" : "disconnected"}`);
-      // A drop we did not ask for: start recovering. HerdrStream only calls
-      // this with `false` for a teardown nobody requested (see the `close:`
-      // handler in src/server/herdr/socket.ts) — a routine resubscribe
-      // replacing the stream does NOT land here, so this genuinely fires
-      // only on a real drop, not on every ordinary agent start/exit.
+      // A drop we did not ask for: start recovering. HerdrStream calls this
+      // with `false` only when there is genuinely no stream left and nobody
+      // asked for that — a real drop, or a reopen that tore down a live
+      // socket and then failed to replace it. A routine resubscribe that
+      // SUCCEEDS reports nothing but the final `true`, so this does not fire
+      // on every ordinary agent start/exit.
       if (!up) keeper?.notifyClosed();
     },
   });
+  stream = herdrStream;
   const client = {
     request: <T,>(method: string, params?: object) => request<T>(socketPath, method, params),
-    openStream: (subs: Subscription[]) => stream.open(subs),
+    openStream: (subs: Subscription[]) => herdrStream.open(subs),
   };
-  supervisor = new Supervisor({ client, store, onDelta: (d) => hub.queue(d) });
+  supervisor = new Supervisor({
+    client,
+    store,
+    onDelta: (d) => hub.queue(d),
+    // The event-driven refreshes and the 30s healing reconcile are awaited by
+    // nobody, so a rejection there used to be a log line and nothing more.
+    // Arming the keeper makes a background failure self-heal instead.
+    onBackgroundFailure: () => keeper?.notifyClosed(),
+  });
 
   // The pane set after a herdr restart is usually IDENTICAL to what it was
   // before — same agents, dead socket. Supervisor.resubscribe() skips
@@ -76,20 +87,14 @@ if (DEMO) {
   // that belief; otherwise refresh() would reconcile, compute the same key,
   // take the early return, and never re-open the stream at all.
   //
-  // invalidateSubscription() is a plain synchronous setter with no mutex, and
-  // it is called immediately here — not queued behind Supervisor's own
-  // refreshLoop/refreshQueued coalescing the way concurrent refresh() calls
-  // are. Because onStateChange(false) now fires only for a genuine drop (see
-  // the comment above), this callback no longer runs on every routine
-  // resubscribe, which removes the one case that made this race a near
-  // certainty rather than a hypothetical. What remains reachable, though
-  // narrow, is a genuine drop landing while an UNRELATED Supervisor.refresh()
-  // — one started independently by handleEvent(), e.g. for a different pane's
-  // event — is already between its resubscribe()'s openStream() await and its
-  // post-await `openPaneKey` write: that write could still overwrite this
-  // invalidation. Nothing here queues invalidateSubscription() itself behind
-  // that in-flight loop, so the window is real, not eliminated by the
-  // socket.ts fix — just made rare instead of routine.
+  // invalidateSubscription() is a plain synchronous setter with no mutex and
+  // is called immediately here, not queued behind Supervisor's own
+  // refreshLoop/refreshQueued coalescing. It no longer needs to be: the
+  // invalidation now also bumps a generation counter that resubscribe()
+  // captures before awaiting openStream(), so an invalidation landing while
+  // an UNRELATED refresh() is mid-open can no longer be overwritten by that
+  // refresh's post-await `openPaneKey` write. The losing side is the stale
+  // claim, not the invalidation — worst case one extra reopen.
   keeper = new StreamKeeper({
     refresh: () => {
       supervisor!.invalidateSubscription();
@@ -116,7 +121,8 @@ const app = createApp({
     hostId,
     agents: store.snapshot().length,
     clients: hub.clientCount,
-    herdrConnected,
+    // Demo mode has no herdr; otherwise this is the stream's own answer.
+    herdrConnected: DEMO ? true : (stream?.connected ?? false),
     lastEventAt: supervisor?.lastEventAt ?? (demo ? Date.now() : null),
   }),
   staticDir: process.env.PADDOCK_STATIC_DIR ?? "dist",
