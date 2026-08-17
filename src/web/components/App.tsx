@@ -4,6 +4,7 @@ import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
+import { InstallHint } from "@web/components/InstallHint";
 import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { staleAttrs } from "@web/components/staleness";
 
@@ -33,6 +34,7 @@ export function App() {
       {/* Stale data dims here — the banner above stays at full opacity so the
           message announcing staleness is never itself hard to read. */}
       <div {...staleAttrs(stale)}>
+        <InstallHint />
         <HostHeader hostId={hostId} agents={agents} />
 
         {SECTION_ORDER.map((key) => {
