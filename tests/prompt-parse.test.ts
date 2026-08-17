@@ -98,3 +98,20 @@ test("returns only the current menu's options when a resolved prompt precedes it
   expect(p.question).toBe("Do you want to proceed?");
   expect(p.options!.map((o) => o.label)).toEqual(["Approve", "Reject"]);
 });
+
+// Finding: a stale question from an already-resolved run must not attach to
+// a later run when no fresh question line separates them — otherwise the
+// operator reads a foreign caption and could approve something they never
+// intended. With no question of its own, this run correctly yields null.
+test("does not let a stale question from an earlier run attach to a later one", () => {
+  const p = parsePrompt("Old question?\n1. Yes\n2. No\n\n ❯ 1. Approve\n2. Reject\n");
+  expect(p.question).not.toBe("Old question?");
+  expect(p.options).toBeNull();
+});
+
+// The post-loop fallback: a buffer can end mid-run, with no trailing
+// newline or other line after the menu to close it out.
+test("parses a menu that ends the buffer with no trailing newline", () => {
+  const p = parsePrompt("Pick one?\n ❯ 1. A\n   2. B");
+  expect(p.options!.map((o) => o.label)).toEqual(["A", "B"]);
+});

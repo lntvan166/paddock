@@ -49,6 +49,11 @@ export function parsePrompt(raw: string): ParsedPrompt {
       lastRun = currentRun;
       lastRunQuestion = currentRunQuestion;
       currentRun = [];
+      // The question that applied to the run that just closed must not
+      // survive into the next one. Without this reset, two runs separated
+      // only by a blank line (no fresh question in between) would let the
+      // later run silently inherit an earlier, already-resolved caption.
+      lastQuestion = null;
     }
 
     const q = QUESTION_RE.exec(line);
