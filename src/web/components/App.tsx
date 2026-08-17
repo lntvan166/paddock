@@ -102,6 +102,14 @@ export function App() {
         // an effect does not stop that late resolution from writing after the
         // switch; only unmounting the old instance (so its setState calls
         // become no-ops) does. Do not replace this with field resets.
+        //
+        // The key covers IDENTITY only, and must not be widened to include
+        // `agent.state`: the defining outcome of a successful answer is the
+        // agent leaving `blocked`, so keying on state would unmount the sheet
+        // on the very delta the answer caused and destroy the confirmation
+        // with it. Attribution across TIME — one agent's prompt A vs. its
+        // later prompt B — is handled inside AgentDetail instead, by tagging
+        // the reply and the result with the prompt they belong to.
         <AgentDetail key={openAgent.agentId} agent={openAgent} onClose={() => setOpenId(null)} />
       )}
     </main>

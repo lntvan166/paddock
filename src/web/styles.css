@@ -104,6 +104,11 @@ body {
   }
 }
 
+/* Refresh and Close sit side by side, both full tap targets. Always visible:
+   a control revealed on hover would not exist on a touch screen. */
+.detail header .controls { display: flex; gap: 0.5rem; }
+.detail header .controls button { min-height: 2.75rem; min-width: 2.75rem; }
+
 /* Options scroll; labels wrap. Never truncate an option label. */
 .detail .options { display: grid; gap: 0.5rem; max-height: 40vh; overflow-y: auto; }
 .detail .options button { white-space: normal; text-align: left; min-height: 2.75rem; }
