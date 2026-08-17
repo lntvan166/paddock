@@ -1,0 +1,17 @@
+services:
+  paddock:
+    build: .
+    # Must match the host user: the herdr socket is guarded by filesystem
+    # permissions, so root or a mismatched UID gets EACCES.
+    user: "${UID}:${GID}"
+    # 127.0.0.1 prefix is REQUIRED. The short form "8787:8787" publishes on every
+    # interface and exposes the dashboard to the local network.
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ${HOME}/.config/herdr/herdr.sock:/herdr.sock:rw
+    environment:
+      PADDOCK_HERDR_SOCKET: /herdr.sock
+      PADDOCK_PORT: "8787"
+      PADDOCK_HOST_ID: ${PADDOCK_HOST_ID:-local}
+    restart: unless-stopped
