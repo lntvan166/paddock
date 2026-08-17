@@ -70,3 +70,31 @@ test("takes the question nearest the options, not the first question in the buff
 test("always returns raw, even when parsing fails", () => {
   expect(parsePrompt("nothing here").raw).toBe("nothing here");
 });
+
+// Finding: a flat scan across the whole buffer can concatenate a stray
+// numbered line from earlier output onto a later, otherwise non-contiguous
+// menu and make the combined run look contiguous — silently attaching a
+// foreign line as "option 1". Scoping to the LAST contiguous run closes this.
+test("does not splice a stray numbered line from earlier output onto a later menu", () => {
+  const p = parsePrompt(
+    "Old numbered output\n1. something\n\nProceed?\n   2. Yes\n   3. No\n",
+  );
+  expect(p.options).toBeNull();
+});
+
+test("returns options: null when options-shaped content has no question line", () => {
+  const p = parsePrompt("   1. Yes\n   2. No\n");
+  expect(p.options).toBeNull();
+  expect(p.question).toBeNull();
+});
+
+// The scrollback case: a resolved earlier prompt sits above the live menu.
+// Only the live menu's options may be returned, identified by label, not
+// just count — both menus here have the same number of options.
+test("returns only the current menu's options when a resolved prompt precedes it", () => {
+  const p = parsePrompt(
+    "Earlier question?\n ❯ 1. Yes\n   2. No\n\nDo you want to proceed?\n ❯ 1. Approve\n   2. Reject\n",
+  );
+  expect(p.question).toBe("Do you want to proceed?");
+  expect(p.options!.map((o) => o.label)).toEqual(["Approve", "Reject"]);
+});
