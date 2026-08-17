@@ -81,18 +81,37 @@ export class Supervisor {
    * No-op when the pane set is unchanged from what's already open: this keeps
    * repeated refresh() passes (see the coalescing loop below) cheap and
    * idempotent, and avoids needless stream churn when nothing actually moved.
+   *
+   * The key is recorded only AFTER `openStream()` resolves. Recording it
+   * before the await would mean a rejected subscribe (herdr down, socket
+   * refused, subscription rejected) gets permanently remembered as live: every
+   * later resubscribe() computing the same pane set would then hit the early
+   * return and skip openStream() forever, with nothing — not even the 30s
+   * timer, which only reconciles — ever noticing or retrying.
    */
   private async resubscribe(): Promise<void> {
     const paneIds = this.opts.store.snapshot().map((a) => a.agentId);
     const key = JSON.stringify([...paneIds].sort());
     if (key === this.openPaneKey) return;
-    this.openPaneKey = key;
 
     await this.opts.client.openStream([
       ...statusSubscriptions(paneIds),
       ...GLOBAL_SUBSCRIPTIONS,
     ]);
+    this.openPaneKey = key;
     console.info("herdr: subscribed", { panes: paneIds.length });
+  }
+
+  /**
+   * Clear the recorded subscription key. Call this whenever the stream is
+   * known to be closed (e.g. Task 16's drop-recovery), so the next refresh()
+   * re-subscribes rather than taking resubscribe()'s unchanged-pane-set early
+   * return — which would otherwise believe the (now-dead) stream is still
+   * live and skip re-opening it, even though the pane set itself never
+   * changed.
+   */
+  invalidateSubscription(): void {
+    this.openPaneKey = null;
   }
 
   stop(): void {

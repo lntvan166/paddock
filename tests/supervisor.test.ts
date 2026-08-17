@@ -140,6 +140,62 @@ test("a refresh whose pane set is unchanged does not reopen the stream", async (
   sup.stop();
 });
 
+test("a rejected openStream() does not poison the guard — a later resubscribe with the same pane set still retries", async () => {
+  const client = fakeClient();
+  const store = new AgentStore("dev-box");
+  const sup = new Supervisor({ client, store, onDelta: () => {}, now: () => NOW });
+
+  // Make the FIRST openStream attempt reject, as herdr would if it were down
+  // or refused the subscription. Every attempt after that succeeds normally.
+  let openAttempts = 0;
+  const realOpenStream = client.openStream.bind(client);
+  client.openStream = async (subs) => {
+    openAttempts++;
+    if (openAttempts === 1) throw new Error("herdr: subscribe rejected");
+    return realOpenStream(subs);
+  };
+
+  // start() reconciles fine, but its subscribe attempt is the rejected one.
+  let threw = false;
+  try {
+    await sup.start();
+  } catch {
+    threw = true;
+  }
+  expect(threw).toBe(true);
+  expect(openAttempts).toBe(1);
+
+  // The pane set is unchanged from the failed attempt (still just w1:p1). If
+  // the failed attempt had been recorded as successful, this refresh would
+  // wrongly take the "unchanged, nothing to do" early return and never call
+  // openStream() again — leaving the supervisor believing it is subscribed
+  // to a stream that was never opened.
+  await sup.refresh();
+  expect(openAttempts).toBe(2);
+
+  sup.stop();
+});
+
+test("invalidateSubscription() forces the next refresh to re-open the stream even with an unchanged pane set", async () => {
+  const client = fakeClient();
+  const store = new AgentStore("dev-box");
+  const sup = new Supervisor({ client, store, onDelta: () => {}, now: () => NOW });
+  await sup.start();
+  const before = client.streams.length;
+
+  // Baseline: an unchanged pane set alone does not reopen the stream.
+  await sup.refresh();
+  expect(client.streams.length).toBe(before);
+
+  // Task 16 calls this after learning the stream is closed. The pane set is
+  // still unchanged, but the next refresh must re-subscribe anyway.
+  sup.invalidateSubscription();
+  await sup.refresh();
+
+  expect(client.streams.length).toBe(before + 1);
+  sup.stop();
+});
+
 test("pane_closed removes the agent immediately, without waiting for reconcile", async () => {
   const store = new AgentStore("dev-box");
   const client = fakeClient();
