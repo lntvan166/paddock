@@ -1,0 +1,164 @@
+import { applyStatusEvent, toAgent, workspaceLabels } from "@server/herdr/adapter";
+import {
+  EVENT_AGENT_DETECTED,
+  EVENT_PANE_CLOSED,
+  EVENT_PANE_EXITED,
+  EVENT_STATUS_CHANGED,
+  GLOBAL_SUBSCRIPTIONS,
+  statusSubscriptions,
+  type Subscription,
+} from "@server/herdr/socket";
+import type { AgentStore, Delta } from "@server/state/store";
+import type {
+  HerdrAgentRaw,
+  HerdrEvent,
+  HerdrStatusChanged,
+  HerdrWorkspaceRaw,
+} from "@shared/herdr-api";
+
+export interface HerdrClientLike {
+  request<T>(method: string, params?: object): Promise<T>;
+  openStream(subs: Subscription[]): Promise<void>;
+}
+
+export interface SupervisorOptions {
+  client: HerdrClientLike;
+  store: AgentStore;
+  onDelta: (d: Delta) => void;
+  /** Healing reconcile interval. Push is the primary mechanism. */
+  reconcileMs?: number;
+  now?: () => number;
+}
+
+// Delivered names, not subscribe names — see src/server/herdr/socket.ts.
+// EVENT_STATUS_CHANGED is dotted; the lifecycle ones are underscored.
+const LIFECYCLE_GONE: string[] = [EVENT_PANE_CLOSED, EVENT_PANE_EXITED];
+
+export class Supervisor {
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private labels = new Map<string, string>();
+  private eventAt: number | null = null;
+  private readonly now: () => number;
+  private readonly reconcileMs: number;
+
+  constructor(private readonly opts: SupervisorOptions) {
+    this.now = opts.now ?? Date.now;
+    this.reconcileMs = opts.reconcileMs ?? 30_000;
+  }
+
+  get lastEventAt(): number | null {
+    return this.eventAt;
+  }
+
+  /**
+   * Reconcile BEFORE subscribing. Status events are per-pane, so the pane set
+   * has to be known to name it. Subscribing first would name no panes and
+   * silently deliver nothing.
+   */
+  async start(): Promise<void> {
+    await this.reconcile();
+    await this.resubscribe();
+    this.timer = setInterval(() => {
+      this.reconcile().catch((err) => console.error("reconcile failed", err));
+    }, this.reconcileMs);
+  }
+
+  /**
+   * Re-open the event stream naming every currently known agent pane, plus the
+   * globals. A subscription set cannot be extended in place, so any change to
+   * the pane set means replacing the stream.
+   */
+  private async resubscribe(): Promise<void> {
+    const paneIds = this.opts.store.snapshot().map((a) => a.agentId);
+    await this.opts.client.openStream([
+      ...statusSubscriptions(paneIds),
+      ...GLOBAL_SUBSCRIPTIONS,
+    ]);
+    console.info("herdr: subscribed", { panes: paneIds.length });
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  async reconcile(): Promise<Delta> {
+    const now = this.now();
+
+    const ws = await this.opts.client.request<{ workspaces: HerdrWorkspaceRaw[] }>(
+      "workspace.list",
+      {},
+    );
+    this.labels = workspaceLabels(ws.workspaces ?? []);
+
+    const list = await this.opts.client.request<{ agents: HerdrAgentRaw[] }>("agent.list", {});
+    const agents = (list.agents ?? [])
+      .map((raw) => toAgent(raw, { hostId: this.opts.store.hostId, labels: this.labels, now }))
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
+    const delta = this.opts.store.replaceAll(agents, now);
+    if (delta.upserted.length || delta.removedIds.length) this.opts.onDelta(delta);
+    return delta;
+  }
+
+  /**
+   * Re-learn the pane set and re-point the stream at it. Used whenever the set
+   * changed: a new agent, a closed pane, or a status event for a pane we do not
+   * know. Reconcile first — resubscribe() reads the pane set from the store.
+   *
+   * Public because Task 16 also calls it to recover after the stream drops.
+   */
+  async refresh(): Promise<void> {
+    await this.reconcile();
+    await this.resubscribe();
+  }
+
+  /**
+   * Three kinds matter, and they do not share a naming convention:
+   *
+   *   pane.agent_status_changed  (dotted)      a known agent changed state
+   *   pane_agent_detected        (underscored) a new agent appeared
+   *   pane_closed / pane_exited  (underscored) an agent went away
+   *
+   * The status event carries no `name`, so it merges into a known agent. The
+   * two lifecycle kinds change the pane set, which means the subscription set
+   * is now stale and the stream must be re-opened.
+   */
+  handleEvent(e: HerdrEvent): void {
+    if (e.event === EVENT_AGENT_DETECTED) {
+      this.eventAt = this.now();
+      console.info("herdr: new agent detected, resubscribing", (e.data as any).pane_id);
+      this.refresh().catch((err) => console.error("refresh failed", err));
+      return;
+    }
+
+    if (LIFECYCLE_GONE.includes(e.event)) {
+      this.eventAt = this.now();
+      const paneId = (e.data as any).pane_id as string;
+      const delta = this.opts.store.remove(paneId);
+      if (delta) {
+        console.info("herdr: agent gone", paneId);
+        this.opts.onDelta(delta);
+      }
+      // The closed pane is still named in the live subscription set.
+      this.refresh().catch((err) => console.error("refresh failed", err));
+      return;
+    }
+
+    if (e.event !== EVENT_STATUS_CHANGED) return;
+    this.eventAt = this.now();
+    const data = e.data as unknown as HerdrStatusChanged;
+
+    if (!this.opts.store.has(data.pane_id)) {
+      console.info("herdr: event for unknown agent, reconciling", data.pane_id);
+      this.refresh().catch((err) => console.error("refresh failed", err));
+      return;
+    }
+
+    const now = this.now();
+    const next = this.opts.store.applyEvent(data.pane_id, (prev) =>
+      applyStatusEvent(prev, data, now),
+    );
+    if (next) this.opts.onDelta({ upserted: [next], removedIds: [] });
+  }
+}
