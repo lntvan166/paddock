@@ -62,16 +62,81 @@ test("a status subscription is never sent without a pane_id", async () => {
 });
 
 test("pane_agent_detected re-opens the stream with the new pane set", async () => {
-  const client = fakeClient();
+  // A mutable backing array: resubscribe() now no-ops when the pane set is
+  // unchanged (see the coalescing tests below), so the fake server's agent
+  // list has to actually gain the pane for this resubscribe to be non-trivial.
+  const agents = [rawAgent()];
+  const client = fakeClient(agents);
   const sup = new Supervisor({ client, store: new AgentStore("dev-box"), onDelta: () => {}, now: () => NOW });
   await sup.start();
   const before = client.streams.length;
+
+  agents.push(rawAgent({ pane_id: "w1:p2", name: "flaky-test-fix" }));
 
   // Underscored — this is the name herdr actually delivers.
   sup.handleEvent({ event: "pane_agent_detected", data: { pane_id: "w1:p2", workspace_id: "w1", agent: "claude" } });
   await Bun.sleep(20);
 
   expect(client.streams.length).toBe(before + 1);
+  expect(client.streams.at(-1)).toContainEqual({ type: "pane.agent_status_changed", pane_id: "w1:p2" });
+  sup.stop();
+});
+
+test("a burst of lifecycle events coalesces into one resubscribe carrying the final pane set", async () => {
+  // Two panes are live; mid-burst the server starts reporting a completely
+  // different pane set (p1 and p2 both gone, p3 present) before any of the
+  // three back-to-back events below has had a chance to reconcile.
+  const agents = [rawAgent({ pane_id: "w1:p1" }), rawAgent({ pane_id: "w1:p2", name: "flaky-test-fix" })];
+  const client = fakeClient(agents);
+  const store = new AgentStore("dev-box");
+  const sup = new Supervisor({ client, store, onDelta: () => {}, now: () => NOW });
+  await sup.start();
+  expect(store.snapshot()).toHaveLength(2);
+  const before = client.streams.length;
+  const agentListCallsBefore = client.calls.filter((c) => c === "agent.list").length;
+
+  agents.length = 0;
+  agents.push(rawAgent({ pane_id: "w1:p3", name: "schema-migration" }));
+
+  // Fired back-to-back with no await between them — a real burst, not three
+  // separate ticks of the event loop.
+  sup.handleEvent({ event: "pane_closed", data: { pane_id: "w1:p1", workspace_id: "w1" } });
+  sup.handleEvent({ event: "pane_closed", data: { pane_id: "w1:p2", workspace_id: "w1" } });
+  sup.handleEvent({ event: "pane_agent_detected", data: { pane_id: "w1:p3", workspace_id: "w1", agent: "claude" } });
+
+  await Bun.sleep(20);
+
+  // The real discriminator: three events must not launch three independent
+  // reconcile+resubscribe chains. One in-flight pass, plus exactly one
+  // coalesced follow-up to pick up all three events, is two agent.list calls
+  // total — never three (one per event). This is what genuinely distinguishes
+  // a serialized refresh() from an unserialized one; the resubscribe call
+  // count below does NOT (see the coalescing comment in supervisor.ts), since
+  // the unchanged-set no-op happens to converge to the same open count here.
+  const agentListCallsDuring = client.calls.filter((c) => c === "agent.list").length - agentListCallsBefore;
+  expect(agentListCallsDuring).toBe(2);
+
+  // And the stream that does get (re)opened carries the final pane set, not
+  // one from partway through the burst.
+  expect(client.streams.length).toBe(before + 1);
+  const finalSubs = client.streams.at(-1)!;
+  expect(finalSubs).toContainEqual({ type: "pane.agent_status_changed", pane_id: "w1:p3" });
+  expect(finalSubs.some((s) => s.pane_id === "w1:p1")).toBe(false);
+  expect(finalSubs.some((s) => s.pane_id === "w1:p2")).toBe(false);
+  sup.stop();
+});
+
+test("a refresh whose pane set is unchanged does not reopen the stream", async () => {
+  const client = fakeClient();
+  const store = new AgentStore("dev-box");
+  const sup = new Supervisor({ client, store, onDelta: () => {}, now: () => NOW });
+  await sup.start();
+  const before = client.streams.length;
+
+  // Nothing about the pane set changed — reconcile alone must not reopen it.
+  await sup.refresh();
+
+  expect(client.streams.length).toBe(before);
   sup.stop();
 });
 

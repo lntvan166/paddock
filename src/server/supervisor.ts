@@ -41,6 +41,16 @@ export class Supervisor {
   private readonly now: () => number;
   private readonly reconcileMs: number;
 
+  // Coalesces overlapping refresh() calls. While one is running, further
+  // calls do not start a second reconcile+resubscribe chain — they only flag
+  // that one more pass is needed once the current one finishes. See refresh().
+  private refreshLoop: Promise<void> | null = null;
+  private refreshQueued = false;
+
+  // The sorted pane id set behind the currently open stream. Lets
+  // resubscribe() skip the teardown/reopen when the set hasn't changed.
+  private openPaneKey: string | null = null;
+
   constructor(private readonly opts: SupervisorOptions) {
     this.now = opts.now ?? Date.now;
     this.reconcileMs = opts.reconcileMs ?? 30_000;
@@ -67,9 +77,17 @@ export class Supervisor {
    * Re-open the event stream naming every currently known agent pane, plus the
    * globals. A subscription set cannot be extended in place, so any change to
    * the pane set means replacing the stream.
+   *
+   * No-op when the pane set is unchanged from what's already open: this keeps
+   * repeated refresh() passes (see the coalescing loop below) cheap and
+   * idempotent, and avoids needless stream churn when nothing actually moved.
    */
   private async resubscribe(): Promise<void> {
     const paneIds = this.opts.store.snapshot().map((a) => a.agentId);
+    const key = JSON.stringify([...paneIds].sort());
+    if (key === this.openPaneKey) return;
+    this.openPaneKey = key;
+
     await this.opts.client.openStream([
       ...statusSubscriptions(paneIds),
       ...GLOBAL_SUBSCRIPTIONS,
@@ -107,10 +125,40 @@ export class Supervisor {
    * know. Reconcile first — resubscribe() reads the pane set from the store.
    *
    * Public because Task 16 also calls it to recover after the stream drops.
+   *
+   * handleEvent() below can call this from three independent event paths with
+   * no ordering guarantee between them. Each call is two herdr round-trips
+   * followed by a stream teardown/reopen; launching one such chain per event
+   * would let them run concurrently and settle out of order, so the LAST TO
+   * RESOLVE — not the last issued — would decide the live subscription set. A
+   * refresh started for an older event could then resolve after a newer one
+   * and reopen the stream naming a pane set that is already stale, with
+   * nothing to correct it before the next healing reconcile up to 30s later.
+   *
+   * So at most one refresh runs at a time. A call that arrives while one is
+   * already in flight does not start a second chain — it only flags that one
+   * more pass is needed once the current one finishes, and every such call
+   * folds into that single follow-up pass rather than queuing one each.
    */
   async refresh(): Promise<void> {
-    await this.reconcile();
-    await this.resubscribe();
+    if (this.refreshLoop) {
+      this.refreshQueued = true;
+      return this.refreshLoop;
+    }
+    this.refreshLoop = this.runRefreshLoop();
+    try {
+      await this.refreshLoop;
+    } finally {
+      this.refreshLoop = null;
+    }
+  }
+
+  private async runRefreshLoop(): Promise<void> {
+    do {
+      this.refreshQueued = false;
+      await this.reconcile();
+      await this.resubscribe();
+    } while (this.refreshQueued);
   }
 
   /**
