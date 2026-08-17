@@ -34,3 +34,29 @@ test("a network failure becomes an ActionResult, not a throw", async () => {
   expect(res.ok).toBe(false);
   expect(res.detail).toContain("offline");
 });
+
+// A read must not resolve with a value whose type is a lie: a non-2xx body
+// like { ok: false, detail: "unknown agent" } is valid JSON but has no
+// `lines` — resolving with it would hand the caller an object TypeScript
+// believes has `lines` but doesn't. It must reject instead, carrying the
+// server's reason.
+test("fetchOutput rejects on a 404 with the server's detail in the message", async () => {
+  const { fn } = stubFetch(404, { ok: false, detail: "unknown agent" });
+  await expect(fetchOutput("w1:p1", 40, fn as any)).rejects.toThrow(/unknown agent/);
+});
+
+test("fetchOutput rejects on a 502 with the server's detail in the message", async () => {
+  const { fn } = stubFetch(502, { ok: false, detail: "herdr socket unreachable" });
+  await expect(fetchOutput("w1:p1", 40, fn as any)).rejects.toThrow(/herdr socket unreachable/);
+});
+
+// Pins the asymmetry deliberately: reads reject on non-2xx, but actions must
+// keep resolving with the server's real detail. A future refactor that
+// "unifies" the two paths should break this test rather than silently
+// destroying the refusal message.
+test("answerWithKey still resolves (not rejects) with the server's detail on a 409", async () => {
+  const { fn } = stubFetch(409, { ok: false, detail: "agent is working, no longer blocked" });
+  const res = await answerWithKey("w1:p1", "1", fn as any);
+  expect(res.ok).toBe(false);
+  expect(res.detail).toContain("no longer blocked");
+});
