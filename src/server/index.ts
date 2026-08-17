@@ -9,6 +9,7 @@ import {
   request,
   type Subscription,
 } from "@server/herdr/socket";
+import { StreamKeeper } from "@server/herdr/keeper";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
 import { Hub, type HubClient } from "@server/ws/hub";
@@ -44,12 +45,16 @@ if (DEMO) {
   console.info("paddock: demo mode — synthetic agents, no herdr connection");
 } else {
   // The stream is the only long-lived connection. Requests each open their own.
+  let keeper: StreamKeeper | null = null;
+
   const stream = new HerdrStream({
     path: socketPath,
     onEvent: (e) => supervisor?.handleEvent(e),
     onStateChange: (up) => {
       herdrConnected = up;
       console.info(`herdr event stream ${up ? "connected" : "disconnected"}`);
+      // A drop we did not ask for: start recovering.
+      if (!up) keeper?.notifyClosed();
     },
   });
   const client = {
@@ -57,6 +62,30 @@ if (DEMO) {
     openStream: (subs: Subscription[]) => stream.open(subs),
   };
   supervisor = new Supervisor({ client, store, onDelta: (d) => hub.queue(d) });
+
+  // The pane set after a herdr restart is usually IDENTICAL to what it was
+  // before — same agents, dead socket. Supervisor.resubscribe() skips
+  // re-opening the stream when the computed pane set matches what it already
+  // believes is live, so invalidateSubscription() must run first to clear
+  // that belief; otherwise refresh() would reconcile, compute the same key,
+  // take the early return, and never re-open the stream at all.
+  //
+  // invalidateSubscription() is a plain synchronous setter with no mutex. If
+  // it were called while a resubscribe() were in flight, that call's
+  // post-await success write could supersede the invalidation. Supervisor's
+  // refresh() serialises everything through one in-flight loop (see its
+  // refreshLoop/refreshQueued coalescing), so that race is not reachable from
+  // this recovery path today — but a future editor adding a second, uncoupled
+  // caller of invalidateSubscription() around a concurrent refresh() could
+  // reintroduce it.
+  keeper = new StreamKeeper({
+    refresh: () => {
+      supervisor!.invalidateSubscription();
+      return supervisor!.refresh();
+    },
+    onFatal: () => process.exit(1),
+  });
+
   try {
     await checkProtocol(socketPath);
     await supervisor.start();
