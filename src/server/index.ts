@@ -53,7 +53,11 @@ if (DEMO) {
     onStateChange: (up) => {
       herdrConnected = up;
       console.info(`herdr event stream ${up ? "connected" : "disconnected"}`);
-      // A drop we did not ask for: start recovering.
+      // A drop we did not ask for: start recovering. HerdrStream only calls
+      // this with `false` for a teardown nobody requested (see the `close:`
+      // handler in src/server/herdr/socket.ts) — a routine resubscribe
+      // replacing the stream does NOT land here, so this genuinely fires
+      // only on a real drop, not on every ordinary agent start/exit.
       if (!up) keeper?.notifyClosed();
     },
   });
@@ -70,14 +74,20 @@ if (DEMO) {
   // that belief; otherwise refresh() would reconcile, compute the same key,
   // take the early return, and never re-open the stream at all.
   //
-  // invalidateSubscription() is a plain synchronous setter with no mutex. If
-  // it were called while a resubscribe() were in flight, that call's
-  // post-await success write could supersede the invalidation. Supervisor's
-  // refresh() serialises everything through one in-flight loop (see its
-  // refreshLoop/refreshQueued coalescing), so that race is not reachable from
-  // this recovery path today — but a future editor adding a second, uncoupled
-  // caller of invalidateSubscription() around a concurrent refresh() could
-  // reintroduce it.
+  // invalidateSubscription() is a plain synchronous setter with no mutex, and
+  // it is called immediately here — not queued behind Supervisor's own
+  // refreshLoop/refreshQueued coalescing the way concurrent refresh() calls
+  // are. Because onStateChange(false) now fires only for a genuine drop (see
+  // the comment above), this callback no longer runs on every routine
+  // resubscribe, which removes the one case that made this race a near
+  // certainty rather than a hypothetical. What remains reachable, though
+  // narrow, is a genuine drop landing while an UNRELATED Supervisor.refresh()
+  // — one started independently by handleEvent(), e.g. for a different pane's
+  // event — is already between its resubscribe()'s openStream() await and its
+  // post-await `openPaneKey` write: that write could still overwrite this
+  // invalidation. Nothing here queues invalidateSubscription() itself behind
+  // that in-flight loop, so the window is real, not eliminated by the
+  // socket.ts fix — just made rare instead of routine.
   keeper = new StreamKeeper({
     refresh: () => {
       supervisor!.invalidateSubscription();

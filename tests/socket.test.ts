@@ -79,6 +79,9 @@ async function fakeHerdr(protocol = 19, opts: { dropSubscribeAck?: boolean } = {
     push: (e: HerdrEvent) => { for (const s of streams) s.write(JSON.stringify(e) + "\n"); },
     pushRaw: (text: string) => { for (const s of streams) s.write(text); },
     streamCount: () => streams.size,
+    /** Hang up from the server side, as herdr crashing or restarting would —
+     * NOT requested by the client. Distinct from the client calling close(). */
+    dropStream: () => { for (const s of streams) s.end(); },
   };
 }
 
@@ -189,6 +192,52 @@ test("open() replaces the previous stream rather than stacking one", async () =>
   await stream.open(statusSubscriptions(["w1:p1", "w1:p2"]));
   await Bun.sleep(50);
   expect(streamCount()).toBe(1);
+  stream.close();
+});
+
+// Task 16 review finding: open() tears down the previous socket at its top
+// (see close() there), and Bun invokes that old socket's close handler
+// synchronously. That teardown is deliberate — a routine resubscribe, which
+// happens on every ordinary agent start/exit in a live session — and must
+// not be reported as a disconnect. Reporting it would fire the Task 16
+// reconnect keeper on every such routine event, not just a real one, and
+// bury the one signal a genuine incident needs to stand out against.
+test("a routine open() replacing the stream reports no false disconnect", async () => {
+  const { path } = await fakeHerdr();
+  const changes: boolean[] = [];
+  const stream = new HerdrStream({
+    path,
+    onEvent: () => {},
+    onStateChange: (up) => changes.push(up),
+  });
+
+  await stream.open(statusSubscriptions(["w1:p1"]));
+  await stream.open(statusSubscriptions(["w1:p1", "w1:p2"]));
+  await Bun.sleep(50);
+
+  // Two opens, each eventually connected — never a spurious `false` from the
+  // first stream's deliberate teardown in between.
+  expect(changes).toEqual([true, true]);
+  stream.close();
+});
+
+// The other half of the same fix: a drop nobody asked for must still be
+// reported, or a real herdr crash would go unnoticed and Task 16's keeper
+// would never fire.
+test("a genuine unrequested drop still reports a disconnect", async () => {
+  const { path, dropStream } = await fakeHerdr();
+  const changes: boolean[] = [];
+  const stream = new HerdrStream({
+    path,
+    onEvent: () => {},
+    onStateChange: (up) => changes.push(up),
+  });
+
+  await stream.open(statusSubscriptions(["w1:p1"]));
+  dropStream(); // herdr hangs up on its own — the client never called close()
+  await Bun.sleep(50);
+
+  expect(changes).toEqual([true, false]);
   stream.close();
 });
 

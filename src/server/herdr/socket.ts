@@ -167,8 +167,23 @@ export class HerdrStream {
         data: (_s, chunk) => this.onData(chunk.toString()),
         close: () => {
           this.socket = null;
-          this.opts.onStateChange?.(false);
-          if (this.wantOpen) console.error("herdr: event stream closed unexpectedly");
+          // wantOpen is false here precisely when THIS teardown was
+          // requested: close() (called directly, or from the top of this
+          // very open() when replacing an existing stream for a routine
+          // resubscribe) always flips it to false BEFORE calling
+          // socket.end(), and Bun invokes this handler synchronously during
+          // that end() call — so by the time we read it, it already
+          // reflects whether this specific socket's death was asked for.
+          // Only a drop that nobody asked for should count as a real
+          // disconnect: reporting `false` on every deliberate
+          // teardown-for-reopen would fire on every routine agent
+          // start/exit, burying the one signal a genuine incident needs to
+          // stand out against (and would spuriously trigger Task 16's
+          // reconnect keeper on every such routine event, not just a real one).
+          if (this.wantOpen) {
+            console.error("herdr: event stream closed unexpectedly");
+            this.opts.onStateChange?.(false);
+          }
           // If the socket closed before the subscribe ack arrived, settle
           // open()'s promise instead of leaving the caller's `await` hanging
           // forever with no error and no stack.
