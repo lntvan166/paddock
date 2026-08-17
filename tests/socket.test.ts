@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,6 +12,7 @@ import {
   EVENT_STATUS_CHANGED,
   EVENT_PANE_CLOSED,
 } from "@server/herdr/socket";
+import { StreamKeeper } from "@server/herdr/keeper";
 import type { HerdrEvent } from "@shared/herdr-api";
 
 let stop: (() => void) | null = null;
@@ -27,11 +28,19 @@ afterEach(() => { stop?.(); stop = null; });
  * subscription, a daemon hangup, or the socket just dying mid-handshake).
  * It changes nothing about request connections: they still get exactly one
  * response and refuse a second request on the same connection.
+ *
+ * `mute` models the nastier failure: herdr accepts the connection, reads the
+ * request, and then answers NOTHING, ever, while holding the connection open.
+ * Nothing about that is observable to the client except the passage of time.
  */
-async function fakeHerdr(protocol = 19, opts: { dropSubscribeAck?: boolean } = {}) {
+async function fakeHerdr(
+  protocol = 19,
+  opts: { dropSubscribeAck?: boolean; mute?: boolean } = {},
+) {
   const dir = await mkdtemp(join(tmpdir(), "paddock-sock-"));
   const path = join(dir, "h.sock");
   const streams = new Set<any>();
+  const muted = new Set<any>();
   const served = new WeakSet<any>();
   const requestsSeen: { method: string; params: any }[] = [];
 
@@ -47,6 +56,9 @@ async function fakeHerdr(protocol = 19, opts: { dropSubscribeAck?: boolean } = {
           // A connection that already answered must not answer again.
           if (served.has(s)) { s.end(); return; }
           requestsSeen.push({ method: req.method, params: req.params });
+
+          // Accepted, read, and never answered — the connection just sits there.
+          if (opts.mute) { muted.add(s); return; }
 
           if (req.method === "events.subscribe") {
             if (opts.dropSubscribeAck) {
@@ -72,7 +84,11 @@ async function fakeHerdr(protocol = 19, opts: { dropSubscribeAck?: boolean } = {
     },
   });
 
-  stop = () => { for (const s of streams) s.end(); server.stop(true); };
+  stop = () => {
+    for (const s of streams) s.end();
+    for (const s of muted) s.end();
+    server.stop(true);
+  };
   return {
     path,
     requestsSeen,
@@ -263,4 +279,130 @@ test("open() rejects rather than hanging when the socket closes before the subsc
   expect(result).toBeInstanceOf(Error);
   expect((result as Error).message).toMatch(/before events\.subscribe was acknowledged/);
   stream.close();
+});
+
+// ---------------------------------------------------------------------------
+// Bounded waits. A herdr that ACCEPTS a connection and then answers nothing
+// used to hang forever, which by Task 16 meant: reconcile() hangs ->
+// runRefreshLoop() never resolves -> refreshLoop stays non-null -> every later
+// refresh() returns that same hung promise, including the reconnect keeper's,
+// which then never retries. Plus one leaked socket per 30s healing tick.
+// ---------------------------------------------------------------------------
+
+test("request() rejects within its timeout when herdr accepts but never answers", async () => {
+  const { path } = await fakeHerdr(19, { mute: true });
+
+  const timedOut = Symbol("hung");
+  const started = Date.now();
+  const result = await Promise.race([
+    request(path, "agent.list", {}, 100).then(
+      () => { throw new Error("request() resolved, but herdr never answered"); },
+      (err) => err,
+    ),
+    Bun.sleep(2_000).then(() => timedOut),
+  ]);
+
+  expect(result).not.toBe(timedOut); // regression: request() hung forever
+  expect((result as Error).message).toMatch(/agent\.list timed out after 100ms/);
+  expect(Date.now() - started).toBeLessThan(1_000);
+});
+
+test("the request timeout names the method, so a log line identifies the wedge", async () => {
+  const { path } = await fakeHerdr(19, { mute: true });
+  await expect(request(path, "workspace.list", {}, 50)).rejects.toThrow(/workspace\.list timed out/);
+});
+
+test("the subscribe ack wait is bounded too", async () => {
+  // Distinct from the drop-before-ack case above: here the connection stays
+  // up and simply never acknowledges, so there is no close event to settle
+  // open() and nothing but a timeout can end the wait.
+  const { path } = await fakeHerdr(19, { mute: true });
+  const stream = new HerdrStream({ path, onEvent: () => {}, ackTimeoutMs: 100 });
+
+  const timedOut = Symbol("hung");
+  const result = await Promise.race([
+    stream.open(statusSubscriptions(["w1:p1"])).then(
+      () => { throw new Error("open() resolved without an ack"); },
+      (err) => err,
+    ),
+    Bun.sleep(2_000).then(() => timedOut),
+  ]);
+
+  expect(result).not.toBe(timedOut); // regression: the ack wait hung forever
+  expect((result as Error).message).toMatch(/events\.subscribe timed out after 100ms/);
+  expect(stream.connected).toBe(false); // and the socket did not leak
+  stream.close();
+});
+
+// ---------------------------------------------------------------------------
+// The dead end: a reopen that cannot connect. The old socket's teardown was
+// deliberate, so it reports nothing; the replacement never connects, so there
+// is no close handler to report either. Nothing armed recovery, and
+// /api/health went on claiming the stream was up.
+// ---------------------------------------------------------------------------
+
+test("a reopen whose connect fails reports the disconnect", async () => {
+  const { path } = await fakeHerdr();
+  const changes: boolean[] = [];
+  const stream = new HerdrStream({
+    path,
+    onEvent: () => {},
+    onStateChange: (up) => changes.push(up),
+  });
+
+  await stream.open(statusSubscriptions(["w1:p1"]));
+  expect(changes).toEqual([true]);
+
+  // herdr dies exactly between the teardown and the reconnect: the socket
+  // path is gone, so Bun.connect cannot succeed, while the live connection is
+  // still what open() tears down first.
+  await unlink(path);
+
+  await expect(stream.open(statusSubscriptions(["w1:p1", "w1:p2"]))).rejects.toThrow();
+
+  expect(changes).toEqual([true, false]);
+  expect(stream.connected).toBe(false); // health must not claim otherwise
+  stream.close();
+});
+
+test("a failed reopen ARMS the reconnect keeper", async () => {
+  // The end of the dead-end path: whatever the mechanism, the outcome that
+  // matters is that something is now trying to get the stream back.
+  const { path } = await fakeHerdr();
+  let keeper: StreamKeeper;
+  let refreshes = 0;
+
+  const stream = new HerdrStream({
+    path,
+    onEvent: () => {},
+    // Exactly how src/server/index.ts wires it.
+    onStateChange: (up) => { if (!up) keeper.notifyClosed(); },
+  });
+  keeper = new StreamKeeper({
+    refresh: async () => { refreshes++; },
+    sleep: async () => {},
+  });
+
+  await stream.open(statusSubscriptions(["w1:p1"]));
+  await unlink(path);
+  await expect(stream.open(statusSubscriptions(["w1:p1", "w1:p2"]))).rejects.toThrow();
+  await keeper.settled();
+
+  expect(refreshes).toBeGreaterThan(0);
+  stream.close();
+});
+
+test("a FIRST open() that fails does not claim a stream was lost", async () => {
+  // Nothing was ever up, so there is nothing to report as down — only the
+  // rejection the caller already has to handle.
+  const { path } = await fakeHerdr();
+  await unlink(path);
+  const changes: boolean[] = [];
+  const stream = new HerdrStream({
+    path, onEvent: () => {}, onStateChange: (up) => changes.push(up),
+  });
+
+  await expect(stream.open(statusSubscriptions(["w1:p1"]))).rejects.toThrow();
+
+  expect(changes).toEqual([]);
 });
