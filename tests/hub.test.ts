@@ -93,3 +93,42 @@ test("a delta reaches every connected client", () => {
   expect(a.sent).toHaveLength(1);
   expect(b.sent).toHaveLength(1);
 });
+
+test("an unflushed queue auto-flushes once the coalescing window elapses", async () => {
+  const hub = new Hub({ coalesceMs: 20 });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.queue({ upserted: [agent()], removedIds: [] });
+  expect(sent).toHaveLength(0);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(sent).toHaveLength(1);
+});
+
+test("a rapid burst for one agent auto-flushes once, carrying its final value", async () => {
+  const hub = new Hub({ coalesceMs: 20 });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.queue({ upserted: [agent({ state: "working" })], removedIds: [] });
+  hub.queue({ upserted: [agent({ state: "idle" })], removedIds: [] });
+  hub.queue({ upserted: [agent({ state: "working" })], removedIds: [] });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(sent).toHaveLength(1);
+  const msg = sent[0]!;
+  if (msg.type !== "delta") throw new Error("expected a delta");
+  expect(msg.upserted).toHaveLength(1);
+  expect(msg.upserted[0]!.state).toBe("working");
+});
+
+test("a burst merges an upsert of one agent with a removal of a different agent", () => {
+  const hub = new Hub({ coalesceMs: 100, now: () => NOW });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.queue({ upserted: [agent({ agentId: "w1:p1" })], removedIds: [] });
+  hub.queue({ upserted: [], removedIds: ["w1:p2"] });
+  hub.flush();
+  expect(sent).toHaveLength(1);
+  const msg = sent[0]!;
+  if (msg.type !== "delta") throw new Error("expected a delta");
+  expect(msg.upserted.map((a) => a.agentId)).toEqual(["w1:p1"]);
+  expect(msg.removedIds).toEqual(["w1:p2"]);
+});
