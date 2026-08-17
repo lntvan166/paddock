@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import type { HerdrActions } from "@server/herdr/actions";
+import { parsePrompt } from "@server/herdr/prompt-parse";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 
@@ -28,10 +30,20 @@ export interface AppDeps {
   health: () => HealthBody;
   /** Built UI directory. Omit in tests that only exercise the API. */
   staticDir?: string;
+  /** herdr actions. Omit in tests that only exercise the read-only API. */
+  actions?: HerdrActions;
+  /**
+   * Clock for `/ack`'s `acknowledgedAt` stamp. Same injectable-clock pattern
+   * as `Hub`, `Supervisor`, and `DemoSource` elsewhere in this codebase —
+   * defaults to `Date.now` in production, overridden in tests so an
+   * assertion can compare against a fixed fixture timestamp.
+   */
+  now?: () => number;
 }
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
+  const now = deps.now ?? Date.now;
 
   // No authentication middleware. Cloudflare Access is the only gate — see
   // docs/decisions.md before adding one.
@@ -40,6 +52,67 @@ export function createApp(deps: AppDeps) {
   app.get("/api/agents", (c) =>
     c.json({ hostId: deps.store.hostId, agents: deps.store.snapshot() }),
   );
+
+  if (deps.actions) {
+    const actions = deps.actions;
+
+    // POST, never GET: a payload in a query string lands in edge access logs.
+    app.post("/api/agents/:id/output", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+      const body = await c.req.json().catch(() => ({}) as { lines?: number });
+      try {
+        return c.json(await actions.readOutput(agent.agentId, agent.state, body.lines));
+      } catch (err) {
+        return c.json({ ok: false, detail: String(err) }, 502);
+      }
+    });
+
+    app.post("/api/agents/:id/prompt", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+      try {
+        return c.json(parsePrompt(await actions.readDetection(agent.agentId)));
+      } catch (err) {
+        return c.json({ ok: false, detail: String(err) }, 502);
+      }
+    });
+
+    app.post("/api/agents/:id/answer", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+
+      // THE scope boundary. agent.prompt accepts arbitrary text, so "only a
+      // blocked agent may be answered" is enforced here against the store, not
+      // trusted to the UI. If someone answered at the desk first, the agent is
+      // no longer blocked and this reply must not be typed into whatever is now
+      // on screen.
+      if (agent.state !== "blocked") {
+        return c.json({ ok: false, detail: `agent is ${agent.state}, no longer blocked` }, 409);
+      }
+
+      const body = await c.req.json().catch(() => ({}) as { key?: string; text?: string });
+      if (!body.key && !body.text) {
+        return c.json({ ok: false, detail: "provide key or text" }, 400);
+      }
+
+      try {
+        if (body.key) await actions.sendOptionKey(agent.agentId, body.key);
+        else await actions.sendReply(agent.agentId, body.text!);
+        await actions.waitUntilUnblocked(agent.agentId);
+        return c.json({ ok: true });
+      } catch (err) {
+        return c.json({ ok: false, detail: String(err) }, 502);
+      }
+    });
+
+    app.post("/api/agents/:id/ack", (c) => {
+      const delta = deps.store.acknowledge(c.req.param("id"), now());
+      if (!delta) return c.json({ ok: false, detail: "not a fresh done agent" }, 409);
+      deps.hub.queue(delta); // reaches every other open browser
+      return c.json({ ok: true });
+    });
+  }
 
   // API 404s must stay JSON, so this guard comes before the SPA fallback.
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));

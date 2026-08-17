@@ -9,6 +9,7 @@ import {
   request,
   type Subscription,
 } from "@server/herdr/socket";
+import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
@@ -35,6 +36,9 @@ const hub = new Hub();
 
 let supervisor: Supervisor | null = null;
 let demo: DemoSource | null = null;
+// Demo has no herdr to act on, so the action routes stay unset and 404
+// honestly rather than pretending to answer a synthetic agent.
+let actions: HerdrActions | undefined;
 // Health reads the stream itself rather than a cached boolean: a flag can go
 // stale (and did — a failed reopen left it saying `true` with no stream at
 // all), whereas `stream.connected` cannot disagree with reality.
@@ -66,6 +70,7 @@ if (DEMO) {
     },
   });
   stream = herdrStream;
+  actions = createActions(socketPath);
   const client = {
     request: <T,>(method: string, params?: object) => request<T>(socketPath, method, params),
     openStream: (subs: Subscription[]) => herdrStream.open(subs),
@@ -116,6 +121,7 @@ if (DEMO) {
 const app = createApp({
   store,
   hub,
+  actions,
   health: () => ({
     ok: true,
     hostId,
