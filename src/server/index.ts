@@ -78,6 +78,7 @@ const app = createApp({
     herdrConnected,
     lastEventAt: supervisor?.lastEventAt ?? (demo ? Date.now() : null),
   }),
+  staticDir: process.env.PADDOCK_STATIC_DIR ?? "dist",
 });
 
 interface WsData {

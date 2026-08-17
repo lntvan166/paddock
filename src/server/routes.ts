@@ -20,6 +20,8 @@ export interface AppDeps {
   store: AgentStore;
   hub: Hub;
   health: () => HealthBody;
+  /** Built UI directory. Omit in tests that only exercise the API. */
+  staticDir?: string;
 }
 
 export function createApp(deps: AppDeps) {
@@ -32,6 +34,27 @@ export function createApp(deps: AppDeps) {
   app.get("/api/agents", (c) =>
     c.json({ hostId: deps.store.hostId, agents: deps.store.snapshot() }),
   );
+
+  // API 404s must stay JSON, so this guard comes before the SPA fallback.
+  app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
+
+  if (deps.staticDir) {
+    const dir = deps.staticDir;
+    app.get("/*", async (c) => {
+      const path = new URL(c.req.url).pathname;
+      const candidate = Bun.file(`${dir}${path}`);
+      if (path !== "/" && (await candidate.exists())) {
+        // Content-hashed assets are safe to cache forever.
+        const immutable = /\.[0-9a-f]{8,}\.(js|css|woff2|svg|png)$/.test(path);
+        return new Response(candidate, {
+          headers: immutable ? { "cache-control": "public, max-age=31536000, immutable" } : {},
+        });
+      }
+      const index = Bun.file(`${dir}/index.html`);
+      if (!(await index.exists())) return c.text("UI not built — run `make build`", 404);
+      return new Response(index, { headers: { "content-type": "text/html; charset=utf-8" } });
+    });
+  }
 
   return app;
 }
