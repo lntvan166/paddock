@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { groupAgents } from "@web/components/Section";
-import type { Agent } from "@shared/types";
+import { SECTION_ORDER, type Agent } from "@shared/types";
 
 const NOW = 1_700_000_000_000;
 
@@ -23,7 +23,14 @@ test("working and idle are separated", () => {
   expect(g.idle.map((x) => x.name)).toEqual(["d"]);
 });
 
-test("every section key exists even when empty", () => {
+test("every section key exists even when empty, in fixed triage order", () => {
   const g = groupAgents([]);
-  expect(Object.keys(g).sort()).toEqual(["idle", "needs-you", "working"]);
+  // Not sorted: this pins the real key order groupAgents produces, so a
+  // reorder (or a switch to alphabetical) breaks the test instead of passing
+  // silently.
+  expect(Object.keys(g)).toEqual(["needs-you", "working", "idle"]);
+});
+
+test("SECTION_ORDER is pinned — the operator always knows where to look", () => {
+  expect(SECTION_ORDER).toEqual(["needs-you", "working", "idle"]);
 });

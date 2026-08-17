@@ -73,3 +73,11 @@ body {
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* Staleness is shown, never hidden: the banner announces it, this dims the
+   data underneath so "this might be old" is legible at a glance. An instant
+   change is preferred over adding motion for a state that already has a
+   reduced-motion-safe media query above. */
+[data-stale="true"] {
+  opacity: 0.55;
+}
