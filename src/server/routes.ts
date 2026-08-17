@@ -16,6 +16,12 @@ export interface HealthBody {
   lastEventAt: number | null;
 }
 
+// Vite's content hash is base64url (letters, digits, "_", "-"), joined to the
+// basename with a dash, e.g. "index-BRl8nQbG.js" or "index-Cj_7W-bH.css" — not
+// the dot-separated lowercase-hex shape this used to require, which matched no
+// real build output and so never actually set the immutable header.
+export const IMMUTABLE_ASSET_RE = /-[A-Za-z0-9_-]{8,}\.(js|css|woff2|svg|png)$/;
+
 export interface AppDeps {
   store: AgentStore;
   hub: Hub;
@@ -45,7 +51,7 @@ export function createApp(deps: AppDeps) {
       const candidate = Bun.file(`${dir}${path}`);
       if (path !== "/" && (await candidate.exists())) {
         // Content-hashed assets are safe to cache forever.
-        const immutable = /\.[0-9a-f]{8,}\.(js|css|woff2|svg|png)$/.test(path);
+        const immutable = IMMUTABLE_ASSET_RE.test(path);
         return new Response(candidate, {
           headers: immutable ? { "cache-control": "public, max-age=31536000, immutable" } : {},
         });

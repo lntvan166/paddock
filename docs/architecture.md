@@ -15,8 +15,8 @@ One process. No relay hop, no plugin, no polling loop.
    │                                              │
  ┌─┴──────────────── paddock (Bun, 127.0.0.1:8787) ┴──────────────┐
  │  herdr/socket.ts   state/store.ts    ws/hub.ts    static UI    │
- │  stream + request   Map<host:agent>   snapshot +   Vite bundle │
- │  protocol check     authoritative     deltas       + sw.js     │
+ │  stream + request   Map<agentId>      snapshot +   Vite bundle │
+ │  protocol check     authoritative     deltas       (no sw.js)  │
  └───────────────────────────┬────────────────────────────────────┘
                              │ HTTPS + WSS
               Cloudflare Tunnel ── Access ── browser / phone
@@ -26,9 +26,9 @@ One process. No relay hop, no plugin, no polling loop.
 
 | Module | Responsibility |
 |---|---|
-| `server/herdr/socket.ts` | Unix socket client. One-shot `request()`, long-lived `openStream()`, protocol check, reconnect. The **only** thing that speaks the herdr wire format. |
+| `server/herdr/socket.ts` | Unix socket client. One-shot `request()`, long-lived `openStream()`, protocol check. Reports stream up/down via a callback; reconnect-with-backoff on top of that callback is not yet wired. The **only** thing that speaks the herdr wire format. |
 | `server/herdr/adapter.ts` | Normalizes herdr payloads into `shared/types.ts`. The only place field mapping lives. |
-| `server/state/store.ts` | Authoritative in-memory `Map<string, Agent>` keyed `${hostId}:${agentId}`. Computes deltas. Knows nothing about transport. |
+| `server/state/store.ts` | Authoritative in-memory `Map<string, Agent>` keyed by `agentId` alone (the herdr `pane_id`). `hostId` is carried on every `Agent` record but is not part of the key — see `docs/roadmap.md` for what multi-host requires. Computes deltas. Knows nothing about transport. |
 | `server/ws/hub.ts` | Browser fan-out. Full snapshot on connect, deltas after. Knows nothing about herdr. |
 | `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. |
 | `shared/types.ts` | The one payload contract, imported by server and UI. |

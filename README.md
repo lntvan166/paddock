@@ -55,8 +55,12 @@ is structurally incapable of leaking real data.
 ```bash
 make dev           # vite HMR + server reload, no Docker — the iteration loop
 make types         # regenerate src/shared/herdr-api.d.ts
-make check         # tsc --noEmit + lint
+make check         # tsc --noEmit
 make check-clean   # public-repo scanner — run before every commit
 make build          # bundle UI, compile binary
 make up             # docker compose up -d --build
 ```
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
