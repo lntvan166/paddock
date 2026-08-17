@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { isStale, useStore } from "@web/store";
 import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
+import { AgentDetail } from "@web/components/AgentDetail";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
@@ -12,6 +13,7 @@ export function App() {
   const { agents, hostId, connected, lastMessageAt, connect } = useStore();
   const [now, setNow] = useState(() => Date.now());
   const [idleOpen, setIdleOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     connect();
@@ -25,6 +27,10 @@ export function App() {
 
   const groups = groupAgents(agents);
   const stale = isStale({ agents, hostId, connected, lastMessageAt }, now);
+  // Re-derived from the live list every render, never cached: if the selected
+  // agent is pruned from a snapshot (or reconnects under a new id), the sheet
+  // closes itself instead of showing dangling data.
+  const openAgent = agents.find((a) => a.agentId === openId) ?? null;
 
   return (
     <main className="mx-auto max-w-2xl safe-bottom">
@@ -52,9 +58,19 @@ export function App() {
                 onToggle={() => setIdleOpen((v) => !v)}
               />
               {key === "needs-you"
-                ? list.map((a) => <AgentCard key={a.agentId} agent={a} now={now} />)
+                ? list.map((a) => (
+                    <AgentCard
+                      key={a.agentId} agent={a} now={now}
+                      onSelect={() => setOpenId(a.agentId)}
+                    />
+                  ))
                 : open
-                  ? list.map((a) => <AgentRow key={a.agentId} agent={a} now={now} />)
+                  ? list.map((a) => (
+                      <AgentRow
+                        key={a.agentId} agent={a} now={now}
+                        onSelect={() => setOpenId(a.agentId)}
+                      />
+                    ))
                   : (
                     <div className="flex flex-wrap gap-1.5 px-3 pb-3">
                       {list.map((a) => (
@@ -72,6 +88,11 @@ export function App() {
           </p>
         )}
       </div>
+
+      {/* Outside the data-stale wrapper for the same reason as ConnectionBanner:
+          it is a foreground control surface, not background data, so it must
+          never dim along with the list underneath it. */}
+      {openAgent && <AgentDetail agent={openAgent} onClose={() => setOpenId(null)} />}
     </main>
   );
 }

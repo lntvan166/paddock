@@ -81,3 +81,32 @@ body {
 [data-stale="true"] {
   opacity: 0.55;
 }
+
+/* Bottom sheet on a narrow screen, side panel on a wide one. A width media
+   query only — no device detection anywhere in this project. */
+.detail {
+  position: fixed;
+  inset: auto 0 0 0;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (min-width: 640px) {
+  .detail {
+    inset: 0 0 0 auto;
+    width: min(30rem, 50vw);
+    max-height: none;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+}
+
+/* Options scroll; labels wrap. Never truncate an option label. */
+.detail .options { display: grid; gap: 0.5rem; max-height: 40vh; overflow-y: auto; }
+.detail .options button { white-space: normal; text-align: left; min-height: 2.75rem; }
+.detail .output { white-space: pre-wrap; overflow-x: auto; font-family: ui-monospace, monospace; }
+.detail .warn { color: var(--warn); }
+.detail .ok { color: var(--ok); }

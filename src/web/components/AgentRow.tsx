@@ -19,11 +19,32 @@ export function StateDot({ state }: { state: Agent["state"] }) {
 }
 
 /** Dense row. Task text truncates to keep the list scannable. */
-export function AgentRow({ agent, now }: { agent: Agent; now: number }) {
+export function AgentRow({
+  agent, now, onSelect,
+}: {
+  agent: Agent;
+  now: number;
+  /** Opens the detail sheet for this agent. Optional so the row still
+   * renders standalone. */
+  onSelect?: () => void;
+}) {
   return (
     <div
       className="tap flex items-center gap-2.5 px-3 py-2.5"
       style={{ borderTop: "1px solid var(--border)" }}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect}
+      onKeyDown={
+        onSelect
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect();
+              }
+            }
+          : undefined
+      }
     >
       <StateDot state={agent.state} />
       <div className="min-w-0 flex-1">
