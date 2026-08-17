@@ -271,7 +271,10 @@ paddock never guesses:
 3. The UI renders one button per real option, labelled with that text. There is no
    generic "Approve" button unless the agent actually offered one.
 4. Tapping sends `agent.send_keys` with the mapped key.
-5. Confirm with `agent.wait --until working`, bounded by a timeout. Report success
+5. Confirm with `agent.wait` — waiting on the agent **leaving `blocked`**
+   (`--until working --until idle --until done`), not on it reaching `working`.
+   An option that declines sends the agent to `idle`, so a `working`-only wait
+   would report a false failure on every rejection. Bounded by a timeout. Report success
    or an explicit failure.
 6. **If parsing fails, degrade honestly:** show the raw output and a free-text reply
    box backed by `agent.prompt`. Never synthesise a default action.
@@ -639,11 +642,18 @@ Not built in v1. Tracked in `docs/roadmap.md`.
 
 ## 14. Open questions
 
-1. **Prompt-option parsing coverage.** §5 assumes the `detection` snapshot contains
-   a parseable option list. Verified that the source exists; **not yet verified**
-   against a real blocked agent. If parsing proves unreliable, the free-text
-   fallback becomes the primary path and tap-to-answer is downgraded to a nicety.
-   This is the design's largest unvalidated assumption and should be probed first.
+1. **Prompt-option parsing coverage.** *Answered: parseable.* Probed against a
+   real Claude Code permission prompt. The `detection` snapshot contains the
+   option list as text, options are **numbered** (`1.` `2.` `3.`) with `❯`
+   marking the current selection, and the question line is separable. Answering
+   via `agent.send_keys` with the option digit was verified end to end. Two
+   findings shape the v2 design: option labels are dynamic and context-specific
+   (one was "Yes, and always allow access to tmp/ from this project" — a
+   persistent policy change, not an approval), which vindicates rendering real
+   labels rather than a generic Approve; and `recent` / `recent_unwrapped`
+   return `agent_not_idle` while an agent is blocked, because it renders on the
+   alternate screen, so reading output must select its source by agent state.
+   See `docs/design/2026-08-17-paddock-plan2-design.md` §2.
 2. **`stateSince` availability.** *Answered: no timestamp.* Neither `agent.list`
    nor the status event carries one, so paddock stamps first-observation time.
    Slightly wrong across a paddock restart. Accepted.

@@ -66,11 +66,12 @@ surprise.
   environment, so section-order rendering (which agent lands in which
   section) is guarded at the data layer only, not by a rendered-output test.
 
-- **Task 2 was never run.** The blocked-agent detection probe (spec §14
-  question 1) requires a real blocked agent to verify that the `detection`
-  snapshot contains a parseable prompt-option list. Until it runs, whether
-  tap-to-answer is feasible at all remains unvalidated, and the v2 approve
-  path above is unconfirmed rather than merely unbuilt.
+- ~~**Task 2 was never run.**~~ *Done.* Probed against a real Claude Code
+  permission prompt: the option list **is** parseable, options are numbered
+  with `❯` marking the selection, and answering by option digit works end to
+  end. Tap-to-answer is confirmed feasible. See
+  `docs/design/2026-08-17-paddock-plan2-design.md` §2 for the findings and the
+  two constraints they impose.
 
 - **PWA manifest has no icons.** Installable, but unbranded — the install
   prompt shows a generic icon.

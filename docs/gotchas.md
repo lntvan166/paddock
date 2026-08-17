@@ -29,6 +29,21 @@ one, recorded here so they are not reintroduced.
   connection open, as an event stream, and no further request may be sent on
   that connection.
 
+- **`agent.read` with `recent` or `recent_unwrapped` FAILS on a blocked
+  agent.** herdr returns `agent_not_idle`: the agent's prompt renders on the
+  terminal's alternate screen, whose history "can only be captured by
+  scrolling while idle". Use `detection` (what herdr itself classified from)
+  or `visible`. This bites precisely on the agents you most want to read, so
+  choose the read source by agent state, not by preference.
+
+- **A blocked agent's prompt options are numbered and parseable.** The
+  `detection` snapshot carries `1.` / `2.` / `3.` with `❯` on the current
+  selection, and `agent.send_keys` with the option digit selects it. But
+  **option labels are dynamic** — one real option was "Yes, and always allow
+  access to tmp/ from this project", a persistent policy change rather than an
+  approval. Never collapse options into a generic Approve; render the agent's
+  exact label.
+
 - **`pane.agent_status_changed` subscriptions require a `pane_id`** — there
   is no global form. So the pane set must be reconciled *before* subscribing;
   subscribing first names no panes and silently delivers nothing.
