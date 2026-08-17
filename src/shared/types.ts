@@ -18,7 +18,19 @@ export interface Agent {
 
 export type ServerMessage =
   | { type: "snapshot"; hostId: string; agents: Agent[]; serverTime: number }
-  | { type: "delta"; upserted: Agent[]; removedIds: string[]; serverTime: number };
+  | { type: "delta"; upserted: Agent[]; removedIds: string[]; serverTime: number }
+  /**
+   * "I am still here" — carries no agent data and changes nothing on screen.
+   *
+   * Its own variant rather than an empty delta on purpose: an empty delta
+   * states "nothing changed", which is a different claim from "the link is
+   * alive", and a client is entitled to treat a delta as agent news. The
+   * client counts any received message as liveness, so this is what keeps a
+   * genuinely quiet overnight session — every agent idle, zero traffic — from
+   * declaring itself stale at T+60s and leaving the operator unable to tell
+   * "nothing is happening" from "the link died".
+   */
+  | { type: "heartbeat"; serverTime: number };
 
 export const SECTION_ORDER = ["needs-you", "working", "idle"] as const;
 export type Section = (typeof SECTION_ORDER)[number];

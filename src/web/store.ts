@@ -29,12 +29,26 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
       lastMessageAt: msg.serverTime,
     };
   }
+  // Liveness only. It counts as a received message for staleness — that is its
+  // entire job — and must not touch `agents`, so a quiet link keeps proving
+  // itself alive without ever redrawing a row.
+  if (msg.type === "heartbeat") {
+    return { ...state, lastMessageAt: msg.serverTime };
+  }
   const byId = new Map(state.agents.map((a) => [a.agentId, a]));
   for (const a of msg.upserted) byId.set(a.agentId, a);
   for (const id of msg.removedIds) byId.delete(id);
   return { ...state, agents: [...byId.values()], lastMessageAt: msg.serverTime };
 }
 
+/**
+ * Stale means "what you are looking at may no longer be true".
+ *
+ * A disconnected socket is stale immediately, whatever the timing. Otherwise
+ * this is a silence detector: the server sends a heartbeat every 20s (see
+ * Hub.startHeartbeat), so a live link refreshes `lastMessageAt` three times
+ * inside this window even when no agent has moved for hours.
+ */
 export function isStale(state: ClientState, now: number, thresholdMs = STALE_AFTER_MS): boolean {
   if (!state.connected) return true;
   if (state.lastMessageAt === null) return true;

@@ -151,4 +151,8 @@ Bun.serve<WsData>({
   },
 });
 
+// A quiet system sends nothing at all, so without this the browser would
+// declare a perfectly healthy link stale after 60s of idle agents.
+hub.startHeartbeat();
+
 console.info(`paddock listening on http://${HOSTNAME}:${PORT}`);

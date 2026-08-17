@@ -80,6 +80,35 @@ test("a delta removes by id", () => {
   expect(next.agents.map((a) => a.agentId)).toEqual(["w1:p1"]);
 });
 
+test("a heartbeat counts as a received message without disturbing agent state", () => {
+  const base = applyMessage(EMPTY, {
+    type: "snapshot", hostId: "dev-box", agents: [agent()], serverTime: NOW,
+  });
+  const next = applyMessage(base, { type: "heartbeat", serverTime: NOW + 20_000 });
+
+  expect(next.lastMessageAt).toBe(NOW + 20_000);
+  // Identity, not just deep equality: a heartbeat must not rebuild the list.
+  expect(next.agents).toBe(base.agents);
+  expect(next.hostId).toBe("dev-box");
+});
+
+test("heartbeats keep a quiet-but-live link out of the stale state", () => {
+  // The end-to-end point of the heartbeat: at 20s intervals, a session where
+  // no agent moves for hours never crosses the 60s threshold.
+  let s = { ...EMPTY, connected: true, lastMessageAt: NOW };
+  expect(isStale(s, NOW + 61_000)).toBe(true); // without one, it would
+
+  for (const tick of [20_000, 40_000, 60_000, 80_000]) {
+    s = applyMessage(s, { type: "heartbeat", serverTime: NOW + tick });
+    expect(isStale(s, NOW + tick + 1_000)).toBe(false);
+  }
+});
+
+test("a disconnected socket is stale immediately, however fresh the last heartbeat", () => {
+  const s = applyMessage({ ...EMPTY, connected: false }, { type: "heartbeat", serverTime: NOW });
+  expect(isStale(s, NOW)).toBe(true);
+});
+
 test("backoff grows and stays within the cap", () => {
   const fixed = () => 0.5;
   expect(backoffMs(0, fixed)).toBeLessThan(backoffMs(3, fixed));

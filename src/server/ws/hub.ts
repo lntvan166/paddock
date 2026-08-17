@@ -7,6 +7,11 @@ export interface HubClient {
 export interface HubOptions {
   /** Window for merging a burst of changes into one frame. */
   coalesceMs?: number;
+  /**
+   * Liveness interval. Comfortably inside the client's 60s staleness
+   * threshold, and injectable so tests do not sleep for 20 seconds.
+   */
+  heartbeatMs?: number;
   now?: () => number;
 }
 
@@ -21,16 +26,49 @@ export class Hub {
   private readonly pendingUpserts = new Map<string, Agent>();
   private readonly pendingRemovals = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private readonly coalesceMs: number;
+  private readonly heartbeatMs: number;
   private readonly now: () => number;
 
   constructor(opts: HubOptions = {}) {
     this.coalesceMs = opts.coalesceMs ?? 100;
+    this.heartbeatMs = opts.heartbeatMs ?? 20_000;
     this.now = opts.now ?? Date.now;
   }
 
   get clientCount(): number {
     return this.clients.size;
+  }
+
+  get heartbeatIntervalMs(): number {
+    return this.heartbeatMs;
+  }
+
+  /**
+   * Start proving the link is alive.
+   *
+   * Nothing else on the server sends anything on a quiet system: flush()
+   * returns early with nothing pending, and the supervisor emits a delta only
+   * when a reconcile actually changed something. Idle agents overnight — the
+   * primary use case — therefore produce exactly zero traffic, and without
+   * this the UI would show the amber staleness banner and dim to 0.55 opacity
+   * while the link was perfectly healthy.
+   */
+  startHeartbeat(): void {
+    if (this.heartbeatTimer) return;
+    this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), this.heartbeatMs);
+  }
+
+  stopHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+
+  /** One liveness frame to every connected browser. Carries no agent data. */
+  sendHeartbeat(): void {
+    const msg: ServerMessage = { type: "heartbeat", serverTime: this.now() };
+    for (const client of [...this.clients]) this.sendTo(client, msg);
   }
 
   add(client: HubClient): void {

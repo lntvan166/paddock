@@ -119,6 +119,57 @@ test("a rapid burst for one agent auto-flushes once, carrying its final value", 
   expect(msg.upserted[0]!.state).toBe("working");
 });
 
+test("a QUIET hub still proves the link is alive inside the staleness window", async () => {
+  // The whole-branch defect: nothing on the server sends anything when
+  // nothing is happening — flush() returns early with an empty queue, and the
+  // supervisor emits a delta only when a reconcile changed something. Idle
+  // agents overnight meant exactly zero traffic, and the UI declared a
+  // healthy link stale at T+60s.
+  const hub = new Hub({ heartbeatMs: 20 });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+
+  hub.startHeartbeat();
+  try {
+    // No queue(), no flush() — a completely quiet system.
+    await new Promise((resolve) => setTimeout(resolve, 70));
+  } finally {
+    hub.stopHeartbeat();
+  }
+
+  expect(sent.length).toBeGreaterThan(0);
+  for (const msg of sent) expect(msg.type).toBe("heartbeat");
+});
+
+test("the default heartbeat interval sits comfortably inside the 60s staleness threshold", () => {
+  // A heartbeat slower than the client's threshold would be worse than none:
+  // it would flap the banner instead of removing it.
+  expect(new Hub().heartbeatIntervalMs).toBeLessThan(60_000 / 2);
+});
+
+test("a heartbeat carries no agent data", () => {
+  const hub = new Hub({ now: () => NOW });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.sendHeartbeat();
+  expect(sent).toEqual([{ type: "heartbeat", serverTime: NOW }]);
+});
+
+test("startHeartbeat is idempotent — a second call does not double the rate", async () => {
+  const hub = new Hub({ heartbeatMs: 20 });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.startHeartbeat();
+  hub.startHeartbeat();
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  } finally {
+    hub.stopHeartbeat();
+  }
+  // Two intervals in 50ms at 20ms each; a doubled timer would give ~4.
+  expect(sent.length).toBeLessThanOrEqual(3);
+});
+
 test("a burst merges an upsert of one agent with a removal of a different agent", () => {
   const hub = new Hub({ coalesceMs: 100, now: () => NOW });
   const { client, sent } = fakeClient();
