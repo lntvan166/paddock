@@ -56,6 +56,11 @@ export class AgentStore {
         ...next,
         stateSince: next.state === prev.state ? prev.stateSince : now,
         updatedAt: now,
+        // Carried like stateSince, and for the same reason: the 30s reconcile
+        // rebuilds every agent from herdr, which knows nothing about this flag.
+        // Dropping it would resurrect an acknowledged card within half a minute.
+        // Cleared on leaving `done`, because a fresh finish is fresh news.
+        acknowledgedAt: next.state === "done" ? prev.acknowledgedAt : null,
       };
       this.agents.set(next.agentId, merged);
       if (differs(prev, merged)) upserted.push(merged);
@@ -76,6 +81,19 @@ export class AgentStore {
     const next = mutate(prev);
     this.agents.set(agentId, next);
     return next;
+  }
+
+  /**
+   * Dismiss a `done` agent from Needs you. Returns null when the agent is
+   * unknown, not `done`, or already acknowledged — so a double-tap does not
+   * broadcast a no-op delta to every browser.
+   */
+  acknowledge(agentId: string, now: number): Delta | null {
+    const prev = this.agents.get(agentId);
+    if (!prev || prev.state !== "done" || prev.acknowledgedAt !== null) return null;
+    const next = { ...prev, acknowledgedAt: now, updatedAt: now };
+    this.agents.set(agentId, next);
+    return { upserted: [next], removedIds: [] };
   }
 
   /**

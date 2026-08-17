@@ -47,6 +47,7 @@ export function toAgent(rawAgent: HerdrAgentRaw, ctx: AdaptContext): Agent | nul
     cwd: rawAgent.cwd ?? "",
     stateSince: ctx.now,
     updatedAt: ctx.now,
+    acknowledgedAt: null,
   };
 }
 

@@ -19,7 +19,7 @@ import {
  */
 export function groupAgents(agents: Agent[]): Record<SectionKey, Agent[]> {
   const out = { "needs-you": [], working: [], idle: [] } as Record<SectionKey, Agent[]>;
-  for (const a of [...agents].sort(compareAgents)) out[sectionFor(a.state)].push(a);
+  for (const a of [...agents].sort(compareAgents)) out[sectionFor(a)].push(a);
   return out;
 }
 

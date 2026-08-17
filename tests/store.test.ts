@@ -16,6 +16,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     cwd: "/srv/project",
     stateSince: NOW,
     updatedAt: NOW,
+    acknowledgedAt: null,
     ...over,
   };
 }

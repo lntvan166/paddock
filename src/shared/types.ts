@@ -14,6 +14,44 @@ export interface Agent {
   /** Epoch ms when this state was first observed. Stamped by paddock. */
   stateSince: number;
   updatedAt: number;
+  /**
+   * Epoch ms when the operator dismissed this agent's `done` from paddock,
+   * or null.
+   *
+   * herdr derives `done` from idle-plus-*unseen*, and reading over the socket
+   * does not clear it — so without this, finished agents accumulate in Needs
+   * you and can never be cleared from a phone. This flag is paddock's own:
+   * herdr's `done` stays true, paddock just stops surfacing it.
+   */
+  acknowledgedAt: number | null;
+}
+
+export interface PromptOption {
+  /** The option's text EXACTLY as the agent rendered it. Never rewritten. */
+  label: string;
+  /** The key to send via agent.send_keys — the option's digit. */
+  key: string;
+  /** True when the agent's `❯` cursor sits on this option. */
+  selected: boolean;
+}
+
+export interface ParsedPrompt {
+  /** The question line, e.g. "Do you want to proceed?". Null when not found. */
+  question: string | null;
+  /**
+   * The parsed options, or null when the snapshot could not be parsed.
+   *
+   * null is an OUTCOME, not an error: the UI falls back to raw output plus a
+   * free-text reply. A mislabelled Approve button is worse than no button.
+   */
+  options: PromptOption[] | null;
+  /** The snapshot as read. Always present, so the UI can always show something. */
+  raw: string;
+}
+
+export interface ActionResult {
+  ok: boolean;
+  detail?: string;
 }
 
 export type ServerMessage =
@@ -35,9 +73,12 @@ export type ServerMessage =
 export const SECTION_ORDER = ["needs-you", "working", "idle"] as const;
 export type Section = (typeof SECTION_ORDER)[number];
 
-export function sectionFor(state: AgentState): Section {
-  if (state === "blocked" || state === "done") return "needs-you";
-  if (state === "working") return "working";
+export function sectionFor(agent: Agent): Section {
+  if (agent.state === "blocked") return "needs-you";
+  // An acknowledged finish has been dealt with; it stops competing for
+  // attention with agents that still need some.
+  if (agent.state === "done") return agent.acknowledgedAt === null ? "needs-you" : "idle";
+  if (agent.state === "working") return "working";
   return "idle";
 }
 
@@ -54,8 +95,8 @@ export function sectionFor(state: AgentState): Section {
  * only one.
  */
 export function compareAgents(a: Agent, b: Agent): number {
-  const sa = SECTION_ORDER.indexOf(sectionFor(a.state));
-  const sb = SECTION_ORDER.indexOf(sectionFor(b.state));
+  const sa = SECTION_ORDER.indexOf(sectionFor(a));
+  const sb = SECTION_ORDER.indexOf(sectionFor(b));
   if (sa !== sb) return sa - sb;
   if (a.stateSince !== b.stateSince) return b.stateSince - a.stateSince;
   return a.name.localeCompare(b.name);

@@ -27,6 +27,7 @@ export function demoAgents(now: number): Agent[] {
     cwd: "/srv/demo-project",
     stateSince: now - s.ageMs,
     updatedAt: now,
+    acknowledgedAt: null,
   }));
 }
 
