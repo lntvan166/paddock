@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@server/routes";
-import { DemoSource, DEMO_HOST_ID } from "@server/demo";
+import { createDemoSource, DemoSource, DEMO_HOST_ID } from "@server/demo";
 import {
   HerdrStream,
   ProtocolMismatchError,
@@ -38,7 +38,9 @@ let supervisor: Supervisor | null = null;
 let demo: DemoSource | null = null;
 
 if (DEMO) {
-  demo = new DemoSource({ onDelta: (d) => hub.queue(d) });
+  // Every tick goes through the store, so `/api/agents` and a browser that
+  // loads the page an hour in both see current state — not startup state.
+  demo = createDemoSource({ store, onDelta: (d) => hub.queue(d) });
   store.replaceAll(demo.snapshot(), Date.now());
   demo.start();
   herdrConnected = true;

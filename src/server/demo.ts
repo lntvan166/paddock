@@ -30,6 +30,49 @@ export function demoAgents(now: number): Agent[] {
   }));
 }
 
+interface DemoDelta {
+  upserted: Agent[];
+  removedIds: string[];
+}
+
+/**
+ * Just enough of AgentStore's shape to apply a tick to it, declared
+ * structurally rather than imported. demo.ts stands in for herdr and is
+ * therefore upstream of the store; importing `AgentStore` here would point a
+ * dependency the wrong way down `herdr → store → hub → web`.
+ */
+export interface DemoStoreSink {
+  replaceAll(incoming: Agent[], now: number): DemoDelta;
+}
+
+/**
+ * Wire a demo source so every tick lands in the STORE first, then the hub.
+ *
+ * The store is authoritative in both modes, and demo mode must not be the
+ * exception: it is the documented path for screenshots, README media, and
+ * evaluating paddock without herdr, so it is the mode outsiders are most
+ * likely to see. Feeding DemoSource straight to the hub left `/api/agents`
+ * and every newly-loaded browser reading startup state forever, patched only
+ * as the 4s cursor happened to revisit each agent.
+ */
+export function createDemoSource(opts: {
+  store: DemoStoreSink;
+  onDelta: (d: DemoDelta) => void;
+  intervalMs?: number;
+  now?: () => number;
+}): DemoSource {
+  const now = opts.now ?? Date.now;
+  const source: DemoSource = new DemoSource({
+    intervalMs: opts.intervalMs,
+    now: opts.now,
+    // The delta forwarded to browsers is the STORE's, not the demo array's,
+    // so what a browser is told and what a later /api/agents reports are the
+    // same computation.
+    onDelta: () => opts.onDelta(opts.store.replaceAll(source.snapshot(), now())),
+  });
+  return source;
+}
+
 /** Rotates one working agent's state so the UI visibly updates. */
 export class DemoSource {
   private agents: Agent[];
