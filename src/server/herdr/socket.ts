@@ -169,8 +169,19 @@ export class HerdrStream {
           this.socket = null;
           this.opts.onStateChange?.(false);
           if (this.wantOpen) console.error("herdr: event stream closed unexpectedly");
+          // If the socket closed before the subscribe ack arrived, settle
+          // open()'s promise instead of leaving the caller's `await` hanging
+          // forever with no error and no stack.
+          const ack = this.pendingAck;
+          this.pendingAck = null;
+          ack?.reject(new Error("herdr: socket closed before events.subscribe was acknowledged"));
         },
-        error: (_s, err) => console.error("herdr: event stream error", err),
+        error: (_s, err) => {
+          console.error("herdr: event stream error", err);
+          const ack = this.pendingAck;
+          this.pendingAck = null;
+          ack?.reject(new Error(`herdr: socket errored before events.subscribe was acknowledged: ${err}`));
+        },
       },
     });
 

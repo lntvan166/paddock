@@ -21,8 +21,14 @@ afterEach(() => { stop?.(); stop = null; });
  * Models herdr's real connection behaviour:
  *  - a request connection gets ONE response, then the server closes it
  *  - an events.subscribe connection stays open and streams
+ *
+ * `dropSubscribeAck` models a subscribe connection that herdr accepts and
+ * then drops without ever sending the acknowledgement frame (a malformed
+ * subscription, a daemon hangup, or the socket just dying mid-handshake).
+ * It changes nothing about request connections: they still get exactly one
+ * response and refuse a second request on the same connection.
  */
-async function fakeHerdr(protocol = 19) {
+async function fakeHerdr(protocol = 19, opts: { dropSubscribeAck?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "paddock-sock-"));
   const path = join(dir, "h.sock");
   const streams = new Set<any>();
@@ -43,6 +49,10 @@ async function fakeHerdr(protocol = 19) {
           requestsSeen.push({ method: req.method, params: req.params });
 
           if (req.method === "events.subscribe") {
+            if (opts.dropSubscribeAck) {
+              s.end(); // accepted, then dropped — no ack frame, ever
+              return;
+            }
             s.write(JSON.stringify({ id: req.id, result: { type: "subscription_started" } }) + "\n");
             streams.add(s); // stays open
             return;
@@ -179,5 +189,29 @@ test("open() replaces the previous stream rather than stacking one", async () =>
   await stream.open(statusSubscriptions(["w1:p1", "w1:p2"]));
   await Bun.sleep(50);
   expect(streamCount()).toBe(1);
+  stream.close();
+});
+
+// Regression guard: open() must settle even if the underlying socket closes
+// before the events.subscribe acknowledgement ever arrives (a malformed
+// subscription, a daemon hangup, the connection just dying mid-handshake).
+// Race against a bounded timeout so that if this regresses, the test fails
+// fast instead of hanging the whole suite.
+test("open() rejects rather than hanging when the socket closes before the subscribe ack", async () => {
+  const { path } = await fakeHerdr(19, { dropSubscribeAck: true });
+  const stream = new HerdrStream({ path, onEvent: () => {} });
+
+  const timedOut = Symbol("timed out");
+  const result = await Promise.race([
+    stream.open(statusSubscriptions(["w1:p1"])).then(
+      () => { throw new Error("open() resolved, but the subscribe ack was never sent"); },
+      (err) => err,
+    ),
+    Bun.sleep(500).then(() => timedOut),
+  ]);
+
+  expect(result).not.toBe(timedOut); // regression: open() hung instead of rejecting
+  expect(result).toBeInstanceOf(Error);
+  expect((result as Error).message).toMatch(/before events\.subscribe was acknowledged/);
   stream.close();
 });
