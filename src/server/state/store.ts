@@ -1,4 +1,4 @@
-import { SECTION_ORDER, sectionFor, type Agent } from "@shared/types";
+import { compareAgents, type Agent } from "@shared/types";
 
 export interface Delta {
   upserted: Agent[];
@@ -78,14 +78,13 @@ export class AgentStore {
     return next;
   }
 
-  /** Display order: section, then most-recent state change, then name. */
+  /**
+   * Display order: section, then most-recent state change, then name — the
+   * ONE comparator from the shared contract, which the client applies again
+   * after every delta. Sorting here is not enough on its own: a snapshot is
+   * sent only on connect.
+   */
   snapshot(): Agent[] {
-    return [...this.agents.values()].sort((a, b) => {
-      const sa = SECTION_ORDER.indexOf(sectionFor(a.state));
-      const sb = SECTION_ORDER.indexOf(sectionFor(b.state));
-      if (sa !== sb) return sa - sb;
-      if (a.stateSince !== b.stateSince) return b.stateSince - a.stateSince;
-      return a.name.localeCompare(b.name);
-    });
+    return [...this.agents.values()].sort(compareAgents);
   }
 }
