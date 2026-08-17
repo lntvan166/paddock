@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+/* Light is the base palette. Every token is defined here — never only inside a
+   media query, or the manual toggle has nothing to fall back to. */
+:root {
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --border: #e3e5e9;
+  --fg: #14161a;
+  --fg-dim: #5f6672;
+  --accent: #4a55c7;
+  --warn: #9a6600;
+  --ok: #1a7f37;
+}
+
+/* System dark, unless the user explicitly chose light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #08090a;
+    --surface: #12141a;
+    --border: #1f2126;
+    --fg: #f7f8f8;
+    --fg-dim: #8a8f98;
+    --accent: #5e6ad2;
+    --warn: #e0a838;
+    --ok: #3fb950;
+  }
+}
+
+/* Explicit dark toggle wins regardless of system preference. */
+:root[data-theme="dark"] {
+  --bg: #08090a;
+  --surface: #12141a;
+  --border: #1f2126;
+  --fg: #f7f8f8;
+  --fg-dim: #8a8f98;
+  --accent: #5e6ad2;
+  --warn: #e0a838;
+  --ok: #3fb950;
+}
+
+/* System fonts only. A webfont would be the single largest payload on a slow
+   link, and SF/Segoe/Roboto read better at 12px than most alternatives. */
+html {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
+
+/* Touch devices get larger targets; hover affordances are additive only, never
+   the sole route to an action. */
+@media (pointer: coarse) {
+  .tap {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
