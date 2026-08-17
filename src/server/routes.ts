@@ -1,5 +1,5 @@
-import { Hono } from "hono";
-import type { HerdrActions } from "@server/herdr/actions";
+import { Hono, type Context } from "hono";
+import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
@@ -23,6 +23,31 @@ export interface HealthBody {
 // the dot-separated lowercase-hex shape this used to require, which matched no
 // real build output and so never actually set the immutable header.
 export const IMMUTABLE_ASSET_RE = /-[A-Za-z0-9_-]{8,}\.(js|css|woff2|svg|png)$/;
+
+/**
+ * The option's digit, exactly as `prompt-parse` emits it (`1`…`N`, contiguous
+ * from 1, so two digits is already more options than any real prompt offers).
+ *
+ * Spec §6 calls this "the option's digit" and states there is no
+ * general-purpose send endpoint — so anything else (`"C-c"`, `"Escape"`, an
+ * escape sequence) is refused here rather than forwarded verbatim to
+ * `agent.send_keys`. A control sequence is a strictly larger capability than
+ * the free text `{text}` already permits.
+ */
+const OPTION_KEY_RE = /^[1-9][0-9]?$/;
+
+/**
+ * A request body as an object, whatever the client actually sent.
+ *
+ * `c.req.json()` rejects on malformed JSON and resolves with `null`, a number
+ * or an array for well-formed-but-not-an-object bodies — none of which can be
+ * indexed safely. Every field read off the result is `unknown` and validated
+ * before use; nothing here is cast into a shape the body may not have.
+ */
+async function jsonBody(c: Context): Promise<Record<string, unknown>> {
+  const body: unknown = await c.req.json().catch(() => null);
+  return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+}
 
 export interface AppDeps {
   store: AgentStore;
@@ -53,6 +78,21 @@ export function createApp(deps: AppDeps) {
     c.json({ hostId: deps.store.hostId, agents: deps.store.snapshot() }),
   );
 
+  // Registered unconditionally, OUTSIDE the `deps.actions` block below:
+  // acknowledging touches only paddock's own store and the hub, and spec §7 is
+  // explicit that nothing is sent to herdr for it. Gating it on a herdr
+  // dependency it does not use made the one v2 feature that works without
+  // herdr the one visibly broken in `--demo` — the seeded `done` agent offered
+  // a Dismiss button whose POST fell through to the `/api/*` 404, so the card
+  // reported "Could not dismiss." forever, in the mode the README says
+  // screenshots come from.
+  app.post("/api/agents/:id/ack", (c) => {
+    const delta = deps.store.acknowledge(c.req.param("id"), now());
+    if (!delta) return c.json({ ok: false, detail: "not a fresh done agent" }, 409);
+    deps.hub.queue(delta); // reaches every other open browser
+    return c.json({ ok: true });
+  });
+
   if (deps.actions) {
     const actions = deps.actions;
 
@@ -60,9 +100,11 @@ export function createApp(deps: AppDeps) {
     app.post("/api/agents/:id/output", async (c) => {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
-      const body = await c.req.json().catch(() => ({}) as { lines?: number });
+      // Coerced and clamped, never cast: this is the only client-supplied
+      // value besides the store-checked `:id` that reaches a herdr parameter.
+      const lines = resolveReadLines((await jsonBody(c)).lines);
       try {
-        return c.json(await actions.readOutput(agent.agentId, agent.state, body.lines));
+        return c.json(await actions.readOutput(agent.agentId, agent.state, lines));
       } catch (err) {
         return c.json({ ok: false, detail: String(err) }, 502);
       }
@@ -91,26 +133,32 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: `agent is ${agent.state}, no longer blocked` }, 409);
       }
 
-      const body = await c.req.json().catch(() => ({}) as { key?: string; text?: string });
-      if (!body.key && !body.text) {
+      const body = await jsonBody(c);
+
+      // Checked BEFORE the "did you send anything at all" branch, so a
+      // non-string key (a JSON number `2` passes a plain truthiness test and
+      // reaches herdr as a non-string) is refused with the reason rather than
+      // silently falling through to the free-text path or to `agent.send_keys`.
+      const supplied = body.key !== undefined && body.key !== null && body.key !== "";
+      if (supplied && (typeof body.key !== "string" || !OPTION_KEY_RE.test(body.key))) {
+        return c.json({ ok: false, detail: `key must be an option digit, e.g. "2"` }, 400);
+      }
+      const key = supplied ? (body.key as string) : null;
+      // Same treatment for text: `agent.prompt` takes a string, and a JSON
+      // number or object would be forwarded into its params otherwise.
+      const text = typeof body.text === "string" && body.text !== "" ? body.text : null;
+      if (!key && !text) {
         return c.json({ ok: false, detail: "provide key or text" }, 400);
       }
 
       try {
-        if (body.key) await actions.sendOptionKey(agent.agentId, body.key);
-        else await actions.sendReply(agent.agentId, body.text!);
+        if (key) await actions.sendOptionKey(agent.agentId, key);
+        else await actions.sendReply(agent.agentId, text!);
         await actions.waitUntilUnblocked(agent.agentId);
         return c.json({ ok: true });
       } catch (err) {
         return c.json({ ok: false, detail: String(err) }, 502);
       }
-    });
-
-    app.post("/api/agents/:id/ack", (c) => {
-      const delta = deps.store.acknowledge(c.req.param("id"), now());
-      if (!delta) return c.json({ ok: false, detail: "not a fresh done agent" }, 409);
-      deps.hub.queue(delta); // reaches every other open browser
-      return c.json({ ok: true });
     });
   }
 

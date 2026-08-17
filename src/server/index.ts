@@ -36,8 +36,11 @@ const hub = new Hub();
 
 let supervisor: Supervisor | null = null;
 let demo: DemoSource | null = null;
-// Demo has no herdr to act on, so the action routes stay unset and 404
-// honestly rather than pretending to answer a synthetic agent.
+// Demo has no herdr to act on, so the herdr-backed action routes stay unset
+// and 404 honestly rather than pretending to answer a synthetic agent. `/ack`
+// is unaffected: it is registered unconditionally in routes.ts because it
+// touches only paddock's own store, so dismissing a finished agent works in
+// `--demo` too — which is the mode README screenshots come from.
 let actions: HerdrActions | undefined;
 // Health reads the stream itself rather than a cached boolean: a flag can go
 // stale (and did — a failed reopen left it saying `true` with no stream at

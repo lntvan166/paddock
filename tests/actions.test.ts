@@ -2,7 +2,16 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createActions, readSourceFor } from "@server/herdr/actions";
+import {
+  createActions,
+  DEFAULT_READ_LINES,
+  DEFAULT_WAIT_TIMEOUT_MS,
+  MAX_READ_LINES,
+  MAX_WAIT_TIMEOUT_MS,
+  readSourceFor,
+  resolveReadLines,
+  resolveWaitTimeoutMs,
+} from "@server/herdr/actions";
 import { HERDR_TIMEOUT_MS } from "@server/herdr/socket";
 
 let stop: (() => void) | null = null;
@@ -37,6 +46,41 @@ test("a blocked agent is read from visible, everything else from recent_unwrappe
   expect(readSourceFor("working")).toBe("recent_unwrapped");
   expect(readSourceFor("idle")).toBe("recent_unwrapped");
   expect(readSourceFor("done")).toBe("recent_unwrapped");
+});
+
+// Out of range clamps (the caller still gets as much output as paddock will
+// serve); malformed falls back to the default (no inferable intent).
+test("a line count is always a positive integer within the ceiling", () => {
+  expect(resolveReadLines(40)).toBe(40);
+  expect(resolveReadLines(1e9)).toBe(MAX_READ_LINES);
+  expect(resolveReadLines(MAX_READ_LINES + 1)).toBe(MAX_READ_LINES);
+  for (const bad of ["60", {}, [], null, undefined, NaN, Infinity, -5, 0, 2.5, true]) {
+    expect(resolveReadLines(bad)).toBe(DEFAULT_READ_LINES);
+  }
+});
+
+// Unreachable today — one caller, passing nothing — but identical in shape to
+// `lines`, and clamping only the reachable one is the asymmetry that let the
+// unvalidated `lines` through in the first place.
+test("a wait budget is bounded the same way", () => {
+  expect(resolveWaitTimeoutMs(5_000)).toBe(5_000);
+  expect(resolveWaitTimeoutMs(10 * MAX_WAIT_TIMEOUT_MS)).toBe(MAX_WAIT_TIMEOUT_MS);
+  for (const bad of ["5000", {}, null, undefined, NaN, -1, 0]) {
+    expect(resolveWaitTimeoutMs(bad)).toBe(DEFAULT_WAIT_TIMEOUT_MS);
+  }
+});
+
+test("readOutput clamps the line count it puts in the herdr params", async () => {
+  const { path, seen } = await fakeHerdr(() => ({ text: "x" }));
+  const actions = createActions(path);
+  await actions.readOutput("w1:p1", "working", 1e9);
+  expect(seen[0].params.lines).toBe(MAX_READ_LINES);
+});
+
+test("waitUntilUnblocked clamps the budget it asks herdr for", async () => {
+  const { path, seen } = await fakeHerdr(() => ({ agent_status: "idle" }));
+  await createActions(path).waitUntilUnblocked("w1:p1", 10 * MAX_WAIT_TIMEOUT_MS);
+  expect(seen[0].params.timeout_ms).toBe(MAX_WAIT_TIMEOUT_MS);
 });
 
 test("readOutput asks herdr for the state-appropriate source", async () => {
