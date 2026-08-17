@@ -92,7 +92,18 @@ export function App() {
       {/* Outside the data-stale wrapper for the same reason as ConnectionBanner:
           it is a foreground control surface, not background data, so it must
           never dim along with the list underneath it. */}
-      {openAgent && <AgentDetail agent={openAgent} onClose={() => setOpenId(null)} />}
+      {openAgent && (
+        // key={agentId} forces a fresh AgentDetail instance per selected agent.
+        // Without it, switching the selection reuses the same component
+        // instance, and every field in there — result, reply, busy included —
+        // is per-agent state: a reply typed for A, or A's in-flight action
+        // resolving with a 409 AFTER the operator has already switched to B,
+        // would land on B's sheet under B's header. Resetting those fields in
+        // an effect does not stop that late resolution from writing after the
+        // switch; only unmounting the old instance (so its setState calls
+        // become no-ops) does. Do not replace this with field resets.
+        <AgentDetail key={openAgent.agentId} agent={openAgent} onClose={() => setOpenId(null)} />
+      )}
     </main>
   );
 }
