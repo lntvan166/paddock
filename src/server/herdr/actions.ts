@@ -7,6 +7,20 @@ export type ReadSource = "detection" | "visible" | "recent_unwrapped";
 export const DEFAULT_READ_LINES = 120;
 
 /**
+ * Margin added on top of the herdr-side wait budget when computing the
+ * transport-level ceiling for `agent.wait`.
+ *
+ * `request()` defaults its own socket timeout to `HERDR_TIMEOUT_MS` (10s)
+ * when no fourth argument is given. `waitUntilUnblocked` tells herdr it may
+ * take up to `timeoutMs` (default 15s) to answer — if the call to `request`
+ * omitted the fourth argument, the transport guard would fire at 10s while
+ * herdr was still inside the 15s it was told it could use, producing a
+ * false failure exactly in the window a real approve/reject confirmation
+ * lands in. The transport ceiling must always exceed the herdr-side budget.
+ */
+const WAIT_TRANSPORT_MARGIN_MS = 5_000;
+
+/**
  * Pick the read source by agent state.
  *
  * `recent` and `recent_unwrapped` return `agent_not_idle` on a BLOCKED agent:
@@ -35,7 +49,10 @@ export function createActions(socketPath: string): HerdrActions {
       const res = await request<{ text?: string }>(socketPath, "agent.read", {
         target, source, lines, format: "text", strip_ansi: true,
       });
-      return { lines: (res.text ?? "").split("\n"), source };
+      const text = res.text ?? "";
+      // "".split("\n") is [""], not [] — a genuinely empty pane (or a
+      // response missing `text`) must report no lines, not one blank line.
+      return { lines: text === "" ? [] : text.split("\n"), source };
     },
 
     async readDetection(target) {
@@ -60,7 +77,7 @@ export function createActions(socketPath: string): HerdrActions {
       // settled on idle once the command finished.
       await request(socketPath, "agent.wait", {
         target, until: ["working", "idle", "done"], timeout_ms: timeoutMs,
-      });
+      }, timeoutMs + WAIT_TRANSPORT_MARGIN_MS);
     },
   };
 }
