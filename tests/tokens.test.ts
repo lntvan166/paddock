@@ -9,7 +9,12 @@ async function css(): Promise<string> {
 test("every token is defined on bare :root", async () => {
   const text = await css();
   const root = text.slice(text.indexOf(":root {"), text.indexOf("}", text.indexOf(":root {")));
-  for (const t of TOKENS) expect(root).toContain(t);
+  // Match on a token boundary (name immediately followed by its colon), not a bare
+  // substring: "--fg" is a literal substring of "--fg-dim", so a naive
+  // `root.toContain("--fg")` would still pass even if `--fg` itself were moved out
+  // of the bare :root block as long as `--fg-dim` remained — exactly the
+  // regression this test exists to catch.
+  for (const t of TOKENS) expect(root).toContain(`${t}:`);
 });
 
 test("dark overrides are guarded so a manual light toggle wins", async () => {
