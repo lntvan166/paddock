@@ -1,0 +1,35 @@
+# Local private pattern list for scripts/check-private.sh.
+# MUST stay untracked: a committed denylist leaks the very strings it protects.
+.private-denylist
+
+# Secrets — only .env.example is committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Dependencies / build output
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+paddock
+paddock-*
+
+# Runtime / logs
+*.log
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Agent scratch space. These directories hold brainstorm notes, mockups and
+# session state written while working ON this repo, and that material routinely
+# contains real agent names, real paths and employer context. It is the most
+# likely accidental leak into a public repo, because nobody reviews a scratch
+# file the way they review source.
+.superpowers/
+.claude/
+*.local.md
