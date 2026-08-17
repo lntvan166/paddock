@@ -113,6 +113,12 @@ export class DemoSource {
     const target = this.agents[this.cursor % this.agents.length]!;
     const state = rotation[this.cursor % rotation.length]!;
     const now = this.now();
+    // Spreads `...target` without applying carryAcknowledged, so `next` can
+    // carry a stale `acknowledgedAt` into a non-`done` state. Safe only
+    // because this object never reaches a browser directly: createDemoSource
+    // feeds it through `store.replaceAll`, which applies carryAcknowledged
+    // independently on the real Agent it commits. Do not "fix" it here — that
+    // would duplicate the rule instead of the store owning it once.
     const next: Agent = { ...target, state, stateSince: now, updatedAt: now };
     this.agents = this.agents.map((a) => (a.agentId === next.agentId ? next : a));
     this.cursor += 1;

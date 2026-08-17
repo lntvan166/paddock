@@ -35,10 +35,14 @@ One process. No relay hop, no plugin, no polling loop.
 | `server/state/store.ts` | Authoritative in-memory `Map<string, Agent>` keyed by `agentId` alone (the herdr `pane_id`). `hostId` is carried on every `Agent` record but is not part of the key — see `docs/roadmap.md` for what multi-host requires. Computes deltas. Knows nothing about transport. |
 | `server/demo.ts` | Synthetic agents for `--demo`, with invented names. Ticks go through the store like everything else, so the store is authoritative in both modes. Knows nothing about herdr, and takes the store structurally so it imports nothing downstream. |
 | `server/ws/hub.ts` | Browser fan-out. Full snapshot on connect, coalesced deltas after, and a 20s heartbeat so a quiet-but-live link does not read as stale. Knows nothing about herdr. |
-| `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. |
+| `server/herdr/actions.ts` | The herdr calls behind reading a pane and answering a blocked agent: `readOutput`/`readDetection` (source picked by `readSourceFor`, state-driven — see gotchas), `sendOptionKey`/`sendReply`, and `waitUntilUnblocked` (waits on *leaving* `blocked`, not on reaching `working`). Bound to one socket path via `createActions` so `routes.ts` takes it as an injectable `HerdrActions`, omitted entirely in `--demo`. |
+| `server/herdr/prompt-parse.ts` | Turns a `detection` snapshot into `ParsedPrompt` — the last contiguous run of numbered option lines, plus the question line pinned to that run. Returns `options: null` rather than guess when the shape does not hold. The only place that knows the numbered-menu text format. |
+| `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. Read-only routes (`/api/health`, `/api/agents`) are always registered; the four action routes (`/output`, `/prompt`, `/answer`, `/ack`) are added only `if (deps.actions)`, so they do not exist in `--demo`. |
 | `server/index.ts` | Composition root. The only place that wires stream → supervisor → store → hub, and the keeper to the stream's state changes. |
-| `shared/types.ts` | The one payload contract, imported by server and UI — including `compareAgents`, the single triage comparator both sides sort with. |
+| `shared/types.ts` | The one payload contract, imported by server and UI — including `compareAgents`, the single triage comparator both sides sort with, and `carryAcknowledged`, the single rule for carrying `acknowledgedAt` across a state change. |
 | `shared/herdr-api.d.ts` | **Generated** from `herdr api schema --json`. Committed. Never hand-edited. Its interface bodies are hand-written in the generator, so `tests/herdr-schema-drift.test.ts` is what actually holds them to the live schema. |
+| `web/api.ts` | The client's only fetch layer. POSTs to the action routes; reads (`fetchOutput`/`fetchPrompt`) reject on a non-2xx response instead of resolving with a body whose declared shape doesn't hold, actions (`answerWithKey`/`answerWithText`/`acknowledge`) fold both transport errors and non-2xx bodies into one `ActionResult` so a refusal renders instead of throwing. |
+| `web/components/AgentDetail.tsx` | The detail sheet: one agent's output, and — while `blocked` — its parsed prompt options plus a free-text reply box. Mounted with `key={agent.agentId}` in `App.tsx` so switching the selected agent unmounts the old instance rather than reusing its in-flight state. |
 | `web/` | React + Tailwind, single screen. |
 
 ## The dependency rule
@@ -60,6 +64,23 @@ and nothing downstream of the store. `demo.ts` stands where herdr would, so it
 takes the store structurally rather than importing it. `index.ts` is the one
 exception by design — a composition root imports everything precisely so no
 other module has to.
+
+## Actions transport
+
+Reading a pane and answering a blocked agent do not ride the WebSocket at all.
+Each is a plain POST route (`/api/agents/:id/output`, `/prompt`, `/answer`,
+`/ack`) that calls into `HerdrActions` and returns its result — success or
+`ActionResult`-shaped failure — directly in the HTTP response to the caller
+that made the request. No correlation id, no round trip through the hub.
+
+The one exception is `/ack`: it changes agent state (`acknowledgedAt`), so
+after updating the store it also queues the resulting delta on the hub —
+the same path every other state change already takes — so every other open
+browser learns about the dismissal too, not just the tab that tapped it.
+`/answer` does not queue anything itself: the option key or reply goes to
+herdr, and the resulting state change (leaving `blocked`) arrives back to
+every browser, including the one that sent it, through the normal event →
+store → delta path once herdr reports it.
 
 ## Liveness
 

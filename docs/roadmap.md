@@ -18,29 +18,33 @@ surprise.
 - **Adopt a linter.** `make check` currently runs only `bunx tsc --noEmit`;
   there is no linter configured. Add one deliberately, as its own task, rather
   than folding it into an unrelated change.
-- **Web Push.** VAPID keypair, service worker, subscription store, behind a
-  flag so a broken subscription can never break the dashboard. On iOS, Safari
-  delivers push only to a PWA added to the Home Screen — onboarding must say
-  so plainly.
+- **Web Push, the next increment.** VAPID keypair, service worker,
+  subscription store, behind a flag so a broken subscription can never break
+  the dashboard. On iOS, Safari delivers push only to a PWA that has been
+  added to the Home Screen — never to a page merely open in a tab — so
+  onboarding must say so plainly. That requirement is also what makes the
+  missing PWA icons (see "known gaps" below) load-bearing rather than
+  cosmetic: an install prompt with a generic icon is a weaker nudge to add to
+  the Home Screen, and the Home Screen add is the only way iOS delivers push
+  at all.
 - **Stuck-agent detection.** `working` for more than N minutes with no output
   change is worth surfacing. `pane.output_matched` may serve.
 - **Preact swap** if first-load size disappoints (~45 KB → ~4 KB gzipped,
   same API).
 - **Per-agent deep links** (`/#/agent/<name>`) so a notification opens the
   right one.
-- **The approve path** (tap-to-answer a blocked agent's real prompt options,
-  `agent.send_keys` / `agent.prompt`). v1 is read-only by design; see "known
-  gaps" below for why this is unconfirmed rather than merely deferred.
 
 ## Known v1 gaps
 
-- **`done` is sticky (spec §14 question 4).** herdr derives `done` from
-  idle-plus-*unseen*, where "seen" means the tab was focused in the herdr
-  desktop UI; reading over the socket does not clear it. So an agent answered
-  from the phone stays `done` and remains in **Needs you** until the operator
-  returns to the desk. Options are to accept it, or to track a paddock-local
-  "acknowledged" flag that dismisses the card without lying to herdr.
-  Unresolved by design — decide before building any acknowledge affordance.
+- ~~**`done` is sticky (spec §14 question 4).**~~ *Resolved.* herdr derives
+  `done` from idle-plus-*unseen*, where "seen" means the tab was focused in
+  the herdr desktop UI, so reading over the socket never clears it at the
+  source. v2 tracks a paddock-local `acknowledgedAt` on `Agent` instead (see
+  `docs/decisions.md`): dismissing a card sets it, `carryAcknowledged` keeps
+  it while the agent stays `done` and clears it the moment the agent isn't,
+  and `sectionFor` routes an acknowledged `done` agent to **Idle** instead of
+  **Needs you**. herdr's own `done` flag is untouched — paddock just stops
+  surfacing it.
 
 - **No pull-to-refresh (spec §7.6).** "Pull-to-refresh forces a reconcile" was
   never implemented, and was missing from the implementation plan's own
@@ -50,12 +54,12 @@ surprise.
   delivers a fresh snapshot, so the gap is the affordance and the sense of
   control, not correctness — which is why it is a gap and not a defect.
 
-- **No agent detail sheet / side panel (spec §6).** The component tree calls
-  for `<AgentDetail/>` — a sheet below 640px, a side panel above — showing one
-  agent's full task line, workspace, cwd and elapsed time. The plan deferred
-  it and never carried the deferral anywhere visible; recorded here now.
-  v1 shows everything it has on the list itself, so nothing is unreachable,
-  but a long task line is truncated with no way to read the rest.
+- ~~**No agent detail sheet / side panel (spec §6).**~~ *Done.* v2 ships
+  `web/components/AgentDetail.tsx`: tapping a card or row opens it over the
+  agent's output plus, while `blocked`, its parsed prompt options and a
+  free-text reply — see `docs/architecture.md`. The approve path is now built
+  too: tap-to-answer a blocked agent's real prompt options
+  (`agent.send_keys` / `agent.prompt`) via the same sheet.
 
 - **No motion.** Spec §6 calls for a cross-fade on the state dot and an
   animated section move; neither ships. A partial implementation would signal

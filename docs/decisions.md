@@ -36,3 +36,29 @@ session does not silently re-litigate them.
 6. **No webfont.** The system font stack (and system monospace stack where
    needed) is used instead. This is the single largest available saving on
    first-page load over a slow mobile link.
+
+7. **Actions are POST routes; state changes ride the existing delta path.**
+   Reading a pane and answering a blocked agent are plain HTTP calls that
+   return their result to the caller. Rejected: a `ClientMessage` union sent
+   over the WebSocket — it needs request/response correlation ids the
+   protocol has no field for, and error handling across a socket that can
+   reconnect mid-request is harder than reading an HTTP status. Also
+   rejected: POST-only with no delta involvement at all — the state change an
+   action causes (or a dismissal's `acknowledgedAt`) would only reach the tab
+   that made the request, and every other open browser would disagree until
+   the next 30s reconcile.
+
+8. **Persistent-grant options are rendered verbatim, with no special
+   treatment.** One real probed option was "Yes, and always allow access to
+   tmp/ from this project" — a policy change, not a one-time approval.
+   Detecting that case would mean matching a label's text against a pattern,
+   which is exactly the guessing `docs/gotchas.md` forbids for option
+   handling: a pattern that misfires either nags on an option that was safe,
+   or stays silent on one that granted something lasting.
+
+9. **The acknowledge flag is paddock-local and never sent to herdr.**
+   `agent.focus` would clear `done` at the source, but it also yanks the
+   focused pane in herdr's own desktop UI — dismissing a card from the phone
+   must not steal window focus at the desk. `acknowledgedAt` lives only in
+   `Agent` (see `shared/types.ts`) and is carried across state updates by
+   `carryAcknowledged`.

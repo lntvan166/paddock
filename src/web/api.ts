@@ -24,12 +24,15 @@ async function detailFrom(res: Response): Promise<string | null> {
 }
 
 /**
- * Reads must resolve with a value whose type is honest: a non-2xx response
- * (e.g. `{ ok: false, detail: "unknown agent" }` on a 404) is valid JSON but
- * has no `lines`/`options` — resolving with it would hand the caller an
- * object TypeScript believes matches the shape but doesn't. So a non-2xx
- * status rejects instead, carrying the server's `detail` in the message
- * when there is one.
+ * Reads must resolve with a value whose type is honest for the non-2xx case:
+ * a non-2xx response (e.g. `{ ok: false, detail: "unknown agent" }` on a 404)
+ * is valid JSON but has no `lines`/`options` — resolving with it would hand
+ * the caller an object TypeScript believes matches the shape but doesn't. So
+ * a non-2xx status rejects instead, carrying the server's `detail` in the
+ * message when there is one. This does not make a 200 body honest on its
+ * own — a malformed 200 response would still resolve with e.g. `lines`
+ * undefined, since nothing here validates the body's shape once the status
+ * check passes.
  */
 async function readJson<T>(path: string, body: object, f: Fetch): Promise<T> {
   const res = await request(path, body, f);

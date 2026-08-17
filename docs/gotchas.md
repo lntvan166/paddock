@@ -48,6 +48,30 @@ one, recorded here so they are not reintroduced.
   is no global form. So the pane set must be reconciled *before* subscribing;
   subscribing first names no panes and silently delivers nothing.
 
+- **Waiting on `--until working` after answering a blocked agent reports a
+  false failure whenever the option declines.** Declining settles the agent
+  on `idle`, not `working` — confirmed during the probe, where answering
+  "Yes" also settled on `idle` once the command finished. Wait on *leaving*
+  `blocked` instead: `agent.wait({ until: ["working", "idle", "done"] })`
+  (`waitUntilUnblocked` in `server/herdr/actions.ts`).
+
+- **A herdr-side `timeout_ms` must be paired with a larger client-side
+  transport ceiling.** `request()` in `server/herdr/socket.ts` defaults its
+  own guard to `HERDR_TIMEOUT_MS` (10s) unless a fourth argument overrides it.
+  Telling herdr it may take up to 15s to answer `agent.wait`, without raising
+  that transport ceiling past 15s, makes the client terminate the socket at
+  10s and report a false failure on an action that was still succeeding
+  inside herdr. `waitUntilUnblocked` passes `timeoutMs + WAIT_TRANSPORT_MARGIN_MS`
+  explicitly for this reason.
+
+- **A prompt parser must scope option matching to the last contiguous run,
+  and must not carry a question across runs.** Scanning the whole buffer in
+  `server/herdr/prompt-parse.ts` would let a stray numbered line elsewhere in
+  scrollback splice onto the real menu just because the numbering happens to
+  continue; not resetting the pinned question when a run closes would let a
+  resolved prompt's caption attach itself to the live menu's buttons. Both
+  produce a plausible wrong answer, not a visible error.
+
 - **Delivered event names differ from subscribe names.** The three
   `SubscriptionEventKind` types stay dotted (`pane.agent_status_changed`);
   everything else is delivered underscored (`pane.closed` arrives as
@@ -73,3 +97,19 @@ one, recorded here so they are not reintroduced.
 - **`localStorage` throws rather than returning `null`** in Safari private
   mode and under enterprise storage policies. Guard any access made during
   render.
+
+- **An HTTP error body that is valid JSON parses cleanly as a success
+  shape.** The action routes in `server/routes.ts` return
+  `{ ok: false, detail }` on a 404 or 502 — valid JSON, but not the shape a
+  read caller declared. `web/api.ts`'s read paths (`fetchOutput`/
+  `fetchPrompt`) check `res.ok` before parsing and reject on non-2xx instead,
+  specifically so a caller cannot receive a value whose declared type is a
+  lie. Check status before parsing on any read path that shares a body shape
+  with its error case.
+
+- **A per-entity React component needs `key={entityId}` when it holds
+  in-flight async state.** `AgentDetail` keeps `result`/`reply`/`busy` per
+  selected agent; without `key={agent.agentId}` in `App.tsx`, switching the
+  selection would reuse the same component instance, and a late response
+  (e.g. a 409 that resolves after the operator already switched agents) would
+  land attributed to the wrong one.
