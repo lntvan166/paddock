@@ -1,5 +1,14 @@
 import { expect, test } from "bun:test";
-import type { HerdrAgentRaw } from "@shared/herdr-api";
+import type { HerdrAgentRaw, HerdrStatusChanged, HerdrWorkspaceRaw } from "@shared/herdr-api";
+
+// scripts/gen-herdr-types.ts derives only `protocol` and the AgentStatus enum
+// from the schema; all three interface BODIES are hand-written. So the
+// "generated types make a rename a build error" guarantee in docs/gotchas.md
+// and docs/decisions.md rests entirely on this file, and it has to cover all
+// three payload types to be worth what those docs claim. A rename in
+// WorkspaceInfo.label would otherwise produce silently empty workspace
+// labels, and one in the status-event payload a frozen task line — precisely
+// the "a field is always empty" failure they say is eliminated.
 
 // Every field HerdrAgentRaw declares, kept honest by the `satisfies` check
 // below: adding or removing a field on HerdrAgentRaw without updating this
@@ -42,22 +51,93 @@ const IGNORED_FIELDS = [
   "tokens",
 ] as const;
 
-test("HerdrAgentRaw has not drifted from the installed herdr's AgentInfo schema", async () => {
+// Same compile-time link for the other two payload types paddock reads.
+const DECLARED_WORKSPACE_FLAGS = {
+  workspace_id: true,
+  label: true,
+  number: true,
+} satisfies Record<keyof HerdrWorkspaceRaw, true>;
+
+const DECLARED_WORKSPACE_FIELDS = Object.keys(
+  DECLARED_WORKSPACE_FLAGS,
+) as (keyof HerdrWorkspaceRaw)[];
+
+const IGNORED_WORKSPACE_FIELDS = [
+  "active_tab_id",
+  "agent_status",
+  "focused",
+  "pane_count",
+  "tab_count",
+  "tokens",
+  "worktree",
+] as const;
+
+const DECLARED_STATUS_FLAGS = {
+  pane_id: true,
+  workspace_id: true,
+  agent_status: true,
+  agent: true,
+  display_agent: true,
+  title: true,
+  state_labels: true,
+} satisfies Record<keyof HerdrStatusChanged, true>;
+
+const DECLARED_STATUS_FIELDS = Object.keys(
+  DECLARED_STATUS_FLAGS,
+) as (keyof HerdrStatusChanged)[];
+
+/** paddock models every field of this event, so nothing is ignored. */
+const IGNORED_STATUS_FIELDS = [] as const;
+
+async function liveSchema(): Promise<any> {
   const proc = Bun.spawn(["herdr", "api", "schema", "--json"], { stdout: "pipe" });
-  const schema = JSON.parse(await new Response(proc.stdout).text());
-  const liveProperties: string[] = Object.keys(
-    schema.schemas.success_response.$defs.AgentInfo.properties,
+  return JSON.parse(await new Response(proc.stdout).text());
+}
+
+/**
+ * Both halves of "has not drifted":
+ *  - every field paddock declares is still a real property upstream (a rename
+ *    or removal would otherwise read as undefined forever), and
+ *  - every upstream property is either modeled or explicitly ignored (so a new
+ *    field is a decision to make, not a silently dropped column).
+ */
+function expectNoDrift(
+  liveProperties: string[],
+  declared: readonly string[],
+  ignored: readonly string[],
+): void {
+  for (const field of declared) expect(liveProperties).toContain(field);
+  const known = new Set<string>([...declared, ...ignored]);
+  expect(liveProperties.filter((property) => !known.has(property))).toEqual([]);
+}
+
+test("HerdrAgentRaw has not drifted from the installed herdr's AgentInfo schema", async () => {
+  const schema = await liveSchema();
+  expectNoDrift(
+    Object.keys(schema.schemas.success_response.$defs.AgentInfo.properties),
+    DECLARED_FIELDS,
+    IGNORED_FIELDS,
   );
+});
 
-  // Catches a rename or removal: every field HerdrAgentRaw declares must
-  // still be a real property on the live AgentInfo.
-  for (const field of DECLARED_FIELDS) {
-    expect(liveProperties).toContain(field);
-  }
+test("HerdrWorkspaceRaw has not drifted from the installed herdr's WorkspaceInfo schema", async () => {
+  // `label` is the whole reason paddock reads workspace.list. A rename here
+  // renders every workspace label empty, with no error anywhere.
+  const schema = await liveSchema();
+  expectNoDrift(
+    Object.keys(schema.schemas.success_response.$defs.WorkspaceInfo.properties),
+    DECLARED_WORKSPACE_FIELDS,
+    IGNORED_WORKSPACE_FIELDS,
+  );
+});
 
-  // Catches a new upstream field paddock is silently ignoring: every live
-  // property must be either modeled or explicitly on the ignore list.
-  const known = new Set<string>([...DECLARED_FIELDS, ...IGNORED_FIELDS]);
-  const unaccountedFor = liveProperties.filter((property) => !known.has(property));
-  expect(unaccountedFor).toEqual([]);
+test("HerdrStatusChanged has not drifted from the installed pane.agent_status_changed payload", async () => {
+  // This is the push path: a rename in `agent_status` or `title` freezes every
+  // row's state or task line until the next healing reconcile papers over it.
+  const schema = await liveSchema();
+  expectNoDrift(
+    Object.keys(schema.schemas.subscription_event.$defs.PaneAgentStatusChangedEvent.properties),
+    DECLARED_STATUS_FIELDS,
+    IGNORED_STATUS_FIELDS,
+  );
 });
