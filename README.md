@@ -46,9 +46,11 @@ To run it as a container instead, see `make up` and `docker-compose.yml`.
 Any screenshot or README image is captured from `paddock serve --demo`, never a
 live session — the demo fixtures use invented agent names, so published media
 is structurally incapable of leaking real data. Demo mode has no herdr to act
-on (`--demo` never wires up `HerdrActions`), so the action routes 404 there
-and the approve path cannot be demonstrated without a real herdr instance —
-screenshots of that flow are not available.
+on (`--demo` never wires up `HerdrActions`), so the three herdr-backed action
+routes — `/output`, `/prompt`, `/answer` — 404 there and the approve path
+cannot be demonstrated without a real herdr instance; screenshots of that flow
+are not available. Dismissing a finished agent does work in demo mode: `/ack`
+touches only paddock's own store and sends nothing to herdr.
 
 ## Documentation
 

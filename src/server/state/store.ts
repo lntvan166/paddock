@@ -5,7 +5,26 @@ export interface Delta {
   removedIds: string[];
 }
 
-/** Fields whose change is worth sending to a browser. */
+/**
+ * Fields whose change is worth sending to a browser.
+ *
+ * `acknowledgedAt` is deliberately absent, and that is only correct because of
+ * a two-step argument worth stating rather than rediscovering:
+ *
+ *  1. **`acknowledgedAt !== null` implies `state === "done"`,** on all three
+ *     write paths. `acknowledge()` below refuses any agent that is not `done`;
+ *     `replaceAll` and the push path (`applyStatusEvent` in
+ *     `herdr/adapter.ts`) both run the flag through `carryAcknowledged`, which
+ *     nulls it for any non-`done` state. A fresh row arrives with `null`.
+ *  2. Therefore the flag can only ever go **null → non-null** inside
+ *     `acknowledge()`, which builds its own delta and does not consult this
+ *     function, or **non-null → null** as part of leaving `done` — a state
+ *     change `differs` already reports on its own.
+ *
+ * So there is no reachable case where `acknowledgedAt` changes while every
+ * field below stays equal. Break step 1 — set the flag anywhere without the
+ * `done` guard — and a dismissal would stop reaching other browsers.
+ */
 function differs(a: Agent, b: Agent): boolean {
   return (
     a.name !== b.name ||

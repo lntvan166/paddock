@@ -62,3 +62,12 @@ session does not silently re-litigate them.
    must not steal window focus at the desk. `acknowledgedAt` lives only in
    `Agent` (see `shared/types.ts`) and is carried across state updates by
    `carryAcknowledged`.
+
+   **Where that claim comes from:** herdr's own CLI documentation for
+   `agent.focus` / `herdr agent focus`, which is out of this tree — nothing in
+   this repository demonstrates the focus-stealing behaviour, and no paddock
+   test can, since paddock never calls the method. A future challenger should
+   re-read that documentation (or probe `agent.focus` against a live herdr with
+   the desktop UI visible) rather than treat the sentence above as evidence in
+   itself. The behaviour could also change upstream without anything here
+   failing.

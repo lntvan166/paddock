@@ -6,7 +6,7 @@ one, recorded here so they are not reintroduced.
 | Failure | Cause | Design response |
 |---|---|---|
 | Every row shows the same label | Label derived from `basename(cwd)`; agents commonly share a working directory | `name` from `agent.list` is the primary label — this is the defect the project exists to prevent |
-| A field is always empty | Read from the wrong object (pane vs workspace vs agent) | Generated types make a rename a build error |
+| A field is always empty | Read from the wrong object (pane vs workspace vs agent) | Generated types make a rename a build error — for the three v1 payloads only; see the coverage limit in `docs/roadmap.md` |
 | Events dropped with no error | Push script ends `curl -s … >/dev/null 2>&1; exit 0` | Log receipt at INFO; `/api/health` exposes `lastEventAt` |
 | Sensitive paths in access logs | Payload sent as a GET query string | POST bodies only |
 | Service worker silently disabled | Auth check gates every route including `/sw.js` | No app token; Access is the gate |
@@ -108,8 +108,36 @@ one, recorded here so they are not reintroduced.
   with its error case.
 
 - **A per-entity React component needs `key={entityId}` when it holds
-  in-flight async state.** `AgentDetail` keeps `result`/`reply`/`busy` per
-  selected agent; without `key={agent.agentId}` in `App.tsx`, switching the
-  selection would reuse the same component instance, and a late response
-  (e.g. a 409 that resolves after the operator already switched agents) would
-  land attributed to the wrong one.
+  in-flight async state.** `AgentDetail` keeps the action result, the typed
+  reply and `busy` per selected agent; without `key={openAgent.agentId}` in
+  `App.tsx`, switching the selection would reuse the same component instance,
+  and a late response (e.g. a 409 that resolves after the operator already
+  switched agents) would land attributed to the wrong one.
+
+- **A key fixes identity, not time — and must not be widened to cover it.**
+  The same agent hits prompt A, is answered, works, then hits prompt B: with
+  identity alone, A's "Sent." and A's typed reply are still on screen under
+  B's question. The tempting fix — adding `agent.state` to the key — is wrong
+  here, because a successful answer's defining outcome IS a state change, so
+  it would unmount the sheet on the very delta the answer caused. `AgentDetail`
+  tags the reply and the result with a `promptSeq` instead and renders them
+  only while that prompt is still the one on screen, which also covers an
+  answer that resolves after the next prompt has already loaded — something no
+  reset can, since a reset cannot un-write a later `setState`.
+
+- **Feedback nested inside a conditional section dies with the section.** The
+  "Sent." confirmation used to live inside `AgentDetail`'s
+  `agent.state === "blocked"` block. Since a successful answer moves the agent
+  out of `blocked`, the confirmation unmounted the moment the delta arrived —
+  at best a ~100 ms flash, and nothing at all when the delta beat the HTTP
+  response. Render an action's outcome outside anything the action itself
+  changes.
+
+- **Validate a client-supplied number before it reaches a herdr parameter.**
+  `POST /output`'s `{lines}` was cast, never checked: `1e9` asked herdr for a
+  billion lines and buffered them here, and `"60"` put a string into a numeric
+  param. `resolveReadLines` / `resolveWaitTimeoutMs` in
+  `server/herdr/actions.ts` clamp out-of-range values and fall back to the
+  default for malformed ones — and `{key}` is constrained to an option digit,
+  since spec §6 provides no general-purpose key-send endpoint and a control
+  sequence is a larger capability than the free text already allowed.
