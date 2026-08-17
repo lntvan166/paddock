@@ -14,10 +14,16 @@ test("every hashed asset Vite actually builds matches the immutable-cache regex"
   let entries: string[];
   try {
     entries = readdirSync("dist/assets");
-  } catch {
-    // dist/ not built yet in this environment — nothing to check. `make
-    // build` runs `bun run build:web` before this suite would matter in CI.
-    return;
+  } catch (err) {
+    // FAIL, never skip. This used to `return` when dist/ was missing — and
+    // the Makefile ran the suite BEFORE the build, so on a clean checkout
+    // (CI) the guard silently passed on every run without checking anything.
+    // `make test` now builds the UI first; a bare `bun test` does not.
+    throw new Error(
+      "dist/assets is missing, so this guard would check nothing. Run `make test` " +
+        "(which builds the UI first) rather than `bun test` directly. " +
+        `Underlying error: ${err}`,
+    );
   }
 
   const hashedExt = /\.(js|css|woff2|svg|png)$/;
