@@ -7,7 +7,7 @@
     "dev:server": "bun --watch src/server/index.ts",
     "dev:web": "vite",
     "build:web": "vite build",
-    "test": "bun test"
+    "test": "bun run build:web && bun test"
   },
   "dependencies": {
     "hono": "^4.6.0",
