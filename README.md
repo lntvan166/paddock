@@ -57,8 +57,9 @@ make dev           # vite HMR + server reload, no Docker — the iteration loop
 make types         # regenerate src/shared/herdr-api.d.ts
 make check         # tsc --noEmit
 make check-clean   # public-repo scanner — run before every commit
-make build          # bundle UI, compile binary
-make up             # docker compose up -d --build
+make test          # builds the UI first, then runs the suite
+make build         # check, check-clean, test, then compile the binary
+make up            # docker compose up -d --build
 ```
 
 ## License

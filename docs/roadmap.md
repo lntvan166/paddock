@@ -42,6 +42,21 @@ surprise.
   "acknowledged" flag that dismisses the card without lying to herdr.
   Unresolved by design — decide before building any acknowledge affordance.
 
+- **No pull-to-refresh (spec §7.6).** "Pull-to-refresh forces a reconcile" was
+  never implemented, and was missing from the implementation plan's own
+  coverage table too, so it fell between tasks rather than being declined.
+  Nothing user-initiated forces a reconcile: the healing 30s timer, herdr's
+  own push, and a reconnect are the only paths. Note that a reconnect already
+  delivers a fresh snapshot, so the gap is the affordance and the sense of
+  control, not correctness — which is why it is a gap and not a defect.
+
+- **No agent detail sheet / side panel (spec §6).** The component tree calls
+  for `<AgentDetail/>` — a sheet below 640px, a side panel above — showing one
+  agent's full task line, workspace, cwd and elapsed time. The plan deferred
+  it and never carried the deferral anywhere visible; recorded here now.
+  v1 shows everything it has on the list itself, so nothing is unreachable,
+  but a long task line is truncated with no way to read the rest.
+
 - **No motion.** Spec §6 calls for a cross-fade on the state dot and an
   animated section move; neither ships. A partial implementation would signal
   change inconsistently, and animating a section move properly needs FLIP or

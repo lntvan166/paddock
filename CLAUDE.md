@@ -100,9 +100,10 @@ Full detail in `docs/architecture.md`. The rules that must not be broken:
 ```bash
 make dev           # vite HMR + server reload, no Docker — the iteration loop
 make types         # regenerate src/shared/herdr-api.d.ts
-make check         # tsc --noEmit + lint
+make check         # tsc --noEmit — there is no linter; see docs/roadmap.md
 make check-clean   # public-repo scanner — before EVERY commit
-make build         # bundle UI, compile binary
+make test          # builds the UI first, then runs the suite (not bare `bun test`)
+make build         # check, check-clean, test, then compile the binary
 make up            # docker compose up -d --build
 ```
 
