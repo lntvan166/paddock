@@ -47,9 +47,12 @@ interface Store extends ClientState {
 
 /**
  * NOTE: this module must be importable with zero side effects outside a
- * browser (bun test has no DOM). All `document`/`window` access is therefore
- * deferred until `connect()` is actually invoked, and guarded — never touched
- * at module load, so importing @web/store never throws under `bun test`.
+ * browser (bun test has no DOM). All `document`/`location` access is
+ * therefore deferred until `connect()`/`open()` actually runs, and guarded —
+ * never touched at module load, so importing @web/store never throws under
+ * `bun test`. Reading `globalThis.location` rather than `window.location` is
+ * equivalent in a browser (there `window === globalThis`) and lets tests
+ * stub `globalThis.location` without a DOM.
  */
 export const useStore = create<Store>((set, get) => {
   let ws: WebSocket | null = null;
@@ -58,8 +61,12 @@ export const useStore = create<Store>((set, get) => {
   let visibilityListenerAttached = false;
 
   const open = () => {
+    // Re-entrancy guard: a second connect() call (duplicate mount, a
+    // double-invoked React StrictMode effect) must not orphan the first
+    // socket's handlers and spin up a second live connection + retry timer.
+    if (ws !== null) return;
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-    ws = new WebSocket(wsUrlFrom(window.location));
+    ws = new WebSocket(wsUrlFrom(globalThis.location));
 
     ws.onopen = () => {
       attempt = 0;

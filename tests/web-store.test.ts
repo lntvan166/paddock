@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyMessage, backoffMs, isStale, type ClientState } from "@web/store";
+import { applyMessage, backoffMs, isStale, useStore, type ClientState } from "@web/store";
 import type { Agent, ServerMessage } from "@shared/types";
 import { wsUrlFrom } from "@web/store";
 
@@ -44,6 +44,20 @@ test("a snapshot is idempotent", () => {
   expect(applyMessage(applyMessage(EMPTY, msg), msg).agents).toHaveLength(1);
 });
 
+test("a new snapshot drops agents missing from it — replacement, not a merge with the prior snapshot", () => {
+  const base = applyMessage(EMPTY, {
+    type: "snapshot", hostId: "dev-box",
+    agents: [agent(), agent({ agentId: "w2:p1", name: "docs-cleanup" })], serverTime: NOW,
+  });
+  const next = applyMessage(base, {
+    type: "snapshot", hostId: "dev-box", agents: [agent()], serverTime: NOW + 1,
+  });
+  // If this merged with the prior snapshot instead of replacing it, "w2:p1"
+  // (removed server-side, e.g. between a disconnect and reconnect) would
+  // linger on screen forever.
+  expect(next.agents.map((a) => a.agentId)).toEqual(["w1:p1"]);
+});
+
 test("a delta upserts by agentId", () => {
   const base = applyMessage(EMPTY, {
     type: "snapshot", hostId: "dev-box", agents: [agent()], serverTime: NOW,
@@ -84,4 +98,40 @@ test("state is stale when no message has arrived within the threshold", () => {
   const s = { ...EMPTY, connected: true, lastMessageAt: NOW };
   expect(isStale(s, NOW + 61_000)).toBe(true);
   expect(isStale(s, NOW + 10_000)).toBe(false);
+});
+
+test("connect() is not re-entrant: a second call opens no additional socket", () => {
+  const realWebSocket = globalThis.WebSocket;
+  const hadLocation = Object.prototype.hasOwnProperty.call(globalThis, "location");
+  const realLocation = (globalThis as { location?: unknown }).location;
+  let constructed = 0;
+
+  class FakeWebSocket {
+    onopen: (() => void) | null = null;
+    onmessage: ((ev: MessageEvent) => void) | null = null;
+    onclose: (() => void) | null = null;
+    onerror: ((err: unknown) => void) | null = null;
+    constructor(public url: string) {
+      constructed++;
+    }
+  }
+
+  (globalThis as { WebSocket: unknown }).WebSocket = FakeWebSocket;
+  (globalThis as { location: unknown }).location = { protocol: "http:", host: "example.test" };
+
+  try {
+    // Simulates a duplicate mount / a double-invoked React StrictMode effect:
+    // two connect() calls with no close in between must not orphan the first
+    // socket's handlers by silently overwriting the `ws` reference.
+    useStore.getState().connect();
+    useStore.getState().connect();
+    expect(constructed).toBe(1);
+  } finally {
+    (globalThis as { WebSocket: unknown }).WebSocket = realWebSocket;
+    if (hadLocation) {
+      (globalThis as { location: unknown }).location = realLocation;
+    } else {
+      delete (globalThis as { location?: unknown }).location;
+    }
+  }
 });
