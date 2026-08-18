@@ -1,4 +1,15 @@
 import type { Agent } from "@shared/types";
+import { Mark } from "@web/components/Mark";
+
+/**
+ * The host label is only worth screen space when it distinguishes something.
+ *
+ * `PADDOCK_HOST_ID` defaults to `local` (see `.env.example`), so on a
+ * single-host install the header was spending its most prominent line saying
+ * "local" — true, and of no use to anyone. An operator who has set a real
+ * name, which is what multi-host will need, still sees it.
+ */
+const DEFAULT_HOST_ID = "local";
 
 export function HostHeader({
   hostId, agents, onOpenSettings,
@@ -29,8 +40,20 @@ export function HostHeader({
       className="flex items-center justify-between px-3 py-3"
       style={{ borderBottom: "1px solid var(--border)" }}
     >
-      <h1 className="text-[13px] font-semibold">{hostId ?? "connecting…"}</h1>
+      <h1 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <Mark size={16} />
+        paddock
+      </h1>
       <div className="flex items-center gap-2">
+        {/* The host label, demoted from the title but not dropped — see
+            DEFAULT_HOST_ID above. `connecting…` still has to appear somewhere:
+            the title is now a constant, so it can no longer carry the "we have
+            not heard from the server yet" signal it used to. */}
+        {hostId === null ? (
+          <span className="text-[10px]" style={{ color: "var(--fg-dim)" }}>connecting…</span>
+        ) : hostId !== DEFAULT_HOST_ID ? (
+          <span className="text-[10px]" style={{ color: "var(--fg-dim)" }}>{hostId}</span>
+        ) : null}
         <span className="text-[10px]" style={{ color: "var(--fg-dim)" }}>
           {parts.length ? parts.join(" · ") : "no agents"}
         </span>
