@@ -1,6 +1,18 @@
 import "./support/dom";
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { RATE_MS, readPrefs, writePref } from "@web/prefs";
+
+/**
+ * Bun runs every test file in one process (tests/support/dom.ts documents
+ * this cross-file pollution has already caused real failures here). Every
+ * test below writes into the shared happy-dom localStorage, so every key
+ * this module touches is removed after each test — not per-test
+ * `removeItem` calls a later test could forget to add.
+ */
+const ALL_KEYS = ["paddock.theme", "paddock.rate", "paddock.term.wrap", "paddock.term.fontpx"];
+afterEach(() => {
+  for (const k of ALL_KEYS) localStorage.removeItem(k);
+});
 
 test("defaults are returned when nothing is stored", () => {
   expect(readPrefs()).toEqual({ theme: "system", rate: "live", wrap: false, fontPx: 13 });
@@ -27,4 +39,73 @@ test("a throwing localStorage yields defaults instead of a blank screen", () => 
 
 test("the three refresh presets are the ones the spec names", () => {
   expect(RATE_MS).toEqual({ live: 250, balanced: 1_000, frugal: 3_000 });
+});
+
+// --- Validation fallbacks: a hand-edited or stale value must not reach the UI ---
+
+test("an unrecognised stored theme falls back to the default", () => {
+  localStorage.setItem("paddock.theme", "banana");
+  expect(readPrefs().theme).toBe("system");
+});
+
+test("an unrecognised stored rate falls back to the default", () => {
+  localStorage.setItem("paddock.rate", "warp-speed");
+  expect(readPrefs().rate).toBe("live");
+});
+
+test("a non-numeric stored fontPx falls back to the default", () => {
+  localStorage.setItem("paddock.term.fontpx", "abc");
+  expect(readPrefs().fontPx).toBe(13);
+});
+
+test("a literal 'NaN' stored fontPx falls back to the default", () => {
+  localStorage.setItem("paddock.term.fontpx", "NaN");
+  expect(readPrefs().fontPx).toBe(13);
+});
+
+test("a stored fontPx below the 10px floor falls back to the default", () => {
+  localStorage.setItem("paddock.term.fontpx", "9");
+  expect(readPrefs().fontPx).toBe(13);
+});
+
+test("a stored fontPx above the 22px ceiling falls back to the default", () => {
+  localStorage.setItem("paddock.term.fontpx", "23");
+  expect(readPrefs().fontPx).toBe(13);
+});
+
+test("the fontPx boundaries themselves are accepted, being inclusive", () => {
+  localStorage.setItem("paddock.term.fontpx", "10");
+  expect(readPrefs().fontPx).toBe(10);
+  localStorage.setItem("paddock.term.fontpx", "22");
+  expect(readPrefs().fontPx).toBe(22);
+});
+
+// --- writePref round-trips: prove it serializes correctly, not just "doesn't throw" ---
+
+test("writePref round-trips theme", () => {
+  writePref("theme", "dark");
+  expect(readPrefs().theme).toBe("dark");
+});
+
+test("writePref round-trips rate", () => {
+  writePref("rate", "frugal");
+  expect(readPrefs().rate).toBe("frugal");
+});
+
+test("writePref round-trips wrap true", () => {
+  writePref("wrap", true);
+  expect(localStorage.getItem("paddock.term.wrap")).toBe("1");
+  expect(readPrefs().wrap).toBe(true);
+});
+
+test("writePref round-trips wrap false, persisting as '0' rather than falling through to default", () => {
+  localStorage.setItem("paddock.term.wrap", "1");
+  writePref("wrap", false);
+  expect(localStorage.getItem("paddock.term.wrap")).toBe("0");
+  expect(readPrefs().wrap).toBe(false);
+});
+
+test("writePref round-trips fontPx", () => {
+  writePref("fontPx", 18);
+  expect(readPrefs().fontPx).toBe(18);
 });
