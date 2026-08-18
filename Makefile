@@ -1,6 +1,8 @@
 export UID := $(shell id -u)
 export GID := $(shell id -g)
 
+VERSION := $(shell git describe --tags --exact-match 2>/dev/null || echo 0.0.0-dev)
+
 .PHONY: dev types icons check check-clean embed build-web test build up down logs restart
 
 dev:
@@ -48,7 +50,9 @@ test: build-web
 build: check check-clean test
 	bun run build:web
 	$(MAKE) embed
-	bun build --compile --target=bun src/server/index.ts --outfile paddock
+	bun build --compile --target=bun \
+	  --define 'process.env.PADDOCK_VERSION="$(VERSION)"' \
+	  src/server/index.ts --outfile paddock
 
 up:
 	docker compose up -d --build

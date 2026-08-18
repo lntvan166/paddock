@@ -19,14 +19,26 @@ import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
+import { parseArgs } from "@server/cli";
+import { VERSION } from "@server/version";
 
-const args = new Set(Bun.argv.slice(2));
-const DEMO = args.has("--demo");
+const { command, flags } = parseArgs(Bun.argv.slice(2));
+const DEMO = flags.has("--demo");
 const PORT = Number(process.env.PADDOCK_PORT ?? 8787);
 const HOSTNAME = "127.0.0.1"; // loopback only; exposure is the tunnel's job
 
+if (flags.has("--version") || flags.has("-V")) {
+  console.log(VERSION);
+  process.exit(0);
+}
+
+if (command === "update") {
+  console.error("paddock update: not implemented");
+  process.exit(2);
+}
+
 for (const unimplemented of ["agent", "hub"]) {
-  if (args.has(unimplemented)) {
+  if (Bun.argv.includes(unimplemented)) {
     console.error(`paddock ${unimplemented}: not implemented — see docs/roadmap.md`);
     process.exit(2);
   }
