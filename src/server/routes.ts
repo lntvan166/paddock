@@ -2,9 +2,11 @@ import { Hono, type Context } from "hono";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
 import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
+import { sendTelegram } from "@server/notify/telegram";
+import type { SettingsStore } from "@server/settings/store";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
-import { isNavKey } from "@shared/types";
+import { isNavKey, type SettingsPatch } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 
 export interface HealthBody {
@@ -129,6 +131,8 @@ export interface AppDeps {
   staticDir?: string;
   /** herdr actions. Omit in tests that only exercise the read-only API. */
   actions?: HerdrActions;
+  /** Settings store. Omit in tests that only exercise the agent API. */
+  settings?: SettingsStore;
   /**
    * Clock for `/ack`'s `acknowledgedAt` stamp. Same injectable-clock pattern
    * as `Hub`, `Supervisor`, and `DemoSource` elsewhere in this codebase —
@@ -136,6 +140,9 @@ export interface AppDeps {
    * assertion can compare against a fixed fixture timestamp.
    */
   now?: () => number;
+  /** Telegram sender. Injected in tests so the suite never makes a real
+   *  network request; defaults to the real transport in production. */
+  sendTest?: (o: { token: string; chatId: string; text: string }) => Promise<{ ok: boolean; detail: string | null }>;
 }
 
 export function createApp(deps: AppDeps) {
@@ -356,6 +363,41 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         return c.json({ ok: false, detail: String(err) }, 502);
       }
+    });
+  }
+
+  if (deps.settings) {
+    const settings = deps.settings;
+    const sendTest = deps.sendTest ?? sendTelegram;
+
+    // The single most important property of this route: settings.current()
+    // holds the raw token and must never reach c.json(...), on any path —
+    // only settings.view() is a valid response body, here or in any other
+    // handler in this block.
+    app.get("/api/settings", (c) => c.json(settings.view()));
+
+    // PUT, never GET: a payload in a query string lands in edge access logs.
+    app.put("/api/settings", async (c) => {
+      const patch = (await c.req.json()) as SettingsPatch;
+      try {
+        await settings.patch(patch);
+      } catch (e) {
+        // Reporting a save that did not happen is worse than reporting none.
+        return c.json({ ok: false, detail: (e as Error).message }, 500);
+      }
+      return c.json(settings.view());
+    });
+
+    app.post("/api/settings/telegram/test", async (c) => {
+      const s = settings.current();
+      if (!s.telegram.token || !s.telegram.chatId) {
+        return c.json({ ok: false, detail: "token and chat id must both be set" }, 400);
+      }
+      const r = await sendTest({
+        token: s.telegram.token, chatId: s.telegram.chatId,
+        text: "paddock test message — notifications are wired up.",
+      });
+      return c.json(r);
     });
   }
 
