@@ -66,3 +66,28 @@ test("index.html is revalidated, so a hashed bundle can never be pinned forever"
   const asset = await app.request(`/assets/${name}`);
   expect(asset.headers.get("cache-control")).toContain("immutable");
 });
+
+// The third side of the contract, and the one that was missing: the files that
+// carry NO hash must be revalidated. This is not hypothetical tidying — the
+// unanchored regex matched "/apple-touch-icon.png" (on "-touch-icon") and
+// "/icon-maskable-512.png" (on "-maskable-512") and served both `immutable` for
+// a year. Those names never change, so a redesign could not reach any client
+// that had loaded the old one, and apple-touch-icon.png is precisely the file
+// iOS reads for the Home Screen icon.
+//
+// The list is explicit rather than derived from a `public/` listing, because the
+// point is to pin the classification of these exact URLs. A future icon whose
+// name happens to look hashed should fail here and be renamed.
+test("unhashed root assets are revalidated, never pinned immutable", async () => {
+  for (const path of [
+    "/favicon-32-v2.png",
+    "/favicon-180-v2.png",
+    "/apple-touch-icon-v2.png",
+    "/icon-192-v2.png",
+    "/icon-512-v2.png",
+    "/icon-maskable-512-v2.png",
+    "/manifest.webmanifest",
+  ]) {
+    expect(IMMUTABLE_ASSET_RE.test(path)).toBe(false);
+  }
+});

@@ -25,7 +25,18 @@ export interface HealthBody {
 // basename with a dash, e.g. "index-BRl8nQbG.js" or "index-Cj_7W-bH.css" — not
 // the dot-separated lowercase-hex shape this used to require, which matched no
 // real build output and so never actually set the immutable header.
-export const IMMUTABLE_ASSET_RE = /-[A-Za-z0-9_-]{8,}\.(js|css|woff2|svg|png)$/;
+//
+// The `/assets/` anchor is the other correction. Unanchored, the hash pattern
+// only asked for a dash followed by eight characters, and "-" is inside its own
+// character class, so it happily spanned several segments of an ordinary name:
+// "/apple-touch-icon.png" matched on "-touch-icon" and "/icon-maskable-512.png"
+// on "-maskable-512". Both were served `immutable` for a year despite being
+// exactly the unhashed, never-renamed files the header must never touch — and
+// apple-touch-icon.png is the one iOS reads for the Home Screen, so the bug
+// pinned the icon most resistant to updating in the first place. Vite writes
+// every hashed output under dist/assets/, so requiring that prefix states the
+// real rule: hashed bundles are immutable, root-level files are revalidated.
+export const IMMUTABLE_ASSET_RE = /^\/assets\/.*-[A-Za-z0-9_-]{8,}\.(js|css|woff2|svg|png)$/;
 
 /**
  * The option's digit, exactly as `prompt-parse` emits it (`1`…`N`, contiguous
