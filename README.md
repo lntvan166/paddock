@@ -19,17 +19,15 @@ paddock is one local process that reads herdr over its unix socket and serves a 
 
 ---
 
-## What it does
+## What it is
 
-**Triage first.** Agents are grouped into *Needs you*, *Working* and *Idle*, most-recently-changed first. A finished agent can be dismissed from *Needs you* without touching herdr's own state.
+A local web app. It reads herdr's unix socket and serves one screen on `127.0.0.1:8787`, on the same machine as your agents. To reach it from your phone, put a [Cloudflare Tunnel with Zero Trust Access](#it-runs-locally-on-purpose) in front — paddock has no login of its own, by design.
 
-**A terminal you can actually read on a phone.** Prose reflows to the screen; tables, boxes and progress bars keep their columns and scroll in their own strip. ANSI colour is preserved, because in agent output the colour *is* the structure.
-
-**Answer without guessing.** A blocked agent's real options are rendered as buttons carrying its exact labels. Above the keypad, paddock shows **what Enter will commit** — because the cursor wraps from the last option back to the first, and the middle option of a permission prompt is routinely *"and don't ask again"*.
-
-**Scroll back.** Up to 4000 lines per agent, reconstructed from what the tab watched, revealed on demand.
-
-**Cheap to watch.** Refresh adapts from 250 ms down to 10 s based on whether the screen is actually moving, and only changed lines are sent — a thinking agent redraws one line of 63, so sending whole screens was ~90% waste.
+- **Triage** — agents grouped into *Needs you*, *Working*, *Idle*
+- **Read** — full ANSI colour; prose reflows to the screen, tables keep their columns
+- **Answer** — the agent's real option labels, and what Enter will commit before you tap it
+- **Scroll back** — up to 4000 lines per agent
+- **Cheap to watch** — adaptive polling, and only changed lines on the wire
 
 ## Quick start
 
@@ -94,7 +92,7 @@ The [live demo](https://lntvan166.github.io/paddock/) shows the interface, not t
 
 ## Contributing
 
-Every limit above is an open invitation. Issues and pull requests are welcome — especially for the things this needs most:
+Every gap listed above is an open invitation. Issues and pull requests are welcome — especially for the things this needs most:
 
 - **Web Push** — so you find out an agent is blocked without opening the dashboard. The biggest functional gap. VAPID keys, a service worker, a subscription store; the PWA icons it depends on already ship.
 - **Multi-host** — several machines in one list. The seams exist (`hostId` is on every record); the blocker is that the store is keyed by herdr's `pane_id`, which is not unique across machines.
