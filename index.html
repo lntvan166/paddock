@@ -5,13 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="180x180" href="/favicon-180.png" />
+    <!-- The -v2 is load-bearing, not decorative. iOS holds icons in a per-URL
+         store that Cache-Control does not reach, so redeploying new bytes under
+         an old name updates every desktop browser and no iPhone. A new filename
+         is the only cache key Safari will honour. `make icons` refuses to run if
+         these fall out of step with ICON_V in scripts/build-icons.sh. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32-v2.png" />
+    <link rel="icon" type="image/png" sizes="180x180" href="/favicon-180-v2.png" />
     <!-- iOS ignores the manifest for the Home Screen icon and uses this. That
          matters beyond branding: Safari delivers Web Push only to a PWA added
          to the Home Screen, so the icon is part of the path to notifications
-         working at all. -->
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+         working at all. A shortcut already on a Home Screen keeps the icon it
+         was added with regardless — that one only changes on re-add. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon-v2.png" />
     <title>paddock</title>
   </head>
   <body>

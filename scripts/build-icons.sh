@@ -19,6 +19,23 @@ cd "$(dirname "$0")/.."
 MASTER="assets/logo.svg"
 MASKABLE="assets/logo-maskable.svg"
 
+# --- The icon URL version. -------------------------------------------------
+#
+# iOS keeps favicons and apple-touch-icons in a per-URL icon store that
+# Cache-Control never reaches. `no-cache` on the response does not make Safari
+# refetch one, and a Home Screen shortcut freezes its icon at the moment it is
+# added. The only thing that invalidates either is a DIFFERENT URL, so the
+# rasters carry the version in their filename.
+#
+# Bump this whenever the mark changes in a way anyone should see. Leaving it
+# alone ships new bytes under an old name, which desktop browsers pick up and
+# iOS does not — a redesign that looks deployed everywhere except on the phones
+# the dashboard is built for.
+#
+# v1 is the unversioned era (`favicon-32.png` and friends); those names are
+# retired and not served.
+ICON_V=2
+
 for f in "$MASTER" "$MASKABLE"; do
   if [ ! -f "$f" ]; then
     echo "build-icons: missing $f — the rasters are derived from it, so there is nothing to build" >&2
@@ -66,6 +83,34 @@ if [ "$MASTER_GROUND" != "$MASKABLE_GROUND" ]; then
   echo "home-screen icon ship on different backgrounds." >&2
   exit 1
 fi
+
+# --- The markup must name the files this run will write. -------------------
+#
+# A bump that lands in the rasters but not in the markup links icons that 404:
+# no icon at all, which is worse than a stale one and every bit as quiet. Fail
+# before rendering, so a forgotten edit cannot half-apply.
+#
+# index.html carries the favicon and apple-touch-icon links; the manifest
+# carries the three PWA icons. Each referrer is checked for its own files.
+
+check_referenced() {
+  local referrer="$1" name="$2"
+  if ! grep -qF "$name" "$referrer"; then
+    echo "build-icons: $referrer does not reference $name." >&2
+    echo "ICON_V is $ICON_V, so every icon URL in $referrer needs the" >&2
+    echo "-v$ICON_V suffix. Update it and rerun. Until then Safari keeps" >&2
+    echo "serving the previous mark from its icon store, because nothing ever" >&2
+    echo "asks it for a URL it has not already cached." >&2
+    exit 1
+  fi
+}
+
+check_referenced index.html                 "favicon-32-v$ICON_V.png"
+check_referenced index.html                 "favicon-180-v$ICON_V.png"
+check_referenced index.html                 "apple-touch-icon-v$ICON_V.png"
+check_referenced public/manifest.webmanifest "icon-192-v$ICON_V.png"
+check_referenced public/manifest.webmanifest "icon-512-v$ICON_V.png"
+check_referenced public/manifest.webmanifest "icon-maskable-512-v$ICON_V.png"
 
 # --- Pick a rasteriser. ----------------------------------------------------
 #
@@ -187,13 +232,34 @@ scale() {
   echo "  $3 (${2}px)"
 }
 
-scale "$TMP/master.png"    32 public/favicon-32.png
-scale "$TMP/master.png"   180 public/favicon-180.png
-scale "$TMP/master.png"   180 public/apple-touch-icon.png
-scale "$TMP/master.png"   192 public/icon-192.png
-scale "$TMP/master.png"   512 public/icon-512.png
-scale "$TMP/maskable.png" 512 public/icon-maskable-512.png
+scale "$TMP/master.png"    32 "public/favicon-32-v$ICON_V.png"
+scale "$TMP/master.png"   180 "public/favicon-180-v$ICON_V.png"
+scale "$TMP/master.png"   180 "public/apple-touch-icon-v$ICON_V.png"
+scale "$TMP/master.png"   192 "public/icon-192-v$ICON_V.png"
+scale "$TMP/master.png"   512 "public/icon-512-v$ICON_V.png"
+scale "$TMP/maskable.png" 512 "public/icon-maskable-512-v$ICON_V.png"
+
+# docs/images/logo.png is README artwork, not a browser icon. Nothing is holding
+# it in an icon store, and a version would churn the filename in the README on
+# every bump for no gain.
 scale "$TMP/master.png"   480 docs/images/logo.png
+
+# --- Retire the rasters of older versions. --------------------------------
+#
+# Left behind, they would be committed and served as a second, permanently
+# stale copy of the mark under a URL nothing links — precisely what versioning
+# the name is here to end.
+
+for stale in public/favicon-32*.png public/favicon-180*.png \
+             public/apple-touch-icon*.png public/icon-192*.png \
+             public/icon-512*.png public/icon-maskable-512*.png; do
+  case "$stale" in
+    *"-v$ICON_V.png") continue ;;
+  esac
+  [ -e "$stale" ] || continue   # an unmatched glob stays literal
+  rm "$stale"
+  echo "  removed $stale (superseded by v$ICON_V)"
+done
 
 echo "build-icons: done. dist/ and dist-demo/ are build output — rerun the web"
 echo "build to pick these up; do not copy them by hand."
