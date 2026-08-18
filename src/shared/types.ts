@@ -1,5 +1,28 @@
 import type { ScreenPatch } from "@shared/screen";
 
+export type NotifyTrigger = "blocked" | "done";
+
+/** What GET /api/settings returns. The token is NEVER a member. */
+export interface SettingsView {
+  telegram: { configured: boolean; hint: string | null; chatId: string | null };
+  notify: {
+    enabled: boolean;
+    triggers: NotifyTrigger[];
+    /** "22:00"/"08:00", server local time. Wraps midnight when start > end. */
+    quietHours: { start: string; end: string } | null;
+    cooldownMs: number;
+  };
+  publicUrl: string | null;
+  /** Non-null when settings.json failed to load. Surfaced, never swallowed. */
+  error: string | null;
+}
+
+export interface SettingsPatch {
+  telegram?: { token?: string | null; chatId?: string | null };
+  notify?: Partial<SettingsView["notify"]>;
+  publicUrl?: string | null;
+}
+
 export type AgentState = "blocked" | "done" | "working" | "idle";
 
 export interface Agent {
