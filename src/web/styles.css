@@ -245,8 +245,10 @@ body {
   /* Sized by COLUMNS VISIBLE, not by points. The previous floor of 0.7rem
      showed ~46 columns on a 390px phone, so an 80-column TUI was clipped
      mid-word on every line and had to be scrolled sideways to be read at all.
-     ~0.62rem fits low 50s, which covers most of what an agent draws. */
-  font-size: clamp(0.62rem, 2.3vw, 0.78rem);
+     ~0.62rem fits low 50s, which covers most of what an agent draws.
+     `--term-font-px` is set inline by AgentTerminal.tsx from the operator's
+     stored preference; the clamp() is the fallback for whenever it is unset. */
+  font-size: var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem));
   line-height: 1.35;
   background: var(--term-bg);
   color: var(--term-fg);

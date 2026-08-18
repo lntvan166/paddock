@@ -6,6 +6,7 @@ import { groupLines } from "@web/lines";
 import { mergeSnapshot } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 import { applyPatch, digestOf } from "@shared/screen";
+import { RATE_MS, readPrefs, writePref, type RatePref } from "@web/prefs";
 
 /**
  * Undefined for an unstyled span, so the common run of plain text costs no
@@ -59,8 +60,6 @@ const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
   { key: "space", label: "Space" },
 ];
 
-const WRAP_KEY = "paddock.term.wrap";
-
 /**
  * Whether the pane reflows long lines to the viewport.
  *
@@ -71,29 +70,11 @@ const WRAP_KEY = "paddock.term.wrap";
  * Wrap everything and the majority of long lines fold into nonsense; wrap
  * nothing and half the transcript needs sideways scrolling to read a sentence.
  *
- * So the operator decides, per pane, at any moment. Wrapping is the DEFAULT
- * because reading is the common case, and a folded table is recoverable with
- * one tap whereas scrolling every prose line is a permanent tax.
+ * So the operator decides, per pane, at any moment. The stored value is owned
+ * by `@web/prefs` (key `paddock.term.wrap`, kept verbatim from this file's own
+ * former constant so no operator's setting resets) — this component reads and
+ * writes through it rather than touching `localStorage` directly.
  */
-function readWrap(): boolean {
-  try {
-    const v = localStorage.getItem(WRAP_KEY);
-    return v === null ? true : v === "1";
-  } catch {
-    // Safari private mode throws on write, and a blocked-storage policy can
-    // throw on mere access — and this runs during render. Fail to the default
-    // rather than taking the dashboard down. See web/install.ts.
-    return true;
-  }
-}
-
-function saveWrap(on: boolean): void {
-  try {
-    localStorage.setItem(WRAP_KEY, on ? "1" : "0");
-  } catch {
-    // Best-effort; the setting just does not survive the session.
-  }
-}
 
 /** Distance from the bottom, in px, still counted as "following the tail". */
 const STICK_THRESHOLD_PX = 48;
@@ -129,14 +110,30 @@ export const MAX_REFRESH_MS = 10_000;
 const REFRESH_BACKOFF = 2;
 
 /**
- * The next poll delay, given the current one and whether the screen moved.
+ * The operator's refresh preset, as a floor in milliseconds.
+ *
+ * Raises the FLOOR only — the backoff ceiling (`MAX_REFRESH_MS`) and the
+ * doubling that climbs toward it are untouched by the preset, so a metered
+ * connection still quiets down on an idle pane exactly as before. Named
+ * points from `@web/prefs`, not a free numeric field: see `RATE_MS` there for
+ * why.
+ */
+export function floorFor(rate: RatePref): number {
+  return RATE_MS[rate];
+}
+
+/**
+ * The next poll delay, given the current one, whether the screen moved, and
+ * the floor to snap back to.
  *
  * Pure and exported so the ladder is testable without a live agent and
  * without a DOM — the component holds it in a ref, which no unit test can
- * reach.
+ * reach. `floor` defaults to `MIN_REFRESH_MS` so every existing caller (and
+ * `tests/refresh-backoff.test.ts`, which predates the refresh preset) keeps
+ * its prior behaviour unchanged.
  */
-export function nextRefreshMs(current: number, changed: boolean): number {
-  if (changed) return MIN_REFRESH_MS;
+export function nextRefreshMs(current: number, changed: boolean, floor: number = MIN_REFRESH_MS): number {
+  if (changed) return floor;
   return Math.min(MAX_REFRESH_MS, Math.round(current * REFRESH_BACKOFF));
 }
 
@@ -160,7 +157,11 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // `error`, which means the read failed with nothing to show.
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [wrap, setWrap] = useState(readWrap);
+  const [wrap, setWrap] = useState(() => readPrefs().wrap);
+  // Read once: Settings is a separate full-screen view (App.tsx unmounts this
+  // component to show it), so there is no live pref change to react to while
+  // a pane stays open.
+  const [fontPx] = useState(() => readPrefs().fontPx);
   const [shownHistory, setShownHistory] = useState(0);
   const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
   const [reply, setReply] = useState("");
@@ -176,10 +177,17 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const busyRef = useRef(false);
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
+  // The floor the backoff snaps back to, from the operator's refresh preset.
+  // A ref for the same reason as `intervalRef` below: read once (see the
+  // `fontPx` comment above for why once is enough), and read by callbacks
+  // that must not be rebuilt every render to pick up a value that cannot
+  // change under them anyway.
+  const floorRef = useRef(floorFor(readPrefs().rate));
+
   // Current backoff position. A ref, not state: changing it must not re-render
   // the pane, and the polling loop has to read the latest value without being
   // rebuilt around it.
-  const intervalRef = useRef(MIN_REFRESH_MS);
+  const intervalRef = useRef(floorRef.current);
 
 
   const apply = useCallback((lines: string[], digest: string | null = null) => {
@@ -218,7 +226,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
       return true;
     }
     // The screen moved, so it may well move again — follow it closely.
-    intervalRef.current = nextRefreshMs(intervalRef.current, true);
+    intervalRef.current = nextRefreshMs(intervalRef.current, true, floorRef.current);
 
     if ("patch" in res) {
       const base = screenFor(agent.agentId)?.lines ?? [];
@@ -345,7 +353,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
     // whatever backoff was in force when the phone was pocketed.
     const onVisible = () => {
       if (document.hidden) return;
-      intervalRef.current = MIN_REFRESH_MS;
+      intervalRef.current = floorRef.current;
       clearTimeout(timer);
       void run();
     };
@@ -445,7 +453,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           type="button"
           className="term-wrap-toggle"
           aria-pressed={wrap}
-          onClick={() => { const v = !wrap; setWrap(v); saveWrap(v); }}
+          onClick={() => { const v = !wrap; setWrap(v); writePref("wrap", v); }}
         >
           {wrap ? "Wrap" : "Exact"}
         </button>
@@ -479,7 +487,17 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
       {error ? (
         <p className="term-error warn" role="alert">Could not load output: {error}</p>
       ) : (
-        <div ref={paneRef} className="term-pane" data-wrap={wrap ? "on" : "off"} onScroll={rememberScroll}>
+        <div
+          ref={paneRef}
+          className="term-pane"
+          data-wrap={wrap ? "on" : "off"}
+          onScroll={rememberScroll}
+          // `--term-font-px` is read by styles.css:249. Set as a custom
+          // property rather than a `fontSize` style so `.term-exact`'s
+          // `font: inherit` (styles.css:399) picks it up in both wrap modes
+          // without a second place to apply it.
+          style={{ "--term-font-px": `${fontPx}px` } as CSSProperties}
+        >
           {/* Spans, not raw text: the escapes carry the structure. Every span's
               content is a React child, so React escapes it — this is agent
               output, arbitrary untrusted text, and it must never reach
