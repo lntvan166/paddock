@@ -317,3 +317,34 @@ body {
 /* A pane whose polling has failed. Warn-coloured and always visible: the
    alternative is a frozen transcript that looks live. */
 .term-stalled { font-size: 0.65rem; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Wrap mode. `pre-wrap` keeps leading indentation (unlike `normal`), so an
+   indented block still reads as indented after it folds.
+
+   `overflow-wrap: anywhere` matters more than it looks: agent output is full
+   of unbreakable tokens — file paths, URLs, long identifiers — and without it
+   a single 120-character path would force the horizontal scrollbar back for
+   the whole pane, defeating the mode entirely. */
+.term-pane[data-wrap="on"] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+}
+
+/* Exact mode is the terminal's own geometry: never reflow, scroll sideways.
+   The default rule on .term-pane already does this; stated explicitly so the
+   two modes read as a pair rather than one being the absence of the other. */
+.term-pane[data-wrap="off"] {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* A mode indicator, not an icon — the label says which mode is ACTIVE. */
+.term-wrap-toggle {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0 0.5rem;
+  border-radius: 0.4rem;
+}
+.term-wrap-toggle[aria-pressed="false"] { color: var(--fg-dim); }

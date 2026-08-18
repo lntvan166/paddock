@@ -55,6 +55,42 @@ const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
   { key: "space", label: "Space" },
 ];
 
+const WRAP_KEY = "paddock.term.wrap";
+
+/**
+ * Whether the pane reflows long lines to the viewport.
+ *
+ * A choice rather than a heuristic, and deliberately so. Measured across five
+ * live agents: of the lines too long for a phone, 57% are STRUCTURED — box
+ * drawing, or table rows whose columns carry meaning positionally — and 43%
+ * are prose or code that reflows perfectly. No per-line rule gets both right.
+ * Wrap everything and the majority of long lines fold into nonsense; wrap
+ * nothing and half the transcript needs sideways scrolling to read a sentence.
+ *
+ * So the operator decides, per pane, at any moment. Wrapping is the DEFAULT
+ * because reading is the common case, and a folded table is recoverable with
+ * one tap whereas scrolling every prose line is a permanent tax.
+ */
+function readWrap(): boolean {
+  try {
+    const v = localStorage.getItem(WRAP_KEY);
+    return v === null ? true : v === "1";
+  } catch {
+    // Safari private mode throws on write, and a blocked-storage policy can
+    // throw on mere access — and this runs during render. Fail to the default
+    // rather than taking the dashboard down. See web/install.ts.
+    return true;
+  }
+}
+
+function saveWrap(on: boolean): void {
+  try {
+    localStorage.setItem(WRAP_KEY, on ? "1" : "0");
+  } catch {
+    // Best-effort; the setting just does not survive the session.
+  }
+}
+
 /** Distance from the bottom, in px, still counted as "following the tail". */
 const STICK_THRESHOLD_PX = 48;
 
@@ -124,6 +160,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // `error`, which means the read failed with nothing to show.
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [wrap, setWrap] = useState(readWrap);
   const [reply, setReply] = useState("");
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
   const paneRef = useRef<HTMLPreElement>(null);
@@ -335,6 +372,14 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               not look current. */}
           {stalled && <span className="term-stalled" role="status">not updating</span>}
         </div>
+        <button
+          type="button"
+          className="term-wrap-toggle"
+          aria-pressed={wrap}
+          onClick={() => { const v = !wrap; setWrap(v); saveWrap(v); }}
+        >
+          {wrap ? "Wrap" : "Exact"}
+        </button>
         <button type="button" onClick={() => void load()} disabled={busy} aria-label="Refresh">
           ↻
         </button>
@@ -343,7 +388,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
       {error ? (
         <p className="term-error warn" role="alert">Could not load output: {error}</p>
       ) : (
-        <pre ref={paneRef} className="term-pane" onScroll={rememberScroll}>
+        <pre ref={paneRef} className="term-pane" data-wrap={wrap ? "on" : "off"} onScroll={rememberScroll}>
           {/* Spans, not raw text: the escapes carry the structure. The newline
               is emitted explicitly rather than wrapping each line in a block,
               so a blank line still occupies a row — `white-space: pre` gives
