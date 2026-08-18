@@ -7,8 +7,9 @@ import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
 import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
+import { Settings } from "@web/components/Settings";
 import { staleAttrs } from "@web/components/staleness";
-import { agentHash, useAgentRoute } from "@web/route";
+import { agentHash, useAgentRoute, useSettingsRoute } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { UpdateBar } from "@web/components/UpdateBar";
 
@@ -21,6 +22,7 @@ export function App() {
   // about them. Collapsing stays available; it is just no longer the default.
   const [idleOpen, setIdleOpen] = useState(true);
   const openId = useAgentRoute();
+  const showSettings = useSettingsRoute();
 
   useEffect(() => {
     connect();
@@ -68,6 +70,8 @@ export function App() {
   // in-flight key resolving AFTER the operator navigated to B, would land on
   // B's screen. Resetting fields in an effect cannot stop that late write;
   // only unmounting the old instance can.
+  if (showSettings) return <Settings onBack={() => { location.hash = ""; }} />;
+
   if (openAgent) {
     return (
       <AgentTerminal

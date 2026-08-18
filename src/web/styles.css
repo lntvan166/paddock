@@ -507,3 +507,143 @@ body {
   font-weight: 600;
   cursor: pointer;
 }
+
+/* Settings — no new colour tokens. Every colour below is one already defined
+   on bare :root and redefined under both the dark media query and the
+   explicit [data-theme="dark"] toggle (see the top of this file), so nothing
+   here needs its own dark-mode block. */
+.settings {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.settings-section {
+  padding: 0.9rem 0.9rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-section h2 {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.settings-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.75rem;
+  color: var(--fg-dim);
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.8rem;
+}
+
+.settings-field input,
+.settings-field select {
+  min-height: 2.5rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
+/* A checkbox rendered inline with its label, not stacked like a text field —
+   this is the shape of a switch, even though it is a plain checkbox input:
+   touch devices get the same 44px+ target via .tap conventions elsewhere, and
+   no hover-only affordance is introduced. */
+.settings-field-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.settings-field-row input[type="checkbox"] {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.settings-token-status {
+  font-size: 0.72rem;
+  color: var(--fg-dim);
+}
+
+.settings-triggers {
+  display: flex;
+  gap: 1rem;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  border: 0;
+  font-size: 0.8rem;
+}
+
+.settings-triggers legend {
+  font-size: 0.75rem;
+  color: var(--fg-dim);
+  padding: 0 0 0.3rem;
+}
+
+.settings-triggers label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.settings-banner {
+  margin: 0 0 0.85rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.4rem;
+  background: var(--surface);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 0.78rem;
+}
+
+.settings-ok {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: var(--ok);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.settings-actions button {
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-actions button:disabled {
+  opacity: 0.5;
+}

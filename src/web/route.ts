@@ -15,3 +15,14 @@ export function useAgentRoute(): string | null {
   }, []);
   return id;
 }
+
+export function useSettingsRoute(): boolean {
+  const [on, setOn] = useState(() => location.hash === "#/settings");
+  useEffect(() => {
+    const onChange = () => setOn(location.hash === "#/settings");
+    addEventListener("hashchange", onChange);
+    onChange();
+    return () => removeEventListener("hashchange", onChange);
+  }, []);
+  return on;
+}
