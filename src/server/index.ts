@@ -19,15 +19,34 @@ import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
-import { parseArgs } from "@server/cli";
+import { parseArgs, USAGE } from "@server/cli";
 import { VERSION } from "@server/version";
 import { runUpdate } from "@server/update";
 import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
 
-const { command, flags } = parseArgs(Bun.argv.slice(2));
+const { command, flags, verb } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
 const PORT = Number(process.env.PADDOCK_PORT ?? 8787);
 const HOSTNAME = "127.0.0.1"; // loopback only; exposure is the tunnel's job
+
+// Reserved, and routed through the parser like every other verb. This used to
+// scan raw `Bun.argv` instead — two argv mechanisms in one function, which is
+// also how `paddock --demo agent` came out as `serve` from parseArgs and as
+// `agent` from here. Exit code 2 and the roadmap pointer are unchanged.
+if (command === "agent" || command === "hub") {
+  console.error(`paddock ${command}: not implemented — see docs/roadmap.md`);
+  process.exit(2);
+}
+
+// An unrecognised verb must NOT fall through to serve. `paddock updte` used to
+// launch a dashboard, which on a branch whose whole purpose is introducing
+// verbs is the "never swallow errors" shape — the operator asked for something
+// that does not exist and got a working-looking server instead of being told.
+if (command === "unknown") {
+  console.error(`paddock: unknown command '${verb}'`);
+  console.error(USAGE);
+  process.exit(2);
+}
 
 if (flags.has("--version") || flags.has("-V")) {
   console.log(VERSION);
@@ -58,13 +77,6 @@ if (command === "update") {
     current: VERSION,
     checkOnly: flags.has("--check"),
   }));
-}
-
-for (const unimplemented of ["agent", "hub"]) {
-  if (Bun.argv.includes(unimplemented)) {
-    console.error(`paddock ${unimplemented}: not implemented — see docs/roadmap.md`);
-    process.exit(2);
-  }
 }
 
 const socketPath =
