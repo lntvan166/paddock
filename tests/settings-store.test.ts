@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SettingsStore } from "@server/settings/store";
@@ -84,4 +84,53 @@ test("current() hands back a snapshot, so a caller cannot mutate the store throu
   expect(s.current().notify.enabled).toBe(false);
   expect(s.current().notify.triggers).toEqual(["blocked"]);
   expect(s.current().telegram.token).toBe(null);
+});
+
+test("persist fsyncs the temp file before renaming it over settings.json", async () => {
+  // The design specifies "Write `settings.json.tmp`, `fsync`, then
+  // `rename()`", and gives the reason: `rename()` is atomic for the DIRECTORY
+  // ENTRY and says nothing about the file's contents having reached the disk,
+  // so without the sync a crash can leave the rename durable while the data
+  // behind it is not — and the value lost is the token, the one field the
+  // operator cannot regenerate from the UI.
+  //
+  // Spied on `FileHandle.prototype` rather than by mocking `node:fs/promises`:
+  // Bun runs every test file in one process, so a module mock would follow
+  // this suite into every file that runs after it. Every handle shares one
+  // prototype, so a spy installed here sees the store's own handle — and is
+  // restored immediately after, for the same reason.
+  const d = await dir();
+  const probe = await open(join(d, "sync-probe"), "w");
+  const proto = Object.getPrototypeOf(probe) as { sync: () => Promise<void> };
+  await probe.close();
+
+  const order: string[] = [];
+  const realSync = proto.sync;
+  proto.sync = async function spySync(this: unknown) {
+    order.push("sync");
+    return (realSync as () => Promise<void>).call(this);
+  };
+  try {
+    const s = new SettingsStore(d, {});
+    await s.load();
+    await s.patch({ telegram: { token: "123456:ABCDEF" } });
+  } finally {
+    proto.sync = realSync;
+  }
+
+  expect(order).toContain("sync");
+  // And the rename still happened, so the sync did not replace the write.
+  expect(JSON.parse(await readFile(join(d, "settings.json"), "utf8")).telegram.token)
+    .toBe("123456:ABCDEF");
+});
+
+test("no .tmp file is left behind after a save", async () => {
+  // The tmp file is the crash-safety mechanism, not an artifact: one left in
+  // `~/.config/paddock` at mode 0600 is a second copy of the token nobody is
+  // watching.
+  const d = await dir();
+  const s = new SettingsStore(d, {});
+  await s.load();
+  await s.patch({ telegram: { token: "123456:ABCDEF" } });
+  expect((await readdir(d)).sort()).toEqual(["settings.json"]);
 });
