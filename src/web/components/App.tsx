@@ -9,6 +9,7 @@ import { InstallHint } from "@web/components/InstallHint";
 import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { staleAttrs } from "@web/components/staleness";
 import { agentHash, useAgentRoute } from "@web/route";
+import { prunePanes } from "@web/pane-cache";
 
 export function App() {
   const { agents, hostId, connected, lastMessageAt, connect } = useStore();
@@ -29,6 +30,23 @@ export function App() {
     const t = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(t);
   }, []);
+
+  /**
+   * Evict cached screens and scrollback for agents that no longer exist.
+   *
+   * Driven from here because this is where the live agent list is. `store.ts`
+   * already prunes agents on `removedIds`, but nothing told the render caches,
+   * so they grew by one entry per agent EVER opened rather than per agent that
+   * exists — up to ~146 KB of reconstructed scrollback each, reclaimable only
+   * by reloading the page.
+   *
+   * Keyed on the ids rather than the array so this runs when the SET of agents
+   * changes, not on every delta that merely updates one agent's state.
+   */
+  const agentIds = agents.map((a) => a.agentId).sort().join("\u0000");
+  useEffect(() => {
+    prunePanes(new Set(agentIds ? agentIds.split("\u0000") : []));
+  }, [agentIds]);
 
   const groups = groupAgents(agents);
   const stale = isStale({ agents, hostId, connected, lastMessageAt }, now);

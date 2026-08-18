@@ -3,7 +3,8 @@ import type { ActionResult, Agent, NavKey, OutputResult, ParsedPrompt } from "@s
 import { answerWithKey, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
-import { mergeSnapshot, type History } from "@web/history";
+import { mergeSnapshot } from "@web/history";
+import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 
 /**
  * Undefined for an unstyled span, so the common run of plain text costs no
@@ -138,36 +139,6 @@ export function nextRefreshMs(current: number, changed: boolean): number {
   return Math.min(MAX_REFRESH_MS, Math.round(current * REFRESH_BACKOFF));
 }
 
-/**
- * Last screen seen per agent, kept for the life of the page.
- *
- * Re-opening an agent paints instantly from here instead of showing an empty
- * pane while a request is in flight. Over a local socket that gap is one
- * frame; over a phone on a ~250 ms link it is the entire impression of
- * slowness, and a blank pane is also indistinguishable from "this agent has
- * no output".
- *
- * Deliberately module-level rather than in the store: it is a render cache,
- * not agent state, and putting it in the store would push it through the
- * delta path to every connected browser for no benefit.
- *
- * Unbounded is fine — one screen per agent the operator has actually opened,
- * bounded in practice by the agent list itself.
- */
-const screenCache = new Map<string, { lines: string[]; digest: string | null }>();
-
-/**
- * Reconstructed scrollback per agent, for the life of the page.
- *
- * Session-only and in memory, deliberately. It is the simplest thing that
- * delivers the value — scrolling back over what happened while you were
- * watching — and it keeps an operator's work content out of on-device storage.
- * IndexedDB is a contained upgrade if surviving a reload turns out to matter.
- *
- * See `web/history.ts` for why this cannot simply append.
- */
-const historyCache = new Map<string, History>();
-
 /** Settled lines revealed per tap of "show earlier". */
 const HISTORY_PAGE = 200;
 
@@ -179,10 +150,10 @@ export interface AgentTerminalProps {
 export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // Seeded from the cache, so a re-opened agent has its screen on the first
   // render rather than after a round trip.
-  const [output, setOutput] = useState<string[]>(() => screenCache.get(agent.agentId)?.lines ?? []);
+  const [output, setOutput] = useState<string[]>(() => screenFor(agent.agentId)?.lines ?? []);
   // Digest of the screen currently held, sent with each poll so the server can
   // answer "unchanged" instead of resending ~10 KB the client already has.
-  const digestRef = useRef<string | null>(screenCache.get(agent.agentId)?.digest ?? null);
+  const digestRef = useRef<string | null>(screenFor(agent.agentId)?.digest ?? null);
   const [error, setError] = useState<string | null>(null);
   // A poll that failed while output is already on screen. Distinct from
   // `error`, which means the read failed with nothing to show.
@@ -212,14 +183,14 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
 
   const apply = useCallback((lines: string[], digest: string | null = null) => {
     digestRef.current = digest;
-    screenCache.set(agent.agentId, { lines, digest });
+    rememberScreen(agent.agentId, { lines, digest });
     // Every live screen is folded into the reconstructed scrollback. Only
     // lines that have provably left the viewport are committed — see
     // `web/history.ts`, which is what stops a redrawn spinner being pasted
     // into history on every poll.
-    historyCache.set(
+    rememberHistory(
       agent.agentId,
-      mergeSnapshot(historyCache.get(agent.agentId) ?? { settled: [], gaps: 0 }, lines),
+      mergeSnapshot(historyFor(agent.agentId) ?? { settled: [], gaps: 0 }, lines),
     );
     setOutput(lines);
     setError(null);
@@ -424,7 +395,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // Nothing of it renders by default: the pane costs exactly what it did
   // before until "show earlier" is tapped, which is what keeps a 2000-line
   // history from becoming 36,000 DOM nodes nobody asked for.
-  const history = historyCache.get(agent.agentId) ?? { settled: [], gaps: 0 };
+  const history = historyFor(agent.agentId) ?? { settled: [], gaps: 0 };
   const revealed = shownHistory > 0
     ? history.settled.slice(Math.max(0, history.settled.length - shownHistory))
     : [];
