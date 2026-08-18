@@ -1,0 +1,53 @@
+# Publishes the browser-only demo to GitHub Pages.
+#
+# The demo has no server: `VITE_PADDOCK_DEMO=1` swaps `fetch` and `WebSocket`
+# for an in-browser mock before the app mounts, so the real UI runs unmodified
+# against synthetic data. That is what makes it hostable on Pages at all, and
+# what keeps it from drifting from the product — there are no demo branches in
+# any component.
+name: demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a running deploy halfway; queue instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      # The same gates that guard a normal build. A demo that ships from a
+      # red tree would be advertising something that does not work.
+      - run: make check
+      - run: make check-clean
+      - run: bun run build:web && bun test
+
+      - run: bun run build:demo
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

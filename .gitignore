@@ -12,6 +12,7 @@
 # Dependencies / build output
 node_modules/
 dist/
+dist-demo/
 build/
 *.tsbuildinfo
 paddock

@@ -1,27 +1,35 @@
 # paddock
 
-A mobile-first web dashboard for watching and answering
-[herdr](https://github.com/dcolinmorgan/herdr) coding agents from a phone.
+**Watch and answer your coding agents from your phone.**
 
-You run several coding agents in herdr panes on one machine. When you are away
-from the desk you want to know, at a glance: **which agent needs me?** paddock
-is a single local process that reads herdr over its unix socket and serves one
-screen, ordered by what needs attention rather than alphabetically.
+You have several coding agents running in [herdr](https://github.com/dcolinmorgan/herdr) panes. You step away from the desk. One of them finishes, another hits a permission prompt, and both sit there waiting — because the only way to find out is to walk back and look.
 
-Tap an agent to open its detail sheet: recent output, and — when it is
-blocked on a prompt — the agent's real options rendered as buttons (plus a
-free-text reply for anything an option doesn't cover). A finished agent can
-be dismissed from **Needs you** without touching herdr's own state.
+paddock is one local process that reads herdr over its unix socket and serves a single screen, ordered by **what needs you** rather than alphabetically. Tap an agent to read its terminal in colour, scroll back through what it did, and answer it — with the agent's own option labels, never a guessed "Approve".
 
-## Attribution
+### ▶ [Try the live demo](https://lntvan166.github.io/paddock/) — no install, synthetic agents, runs entirely in your browser
 
-The idea comes from [herdr-remote](https://github.com/dcolinmorgan/herdr-remote) by
-dcolinmorgan — pushing herdr agent status to a phone for monitoring and one-tap
-approval. paddock reuses that concept with a different transport, stack and UI.
+<p align="center">
+  <img src="docs/images/01-agents.png" alt="The agent list, grouped by what needs attention" width="46%">
+  <img src="docs/images/02-blocked.png" alt="A blocked agent showing its real options and what Enter will commit" width="46%">
+</p>
+
+---
+
+## What it does
+
+**Triage first.** Agents are grouped into *Needs you*, *Working* and *Idle*, most-recently-changed first. A finished agent can be dismissed from *Needs you* without touching herdr's own state.
+
+**A terminal you can actually read on a phone.** Prose reflows to the screen; tables, boxes and progress bars keep their columns and scroll in their own strip. ANSI colour is preserved, because in agent output the colour *is* the structure.
+
+**Answer without guessing.** A blocked agent's real options are rendered as buttons carrying its exact labels. Above the keypad, paddock shows **what Enter will commit** — because the cursor wraps from the last option back to the first, and the middle option of a permission prompt is routinely *"and don't ask again"*.
+
+**Scroll back.** Up to 4000 lines per agent, reconstructed from what the tab watched, revealed on demand.
+
+**Cheap to watch.** Refresh adapts from 250 ms down to 10 s based on whether the screen is actually moving, and only changed lines are sent — a thinking agent redraws one line of 63, so sending whole screens was ~90% waste.
 
 ## Quick start
 
-Try it without herdr installed, using synthetic agents:
+Try it with synthetic agents, no herdr required:
 
 ```bash
 bun install
@@ -29,49 +37,54 @@ bun run build:web
 bun src/server/index.ts --demo
 ```
 
-Then open `http://127.0.0.1:8787`.
-
-Against a real herdr instance, drop `--demo` — paddock reads
-`$HOME/.config/herdr/herdr.sock` by default (override with
-`PADDOCK_HERDR_SOCKET`):
+Against a real herdr:
 
 ```bash
-bun src/server/index.ts
+make dev        # vite HMR + server reload
 ```
 
-To run it as a container instead, see `make up` and `docker-compose.yml`.
+paddock finds herdr at `$HOME/.config/herdr/herdr.sock`; override with `PADDOCK_HERDR_SOCKET`. It binds `127.0.0.1:8787` by default — put [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/) or an equivalent in front of it before exposing it to the internet. paddock has **no application-level auth of its own**, deliberately: an app token would gate `/sw.js` and silently break the service worker. See [`docs/decisions.md`](docs/decisions.md).
 
-## Screenshots
+## What it does not do
 
-Any screenshot or README image is captured from `paddock serve --demo`, never a
-live session — the demo fixtures use invented agent names, so published media
-is structurally incapable of leaking real data. Demo mode has no herdr to act
-on (`--demo` never wires up `HerdrActions`), so the three herdr-backed action
-routes — `/output`, `/prompt`, `/answer` — 404 there and the approve path
-cannot be demonstrated without a real herdr instance; screenshots of that flow
-are not available. Dismissing a finished agent does work in demo mode: `/ack`
-touches only paddock's own store and sends nothing to herdr.
+Worth knowing before you install it:
+
+- **Output is pulled, not streamed.** herdr exposes no output-changed event and no byte stream, so there is nothing to stream. Updates arrive on an adaptive poll.
+- **History only covers what a tab watched.** An agent nobody was watching has none, and reconstruction records a *gap* rather than guessing when the screen scrolls faster than it was sampled.
+- **One machine.** Multi-host is designed but not built — the store is keyed by herdr's `pane_id`, which is not unique across machines. See [`docs/roadmap.md`](docs/roadmap.md).
+- **No push notifications yet.** You still have to open the dashboard to find out something is blocked. That's the next increment.
+
+The [live demo](https://lntvan166.github.io/paddock/) shows the interface, not the herdr integration — it proves the UI works, not that it can talk to your agents.
 
 ## Documentation
 
-- `docs/architecture.md` — module map and the one-way dependency rule
-- `docs/decisions.md` — why the design is shaped the way it is
-- `docs/gotchas.md` — failure modes designed out, and their causes
-- `docs/roadmap.md` — what is deliberately not in v1
-- `docs/deploy-cloudflare.md` — tunnel + Access setup, and how to verify it
+| | |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Sequence diagrams, the push/pull rule, why one port |
+| [`docs/gotchas.md`](docs/gotchas.md) | Every herdr constraint found the hard way, with measurements |
+| [`docs/decisions.md`](docs/decisions.md) | Choices made and the alternatives rejected |
+| [`docs/roadmap.md`](docs/roadmap.md) | What is not built, and why |
+
+`docs/gotchas.md` is the one worth reading first if you are building anything against herdr — it records what its API actually does, measured rather than assumed.
 
 ## Development
 
 ```bash
-make dev           # vite HMR + server reload, no Docker — the iteration loop
-make types         # regenerate src/shared/herdr-api.d.ts
+make dev           # vite HMR + server reload, no Docker
 make check         # tsc --noEmit
-make check-clean   # public-repo scanner — run before every commit
+make check-clean   # scans for anything that should not be in a public repo
 make test          # builds the UI first, then runs the suite
 make build         # check, check-clean, test, then compile the binary
-make up            # docker compose up -d --build
 ```
+
+Screenshots come from the demo build, never a live session — see `CLAUDE.md`.
+
+## Attribution
+
+The idea comes from [herdr-remote](https://github.com/dcolinmorgan/herdr-remote) by dcolinmorgan: pushing herdr agent status to a phone for monitoring and one-tap approval.
+
+paddock reuses that **concept** and none of its implementation. herdr-remote is AGPL-3.0-or-later; paddock is MIT. No code, markup or styling has been copied between them, and the two solve the problem differently — herdr-remote relays through a Python service, paddock speaks herdr's socket protocol directly.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT — see [LICENSE](LICENSE).
