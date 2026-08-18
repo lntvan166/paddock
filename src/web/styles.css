@@ -350,6 +350,16 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Decoration — a separator, a bare bar, an empty boxed row. It keeps its
+   columns (never reflow a rule into two rows of dashes) but must NOT scroll:
+   there is nothing further along to see. Each of these used to be a strip,
+   which put a scrollbar under every separator and rendered the agent's input
+   box as four visual rows where the terminal has two. */
+.term-rule {
+  white-space: pre;
+  overflow: hidden;
+}
+
 /* Exact mode: one `pre` block, the terminal's own geometry, everything
    scrolling together. Stated explicitly so the two modes read as a pair
    rather than one being the absence of the other. */

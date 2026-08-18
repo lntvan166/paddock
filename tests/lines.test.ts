@@ -92,3 +92,51 @@ test("every line lands in exactly one block, in order", () => {
 test("an empty buffer produces no blocks", () => {
   expect(groupLines([])).toEqual([]);
 });
+
+// ── decoration vs structure ────────────────────────────────────────────────
+// A run of box characters with no text in it carries nothing in its columns:
+// scrolling a line of dashes reveals more dashes. Giving each one a scroll
+// strip put a fat scrollbar under every separator in the transcript — four
+// visual rows where the terminal has two.
+
+test("a standalone rule is decoration, not structure", () => {
+  expect(groupLines(["prose", "─".repeat(208), "more prose"])).toEqual([
+    { kind: "prose", from: 0, to: 0 },
+    { kind: "rule", from: 1, to: 1 },
+    { kind: "prose", from: 2, to: 2 },
+  ]);
+});
+
+test("the agent's input box becomes two rules around a prompt, not two strips", () => {
+  // Exactly the shape herdr sends for the input block.
+  const lines = ["─".repeat(208), "❯", "─".repeat(208), "auto mode on"];
+  expect(groupLines(lines).map((b) => b.kind)).toEqual(["rule", "prose", "rule", "prose"]);
+});
+
+test("a table keeps ONE strip, because its rules sit beside rows that have text", () => {
+  const lines = [
+    "┌────────────┬────────────┐",
+    "│ Feature    │ Item       │",
+    "├────────────┼────────────┤",
+    "│ docs-clean │ pending    │",
+    "└────────────┴────────────┘",
+  ];
+  expect(groupLines(lines)).toEqual([{ kind: "structure", from: 0, to: 4 }]);
+});
+
+test("a bar with a label scrolls; a bare bar does not", () => {
+  expect(groupLines(["  model ████░░░░ 42%"])).toEqual([{ kind: "structure", from: 0, to: 0 }]);
+  expect(groupLines(["  ████░░░░"])).toEqual([{ kind: "rule", from: 0, to: 0 }]);
+});
+
+test("consecutive rules with nothing between them stay ONE decorative run", () => {
+  expect(groupLines(["────", "════", "────"])).toEqual([{ kind: "rule", from: 0, to: 2 }]);
+});
+
+test("rule blocks still tile the buffer with prose and structure", () => {
+  const lines = ["a", "────", "│ x │", "b"];
+  const blocks = groupLines(lines);
+  const covered: number[] = [];
+  for (const b of blocks) for (let i = b.from; i <= b.to; i++) covered.push(i);
+  expect(covered).toEqual([0, 1, 2, 3]);
+});

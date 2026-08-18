@@ -19,9 +19,24 @@
 
 export type LineKind = "prose" | "structure";
 
+/**
+ * What a run of lines is FOR, which is a different question from what its
+ * lines look like.
+ *
+ * - `prose`     reflows to the viewport.
+ * - `structure` keeps its columns and scrolls on its own — a table, a boxed
+ *               row, a labelled progress bar.
+ * - `rule`      is decoration: box characters with no text among them. It
+ *               keeps its columns but must NOT scroll, because scrolling a
+ *               line of dashes only reveals more dashes. Treating rules as
+ *               structure put a scrollbar under every separator in the
+ *               transcript, including both halves of the agent's input box.
+ */
+export type BlockKind = LineKind | "rule";
+
 /** A maximal run of consecutive lines of one kind. `from`/`to` are inclusive. */
 export interface Block {
-  kind: LineKind;
+  kind: BlockKind;
   from: number;
   to: number;
 }
@@ -74,5 +89,31 @@ export function groupLines(texts: string[]): Block[] {
     if (last && last.kind === kind) last.to = i;
     else blocks.push({ kind, from: i, to: i });
   }
+
+  // Demote structural runs that turned out to be pure decoration. Done on the
+  // RUN rather than the line, which is what keeps a table intact: its
+  // `├──┼──┤` rules have no text either, but they sit beside rows that do, so
+  // the run as a whole still counts as structure and keeps its single strip.
+  for (const b of blocks) {
+    if (b.kind !== "structure") continue;
+    let hasText = false;
+    for (let i = b.from; i <= b.to && !hasText; i++) hasText = carriesText(texts[i]!);
+    if (!hasText) b.kind = "rule";
+  }
   return blocks;
+}
+
+/**
+ * Whether a line has anything in it besides drawing characters.
+ *
+ * Pipes count as drawing here as well as in `classifyLine`, so an empty boxed
+ * row (`│        │`) reads as decoration rather than as content.
+ */
+function carriesText(text: string): boolean {
+  for (const ch of text) {
+    if (ch === " " || ch === "\t" || ch === "|" || ch === "\u2502") continue;
+    if (BOX_OR_BLOCK.test(ch)) continue;
+    return true;
+  }
+  return false;
 }

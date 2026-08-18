@@ -411,7 +411,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               it. */}
           {wrap
             ? blocks.map((b) => (
-                <div key={b.from} className={b.kind === "structure" ? "term-strip" : "term-prose"}>
+                <div key={b.from} className={`term-${b.kind}`}>
                   {lineSpans.slice(b.from, b.to + 1).map((spans, i) => (
                     <Fragment key={i}>
                       {spans.map((sp, j) => (
