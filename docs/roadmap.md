@@ -80,26 +80,18 @@ surprise.
   change inconsistently, and animating a section move properly needs FLIP or
   View Transitions, which v1 never scoped.
 
-- **No React render test for `App.tsx`, and none for `AgentDetail`'s stateful
-  half.** The repo has no DOM test environment, so section-order rendering
-  (which agent lands in which section) is guarded at the data layer only, not
-  by a rendered-output test. `App.tsx`'s `key={openAgent.agentId}` — the fix
-  that stops one agent's in-flight action landing on another's sheet — was
-  reviewed but never tested, and the same is true of the effect inside
-  `AgentDetail` that bumps `promptSeq`, releases `busy`, and refetches on a
-  state change. What *is* covered: `AgentDetailView` is hook-free, so
-  `tests/detail-render.test.tsx` renders it with `renderToStaticMarkup` (no
-  DOM, no new dependency) and asserts the placement rules — the result line
-  outside the `blocked`-only section, feedback and typed reply hidden once
-  their prompt is superseded. Nothing simulates a click or an effect; closing
-  that needs a DOM environment, which is its own task.
+- ~~**No DOM test environment.**~~ *Partly resolved.* `tests/support/dom.ts`
+  registers happy-dom for component tests, and `tests/terminal-render.test.tsx`
+  covers the terminal's effects and wiring — the layer three defects reached
+  the browser through in a single cycle. Mutation-checked: breaking the Enter
+  preview, the option-button guard, the error surface or the keypad's
+  always-present rule each fails a test.
 
-- ~~**Task 2 was never run.**~~ *Done.* Probed against a real Claude Code
-  permission prompt: the option list **is** parseable, options are numbered
-  with `❯` marking the selection, and answering by option digit works end to
-  end. Tap-to-answer is confirmed feasible. See
-  `docs/design/2026-08-17-paddock-plan2-design.md` §2 for the findings and the
-  two constraints they impose.
+  **Still not covered:** `App.tsx` — routing, cache pruning and the
+  stale-build bar have no render test, and neither does the refresh loop's
+  timing, which needs fake timers. The DOM is imported per-file rather than
+  preloaded, because a global preload gives server tests a DOM they must not
+  have.
 
 - **PWA manifest has no icons.** Installable, but unbranded — the install
   prompt shows a generic icon.
