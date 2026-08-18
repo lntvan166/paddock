@@ -21,6 +21,7 @@ import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs } from "@server/cli";
 import { VERSION } from "@server/version";
+import { runUpdate } from "@server/update";
 
 const { command, flags } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
@@ -32,9 +33,19 @@ if (flags.has("--version") || flags.has("-V")) {
   process.exit(0);
 }
 
+// Must run before any server setup below: `paddock update` should not open a
+// herdr socket or bind a port.
 if (command === "update") {
-  console.error("paddock update: not implemented");
-  process.exit(2);
+  process.exit(await runUpdate({
+    // Bun.argv[0] (and process.execPath) point at the running bun binary in
+    // a source checkout, not at a paddock executable — runUpdate refuses
+    // before this path is ever used unless VERSION is a real release.
+    selfPath: Bun.argv[0]!,
+    platform: process.platform,
+    arch: process.arch,
+    current: VERSION,
+    checkOnly: flags.has("--check"),
+  }));
 }
 
 for (const unimplemented of ["agent", "hub"]) {
