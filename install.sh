@@ -5,9 +5,9 @@
 # Read before running:
 #   curl -fsSL https://lntvan166.github.io/paddock/install.sh | less
 #
-# No privilege escalation of any kind: ~/.local/bin is user-writable, so
-# nothing here needs it — a one-liner that asks for root to install a
-# dashboard is a habit worth not teaching.
+# No sudo. ~/.local/bin is user-writable, so nothing here needs privilege
+# escalation — a one-liner that asks for root to install a dashboard is a
+# habit worth not teaching.
 set -eu
 
 REPO="lntvan166/paddock"
@@ -17,6 +17,10 @@ BIN="$BIN_DIR/paddock"
 # Overridable so the platform table can be tested without four machines.
 UNAME_S="${PADDOCK_UNAME_S:-$(uname -s)}"
 UNAME_M="${PADDOCK_UNAME_M:-$(uname -m)}"
+
+# Overridable so the download -> verify -> install pipeline can be tested
+# offline, with a stub that copies fixture bytes instead of a real network call.
+CURL="${PADDOCK_CURL:-curl}"
 
 asset_name() {
   case "$UNAME_S" in
@@ -43,8 +47,8 @@ trap 'rm -rf "$TMP"' EXIT
 
 BASE="https://github.com/$REPO/releases/latest/download"
 echo "paddock: downloading $ASSET"
-curl -fsSL "$BASE/$ASSET" -o "$TMP/paddock"
-curl -fsSL "$BASE/SHA256SUMS" -o "$TMP/SHA256SUMS"
+"$CURL" -fsSL "$BASE/$ASSET" -o "$TMP/paddock"
+"$CURL" -fsSL "$BASE/SHA256SUMS" -o "$TMP/SHA256SUMS"
 
 echo "paddock: verifying checksum"
 EXPECTED="$(grep " $ASSET\$" "$TMP/SHA256SUMS" | awk '{print $1}')"
