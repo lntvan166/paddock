@@ -277,6 +277,26 @@ This is a deliberate choice, not an accident of convenience:
 Splitting them is possible — the UI is static files and the API is a Hono app
 — but it buys nothing here and costs all three of the above.
 
+## Embedded UI, and where `staticDir` fits
+
+The compiled binary is the whole product: `routes.ts`'s `serve()` checks the
+**embedded manifest first, `staticDir` second** — `EMBEDDED[path]` (from
+`server/embedded.ts`) wins if present, and only a miss falls through to a
+`Bun.file` read under `deps.staticDir` (`PADDOCK_STATIC_DIR`, default `dist`).
+
+`server/embedded.ts` is generated per build, not committed
+(`scripts/gen-embedded.ts`, run by `make embed`): Vite content-hashes every
+asset's filename, so a checked-in manifest would silently drift from the
+bundle it claims to describe the moment the hashes changed. Generating it
+fresh — and writing an empty map when `dist/` does not yet exist — is what
+lets a clean checkout's `make check` typecheck before anything has been built.
+
+`PADDOCK_STATIC_DIR` is what keeps `make dev` and the Docker image serving a
+UI that gets rebuilt constantly without recompiling the binary: both run the
+interpreted server (`bun src/server/index.ts`) against a `dist/` on disk
+rather than an embedded snapshot baked into a compiled executable, so a Vite
+rebuild is visible on the next request with no server restart.
+
 ## Serving several machines
 
 Today `hostId` comes from `PADDOCK_HOST_ID` (default `"local"`) and one

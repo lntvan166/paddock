@@ -32,6 +32,21 @@ Synthetic agents, no install. Best viewed in mobile mode.
 - **Cheap to watch** — adaptive polling, and only changed lines on the wire
 - **Notify** — a Telegram message when an agent needs you, gated by which states you pick, quiet hours, and a per-agent cooldown
 
+## Install
+
+```bash
+curl -fsSL https://lntvan166.github.io/paddock/install.sh | sh
+```
+
+Installs to `~/.local/bin/paddock`. No `sudo`. The script verifies the release
+checksum before writing anything — read it first with
+`curl -fsSL https://lntvan166.github.io/paddock/install.sh | less`.
+
+Upgrade with `paddock update`. paddock never updates itself unasked.
+
+Builds are published for Linux and macOS on x86_64 and aarch64 — the same four
+platforms herdr supports.
+
 ## Quick start
 
 Try it with synthetic agents, no herdr required:

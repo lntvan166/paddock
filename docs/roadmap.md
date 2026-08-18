@@ -192,3 +192,39 @@ surprise.
   deliberately, so a demo run cannot fire real Telegram messages about
   synthetic agents — so whatever closes this gap has to distinguish the two
   call sites rather than forbid the shape.
+
+## Known v3 gaps
+
+- **No signature on release binaries — checksums only.** `install.sh` and
+  `paddock update` both refuse to write a binary whose SHA-256 does not match
+  `SHA256SUMS`, and that file is published on the same GitHub release as the
+  binaries it describes. Be precise about what that buys: it defends against
+  a corrupted download and a broken TLS path, and **not** against a
+  compromised release or a compromised GitHub account — anyone who can
+  replace the binary can replace its checksum file in the same breath. Real
+  protection needs a signature from a key that does not live on GitHub, and
+  that is deliberately not built here: key management (generation, rotation,
+  where the private key is held, how a compromise is detected and revoked) is
+  its own project, and a signing key sitting in CI secrets so a workflow can
+  sign on every tag is exactly the setup that would leak it — a key reachable
+  by CI is no more protected than the artifact it signs. This matters more
+  for paddock than for most command-line tools: paddock can send keystrokes
+  and free text to coding agents and answer their permission prompts, so a
+  tampered update is not merely a bad dashboard, it is a remote hand on every
+  agent paddock can reach.
+
+- **`index.ts` exits on any herdr connection failure at startup, not only a
+  protocol mismatch.** The startup block wraps `checkProtocol()` and
+  `supervisor.start()` in one `try`/`catch` and calls `process.exit(1)` for
+  either a `ProtocolMismatchError` or anything else the two throw — so a
+  herdr that simply is not up yet (socket refused, socket absent) kills
+  paddock exactly the same way an incompatible herdr version would. That is
+  inconsistent with the liveness and retry model `docs/architecture.md`
+  describes: `herdr/keeper.ts`'s jittered-backoff reconnect only arms once
+  `supervisor.start()` has already succeeded once, so it never gets a chance
+  to run here. A paddock started before herdr — an ordering that `systemd`,
+  Docker Compose, or a plain reboot cannot promise — dies instead of waiting
+  for it. Fixing this means distinguishing "herdr is not reachable yet"
+  (retry) from "herdr answered with an incompatible protocol" (fatal, as
+  today); found while working on this branch and deliberately left unfixed
+  rather than folded into an unrelated change.
