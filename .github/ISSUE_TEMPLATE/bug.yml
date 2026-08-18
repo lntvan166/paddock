@@ -1,0 +1,40 @@
+name: Bug report
+description: Something behaves differently than documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: **reload the page.** An already-open tab keeps running
+        the JavaScript it loaded, and a stale bundle has sent this project's
+        own maintainer hunting bugs in already-fixed code more than once.
+        paddock shows a "newer version available" bar when it detects one.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+    validations: { required: true }
+  - type: input
+    id: agent-state
+    attributes:
+      label: Agent state
+      description: blocked / working / idle / done — several behaviours differ by state.
+  - type: input
+    id: versions
+    attributes:
+      label: paddock and herdr versions
+      placeholder: "paddock v0.2.0, herdr 0.8.0 (herdr api schema --json | head)"
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and screen width
+      placeholder: "iOS Safari, 390px — layout depends on width, never on device detection"
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: |
+        `/api/health`, console errors, or server logs.
+        **Redact first** — agent output can contain your work.
+      render: shell

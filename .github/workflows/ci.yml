@@ -1,0 +1,45 @@
+# Gates every pull request and every push to main.
+#
+# Separate from the demo deploy on purpose: this must run on PRs from forks,
+# where Pages credentials are neither available nor safe to grant. Before this
+# existed the only workflow ran on push to main, so a contributor's PR got no
+# checks at all — on a project whose README asks for pull requests.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - name: Types
+        run: make check
+
+      # The public-repo scanner. Runs on every PR because the failure it
+      # guards — a hostname, a home path, a real agent name — is permanent
+      # once merged into a public history.
+      - name: Public-repo scan
+        run: make check-clean
+
+      # `make test` builds the UI first: part of the suite reads real build
+      # output, and running before the build made those tests pass by
+      # checking nothing.
+      - name: Tests
+        run: make test
+
+      - name: Demo build
+        run: bun run build:demo

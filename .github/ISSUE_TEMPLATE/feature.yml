@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest something paddock should do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `docs/roadmap.md` records what is deliberately not built and why —
+        worth a look first, in case the answer is already there.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that paddock makes hard today?
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: Optional. The problem matters more than the solution.

@@ -14,9 +14,7 @@ To reach it from your phone, put a [Cloudflare Tunnel with Zero Trust Access](#i
 
 ### ▶ [Try the live demo](https://lntvan166.github.io/paddock/)
 
-No install, synthetic agents, runs entirely in your browser — click into the blocked agent and answer it.
-
-**It is a phone UI.** Open it on your phone, or switch your browser to device mode (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd>, or <kbd>⌘</kbd>+<kbd>⌥</kbd>+<kbd>M</kbd> on a Mac) to see the shape it was designed for. On a desktop window it renders as a centred column rather than stretching, but the layout is built for a thumb.
+Synthetic agents, no install. Best viewed in mobile mode.
 
 <p align="center">
   <img src="docs/images/01-agents.png" alt="The agent list, grouped by what needs attention" width="46%">

@@ -30,11 +30,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
 
-      # The same gates that guard a normal build. A demo that ships from a
-      # red tree would be advertising something that does not work.
+      # Gates live in ci.yml, which also covers pull requests. Kept here as
+      # well because this workflow publishes: a demo that ships from a red
+      # tree would be advertising something that does not work.
       - run: make check
       - run: make check-clean
-      - run: bun run build:web && bun test
+      - run: make test
 
       - run: bun run build:demo
       - uses: actions/configure-pages@v5

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/lntvan166/paddock/security/advisories/new
+    about: Report privately, not as a public issue. See SECURITY.md.
+  - name: Try the demo
+    url: https://lntvan166.github.io/paddock/
+    about: Synthetic agents, no install — useful for reproducing UI issues.
