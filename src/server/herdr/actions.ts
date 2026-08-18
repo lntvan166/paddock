@@ -1,6 +1,6 @@
 import { request } from "@server/herdr/socket";
 import type { HerdrPaneRead } from "@shared/herdr-api";
-import type { AgentState } from "@shared/types";
+import type { AgentState, NavKey } from "@shared/types";
 
 export type ReadSource = "detection" | "visible" | "recent_unwrapped";
 
@@ -121,10 +121,38 @@ export function readSourceFor(state: AgentState): ReadSource {
   return state === "idle" ? "recent_unwrapped" : "visible";
 }
 
+/**
+ * The source to actually request, given whether the caller wants scrollback.
+ *
+ * `readSourceFor` answers "what is the richest source this state permits".
+ * That is not the same question as "what should the FIRST read use", and
+ * conflating them is what made opening an idle agent slow: `recent_unwrapped`
+ * recovers history by physically scrolling the pane, which costs ~35 ms per
+ * line past the viewport — so a 120-line default on an agent with real
+ * scrollback is seconds of blank screen before anything is drawn.
+ *
+ * `visible` is flat at ~2 ms for any line count and never fails, so it is what
+ * a first paint should ask for. Scrollback is a second, explicit request the
+ * UI makes once the operator is already looking at something.
+ */
+export function resolveSource(state: AgentState, scrollback: boolean): ReadSource {
+  return scrollback ? readSourceFor(state) : "visible";
+}
+
 export interface HerdrActions {
-  readOutput(target: string, state: AgentState, lines?: number): Promise<{ lines: string[]; source: ReadSource }>;
+  readOutput(
+    target: string, state: AgentState, lines?: number, scrollback?: boolean,
+  ): Promise<{ lines: string[]; source: ReadSource }>;
   readDetection(target: string): Promise<string>;
   sendOptionKey(target: string, key: string): Promise<void>;
+  /**
+   * Send one navigation key. Separate from `sendOptionKey` because the two
+   * carry different authority: an option digit answers a prompt paddock
+   * believes it parsed, while a nav key only moves the agent's own cursor and
+   * asserts nothing. `NavKey`'s members are herdr's key names verbatim, so
+   * there is no mapping table here to drift out of date.
+   */
+  sendNavKey(target: string, key: NavKey): Promise<void>;
   sendReply(target: string, text: string): Promise<void>;
   waitUntilUnblocked(target: string, timeoutMs?: number): Promise<void>;
 }
@@ -132,8 +160,8 @@ export interface HerdrActions {
 /** Binds the socket path once so routes can take an injectable object. */
 export function createActions(socketPath: string): HerdrActions {
   return {
-    async readOutput(target, state, lines) {
-      const source = readSourceFor(state);
+    async readOutput(target, state, lines, scrollback = false) {
+      const source = resolveSource(state, scrollback);
       // Clamped here as well as at the route boundary: this is the function
       // that builds the herdr params, so the bound holds for every caller,
       // not only the one that happens to validate first.
@@ -142,13 +170,32 @@ export function createActions(socketPath: string): HerdrActions {
       // `{ text?: string }` this replaced described a response herdr has
       // never sent, and an optional field made the mismatch resolve to `""`
       // instead of failing anywhere.
+      // ANSI is KEPT, and parsed in the browser (`web/ansi.ts`). In agent
+      // output the colour is the structure — headings, diff markers, the
+      // highlight on the selected option — so `strip_ansi: true` was not a
+      // neutral simplification: it flattened every transcript into one grey
+      // wall before the UI ever saw it. Verified against herdr 0.8.0, which
+      // answers this call with truecolor (`38;2;r;g;b`) plus bold and italic.
+      //
+      // `readDetection` below deliberately keeps stripping, because its
+      // consumer is the prompt PARSER, and escapes there would break the
+      // option matching rather than inform it.
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
-        target, source, lines: bounded, format: "text", strip_ansi: true,
+        target, source, lines: bounded, format: "ansi", strip_ansi: false,
       });
       const text = res.read.text;
       // "".split("\n") is [""], not [] — a genuinely empty pane must report
       // no lines, not one blank line.
-      return { lines: text === "" ? [] : text.split("\n"), source };
+      //
+      // The trailing CR is dropped because herdr's `ansi` format returns CRLF
+      // endings, and a bare CR left inside a `white-space: pre` block is
+      // rendered as a line break by some engines and as a glyph by others —
+      // so leaving it in means the transcript looks different on the phone
+      // that matters (iOS Safari) than on the desktop it was checked on.
+      return {
+        lines: text === "" ? [] : text.split("\n").map((l) => l.replace(/\r$/, "")),
+        source,
+      };
     },
 
     async readDetection(target) {
@@ -159,6 +206,10 @@ export function createActions(socketPath: string): HerdrActions {
     },
 
     async sendOptionKey(target, key) {
+      await request(socketPath, "agent.send_keys", { target, keys: [key] });
+    },
+
+    async sendNavKey(target, key) {
       await request(socketPath, "agent.send_keys", { target, keys: [key] });
     },
 

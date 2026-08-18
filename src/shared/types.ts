@@ -73,6 +73,62 @@ export interface ActionResult {
   detail?: string;
 }
 
+/**
+ * The keys the terminal view is allowed to send, as a CLOSED allowlist.
+ *
+ * These are navigation, not answers. An arrow key makes no claim about what
+ * an option means — the operator reads the agent's real screen, watches the
+ * agent's own `❯` cursor move, and commits with Enter. That is strictly more
+ * faithful than a parsed button, and it is why this path works on prompt
+ * shapes the parser cannot read (`options: null`) as well as ones it can.
+ *
+ * Closed on purpose. `agent.prompt` accepts arbitrary text and `send_keys`
+ * accepts arbitrary control sequences, so the boundary is enforced here and
+ * at the route rather than trusted to the UI: paddock still has no
+ * general-purpose key-send endpoint. Every name below was verified accepted
+ * by herdr 0.8.0 on a throwaway pane; `pageup`, `pagedown`, `home` and `end`
+ * are rejected by herdr (`invalid_key`) and are therefore absent.
+ */
+export const NAV_KEYS = [
+  "up", "down", "left", "right", "enter", "esc", "tab", "space", "backspace",
+] as const;
+
+export type NavKey = (typeof NAV_KEYS)[number];
+
+export function isNavKey(value: unknown): value is NavKey {
+  return typeof value === "string" && (NAV_KEYS as readonly string[]).includes(value);
+}
+
+/**
+ * A key press plus the screen it produced.
+ *
+ * The re-read is part of the response rather than a follow-up request because
+ * the two are one interaction: pressing ↓ and seeing the cursor move is a
+ * single act to the operator, and splitting it into two round trips over a
+ * ~250 ms link is what would make navigation feel broken.
+ */
+export interface KeyResult extends ActionResult {
+  lines: string[];
+  source: string;
+}
+
+/**
+ * A read response, which may say "nothing changed" instead of resending.
+ *
+ * Measured on a live working agent: consecutive 3s polls differ by 3 lines out
+ * of 63, so ~95% of a 10.8 KB response is bytes the client already has. The
+ * client sends the digest of the screen it is holding; when it still matches,
+ * the server answers `{ unchanged: true }` and no screen is transmitted.
+ *
+ * This is deliberately an application-level revalidation rather than an HTTP
+ * `ETag`: these are POST routes (spec §12 — payloads must never reach a query
+ * string, and a GET would put read parameters in edge access logs), and
+ * browsers do not perform conditional revalidation on POST.
+ */
+export type OutputResult =
+  | { unchanged: true }
+  | { unchanged?: false; lines: string[]; source: string; digest: string };
+
 export type ServerMessage =
   | { type: "snapshot"; hostId: string; agents: Agent[]; serverTime: number }
   | { type: "delta"; upserted: Agent[]; removedIds: string[]; serverTime: number }

@@ -73,14 +73,25 @@ test.skipIf(agents === null)(
     expect(byState.size).toBeGreaterThan(0);
 
     for (const [state, agent] of byState) {
-      const out = await actions.readOutput(agent.agentId, state);
+      // BOTH stages, against the real socket. The default (fast) read is what
+      // paints first, and the scrollback read is what replaces it for an idle
+      // agent — a regression in either is a regression the fakes cannot see.
+      const fast = await actions.readOutput(agent.agentId, state);
       // The assertion the fake could not make: `res.read.text` carries text.
       // Under the old `res.text`, every one of these is 0.
-      expect(out.lines.length).toBeGreaterThan(0);
-      expect(out.lines.join("").trim().length).toBeGreaterThan(0);
-      expect(out.source).toBe(readSourceFor(state));
+      expect(fast.lines.length).toBeGreaterThan(0);
+      expect(fast.lines.join("").trim().length).toBeGreaterThan(0);
+      expect(fast.source).toBe("visible");
+
+      const full = await actions.readOutput(agent.agentId, state, undefined, true);
+      expect(full.lines.length).toBeGreaterThan(0);
+      expect(full.source).toBe(readSourceFor(state));
+
       // Shape only. Never the content — these are real agents.
-      console.log(`  live readOutput  state=${state} source=${out.source} lines=${out.lines.length}`);
+      console.log(
+        `  live readOutput  state=${state} fast=${fast.source}/${fast.lines.length}` +
+        ` full=${full.source}/${full.lines.length}`,
+      );
     }
   },
   60_000,

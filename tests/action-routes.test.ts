@@ -30,6 +30,7 @@ function harness(a: Agent = agent()) {
     },
     async readDetection() { calls.push("readDetection"); return "Proceed?\n ❯ 1. Yes\n   2. No\n"; },
     async sendOptionKey(_t: string, k: string) { calls.push(`key:${k}`); },
+    async sendNavKey(_t: string, k: string) { calls.push(`nav:${k}`); },
     async sendReply(_t: string, text: string) { calls.push(`reply:${text}`); },
     async waitUntilUnblocked() { calls.push("wait"); },
   };
@@ -52,7 +53,51 @@ test("output returns lines and the source used", async () => {
   const { app } = harness();
   const res = await post(app, "/api/agents/w1:p1/output");
   expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ lines: ["out"], source: "visible" });
+  const body = await res.json();
+  expect(body.lines).toEqual(["out"]);
+  expect(body.source).toBe("visible");
+  // The digest the client echoes back on its next poll.
+  expect(typeof body.digest).toBe("string");
+  expect(body.unchanged).toBeFalsy();
+});
+
+// Revalidation. Measured on a live working agent, consecutive 3s polls differ
+// by 3 lines out of 63 — so ~95% of a 10.8 KB response is bytes the client is
+// already holding.
+test("a matching digest answers `unchanged` and sends no screen", async () => {
+  const { app } = harness();
+  const first = await (await post(app, "/api/agents/w1:p1/output")).json();
+
+  const res = await post(app, "/api/agents/w1:p1/output", { since: first.digest });
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.unchanged).toBe(true);
+  // The screen must be ABSENT, not empty: an empty `lines` here would be
+  // applied by a careless client and blank the pane on the very response that
+  // means it is still correct.
+  expect(body.lines).toBeUndefined();
+});
+
+test("a stale or malformed digest still returns the full screen", async () => {
+  // Note on coverage: the route also type-checks `since` before comparing,
+  // and that guard is DEFENSIVE rather than load-bearing — `=== digest`
+  // against a string already rejects every non-string, so removing the check
+  // leaves behaviour identical and this test cannot detect it. It stays as a
+  // statement of intent for anyone who later loosens the comparison.
+  const { app } = harness();
+  for (const since of ["not-the-current-digest", "", 42, null, {}]) {
+    const body = await (await post(app, "/api/agents/w1:p1/output", { since })).json();
+    expect(body.unchanged).toBeFalsy();
+    expect(body.lines).toEqual(["out"]);
+  }
+});
+
+test("without a digest the server always sends the screen", async () => {
+  // The opening read sends no `since`, because the point of it is to paint.
+  const { app } = harness();
+  const body = await (await post(app, "/api/agents/w1:p1/output")).json();
+  expect(body.unchanged).toBeFalsy();
+  expect(body.lines).toEqual(["out"]);
 });
 
 // A client-supplied `lines` used to be cast, never checked: `{"lines": 1e9}`
@@ -205,6 +250,7 @@ test("a failed action reports ok:false rather than throwing", async () => {
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readDetection() { return ""; },
       async sendOptionKey() { throw new Error("herdr said no"); },
+      async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
     },
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW }),
@@ -212,4 +258,121 @@ test("a failed action reports ok:false rather than throwing", async () => {
   const res = await post(app2, "/api/agents/w1:p1/answer", { key: "1" });
   expect(res.status).toBe(502);
   expect((await res.json()).detail).toContain("herdr said no");
+});
+
+// ── POST /text ─────────────────────────────────────────────────────────────
+// The terminal view's reply box. Distinct from /answer: /answer commits a
+// reply paddock composed FOR A PROMPT, so it must prove the agent is still
+// asking. This is the operator typing into a terminal they are looking at,
+// which is exactly the reasoning that already puts /key in every state.
+
+test("typed text is accepted in EVERY state, and returns the screen it produced", async () => {
+  for (const state of ["idle", "working", "done", "blocked"] as const) {
+    const { app, calls } = harness(agent({ state }));
+    const res = await post(app, "/api/agents/w1:p1/text", { text: "ls -la" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(calls).toContain("reply:ls -la");
+    // Same one-interaction contract as /key: type, then see what happened.
+    expect(body.lines).toEqual(["out"]);
+  }
+});
+
+test("empty or non-string text is refused and never reaches herdr", async () => {
+  const { app, calls } = harness();
+  for (const text of ["", "   ", null, 5, undefined, {}]) {
+    const res = await post(app, "/api/agents/w1:p1/text", { text });
+    expect(res.status).toBe(400);
+  }
+  expect(calls.filter((c) => c.startsWith("reply:"))).toEqual([]);
+});
+
+test("over-long text is refused rather than forwarded to herdr", async () => {
+  // The only unbounded client-supplied string that reaches a herdr parameter.
+  const { app, calls } = harness();
+  const res = await post(app, "/api/agents/w1:p1/text", { text: "x".repeat(10_001) });
+  expect(res.status).toBe(400);
+  expect(calls.filter((c) => c.startsWith("reply:"))).toEqual([]);
+});
+
+test("typed text to an unknown agent is refused before anything is sent", async () => {
+  const { app, calls } = harness();
+  const res = await post(app, "/api/agents/w9:p9/text", { text: "hi" });
+  expect(res.status).toBe(404);
+  expect(calls.filter((c) => c.startsWith("reply:"))).toEqual([]);
+});
+
+test("a nav key is sent, and the screen it produced comes back with it", async () => {
+  const { app, calls } = harness();
+  const res = await post(app, "/api/agents/w1:p1/key", { key: "down" });
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.ok).toBe(true);
+  expect(calls).toContain("nav:down");
+  // The re-read belongs to the same response: pressing a key and seeing the
+  // cursor move is one interaction, and splitting it into two round trips
+  // over a slow link is what would make navigation feel broken.
+  expect(body.lines).toEqual(["out"]);
+  const readAt = calls.findIndex((c) => c.startsWith("readOutput"));
+  expect(readAt).toBeGreaterThan(-1);
+  expect(calls.indexOf("nav:down")).toBeLessThan(readAt);
+});
+
+test("a key outside the allowlist is refused and never reaches herdr", async () => {
+  const { app, calls } = harness();
+  for (const key of ["pageup", "ctrl+c", "a", "", null, 5]) {
+    const res = await post(app, "/api/agents/w1:p1/key", { key });
+    expect(res.status).toBe(400);
+  }
+  // The allowlist is the entire boundary between this and a general-purpose
+  // key-send endpoint, so none of the above may have reached the socket.
+  expect(calls.filter((c) => c.startsWith("nav:"))).toEqual([]);
+});
+
+test("nav keys are allowed on an agent that is NOT blocked, unlike /answer", async () => {
+  // The deliberate difference between the two routes, pinned so it cannot be
+  // "tidied" into consistency later. /answer commits a reply paddock composed,
+  // so it must prove the agent is still asking. A nav key only moves the
+  // agent's own cursor on a screen the operator is looking at.
+  const { app, calls } = harness(agent({ state: "working" }));
+
+  const answer = await post(app, "/api/agents/w1:p1/answer", { key: "1" });
+  expect(answer.status).toBe(409);
+
+  const key = await post(app, "/api/agents/w1:p1/key", { key: "esc" });
+  expect(key.status).toBe(200);
+  expect(calls).toContain("nav:esc");
+});
+
+test("an unknown agent is refused before any key is sent", async () => {
+  const { app, calls } = harness();
+  const res = await post(app, "/api/agents/w9:p9/key", { key: "up" });
+  expect(res.status).toBe(404);
+  expect(calls.filter((c) => c.startsWith("nav:"))).toEqual([]);
+});
+
+test("a failed key reports ok:false with no lines, never a blanked screen", async () => {
+  const store = new AgentStore("dev-box");
+  store.replaceAll([agent()], NOW);
+  const app2 = createApp({
+    store, hub: new Hub({ now: () => NOW }),
+    actions: {
+      async readOutput() { return { lines: ["kept"], source: "visible" as const }; },
+      async readDetection() { return ""; },
+      async sendOptionKey() {},
+      async sendNavKey() { throw new Error("herdr said no"); },
+      async sendReply() {}, async waitUntilUnblocked() {},
+    },
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW }),
+  });
+  const res = await post(app2, "/api/agents/w1:p1/key", { key: "enter" });
+  expect(res.status).toBe(502);
+  const body = await res.json();
+  expect(body.ok).toBe(false);
+  expect(body.detail).toContain("herdr said no");
+  // Empty means "no new screen", never "the pane is empty" — the client keys
+  // off `ok` before painting, and the contract carries the empty array so it
+  // has a shape to check rather than an absent field.
+  expect(body.lines).toEqual([]);
 });

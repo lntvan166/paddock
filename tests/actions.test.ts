@@ -163,12 +163,24 @@ test("readOutput asks herdr for the state-appropriate source", async () => {
 // The other branch of readSourceFor, end to end: an idle agent is the one
 // case where paddock asks herdr to scroll, and the source it reports back
 // has to be the one it actually asked for.
-test("readOutput reads an idle agent from scrollback and reports that source", async () => {
+test("readOutput reads an idle agent from scrollback WHEN ASKED, and reports that source", async () => {
   const { path, seen } = await fakeHerdr(() => paneRead("scrollback line", "recent_unwrapped"));
-  const out = await createActions(path).readOutput("w1:p1", "idle", 40);
+  const out = await createActions(path).readOutput("w1:p1", "idle", 40, true);
   expect(seen[0].params.source).toBe("recent_unwrapped");
   expect(out.lines).toEqual(["scrollback line"]);
   expect(out.source).toBe("recent_unwrapped");
+});
+
+test("readOutput defaults to `visible`, even for an idle agent", async () => {
+  // The default has to be the CHEAP read. `recent_unwrapped` recovers history
+  // by scrolling the pane (~35 ms per line past the viewport), so defaulting
+  // to it put seconds of blank screen in front of the first frame — the whole
+  // reason the two-stage load exists. This test pins the default so it cannot
+  // drift back by way of "readSourceFor already knows the right answer".
+  const { path, seen } = await fakeHerdr(() => paneRead("viewport line", "visible"));
+  const out = await createActions(path).readOutput("w1:p1", "idle", 40);
+  expect(seen[0].params.source).toBe("visible");
+  expect(out.source).toBe("visible");
 });
 
 // A genuinely empty pane must report no lines, not a sentinel blank one:
