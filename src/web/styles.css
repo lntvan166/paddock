@@ -176,10 +176,30 @@ body {
 .term {
   position: fixed;
   inset: 0;
+  /* Centred in a readable column instead of stretching to the viewport.
+     Full-width on a phone (the design target), but on a 1440px laptop an
+     unconstrained terminal put option buttons 1400px wide with their text
+     stranded at the far left, and keypad buttons the size of a hand. The list
+     already centres itself at this width; the terminal did not, so the two
+     views disagreed about how wide the app is.
+
+     `min()` rather than a media query: there is one rule here, not a mobile
+     case and a desktop case, and no device detection anywhere in this
+     project. */
+  width: min(100%, 42rem);
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   background: var(--surface);
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Edges, so the column reads as a deliberate boundary rather than content
+   that happened to stop. Suppressed when it fills the screen. */
+@media (min-width: 42rem) {
+  .term {
+    border-inline: 1px solid var(--border);
+  }
 }
 
 .term-header {

@@ -52,3 +52,16 @@ test("structure and rule pin the properties that make them work", () => {
   // Prose is the only kind allowed to reflow.
   expect(ruleFor(".term-prose")).toContain("pre-wrap");
 });
+
+test("the terminal is constrained to a column, not stretched to the viewport", () => {
+  // On a 1440px laptop an unconstrained `.term` produced option buttons 1400px
+  // wide with their labels stranded at the far left. The list already centres
+  // itself at this width, so an unconstrained terminal also made the two views
+  // disagree about how wide the app is.
+  const css = readFileSync("src/web/styles.css", "utf8");
+  const at = css.indexOf(".term {");
+  expect(at).toBeGreaterThan(-1);
+  const rule = css.slice(at, css.indexOf("}", at));
+  expect(rule).toContain("width: min(100%");
+  expect(rule).toContain("margin-inline: auto");
+});
