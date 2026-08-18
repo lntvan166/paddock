@@ -73,7 +73,19 @@ export class Notifier {
     }
 
     const since = now - (this.#lastSentAt.get(a.agentId) ?? Number.NEGATIVE_INFINITY);
-    if (since < s.notify.cooldownMs) return;
+    if (since < s.notify.cooldownMs) {
+      // Revert the optimistic `lastSeen` write above, same as the failed-send
+      // path below: the cooldown bounds retry FREQUENCY, it does not consume
+      // the transition. Without this, an intervening same-state delta inside
+      // the cooldown window (a blocked agent's task line updating) would
+      // write `lastSeen` forward and never be undone, and every later delta —
+      // including ones long past the cooldown — would then read
+      // `prev === a.state` and never re-detect the transition again. One
+      // failed attempt per episode, and no periodic retry ever, which is the
+      // opposite of what the cooldown is for.
+      if (this.#lastSeen.get(a.agentId) === a.state) this.#lastSeen.set(a.agentId, prev);
+      return;
+    }
 
     // Recorded synchronously too, alongside `lastSeen` above, and NOT reverted
     // on failure below. A broken token fails every send, but `lastSeen` still
