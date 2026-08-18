@@ -30,6 +30,7 @@ Synthetic agents, no install. Best viewed in mobile mode.
 - **Answer** — the agent's real option labels, and what Enter will commit before you tap it
 - **Scroll back** — up to 4000 lines per agent
 - **Cheap to watch** — adaptive polling, and only changed lines on the wire
+- **Notify** — a Telegram message when an agent needs you, gated by which states you pick, quiet hours, and a per-agent cooldown
 
 ## Quick start
 
@@ -48,6 +49,15 @@ make dev        # vite HMR + server reload
 ```
 
 paddock finds herdr at `$HOME/.config/herdr/herdr.sock`; override with `PADDOCK_HERDR_SOCKET`.
+
+## Settings
+
+Open `#/settings` from the gear icon on the agent list. It has two sections, because the settings behind them live in two different places:
+
+- **This device** — theme, refresh rate, terminal font size, line wrap. Stored in this browser's `localStorage` and nowhere else: open paddock on a second device and it starts from defaults, not a synced copy.
+- **All devices** — Telegram token and chat id, the notification switch, which states fire one (`blocked`, `done`), quiet hours, the per-agent cooldown, and the public URL used for a notification's deep link. These live on the paddock **process**, one copy for every device that connects to it, because **sending happens on the server**: turning notifications off from your phone also silences your laptop, since there is exactly one place a Telegram message is ever sent from, not one per browser that happened to open the dashboard.
+
+The Telegram token is written to `~/.config/paddock/settings.json` at file mode `0600` and is never sent back to a browser: `GET /api/settings` reports only whether a token is configured and its last four characters, never the token itself. The public URL (e.g. `https://paddock.example.com`) is what turns a bare "docs-cleanup is blocked" into a tap-through link — set it once here.
 
 ## It runs locally, on purpose
 
@@ -88,7 +98,7 @@ Worth knowing before you install it:
 - **Output is pulled, not streamed.** herdr exposes no output-changed event and no byte stream, so there is nothing to stream. Updates arrive on an adaptive poll.
 - **History only covers what a tab watched.** An agent nobody was watching has none, and reconstruction records a *gap* rather than guessing when the screen scrolls faster than it was sampled.
 - **One machine, and localhost by design.** paddock runs beside herdr and binds `127.0.0.1` — see [It runs locally, on purpose](#it-runs-locally-on-purpose). Multi-host is designed but not built: the store is keyed by herdr's `pane_id`, which is not unique across machines.
-- **No push notifications yet.** You still have to open the dashboard to find out something is blocked. That's the next increment.
+- **Notifications are Telegram, not browser push.** A Telegram message can tell you an agent needs you (see [Settings](#settings) above); nothing reaches your phone through the browser's own push mechanism, and per `docs/roadmap.md` that is no longer the plan, not merely not-yet-built.
 
 The [live demo](https://lntvan166.github.io/paddock/) shows the interface, not the herdr integration — it proves the UI works, not that it can talk to your agents.
 
@@ -96,8 +106,7 @@ The [live demo](https://lntvan166.github.io/paddock/) shows the interface, not t
 
 Every gap listed above is an open invitation. Issues and pull requests are welcome — especially for the things this needs most:
 
-- **Web Push** — so you find out an agent is blocked without opening the dashboard. The biggest functional gap. VAPID keys, a service worker, a subscription store; the PWA icons it depends on already ship.
-- **Multi-host** — several machines in one list. The seams exist (`hostId` is on every record); the blocker is that the store is keyed by herdr's `pane_id`, which is not unique across machines.
+- **Multi-host** — several machines in one list. The biggest functional gap remaining. The seams exist (`hostId` is on every record); the blocker is that the store is keyed by herdr's `pane_id`, which is not unique across machines.
 - **A linter** — `make check` is `tsc --noEmit` and nothing else.
 - **More component tests** — `App.tsx` routing and the refresh loop's timing are still unverified.
 

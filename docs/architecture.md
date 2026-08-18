@@ -38,7 +38,10 @@ One process. No relay hop, no plugin, no polling loop.
 | `server/herdr/actions.ts` | The herdr calls behind reading a pane and answering a blocked agent, and the home of the bounds on both numeric parameters (`resolveReadLines`, `resolveWaitTimeoutMs` — clamped out of range, defaulted when malformed): `readOutput`/`readDetection` (both typed with the generated `HerdrPaneRead` envelope, since the text is at `result.read.text`; source picked by `readSourceFor`, which gives scrollback to an `idle` agent and the viewport to every other state — see gotchas), `sendOptionKey`/`sendReply`, and `waitUntilUnblocked` (waits on *leaving* `blocked`, not on reaching `working`). Bound to one socket path via `createActions` so `routes.ts` takes it as an injectable `HerdrActions`, omitted entirely in `--demo`. |
 | `server/herdr/prompt-parse.ts` | Turns a `detection` snapshot into `ParsedPrompt` — the last contiguous run of numbered option lines, plus the question line pinned to that run. Returns `options: null` rather than guess when the shape does not hold. The only place that knows the numbered-menu text format. |
 | `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. Read-only routes (`/api/health`, `/api/agents`) and `/ack` are always registered — `/ack` touches only the store and the hub, so gating it on herdr would break it in `--demo`. The three herdr-backed action routes (`/output`, `/prompt`, `/answer`) are added only `if (deps.actions)`, so they do not exist there. Client-supplied values are validated at this boundary before they reach a herdr parameter: `:id` against the store, `lines` through `resolveReadLines`, and `key` against the option-digit pattern. |
-| `server/index.ts` | Composition root. The only place that wires stream → supervisor → store → hub, and the keeper to the stream's state changes. |
+| `server/settings/store.ts` | Loads and atomically persists `~/.config/paddock/settings.json` (mode `0600`, override with `PADDOCK_CONFIG_DIR`): the Telegram token/chat id, notification triggers and quiet hours, and the public URL used in a notification's deep link. `view()` is the only thing routes and the notifier read from it, and it never includes the token itself — only whether one is `configured` and its last four characters, so the settings API cannot leak it back out. |
+| `server/notify/notifier.ts` | Watches deltas for a state **transition** (not a state), and sends a Telegram message when one matches the configured triggers, subject to quiet hours and a per-agent cooldown. A leaf off the composition root — see "The dependency rule" below for why it is not folded into `hub.ts` or `state/store.ts`. `fanOut()` is the small function `index.ts` composes with `hub.queue` so a delta reaches both without either learning the other exists. |
+| `server/notify/telegram.ts` | One HTTPS POST to the Telegram Bot API, with a bounded timeout. Transport only — every policy decision (whether to send, to whom, how often) lives in `notifier.ts`, not here. |
+| `server/index.ts` | Composition root. The only place that wires stream → supervisor → store → hub, the keeper to the stream's state changes, and (new in v2) the settings store and notifier into that same delta path via `fanOut`. |
 | `shared/types.ts` | The one payload contract, imported by server and UI — including `compareAgents`, the single triage comparator both sides sort with, and `carryAcknowledged`, the single rule for carrying `acknowledgedAt` across a state change. |
 | `shared/herdr-api.d.ts` | **Generated** from `herdr api schema --json`. Committed. Never hand-edited. Its interface bodies are hand-written in the generator, so `tests/herdr-schema-drift.test.ts` is what actually holds them to the live schema. |
 | `web/api.ts` | The client's only fetch layer. POSTs to the action routes; reads (`fetchOutput`/`fetchPrompt`) reject on a non-2xx response instead of resolving with a body whose declared shape doesn't hold, actions (`answerWithKey`/`answerWithText`/`acknowledge`) fold both transport errors and non-2xx bodies into one `ActionResult` so a refusal renders instead of throwing. |
@@ -64,6 +67,29 @@ and nothing downstream of the store. `demo.ts` stands where herdr would, so it
 takes the store structurally rather than importing it. `index.ts` is the one
 exception by design — a composition root imports everything precisely so no
 other module has to.
+
+`notify/` (`notifier.ts` plus its `telegram.ts` transport) hangs off `index.ts`
+as a second leaf, alongside `hub.ts`, not chained into the line above: nothing
+in `herdr/`, `state/store.ts` or `ws/hub.ts` imports it or knows it exists.
+`index.ts` composes the two leaves with `fanOut(hub, notifier)` and passes the
+result as `Supervisor`'s single `onDelta`, so one delta reaches both without
+either learning the other is there. It deliberately does not live inside
+either existing leaf:
+
+- **Not in `hub.ts`.** `hub.ts`'s whole job is fanning a delta out to
+  connected browsers over the WebSocket. Calling Telegram from inside it would
+  make the browser-transport module aware that a third-party outbound
+  integration exists, and a change to notification policy would then risk
+  touching the code every browser update depends on.
+- **Not in `state/store.ts`.** The store computes deltas and knows nothing
+  about what consumes them — that is what lets `demo.ts` stand in for herdr
+  without either importing the other. Sending a Telegram message is an
+  outbound side effect keyed on *why* a state changed, which is policy the
+  store has no business holding.
+
+Composing them at `index.ts` instead keeps that a wiring decision, not a
+dependency one: either leaf can change independently, and neither has to
+import the other to be told it exists.
 
 ## Actions transport
 

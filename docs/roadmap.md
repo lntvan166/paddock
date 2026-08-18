@@ -18,33 +18,51 @@ surprise.
 - **Adopt a linter.** `make check` currently runs only `bunx tsc --noEmit`;
   there is no linter configured. Add one deliberately, as its own task, rather
   than folding it into an unrelated change.
-- **Web Push, the next increment.** VAPID keypair, service worker,
-  subscription store, behind a flag so a broken subscription can never break
-  the dashboard. On iOS, Safari delivers push only to a PWA that has been
-  added to the Home Screen — never to a page merely open in a tab — so
-  onboarding must say so plainly. That requirement is also what makes the
-  missing PWA icons (see "known gaps" below) load-bearing rather than
-  cosmetic: an install prompt with a generic icon is a weaker nudge to add to
-  the Home Screen, and the Home Screen add is the only way iOS delivers push
-  at all.
-- **History on demand in the terminal view.** `POST /output` already takes
-  `{scrollback: true}` and the server side is tested, but nothing in the UI
-  sends it. It used to be sent automatically for `idle` agents on open, and
-  that was removed: the refresh loop reads `visible`, the two sources return
-  different content, so the digest could never match — and suppressing the
-  poll to stop the pane oscillating left it FROZEN. The reasoning given for
-  that suppression ("an idle agent by definition is not producing output") was
-  wrong: `idle` means ready for input, and a pane changes the moment anyone
-  types at the desk. Bringing history back means an explicit control plus a
-  visible "showing history / back to live" mode, so the operator always knows
-  whether the screen tracks reality — not a hidden second request.
+- ~~**Web Push, the next increment.**~~ *Superseded, not built.* v2 shipped
+  Telegram notifications instead of Web Push — see
+  `docs/design/2026-08-18-settings-and-telegram-design.md` for the reasoning.
+  In short: Web Push needs a service worker, a VAPID keypair, a permission
+  prompt, and a subscription store, all behind a flag so a broken subscription
+  can never break the dashboard; Telegram needs a bot token and an HTTPS POST
+  and works today on any device already running Telegram. The iOS constraint
+  stays on record here for whoever revisits push, because it does not go away
+  on its own: Safari delivers push only to a PWA that has been added to the
+  Home Screen — never to a page merely open in a tab — so onboarding would
+  have to say so plainly, which is also what would make the missing PWA icons
+  (see "Known v1 gaps" below) load-bearing rather than cosmetic. Also on
+  record for that revisit: `docs/gotchas.md`'s "Deployment and Access" notes
+  that an expired Access session turns a service-worker fetch into an HTML
+  login page, not an error, which constrains what a push payload can assume
+  before a single line of it is written. Telegram sidesteps that constraint
+  entirely — Access gates paddock's own hostname, never `api.telegram.org`.
+- ~~**History on demand in the terminal view.**~~ *Resolved, but not as this
+  entry described.* `POST /output` still accepts `{scrollback: true}` and the
+  server side is still tested (`tests/actions.test.ts`,
+  `tests/action-routes.test.ts`), but the request this entry describes —
+  sent from the UI to fetch history on demand — is deliberately never made:
+  `src/web/api.ts` defaults `scrollback` to `false` and no caller overrides
+  it. What shipped instead is `src/web/history.ts`, which reconstructs a
+  transcript from the viewport snapshots the terminal is already polling for:
+  a window of lines from the top of each new snapshot is matched against the
+  previous one, and only the lines that offset proves scrolled off the top
+  are committed to history. That makes it a VIEWER, not a recorder — an agent
+  nobody had open still has no history, and a scroll bigger than half the
+  visible screen between polls is recorded as a gap rather than guessed at
+  (see that file's header comment for the measurement behind the approach).
+  There is no explicit "show history" control and no hidden second request;
+  see `README.md`'s "What it does not do".
 
 - **Stuck-agent detection.** `working` for more than N minutes with no output
   change is worth surfacing. `pane.output_matched` may serve.
 - **Preact swap** if first-load size disappoints (~45 KB → ~4 KB gzipped,
   same API).
-- **Per-agent deep links** (`/#/agent/<name>`) so a notification opens the
-  right one.
+- ~~**Per-agent deep links**~~ (`/#/agent/<name>`) so a notification opens the
+  right one. *Done, since v0.2.0.* `agentHash`/`agentIdFromHash` produce and
+  parse `#/agent/<id>` and have done since the terminal view first shipped;
+  they now live in `src/shared/route.ts` rather than `src/web/route.ts` (which
+  re-exports them), because `server/notify/notifier.ts` needs the same format
+  to build a Telegram message's deep link and the dependency rule forbids
+  server code importing from `web/`.
 
 ## Known v1 gaps
 
@@ -156,3 +174,17 @@ surprise.
   serve. Fixing it properly means either a much lower scrollback ceiling or a
   transport timeout that scales with the request; both are policy decisions
   the read-source fix deliberately did not make on its own.
+
+- **Nothing guards `index.ts`'s call site for the delta fan-out.**
+  `fanOut()` in `server/notify/notifier.ts` is covered
+  (`tests/notify-wiring.test.ts`) and breaking its body turns that test red,
+  but `index.ts` wires it in with one line —
+  `onDelta: fanOut(hub, notifier)` — that no test touches. A future edit to
+  `index.ts` that bypassed `fanOut` entirely and went back to
+  `onDelta: (d) => hub.queue(d)` would pass every test in the suite while
+  silently disabling notifications: the browser fan-out still works, so
+  nothing user-visible breaks, and the notifier simply never sees another
+  delta again. Closing this means moving that composition out of `index.ts`
+  into a side-effect-free module a test can import directly, without booting
+  `Bun.serve` and the herdr socket the way exercising `index.ts` itself
+  would require.
