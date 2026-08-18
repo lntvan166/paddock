@@ -1,13 +1,20 @@
 export UID := $(shell id -u)
 export GID := $(shell id -g)
 
-.PHONY: dev types check check-clean build-web test build up down logs restart
+.PHONY: dev types icons check check-clean build-web test build up down logs restart
 
 dev:
 	bun run dev:server & bun run dev:web; kill %1
 
 types:
 	bun run scripts/gen-herdr-types.ts
+
+# Redraw every icon from assets/logo.svg. Deliberately NOT part of `make build`:
+# the rasters are committed so the server can ship them and GitHub can render the
+# README without a build step, and this needs an SVG rasteriser that CI has no
+# reason to install. Run it when the mark changes, then review the PNGs.
+icons:
+	bash scripts/build-icons.sh
 
 check:
 	bunx tsc --noEmit

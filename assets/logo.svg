@@ -1,0 +1,66 @@
+<!-- paddock's mark. A ram's horns above two paddock rails, with one segment lit.
+     Edit THIS file; every PNG in public/ and docs/images/ is derived from it by
+     scripts/build-icons.sh. Never hand-edit the rasters — they will drift.
+
+     What it says, in the order you read it:
+       the horns    the herd, and herdr, whose own mark is a ram
+       the rails    the paddock the herd is kept in, which is this project
+       the lit bar  one of them needs you, which is what the app exists to say
+
+     The horns are the Aries glyph rather than a drawn animal, deliberately. A
+     filled animal head is a blob at 32px — herdr's own ram proves it, and herdr
+     can afford that as a CLI where a PWA whose icon sits on a home screen
+     cannot. Two arcs from a centre stem stay a ram at any size.
+
+     Kinship with herdr is in the subject AND the language: flat two tones, no
+     gradients, no outlines. herdr's artwork is not reused, only the idea of the
+     ram, which keeps README.md's claim that paddock reuses the concept and none
+     of the implementation true of the logo too.
+
+     The palette is herdr's, sampled from its mark, so the two read as siblings
+     wherever they sit next to each other:
+       #d9dad8  ground, herdr's warm grey
+       #303438  figure, herdr's charcoal
+       #c2410c  the lit segment — a coral chosen to sit with those two, echoing
+                the coral accent on herdr.dev
+
+     That choice has one known cost, accepted on purpose. The app itself is dark
+     first: src/web/styles.css and the manifest both use #08090a, so a light icon
+     no longer matches the screen it opens, and an installed PWA shows a light
+     tile on a near-black splash. Family resemblance was judged worth more than
+     that. If it ever stops being worth it, paddock's own tokens are the swap:
+     #08090a ground, #f7f8f8 figure, #e0a838 lit — the last one being the same
+     amber the UI already uses for a blocked agent. Token names are written
+     without their leading dashes here because a double hyphen is illegal inside
+     an XML comment.
+
+     The lit segment has gaps either side on purpose. Butted against the rail
+     ends it reads as a progress bar, a meaning paddock does not have.
+
+     Rules that keep this legible at 32px, where the previous icon failed:
+       1. No wordmark. Type cannot survive a 32px downscale; the name goes
+          beside the mark in README.md, never inside it.
+       2. Nothing thinner than 32/512 (~6%) of the canvas.
+       3. Five shapes, no more.
+     Ink occupies 288x276 at +112+118, so the outermost corner is ~200px from
+     centre — inside the 204.8px maskable safe radius even before the inset that
+     logo-maskable.svg applies.
+
+     The glyph block below is shared verbatim with logo-maskable.svg, and
+     build-icons.sh fails if the two ever diverge. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"
+     role="img" aria-label="paddock">
+  <rect width="512" height="512" fill="#d9dad8"/>
+  <!-- glyph:start -->
+  <g fill="none" stroke="#303438" stroke-width="34" stroke-linecap="round">
+    <path d="M256 264C256 176 228 128 190 136c-38 8-44 60-8 74"/>
+    <path d="M256 264c0-88 28-136 66-128 38 8 44 60 8 74"/>
+  </g>
+  <g fill="#303438">
+    <rect x="112" y="296" width="288" height="32" rx="16"/>
+    <rect x="112" y="362" width="104" height="32" rx="16"/>
+    <rect x="296" y="362" width="104" height="32" rx="16"/>
+  </g>
+  <rect id="lit" x="230" y="362" width="52" height="32" rx="16" fill="#c2410c"/>
+  <!-- glyph:end -->
+</svg>

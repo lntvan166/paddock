@@ -1,0 +1,35 @@
+<!-- The maskable variant of assets/logo.svg.
+
+     A maskable icon is cropped by the launcher to whatever shape it likes —
+     circle, squircle, rounded square — and only the centre 80% is guaranteed to
+     survive. The icon this replaced ignored that: it reused the plain logo, whose
+     badge ran nearly edge to edge, so a circular crop cut its corners and
+     clipped the wordmark along the bottom.
+
+     The fix is padding, not a redraw. The glyph below is byte-identical to the
+     one in logo.svg — build-icons.sh diffs the two blocks and fails if they
+     diverge, so this file cannot silently fall out of date. The wrapper scales
+     it to 80% about the centre, which pulls the outermost corner to ~160px from
+     centre, comfortably inside the 204.8px safe radius.
+
+     The ground here must match logo.svg's, and it sits outside the shared glyph
+     block, so the divergence check cannot catch a mismatch. If you recolour one,
+     recolour both. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"
+     role="img" aria-label="paddock">
+  <rect width="512" height="512" fill="#d9dad8"/>
+  <g transform="translate(256 256) scale(0.8) translate(-256 -256)">
+  <!-- glyph:start -->
+  <g fill="none" stroke="#303438" stroke-width="34" stroke-linecap="round">
+    <path d="M256 264C256 176 228 128 190 136c-38 8-44 60-8 74"/>
+    <path d="M256 264c0-88 28-136 66-128 38 8 44 60 8 74"/>
+  </g>
+  <g fill="#303438">
+    <rect x="112" y="296" width="288" height="32" rx="16"/>
+    <rect x="112" y="362" width="104" height="32" rx="16"/>
+    <rect x="296" y="362" width="104" height="32" rx="16"/>
+  </g>
+  <rect id="lit" x="230" y="362" width="52" height="32" rx="16" fill="#c2410c"/>
+  <!-- glyph:end -->
+  </g>
+</svg>
