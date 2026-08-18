@@ -1,6 +1,10 @@
-# paddock
+<p align="center">
+  <img src="docs/images/logo.png" alt="paddock" width="160">
+</p>
 
-**Watch and answer your coding agents from your phone.**
+<h1 align="center">paddock</h1>
+
+<p align="center"><strong>Watch and answer your coding agents from your phone.</strong></p>
 
 You have several coding agents running in [herdr](https://github.com/dcolinmorgan/herdr) panes. You step away from the desk. One of them finishes, another hits a permission prompt, and both sit there waiting — because the only way to find out is to walk back and look.
 

@@ -1,6 +1,8 @@
 import type { Agent, AgentState, ServerMessage } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
-import { blockedScreen, DEMO_OPTIONS, DONE_SCREEN, IDLE_SCREEN, SCREENS, WORKING_SCREEN } from "@web/demo/screens";
+import {
+  blockedScreen, DEMO_OPTIONS, DONE_SCREEN, IDLE_DOCS_SCREEN, SCREENS, WORKING_SCREEN,
+} from "@web/demo/screens";
 
 /**
  * A synthetic paddock backend that runs entirely in the browser.
@@ -52,7 +54,7 @@ const recent = new Map<string, { digest: string; lines: string[] }[]>();
 
 function screenFor(id: string): string[] {
   if (id === "d1:p1") return blockedScreen(cursor);
-  return screens[id] ?? IDLE_SCREEN;
+  return screens[id] ?? IDLE_DOCS_SCREEN;
 }
 
 /**

@@ -93,8 +93,12 @@ surprise.
   preloaded, because a global preload gives server tests a DOM they must not
   have.
 
-- **PWA manifest has no icons.** Installable, but unbranded — the install
-  prompt shows a generic icon.
+- ~~**PWA manifest has no icons.**~~ *Resolved.* `public/` now carries 192,
+  512 and maskable icons plus an `apple-touch-icon`, and `index.html` links a
+  favicon. This was load-bearing rather than cosmetic: Safari delivers Web
+  Push only to a PWA added to the Home Screen, so a generic install prompt was
+  a weaker nudge toward the one action that makes notifications possible on
+  iOS at all.
 
 - **`--demo` cannot demonstrate the approve path.** Demo mode has no herdr to
   act on, so `index.ts` leaves `HerdrActions` unset and `/output`, `/prompt`

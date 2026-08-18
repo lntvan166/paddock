@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="180x180" href="/favicon-180.png" />
+    <!-- iOS ignores the manifest for the Home Screen icon and uses this. That
+         matters beyond branding: Safari delivers Web Push only to a PWA added
+         to the Home Screen, so the icon is part of the path to notifications
+         working at all. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>paddock</title>
   </head>
   <body>

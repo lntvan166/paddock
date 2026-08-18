@@ -7,26 +7,87 @@
  * internal tickets" — and demo data is exactly where that happens. Nothing in
  * this file is copied from a real session, and nothing here may ever be.
  *
- * The content is chosen to exercise the features worth showing rather than to
- * look busy: coloured prose, a box-drawn table whose columns must not reflow,
- * a progress bar, a separator, and a permission prompt whose middle option is
- * a persistent grant.
+ * The content exercises what is worth showing rather than filling space: a
+ * box-drawn table whose columns must not reflow, a progress bar, separators,
+ * and a permission prompt whose middle option is a persistent grant.
  */
 
 const E = "";
-const dim = (s: string) => `${E}[38;2;136;136;136m${s}${E}[0m`;
-const white = (s: string) => `${E}[38;2;255;255;255m${s}${E}[0m`;
-const bold = (s: string) => `${E}[1m${s}${E}[0m`;
-const green = (s: string) => `${E}[38;2;63;185;80m${s}${E}[0m`;
-const blue = (s: string) => `${E}[38;2;94;106;210m${s}${E}[0m`;
-const amber = (s: string) => `${E}[38;2;224;168;56m${s}${E}[0m`;
+const paint = (code: string) => (s: string) => `${E}[${code}m${s}${E}[0m`;
+const dim = paint("38;2;136;136;136");
+const white = paint("38;2;255;255;255");
+const bold = paint("1");
+const green = paint("38;2;63;185;80");
+const blue = paint("38;2;94;106;210");
+const amber = paint("38;2;224;168;56");
+const red = paint("38;2;248;81;73");
+
+/**
+ * Build a box-drawn table with guaranteed alignment.
+ *
+ * Cells are padded as PLAIN text and coloured afterwards, because colour codes
+ * carry no visible width: padding a string that already contains escapes
+ * counts the escapes as characters and every row ends up a different length.
+ * The first version of this table was hand-written and did exactly that — one
+ * cell overflowed its column and pushed a stray `│` past the right border,
+ * which is precisely the "looks broken" that a demo cannot afford.
+ */
+type Cell = { text: string; colour?: (s: string) => string; align?: "left" | "right" | "centre" };
+
+function row(cells: Cell[], widths: number[], edge: [string, string, string]): string {
+  const parts = cells.map((c, i) => {
+    const w = widths[i]!;
+    const t = c.text.length > w ? c.text.slice(0, w - 1) + "…" : c.text;
+    const pad = w - t.length;
+    const padded =
+      c.align === "right" ? " ".repeat(pad) + t
+      : c.align === "centre" ? " ".repeat(Math.floor(pad / 2)) + t + " ".repeat(Math.ceil(pad / 2))
+      : t + " ".repeat(pad);
+    return c.colour ? c.colour(padded) : padded;
+  });
+  return `  ${edge[0]}${parts.join(edge[1])}${edge[2]}`;
+}
+
+function rule(widths: number[], edge: [string, string, string]): string {
+  return `  ${edge[0]}${widths.map((w) => "─".repeat(w)).join(edge[1])}${edge[2]}`;
+}
+
+const COLS = [22, 12, 30];
+
+function demoTable(): string[] {
+  const cells = (texts: string[], colour?: (s: string) => string): Cell[] => [
+    { text: ` ${texts[0]} `, colour },
+    { text: `${texts[1]} `, align: "right", colour },
+    { text: ` ${texts[2]} ` },
+  ];
+  return [
+    rule(COLS, ["┌", "┬", "┐"]),
+    row(
+      [
+        { text: "Table", align: "centre" },
+        { text: "Rows", align: "centre" },
+        { text: "Effect", align: "centre" },
+      ],
+      COLS,
+      ["│", "│", "│"],
+    ),
+    rule(COLS, ["├", "┼", "┤"]),
+    row(cells(["sessions", "1,204,882", "index only, no rewrite"], white), COLS, ["│", "│", "│"]),
+    row(cells(["audit_entries", "118,430", "backfilled in batches"], white), COLS, ["│", "│", "│"]),
+    row(cells(["feature_flags", "612", "untouched"], white), COLS, ["│", "│", "│"]),
+    rule(COLS, ["└", "┴", "┘"]),
+  ];
+}
+
+const SEP = "─".repeat(78);
+const inputBox = (): string[] => [SEP, "❯ ", SEP];
 
 /**
  * A blocked agent, mid-permission-prompt. The headline screen.
  *
  * Built from the cursor position rather than fixed, so the demo's arrow keys
  * move the agent's own `❯` exactly as they do against a real pane — which is
- * the whole point of the keypad and of the preview above it.
+ * what the keypad and the preview above it exist for.
  */
 export function blockedScreen(selected = 0): string[] {
   const options = [
@@ -35,48 +96,38 @@ export function blockedScreen(selected = 0): string[] {
     "3. No",
   ];
   return [
-    ...BLOCKED_PRELUDE,
+    green("●") + " Reviewed the migration and its rollback path.",
+    "",
+    "  The change adds one index and backfills in batches, so it can run",
+    "  online. Rollback is a single " + blue("DROP INDEX") + ", with no data loss.",
+    "",
+    bold("  Findings"),
+    "",
+    ...demoTable(),
+    "",
+    "  Estimated runtime on staging: " + amber("~4 minutes") + ".",
+    "",
+    dim("✻ Considered for 38s"),
+    "",
+    bold("Bash command"),
+    "",
+    "  " + blue("bun run migrate --env staging"),
+    "  " + dim("Apply the pending migration to staging"),
+    "",
+    "This command requires approval",
+    "",
+    "Do you want to proceed?",
     ...options.map((o, i) => (i === selected ? `❯ ${o}` : `  ${o}`)),
     "",
     dim("Esc to cancel · Tab to amend · ctrl+e to explain"),
   ];
 }
 
-const BLOCKED_PRELUDE: string[] = [
-  green("●") + " Reviewed the migration and the rollback path.",
-  "",
-  "  The change adds one index and backfills in batches, so it can run",
-  "  online. Rollback is a single " + blue("DROP INDEX") + ", no data loss.",
-  "",
-  bold("  Findings"),
-  "",
-  "  ┌──────────────────────┬────────────┬──────────────────────────────┐",
-  "  │        Table         │    Rows    │            Effect            │",
-  "  ├──────────────────────┼────────────┼──────────────────────────────┤",
-  "  │ " + white("sessions") + "             │  1,204,882 │ index only, no rewrite       │",
-  "  │ " + white("audit_entries") + "        │    118,430 │ backfilled in 500-row batches │",
-  "  │ " + white("feature_flags") + "        │        612 │ untouched                    │",
-  "  └──────────────────────┴────────────┴──────────────────────────────┘",
-  "",
-  "  Estimated runtime on staging: " + amber("~4 minutes") + ".",
-  "",
-  dim("✻ Considered for 38s"),
-  "",
-  bold("Bash command"),
-  "",
-  "  " + blue("bun run migrate --env staging"),
-  "  Apply the pending migration to staging",
-  "",
-  "This command requires approval",
-  "",
-  "Do you want to proceed?",
-];
-
-/** A working agent, mid-thought. Shows the spinner and token counter. */
+/** Mid-thought. The spinner and token counter animate; nothing else moves. */
 export const WORKING_SCREEN: string[] = [
   green("●") + " Extracting the auth middleware.",
   "",
-  "  Moved token parsing out of the request handler and behind a single",
+  "  Token parsing moved out of the request handler and behind a single",
   "  " + blue("requireSession()") + " guard, so the handler no longer knows how a",
   "  session is represented.",
   "",
@@ -89,54 +140,93 @@ export const WORKING_SCREEN: string[] = [
   "",
   dim("✻ Refactoring… (1m 12s · ↓ 3.4k tokens)"),
   "",
-  "─".repeat(78),
-  "❯ ",
-  "─".repeat(78),
+  ...inputBox(),
   "  " + dim("Opus 5") + "  " + green("████████") + dim("░░░░░░░░░░░░") + "  " + dim("38%"),
   "  " + amber("⏵⏵ auto mode on") + dim(" (shift+tab to cycle) · esc to interrupt"),
 ];
 
-/** A finished agent. */
+/** A second working agent, so two are not identical on screen. */
+export const PROFILING_SCREEN: string[] = [
+  green("●") + " Profiling the request path under load.",
+  "",
+  "  " + dim("Ran 1 shell command"),
+  "",
+  "  " + bold("Hot spots") + " at 500 rps:",
+  "",
+  "    " + amber("41%") + "  " + white("serialiseAgent()") + dim("        — re-encodes unchanged rows"),
+  "    " + amber("18%") + "  " + white("parseCookies()") + dim("          — called twice per request"),
+  "    " + dim(" 9%") + "  " + white("json()") + dim("                   — unavoidable"),
+  "",
+  "  The first is worth fixing; the second is a one-line hoist.",
+  "",
+  dim("✻ Measuring… (2m 05s · ↓ 6.1k tokens)"),
+  "",
+  ...inputBox(),
+  "  " + dim("Opus 5") + "  " + green("█████") + dim("░░░░░░░░░░░░░░░") + "  " + dim("24%"),
+  "  " + amber("⏵⏵ auto mode on") + dim(" (shift+tab to cycle) · esc to interrupt"),
+];
+
+/** Finished, and not yet dismissed. */
 export const DONE_SCREEN: string[] = [
   green("●") + " " + bold("Done.") + " Style guide alignment complete.",
   "",
   "  Updated 41 files. The only behavioural change is stricter import",
   "  ordering, which the formatter now enforces.",
   "",
+  "  " + green("✓") + " " + white("41 files") + dim(" reformatted"),
+  "  " + green("✓") + " " + white("0 lint errors") + dim(" remaining (was 137)"),
+  "  " + red("!") + " " + white("2 rules disabled") + dim(" with an inline reason"),
+  "",
   "  " + dim("Ran 1 shell command"),
   "",
   dim("✻ Finished in 2m 04s"),
   "",
-  "─".repeat(78),
-  "❯ ",
-  "─".repeat(78),
+  ...inputBox(),
 ];
 
-export const IDLE_SCREEN: string[] = [
-  dim("  Waiting for instructions."),
+export const IDLE_DOCS_SCREEN: string[] = [
+  green("●") + " Rewrote the getting-started guide.",
   "",
-  "  " + dim("Last run finished 15 minutes ago.") ,
+  "  Cut it from nine steps to four by removing the parts that only",
+  "  applied to the old CLI.",
   "",
-  "─".repeat(78),
-  "❯ ",
-  "─".repeat(78),
+  "  " + dim("Ran 2 shell commands"),
+  "",
+  dim("✻ Finished 15 minutes ago · waiting for instructions"),
+  "",
+  ...inputBox(),
+];
+
+export const IDLE_FLAKY_SCREEN: string[] = [
+  green("●") + " Stabilised the upload suite.",
+  "",
+  "  Three tests shared a temp directory and raced when run in parallel.",
+  "  Each now gets its own, created and removed per test.",
+  "",
+  "  " + green("✓") + " " + white("200 consecutive runs") + dim(" with no failure"),
+  "",
+  "  " + dim("Ran 4 shell commands"),
+  "",
+  dim("✻ Finished an hour ago · waiting for instructions"),
+  "",
+  ...inputBox(),
 ];
 
 export const SCREENS: Record<string, string[]> = {
   "d1:p1": blockedScreen(),
   "d2:p1": DONE_SCREEN,
   "d3:p1": WORKING_SCREEN,
-  "d4:p1": WORKING_SCREEN,
-  "d5:p1": IDLE_SCREEN,
-  "d6:p1": IDLE_SCREEN,
+  "d4:p1": PROFILING_SCREEN,
+  "d5:p1": IDLE_DOCS_SCREEN,
+  "d6:p1": IDLE_FLAKY_SCREEN,
 };
 
 /**
- * The prompt a blocked agent is showing, in the shape `parsePrompt` produces.
+ * The options a blocked agent is showing.
  *
- * The middle option is a PERSISTENT grant, deliberately: it is the case the
- * "Enter selects" preview exists for, and a demo that only showed
- * yes/no would not show why any of that design is there.
+ * The middle one is a PERSISTENT grant, deliberately: it is the case the
+ * "Enter selects" preview exists for, and a demo showing only yes/no would not
+ * show why any of that design is there.
  */
 export const DEMO_OPTIONS = [
   { key: "1", label: "Yes", selected: true },
