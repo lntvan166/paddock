@@ -92,6 +92,29 @@ Worth knowing before you install it:
 
 The [live demo](https://lntvan166.github.io/paddock/) shows the interface, not the herdr integration — it proves the UI works, not that it can talk to your agents.
 
+## Contributing
+
+Every limit above is an open invitation. Issues and pull requests are welcome — especially for the things this needs most:
+
+- **Web Push** — so you find out an agent is blocked without opening the dashboard. The biggest functional gap. VAPID keys, a service worker, a subscription store; the PWA icons it depends on already ship.
+- **Multi-host** — several machines in one list. The seams exist (`hostId` is on every record); the blocker is that the store is keyed by herdr's `pane_id`, which is not unique across machines.
+- **A linter** — `make check` is `tsc --noEmit` and nothing else.
+- **More component tests** — `App.tsx` routing and the refresh loop's timing are still unverified.
+
+[`docs/roadmap.md`](docs/roadmap.md) has the full list with the reasoning for each.
+
+Four house rules, all of which have already caught real mistakes here:
+
+1. **This repo is public.** Never commit hostnames, home paths, usernames, employer terms, or real agent names. `make check-clean` enforces it and runs before every commit — if it fails, fix the content, never the denylist.
+2. **Screenshots come from the demo**, never a live session. Images cannot be scanned, so the only safe source is data that was invented to begin with.
+3. **Measure rather than assume.** [`docs/gotchas.md`](docs/gotchas.md) is a list of things that turned out to be false when checked against a live herdr. If you are about to write "this should be fast" or "this can't happen", measure it and put the number in the commit message.
+4. **Prove a test can fail.** Break the thing it guards and watch it go red. A test that cannot fail is worse than no test, because it reads as coverage.
+
+```bash
+bun install
+make check && make check-clean && make test
+```
+
 ## Documentation
 
 | | |
