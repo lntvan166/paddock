@@ -8,7 +8,9 @@
 
 You have several coding agents running in [herdr](https://github.com/dcolinmorgan/herdr) panes. You step away from the desk. One of them finishes, another hits a permission prompt, and both sit there waiting — because the only way to find out is to walk back and look.
 
-paddock is one local process that reads herdr over its unix socket and serves a single screen, ordered by **what needs you** rather than alphabetically. Tap an agent to read its terminal in colour, scroll back through what it did, and answer it — with the agent's own option labels, never a guessed "Approve".
+paddock is one local process on the same machine as your agents. It reads herdr over its unix socket and serves a single screen on `127.0.0.1:8787`, ordered by **what needs you** rather than alphabetically. Tap an agent to read its terminal in colour, scroll back through what it did, and answer it — with the agent's own option labels, never a guessed "Approve".
+
+To reach it from your phone, put a [Cloudflare Tunnel with Zero Trust Access](#it-runs-locally-on-purpose) in front. paddock has no login of its own, by design.
 
 ### ▶ [Try the live demo](https://lntvan166.github.io/paddock/) — no install, synthetic agents, runs entirely in your browser
 
@@ -19,9 +21,7 @@ paddock is one local process that reads herdr over its unix socket and serves a 
 
 ---
 
-## What it is
-
-A local web app. It reads herdr's unix socket and serves one screen on `127.0.0.1:8787`, on the same machine as your agents. To reach it from your phone, put a [Cloudflare Tunnel with Zero Trust Access](#it-runs-locally-on-purpose) in front — paddock has no login of its own, by design.
+## At a glance
 
 - **Triage** — agents grouped into *Needs you*, *Working*, *Idle*
 - **Read** — full ANSI colour; prose reflows to the screen, tables keep their columns
