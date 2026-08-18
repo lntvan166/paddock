@@ -47,6 +47,12 @@ Upgrade with `paddock update`. paddock never updates itself unasked.
 Builds are published for Linux and macOS on x86_64 and aarch64 — the same four
 platforms herdr supports.
 
+paddock checks GitHub for a newer release **at most once a day**, caches the
+answer in `~/.config/paddock/update-check.json`, and shows a dim line in the
+header when there is one. It never installs anything on its own. Set
+`PADDOCK_NO_UPDATE_CHECK=1` to switch it off entirely — no request is made and
+nothing is written. It is off automatically for a `0.0.0-dev` build.
+
 ## Quick start
 
 Try it with synthetic agents, no herdr required:

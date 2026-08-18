@@ -5,21 +5,32 @@
  * fresh checkout, so a wildcard declaration is what lets `tsc --noEmit` run
  * before anything is built.
  *
- * `*.html` is deliberately NOT declared as a bare extension wildcard, unlike
- * the rest of these: `bun-types` already ships `declare module "*.html"`
- * typed as `HTMLBundle`, for Bun's separate "import an .html file as a
- * dev-server route" feature. A second bare `"*.html"` here would merge with
- * that one and `gen-embedded.ts`'s `dist/index.html` import — which wants the
- * FILE PATH, via `with { type: "file" }`, same as every other embedded asset
- * — would resolve to `HTMLBundle` instead of `string`. Scoping the pattern to
- * the one path shape `gen-embedded.ts` ever emits (`.../dist/<name>.html`)
- * is more specific than `bun-types`' bare wildcard, so it wins, and leaves
- * that other feature's typing untouched for any future genuine HTML-bundle
- * import elsewhere.
+ * EVERY pattern here is scoped to `../../dist/`, which is the only path shape
+ * `scripts/gen-embedded.ts` ever emits. That scoping is load-bearing twice
+ * over:
+ *
+ * 1. `*.html` needed it from the start. `bun-types` already ships
+ *    `declare module "*.html"` typed as `HTMLBundle`, for Bun's separate
+ *    "import an .html file as a dev-server route" feature. A second bare
+ *    `"*.html"` here would merge with that one and `dist/index.html` — which
+ *    wants the FILE PATH, via `with { type: "file" }`, same as every other
+ *    embedded asset — would resolve to `HTMLBundle` instead of `string`.
+ *
+ * 2. The rest needed it for a different reason, and did not have it. Declared
+ *    bare, `"*.js"` / `"*.css"` / `"*.png"` / `"*.svg"` / `"*.webmanifest"`
+ *    matched ANY unresolved import ending in those extensions, anywhere in the
+ *    project — so a genuinely missing relative import (a renamed file, a typo
+ *    in a path) silently typed as `string` instead of failing `make check`.
+ *    A declaration that exists to describe generated build output has no
+ *    business answering for hand-written source.
+ *
+ * The wildcard in an ambient module name matches any substring, slashes
+ * included, so `../../dist/*.js` covers `../../dist/assets/index-<hash>.js`
+ * as well as a file at the top of `dist/`.
  */
 declare module "../../dist/*.html" { const path: string; export default path; }
-declare module "*.js" { const path: string; export default path; }
-declare module "*.css" { const path: string; export default path; }
-declare module "*.png" { const path: string; export default path; }
-declare module "*.svg" { const path: string; export default path; }
-declare module "*.webmanifest" { const path: string; export default path; }
+declare module "../../dist/*.js" { const path: string; export default path; }
+declare module "../../dist/*.css" { const path: string; export default path; }
+declare module "../../dist/*.png" { const path: string; export default path; }
+declare module "../../dist/*.svg" { const path: string; export default path; }
+declare module "../../dist/*.webmanifest" { const path: string; export default path; }

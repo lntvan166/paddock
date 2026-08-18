@@ -39,6 +39,7 @@ One process. No relay hop, no plugin, no polling loop.
 | `server/herdr/prompt-parse.ts` | Turns a `detection` snapshot into `ParsedPrompt` — the last contiguous run of numbered option lines, plus the question line pinned to that run. Returns `options: null` rather than guess when the shape does not hold. The only place that knows the numbered-menu text format. |
 | `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. Read-only routes (`/api/health`, `/api/agents`) and `/ack` are always registered — `/ack` touches only the store and the hub, so gating it on herdr would break it in `--demo`. The three herdr-backed action routes (`/output`, `/prompt`, `/answer`) are added only `if (deps.actions)`, so they do not exist there. Client-supplied values are validated at this boundary before they reach a herdr parameter: `:id` against the store, `lines` through `resolveReadLines`, and `key` against the option-digit pattern. |
 | `server/settings/store.ts` | Loads and atomically persists `~/.config/paddock/settings.json` (mode `0600`, override with `PADDOCK_CONFIG_DIR`): the Telegram token/chat id, notification triggers and quiet hours, and the public URL used in a notification's deep link. `view()` is the only thing routes and the notifier read from it, and it never includes the token itself — only whether one is `configured` and its last four characters, so the settings API cannot leak it back out. |
+| `server/update-check.ts` | The once-a-day "is there a newer release" check, and nothing else. Caches the last check time and last seen tag in `~/.config/paddock/update-check.json` (mode `0600`, same directory and same posture as `settings.json`; `PADDOCK_CONFIG_DIR` moves both). **Off entirely with `PADDOCK_NO_UPDATE_CHECK=1`**, and off automatically for a `0.0.0-dev` build. Every failure — unreachable API, unwritable cache — is logged at INFO and returns `null`; `startUpdateCheck` owns the `.catch` so a failed check can never take the server down. |
 | `server/notify/notifier.ts` | Watches deltas for a state **transition** (not a state), and sends a Telegram message when one matches the configured triggers, subject to quiet hours and a per-agent cooldown. A leaf off the composition root — see "The dependency rule" below for why it is not folded into `hub.ts` or `state/store.ts`. `fanOut()` is the small function `index.ts` composes with `hub.queue` so a delta reaches both without either learning the other exists. |
 | `server/notify/telegram.ts` | One HTTPS POST to the Telegram Bot API, with a bounded timeout. Transport only — every policy decision (whether to send, to whom, how often) lives in `notifier.ts`, not here. |
 | `server/index.ts` | Composition root. The only place that wires stream → supervisor → store → hub, the keeper to the stream's state changes, and (new in v2) the settings store and notifier into that same delta path via `fanOut`. |
@@ -311,6 +312,46 @@ disk when there is one — so a rebuild is visible on the next request with no
 server restart and nothing to recompile. It is also the escape hatch for
 pointing a binary at a UI it was not built with, which is a debugging tool
 rather than a shipping path.
+
+## Environment
+
+Everything paddock reads from the environment, and nothing it reads that is not
+here. `.env.example` is the copy an operator edits.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `PADDOCK_PORT` | `8787` | The port. Always bound to `127.0.0.1` — see "One port, one origin". |
+| `PADDOCK_HOST_ID` | `local` | The label for this machine in the header. |
+| `PADDOCK_HERDR_SOCKET` | `$HOME/.config/herdr/herdr.sock` | Where herdr's socket is. |
+| `PADDOCK_CONFIG_DIR` | `$HOME/.config/paddock` | Where `settings.json` and `update-check.json` live. |
+| `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
+| `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
+| `PADDOCK_NO_UPDATE_CHECK` | unset | `1` disables the update check completely. |
+| `PADDOCK_VERSION` | `0.0.0-dev` | Build-time only, injected by `bun build --define`. Not read at runtime. |
+
+### `PADDOCK_NO_UPDATE_CHECK`, and the file beside `settings.json`
+
+This is the operator's control over whether a dashboard bound to loopback ever
+talks to github.com, so it is documented rather than merely implemented. The
+check already goes out of its way to be quiet — at most one request per 24
+hours, never on a `0.0.0-dev` build, never blocking startup, and silent in the
+UI when it fails — but "rarely" is not "never", and for a project this careful
+about not leaking usage timing the off switch has to be discoverable.
+
+`PADDOCK_NO_UPDATE_CHECK=1` means no request is made at all, and nothing is
+written. The result is that `latestKnown` stays `null` on the health body and
+on every WebSocket envelope, so the dashboard simply never mentions an update.
+
+When the check is on, it caches to `~/.config/paddock/update-check.json`:
+
+```json
+{ "at": 1755400000000, "latest": "0.2.0" }
+```
+
+Mode `0600`, in the same directory as `settings.json` and for the same reason —
+it records when this machine last contacted GitHub. Deleting it costs one HTTP
+request. The cache is what makes a restart cheap: without it, every start would
+be a fresh call.
 
 ## Serving several machines
 
