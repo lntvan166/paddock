@@ -12,7 +12,7 @@ test("unchanged screens back off, and stop at the ceiling", () => {
   let cur = MIN_REFRESH_MS;
   for (let i = 0; i < 10; i++) { cur = nextRefreshMs(cur, false); ladder.push(cur); }
   // Strictly increasing until the cap, never past it.
-  expect(ladder[0]).toBe(1_500);
+  expect(ladder[0]).toBe(MIN_REFRESH_MS * 2);
   expect(Math.max(...ladder)).toBe(MAX_REFRESH_MS);
   for (let i = 1; i < ladder.length; i++) expect(ladder[i]!).toBeGreaterThanOrEqual(ladder[i - 1]!);
   expect(ladder.at(-1)).toBe(MAX_REFRESH_MS);

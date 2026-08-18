@@ -107,12 +107,23 @@ const STICK_THRESHOLD_PX = 48;
  *
  * So the interval follows observed change instead: back off while the server
  * keeps answering `unchanged`, snap back to the floor the moment the screen
- * moves. A revalidated poll costs 38 B, so the 1s floor is affordable; the
- * 10s ceiling keeps a quiet pane from waking a phone's radio for nothing.
+ * moves.
+ *
+ * The FLOOR is what governs how coarse an update looks. Measured against an
+ * agent producing a burst of output, a 1s poll replaced up to 86% of the
+ * screen in a single step — which is the "jumps rather than flows" complaint,
+ * and no rendering change can fix it: the step size IS the poll interval. At
+ * 250ms the same burst arrives in roughly four smaller steps.
+ *
+ * Paying for that floor only while output is moving is the whole point of the
+ * backoff. A quiet pane still reaches the 10s ceiling and costs almost
+ * nothing, because a revalidated poll is 38 B. Doubling (rather than 1.5x)
+ * keeps the climb to the ceiling at six steps from the lower floor, so a pane
+ * that goes quiet stops costing requests about as quickly as it did before.
  */
-export const MIN_REFRESH_MS = 1_000;
+export const MIN_REFRESH_MS = 250;
 export const MAX_REFRESH_MS = 10_000;
-const REFRESH_BACKOFF = 1.5;
+const REFRESH_BACKOFF = 2;
 
 /**
  * The next poll delay, given the current one and whether the screen moved.
