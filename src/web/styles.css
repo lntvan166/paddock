@@ -318,25 +318,49 @@ body {
    alternative is a frozen transcript that looks live. */
 .term-stalled { font-size: 0.65rem; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; }
 
-/* Wrap mode. `pre-wrap` keeps leading indentation (unlike `normal`), so an
-   indented block still reads as indented after it folds.
-
-   `overflow-wrap: anywhere` matters more than it looks: agent output is full
-   of unbreakable tokens — file paths, URLs, long identifiers — and without it
-   a single 120-character path would force the horizontal scrollbar back for
-   the whole pane, defeating the mode entirely. */
+/* Wrap mode: the PANE itself never scrolls sideways. Prose reflows to the
+   viewport, and anything that must keep its columns gets its own strip below.
+   Without `overflow-x: hidden` here a single over-wide strip would drag the
+   whole transcript with it, which is the behaviour this mode exists to end. */
 .term-pane[data-wrap="on"] {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: normal;
   overflow-x: hidden;
 }
 
-/* Exact mode is the terminal's own geometry: never reflow, scroll sideways.
-   The default rule on .term-pane already does this; stated explicitly so the
-   two modes read as a pair rather than one being the absence of the other. */
-.term-pane[data-wrap="off"] {
+/* Prose. `pre-wrap` rather than `normal` so leading indentation survives the
+   fold, and `overflow-wrap: anywhere` because agent output is full of
+   unbreakable tokens — paths, URLs, long identifiers — and ONE of them is
+   enough to reintroduce a horizontal scrollbar for the whole pane. */
+.term-prose {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A run of structure — a table, a box, a progress bar. Columns carry meaning
+   positionally here, so it never reflows; it scrolls on its own instead, and
+   the surrounding sentences stay put.
+
+   `overscroll-behavior-x: contain` stops a swipe that reaches the end of the
+   strip from turning into the browser's back gesture. A strip narrower than
+   the pane simply never scrolls — no affordance appears. */
+.term-strip {
   white-space: pre;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Exact mode: one `pre` block, the terminal's own geometry, everything
+   scrolling together. Stated explicitly so the two modes read as a pair
+   rather than one being the absence of the other. */
+.term-pane[data-wrap="off"] {
+  overflow-x: auto;
+}
+
+.term-exact {
+  margin: 0;
+  white-space: pre;
+  font: inherit;
 }
 
 /* A mode indicator, not an icon — the label says which mode is ACTIVE. */

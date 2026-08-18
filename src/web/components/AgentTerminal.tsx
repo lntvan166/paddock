@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties 
 import type { ActionResult, Agent, NavKey, OutputResult } from "@shared/types";
 import { fetchOutput, sendKey, sendText } from "@web/api";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
+import { groupLines } from "@web/lines";
 
 /**
  * Undefined for an unstyled span, so the common run of plain text costs no
@@ -163,7 +164,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const [wrap, setWrap] = useState(readWrap);
   const [reply, setReply] = useState("");
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
-  const paneRef = useRef<HTMLPreElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
   // Whether the operator is following the tail. Read BEFORE the DOM updates
   // and applied after, so replacing the screen does not yank someone who has
   // deliberately scrolled up to read earlier output.
@@ -359,6 +360,12 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
     setBusy(false);
   };
 
+  // Parsed once per render and shared by both modes. `parseAnsi` carries style
+  // ACROSS lines, so it must see the whole buffer in order — slicing the
+  // result is safe, slicing the input would not be.
+  const lineSpans = parseAnsi(output);
+  const blocks = groupLines(lineSpans.map((spans) => spans.map((sp) => sp.text).join("")));
+
   return (
     <section className="term" aria-label={`${agent.name} terminal`}>
       <header className="term-header">
@@ -388,24 +395,46 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
       {error ? (
         <p className="term-error warn" role="alert">Could not load output: {error}</p>
       ) : (
-        <pre ref={paneRef} className="term-pane" data-wrap={wrap ? "on" : "off"} onScroll={rememberScroll}>
-          {/* Spans, not raw text: the escapes carry the structure. The newline
-              is emitted explicitly rather than wrapping each line in a block,
-              so a blank line still occupies a row — `white-space: pre` gives
-              it height, an empty <div> would not.
+        <div ref={paneRef} className="term-pane" data-wrap={wrap ? "on" : "off"} onScroll={rememberScroll}>
+          {/* Spans, not raw text: the escapes carry the structure. Every span's
+              content is a React child, so React escapes it — this is agent
+              output, arbitrary untrusted text, and it must never reach
+              innerHTML.
 
-              Every span's content is a React child, so React escapes it. This
-              is agent output: arbitrary untrusted text. It must never reach
-              innerHTML. */}
-          {parseAnsi(output).map((spans, i) => (
-            <Fragment key={i}>
-              {spans.map((s, j) => (
-                <span key={j} style={styleFor(s)}>{s.text}</span>
-              ))}
-              {"\n"}
-            </Fragment>
-          ))}
-        </pre>
+              In Exact mode the whole pane is one `pre` block and the newline is
+              emitted explicitly, so a blank line still occupies a row.
+
+              In Wrap mode the buffer is split into runs (`web/lines.ts`):
+              prose reflows to the viewport, and each run of structure becomes
+              its OWN horizontally scrollable strip. That is what keeps a table
+              readable without dragging the surrounding sentences sideways with
+              it. */}
+          {wrap
+            ? blocks.map((b) => (
+                <div key={b.from} className={b.kind === "structure" ? "term-strip" : "term-prose"}>
+                  {lineSpans.slice(b.from, b.to + 1).map((spans, i) => (
+                    <Fragment key={i}>
+                      {spans.map((sp, j) => (
+                        <span key={j} style={styleFor(sp)}>{sp.text}</span>
+                      ))}
+                      {"\n"}
+                    </Fragment>
+                  ))}
+                </div>
+              ))
+            : (
+              <pre className="term-exact">
+                {lineSpans.map((spans, i) => (
+                  <Fragment key={i}>
+                    {spans.map((sp, j) => (
+                      <span key={j} style={styleFor(sp)}>{sp.text}</span>
+                    ))}
+                    {"\n"}
+                  </Fragment>
+                ))}
+              </pre>
+            )}
+        </div>
       )}
 
       {feedback && (
