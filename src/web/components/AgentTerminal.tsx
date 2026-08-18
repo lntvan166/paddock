@@ -5,6 +5,7 @@ import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
 import { mergeSnapshot } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
+import { applyPatch, digestOf } from "@shared/screen";
 
 /**
  * Undefined for an unstyled span, so the common run of plain text costs no
@@ -204,17 +205,35 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
    * pane on precisely the responses that mean it is still correct. It clears
    * `stalled` though: a successful revalidation is proof the link is alive.
    */
-  const applyResult = useCallback((res: OutputResult) => {
+  /**
+   * Returns false when a patch could not be verified, which tells the caller
+   * to fetch a whole screen. Reported rather than thrown: a failed patch is a
+   * recoverable transport hiccup, not an error worth showing the operator.
+   */
+  const applyResult = useCallback((res: OutputResult): boolean => {
     if (res.unchanged) {
       // Nothing moved: wait longer before asking again.
       intervalRef.current = nextRefreshMs(intervalRef.current, false);
       setStalled(false);
-      return;
+      return true;
     }
     // The screen moved, so it may well move again — follow it closely.
     intervalRef.current = nextRefreshMs(intervalRef.current, true);
+
+    if ("patch" in res) {
+      const base = screenFor(agent.agentId)?.lines ?? [];
+      const next = applyPatch(base, res.patch);
+      // Self-check. The server states the digest the patch should produce, so
+      // a patch applied against the wrong base — or a bug in either half —
+      // is caught here instead of showing output that never existed.
+      if (digestOf(next) !== res.patch.digest) return false;
+      apply(next, res.patch.digest);
+      return true;
+    }
+
     apply(res.lines, res.digest);
-  }, [apply]);
+    return true;
+  }, [agent.agentId, apply]);
 
   /**
    * The cheap re-read used by the poll: `visible` only, never scrollback.
@@ -226,7 +245,10 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
    */
   const refresh = useCallback(async () => {
     try {
-      applyResult(await fetchOutput(agent.agentId, undefined, false, digestRef.current));
+      const ok = applyResult(await fetchOutput(agent.agentId, undefined, false, digestRef.current));
+      // A patch that failed its self-check: ask for a whole screen, without a
+      // digest so the server cannot answer with another patch.
+      if (!ok) applyResult(await fetchOutput(agent.agentId));
     } catch {
       setStalled(true);
     }

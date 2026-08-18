@@ -376,3 +376,39 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
   // has a shape to check rather than an absent field.
   expect(body.lines).toEqual([]);
 });
+
+// ── line-level patches ─────────────────────────────────────────────────────
+// A thinking agent redraws only its spinner and token counter: measured on a
+// live agent at 250ms, the MEDIAN changed update touched ONE line of 63.
+// Resending the whole screen for that was ~90% waste.
+
+test("a known previous screen gets a patch, not a whole screen", async () => {
+  const { app } = harness();
+  const first = await (await post(app, "/api/agents/w1:p1/output")).json();
+  expect(first.lines).toEqual(["out"]);
+
+  // Same digest -> unchanged. That path still wins when nothing moved at all.
+  const same = await (await post(app, "/api/agents/w1:p1/output", { since: first.digest })).json();
+  expect(same.unchanged).toBe(true);
+});
+
+test("an unknown digest falls back to a full screen", async () => {
+  // A client that has fallen behind, or just connected, cannot apply a patch
+  // against a screen the server no longer holds. Full screen is always
+  // correct and only ever costs bandwidth.
+  const { app } = harness();
+  const body = await (await post(app, "/api/agents/w1:p1/output", { since: "not-a-held-digest" })).json();
+  expect(body.patch).toBeUndefined();
+  expect(body.lines).toEqual(["out"]);
+  expect(typeof body.digest).toBe("string");
+});
+
+test("a scrollback read is never answered with a patch", async () => {
+  // History is a different, much larger view of the pane. Diffing it against
+  // a viewport would rewrite nearly every line and save nothing.
+  const { app } = harness();
+  const first = await (await post(app, "/api/agents/w1:p1/output")).json();
+  const body = await (await post(app, "/api/agents/w1:p1/output",
+    { since: first.digest, scrollback: true })).json();
+  expect(body.patch).toBeUndefined();
+});

@@ -5,6 +5,7 @@ import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { isNavKey } from "@shared/types";
+import { diffScreens, digestOf } from "@shared/screen";
 
 export interface HealthBody {
   ok: boolean;
@@ -60,8 +61,33 @@ const MAX_TEXT_LEN = 10_000;
  * The line separator is included so that moving a newline between two lines
  * still alters the digest.
  */
-function digestOf(lines: string[]): string {
-  return Bun.hash(lines.join("\n")).toString(36);
+/**
+ * Recently-served screens per agent, so a patch can be computed against
+ * whatever the client is actually holding.
+ *
+ * Two per agent, not one: with several tabs watching, one may be a step behind
+ * the other, and keeping only the newest would push every one of them onto the
+ * full-screen path. Anything older than that falls back to a full screen,
+ * which is always correct and only ever costs bandwidth.
+ *
+ * Bounded by the agent list, and evicted with it — see `pruneScreens`.
+ */
+const recentScreens = new Map<string, { digest: string; lines: string[] }[]>();
+const SCREENS_PER_AGENT = 2;
+
+function rememberScreen(agentId: string, digest: string, lines: string[]): void {
+  const held = recentScreens.get(agentId) ?? [];
+  if (held[0]?.digest === digest) return;
+  recentScreens.set(agentId, [{ digest, lines }, ...held].slice(0, SCREENS_PER_AGENT));
+}
+
+function heldScreen(agentId: string, digest: string): string[] | undefined {
+  return recentScreens.get(agentId)?.find((s) => s.digest === digest)?.lines;
+}
+
+/** Drop screens for agents that no longer exist, mirroring the store. */
+function pruneScreens(liveIds: Set<string>): void {
+  for (const id of [...recentScreens.keys()]) if (!liveIds.has(id)) recentScreens.delete(id);
 }
 
 /**
@@ -141,8 +167,13 @@ export function createApp(deps: AppDeps) {
 
     // POST, never GET: a payload in a query string lands in edge access logs.
     app.post("/api/agents/:id/output", async (c) => {
-      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      const live = deps.store.snapshot();
+      const agent = live.find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+      // Evicted here rather than on a timer: the cache only ever grows when
+      // someone polls, so pruning on a poll is both sufficient and
+      // self-limiting. Cheap — one pass over a handful of agents.
+      pruneScreens(new Set(live.map((a) => a.agentId)));
       // Coerced and clamped, never cast: this is the only client-supplied
       // value besides the store-checked `:id` that reaches a herdr parameter.
       const body = await jsonBody(c);
@@ -159,10 +190,21 @@ export function createApp(deps: AppDeps) {
       try {
         const out = await actions.readOutput(agent.agentId, agent.state, lines, scrollback);
         const digest = digestOf(out.lines);
+        rememberScreen(agent.agentId, digest, out.lines);
+
         // 200, not 304: a 304 is defined against HTTP's own cache validators,
         // which do not apply to POST. This is an application-level answer that
         // happens to mean the same thing.
         if (since !== null && since === digest) return c.json({ unchanged: true });
+
+        // If the screen the caller is holding is still known, send only what
+        // moved. Scrollback reads are excluded: they are a different, much
+        // larger view of the pane, and diffing one against a viewport would
+        // produce a patch that rewrites nearly every line for no saving.
+        if (since !== null && !scrollback) {
+          const base = heldScreen(agent.agentId, since);
+          if (base) return c.json({ patch: diffScreens(base, out.lines), source: out.source });
+        }
         return c.json({ ...out, digest });
       } catch (err) {
         return c.json({ ok: false, detail: String(err) }, 502);

@@ -25,7 +25,7 @@ test("fetchOutput POSTs and returns the parsed body", async () => {
   expect(seen[0]!.init.method).toBe("POST");
   expect(seen[0]!.url).toBe("/api/agents/w1%3Ap1/output");
   expect(out.unchanged).toBeFalsy();
-  if (out.unchanged) throw new Error("unreachable: stub returns a screen");
+  if (out.unchanged || "patch" in out) throw new Error("unreachable: stub returns a full screen");
   expect(out.lines).toEqual(["a"]);
 });
 
