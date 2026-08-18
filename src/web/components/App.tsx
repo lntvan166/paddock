@@ -95,7 +95,10 @@ export function App() {
           message announcing staleness is never itself hard to read. */}
       <div {...staleAttrs(stale)}>
         <InstallHint />
-        <HostHeader hostId={hostId} agents={agents} />
+        <HostHeader
+          hostId={hostId} agents={agents}
+          onOpenSettings={() => { location.hash = "#/settings"; }}
+        />
 
         {SECTION_ORDER.map((key) => {
           const list = groups[key];

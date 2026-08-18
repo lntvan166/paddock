@@ -508,6 +508,22 @@ body {
   cursor: pointer;
 }
 
+/* The one entry point into #/settings. A baseline size here, `.tap` (above)
+   grows it further under `(pointer: coarse)` — the same layered convention
+   as everything else in this file: no device detection, just capability
+   media queries. */
+.host-settings-btn {
+  min-height: 2.5rem;
+  min-width: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 /* Settings — no new colour tokens. Every colour below is one already defined
    on bare :root and redefined under both the dark media query and the
    explicit [data-theme="dark"] toggle (see the top of this file), so nothing

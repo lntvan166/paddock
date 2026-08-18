@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 import { RATE_MS, readPrefs, writePref, type Prefs, type RatePref, type ThemePref } from "@web/prefs";
 
@@ -39,6 +39,22 @@ export function Settings({ onBack }: SettingsProps) {
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
+
+  /**
+   * Shared by `save()` and `sendTest()`, which — unlike the GET effect above,
+   * whose own `live` flag is scoped to one effect run — are user-triggered
+   * handlers that can outlive the component for as long as their request is
+   * in flight. App.tsx's own comment on `key={agentId}` documents this exact
+   * failure once already: a reply typed for one screen resolving AFTER the
+   * operator navigated away must not write into whatever replaced it. Here
+   * that means setSaving/setSaveError/setView after "‹ Agents" has already
+   * unmounted this component.
+   */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -89,6 +105,7 @@ export function Settings({ onBack }: SettingsProps) {
         body: JSON.stringify(patch),
       });
       const body = await res.json();
+      if (!mountedRef.current) return;
       if (!res.ok) {
         // Surfaced verbatim rather than a generic "save failed": the 400
         // reason is the whole point of the server validating the patch.
@@ -100,9 +117,9 @@ export function Settings({ onBack }: SettingsProps) {
       // to empty rather than continuing to display what was just typed.
       setToken("");
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
+      if (mountedRef.current) setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
-      setSaving(false);
+      if (mountedRef.current) setSaving(false);
     }
   }
 
@@ -116,11 +133,13 @@ export function Settings({ onBack }: SettingsProps) {
         body: "{}",
       });
       const body = (await res.json()) as { ok: boolean; detail: string | null };
-      setTestResult(body);
+      if (mountedRef.current) setTestResult(body);
     } catch (e) {
-      setTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e) });
+      if (mountedRef.current) {
+        setTestResult({ ok: false, detail: e instanceof Error ? e.message : String(e) });
+      }
     } finally {
-      setTesting(false);
+      if (mountedRef.current) setTesting(false);
     }
   }
 

@@ -67,3 +67,55 @@ test("the global section says it affects every device", async () => {
   await settle();
   expect(host.textContent?.toLowerCase()).toContain("every device");
 });
+
+function buttonByText(host: HTMLElement, text: string): HTMLButtonElement {
+  const btn = [...host.querySelectorAll("button")].find((b) => b.textContent === text);
+  if (!btn) throw new Error(`no button with text "${text}"`);
+  return btn as HTMLButtonElement;
+}
+
+test("a failed save surfaces the server's rejection reason, never a silent failure", async () => {
+  // The 400 `detail` is the whole point of server-side validation — a
+  // generic "save failed" (or, worse, no message at all) would leave the
+  // operator believing a switch is set when the server refused it.
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === "PUT") {
+      return new Response(
+        JSON.stringify({ ok: false, detail: "cooldownMs must be a positive integer" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  buttonByText(host, "Save").click();
+  await settle();
+  await settle();
+
+  expect(host.textContent).toContain("cooldownMs must be a positive integer");
+});
+
+test("a failed test message surfaces Telegram's own description, never a silent failure", async () => {
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    if (String(input).includes("/telegram/test")) {
+      return new Response(JSON.stringify({ ok: false, detail: "chat not found" }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  buttonByText(host, "Send test message").click();
+  await settle();
+  await settle();
+
+  expect(host.textContent).toContain("chat not found");
+});
