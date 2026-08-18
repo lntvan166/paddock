@@ -22,7 +22,7 @@ import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs } from "@server/cli";
 import { VERSION } from "@server/version";
 import { runUpdate } from "@server/update";
-import { checkForUpdate, noUpdateCheckRequested } from "@server/update-check";
+import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
 
 const { command, flags } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
@@ -108,14 +108,23 @@ function currentBuildId(): string | null {
  * Fired WITHOUT awaiting — a version check must never delay the server
  * binding its port, and this variable simply stays `null` (its honest "don't
  * know yet" value) until the one background check resolves.
+ *
+ * `startUpdateCheck` rather than a bare `void checkForUpdate(...).then(...)`:
+ * that form had no `.catch`, and Bun terminates the process on an unhandled
+ * rejection — so a check that threw killed a server that had already bound
+ * its port and was serving. The rejection handler lives with the check
+ * itself now, where it cannot be dropped by an edit to this file.
  */
 let latestKnown: string | null = null;
-void checkForUpdate({
-  dir: defaultConfigDir(),
-  current: VERSION,
-  now: Date.now(),
-  disabled: noUpdateCheckRequested(),
-}).then((v) => { latestKnown = v; });
+startUpdateCheck(
+  {
+    dir: defaultConfigDir(),
+    current: VERSION,
+    now: Date.now(),
+    disabled: noUpdateCheckRequested(),
+  },
+  (v) => { latestKnown = v; },
+);
 
 const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown });
 
