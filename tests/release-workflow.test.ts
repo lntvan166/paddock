@@ -9,7 +9,7 @@ test("releases build exactly the four platforms herdr supports", () => {
   for (const t of ["bun-linux-x64", "bun-linux-arm64", "bun-darwin-x64", "bun-darwin-arm64"]) {
     expect(wf).toContain(t);
   }
-  expect(wf).not.toContain("windows");
+  expect(wf).not.toContain("bun-windows-");
 });
 
 test("assets are named with herdr's vocabulary, so the two read as siblings", () => {
@@ -22,4 +22,12 @@ test("assets are named with herdr's vocabulary, so the two read as siblings", ()
 test("checksums are published, and the version is stamped from the tag", () => {
   expect(wf).toContain("SHA256SUMS");
   expect(wf).toContain("PADDOCK_VERSION");
+});
+
+test("release is created if it does not exist, or uploads into it if it does", () => {
+  // Pushing a tag does not automatically create a release. The workflow must
+  // handle both cases: bare tag push (create) and hand-written release (upload).
+  expect(wf).toContain("gh release view");
+  expect(wf).toContain("gh release create");
+  expect(wf).toContain("gh release upload");
 });
