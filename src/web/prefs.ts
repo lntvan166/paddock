@@ -20,7 +20,18 @@ export interface Prefs {
   fontPx: number;
 }
 
-const DEFAULTS: Prefs = { theme: "system", rate: "live", wrap: false, fontPx: 13 };
+/**
+ * `wrap` defaults to `true`, not `false`. Measured across five live agents:
+ * of the lines too long for a phone, 57% are STRUCTURED — box drawing, or
+ * table rows whose columns carry meaning positionally — and 43% are prose or
+ * code that reflows perfectly. Wrapping is the default because reading is the
+ * common case, and a folded table is recoverable with one tap whereas
+ * scrolling every prose line is a permanent tax. This is the rationale
+ * `AgentTerminal.tsx`'s own former `readWrap()` carried; it must survive the
+ * move here; see `readPrefs()` below for how "never stored" (default `true`)
+ * is kept distinct from "explicitly turned off" (`"0"`, default `false`).
+ */
+const DEFAULTS: Prefs = { theme: "system", rate: "live", wrap: true, fontPx: 13 };
 
 /** `wrap` is kept verbatim from AgentTerminal's own `WRAP_KEY` so no
  *  operator's current setting resets. All other keys are namespaced the
@@ -47,10 +58,17 @@ export function readPrefs(): Prefs {
   const theme = raw(KEYS.theme);
   const rate = raw(KEYS.rate);
   const font = Number(raw(KEYS.fontPx));
+  // `null` (never stored, or `raw()`'s catch path on throwing storage) must
+  // fall back to the default (`true`) rather than be treated the same as an
+  // explicit `"0"`. `raw(KEYS.wrap) === "1"` alone would collapse both
+  // "never touched" and "explicitly turned off" into the same `false`
+  // answer, silently flipping the default for every operator who never
+  // opened the setting.
+  const wrapRaw = raw(KEYS.wrap);
   return {
     theme: theme === "light" || theme === "dark" ? theme : DEFAULTS.theme,
     rate: rate === "balanced" || rate === "frugal" ? rate : DEFAULTS.rate,
-    wrap: raw(KEYS.wrap) === "1",
+    wrap: wrapRaw === null ? DEFAULTS.wrap : wrapRaw === "1",
     fontPx: Number.isFinite(font) && font >= 10 && font <= 22 ? font : DEFAULTS.fontPx,
   };
 }

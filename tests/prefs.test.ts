@@ -15,10 +15,29 @@ afterEach(() => {
 });
 
 test("defaults are returned when nothing is stored", () => {
-  expect(readPrefs()).toEqual({ theme: "system", rate: "live", wrap: false, fontPx: 13 });
+  // wrap defaults to true: reading is the common case, and a folded table is
+  // recoverable with one tap whereas scrolling every prose line is a
+  // permanent tax (AgentTerminal.tsx's former readWrap() rationale, now
+  // owned here).
+  expect(readPrefs()).toEqual({ theme: "system", rate: "live", wrap: true, fontPx: 13 });
 });
 
 test("the existing wrap key is reused verbatim, so no operator's setting resets", () => {
+  localStorage.setItem("paddock.term.wrap", "1");
+  expect(readPrefs().wrap).toBe(true);
+});
+
+test("wrap distinguishes 'never stored' from 'explicitly turned off'", () => {
+  // The bug this guards against: `raw(KEYS.wrap) === "1"` alone answers
+  // `false` for both an absent key and a stored `"0"`, which silently flips
+  // the default for every operator who never opened the setting. Absent must
+  // fall back to the default (`true`); only a stored `"0"` means `false`.
+  expect(localStorage.getItem("paddock.term.wrap")).toBe(null);
+  expect(readPrefs().wrap).toBe(true);
+
+  localStorage.setItem("paddock.term.wrap", "0");
+  expect(readPrefs().wrap).toBe(false);
+
   localStorage.setItem("paddock.term.wrap", "1");
   expect(readPrefs().wrap).toBe(true);
 });
@@ -33,6 +52,9 @@ test("a throwing localStorage yields defaults instead of a blank screen", () => 
   });
   expect(() => readPrefs()).not.toThrow();
   expect(readPrefs().theme).toBe("system");
+  // Matches the original readWrap()'s catch path: a storage access that
+  // throws must fall back to wrap's true default, not to false.
+  expect(readPrefs().wrap).toBe(true);
   expect(() => writePref("theme", "dark")).not.toThrow();
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: real });
 });
