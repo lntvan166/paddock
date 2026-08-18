@@ -6,6 +6,7 @@ import { sendTelegram } from "@server/notify/telegram";
 import { isConfigured, type SettingsStore } from "@server/settings/store";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
+import { EMBEDDED } from "@server/embedded";
 import { isNavKey, type NotifyTrigger, type SettingsPatch } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 
@@ -566,47 +567,53 @@ export function createApp(deps: AppDeps) {
   // API 404s must stay JSON, so this guard comes before the SPA fallback.
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 
-  if (deps.staticDir) {
-    const dir = deps.staticDir;
-    app.get("/*", async (c) => {
-      const path = new URL(c.req.url).pathname;
-      const candidate = Bun.file(`${dir}${path}`);
-      if (path !== "/" && (await candidate.exists())) {
-        // Content-hashed assets are safe to cache forever. Everything else —
-        // `sw.js`, the manifest, icons — carries no hash, so a long-lived
-        // entry for it would pin a stale copy under a name that never changes.
-        const immutable = IMMUTABLE_ASSET_RE.test(path);
-        return new Response(candidate, {
-          headers: {
-            "cache-control": immutable
-              ? "public, max-age=31536000, immutable"
-              : "no-cache",
-          },
-        });
-      }
-      const index = Bun.file(`${dir}/index.html`);
-      if (!(await index.exists())) return c.text("UI not built — run `make build`", 404);
-      // `no-cache` means "revalidate before use", NOT "do not store". It is
-      // the other half of the immutable-asset trade above: hashed bundles may
-      // be kept for a year precisely BECAUSE the document naming them is
-      // rechecked on every load.
-      //
-      // This header was absent, which is not the same as neutral — with no
-      // Cache-Control, no ETag and no Last-Modified, browsers fall back to
-      // heuristic caching and mobile ones are aggressive about it. A phone
-      // that kept an old index.html also kept the old bundle it referenced,
-      // pinned `immutable` for a year, so no future deploy could ever reach
-      // it. The visible symptom is a UI that fails only where the stale
-      // bundle and the current server disagree — which reads as intermittent,
-      // not stale.
-      return new Response(index, {
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-          "cache-control": "no-cache",
-        },
-      });
-    });
-  }
+  // Embedded assets first, disk second. The binary must be the whole product;
+  // `staticDir` is what keeps `make dev` and the Docker image working, where
+  // the UI is rebuilt constantly and embedding it would be wrong.
+  const serve = async (path: string): Promise<Response | null> => {
+    const embedded = EMBEDDED[path];
+    if (embedded) return new Response(Bun.file(embedded), { headers: headersFor(path) });
+    if (!deps.staticDir) return null;
+    const candidate = Bun.file(`${deps.staticDir}${path}`);
+    return (await candidate.exists())
+      ? new Response(candidate, { headers: headersFor(path) })
+      : null;
+  };
+
+  app.get("/*", async (c) => {
+    const path = new URL(c.req.url).pathname;
+    if (path !== "/") {
+      const hit = await serve(path);
+      if (hit) return hit;
+    }
+    const index = await serve("/index.html");
+    if (!index) return c.text("UI not built — run `make build`", 404);
+    return index;
+  });
 
   return app;
+}
+
+function headersFor(path: string): Record<string, string> {
+  // Content-hashed assets are safe to cache forever. Everything else —
+  // `sw.js`, the manifest, icons — carries no hash, so a long-lived entry for
+  // it would pin a stale copy under a name that never changes.
+  const immutable = IMMUTABLE_ASSET_RE.test(path);
+  if (immutable) {
+    return { "cache-control": "public, max-age=31536000, immutable" };
+  }
+  // `no-cache` means "revalidate before use", NOT "do not store". It is
+  // the other half of the immutable-asset trade above: hashed bundles may
+  // be kept for a year precisely BECAUSE the document naming them is
+  // rechecked on every load.
+  //
+  // This header was absent, which is not the same as neutral — with no
+  // Cache-Control, no ETag and no Last-Modified, browsers fall back to
+  // heuristic caching and mobile ones are aggressive about it. A phone
+  // that kept an old index.html also kept the old bundle it referenced,
+  // pinned `immutable` for a year, so no future deploy could ever reach
+  // it. The visible symptom is a UI that fails only where the stale
+  // bundle and the current server disagree — which reads as intermittent,
+  // not stale.
+  return { "cache-control": "no-cache" };
 }

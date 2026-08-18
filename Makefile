@@ -1,7 +1,7 @@
 export UID := $(shell id -u)
 export GID := $(shell id -g)
 
-.PHONY: dev types icons check check-clean build-web test build up down logs restart
+.PHONY: dev types icons check check-clean embed build-web test build up down logs restart
 
 dev:
 	bash scripts/dev.sh
@@ -16,7 +16,13 @@ types:
 icons:
 	bash scripts/build-icons.sh
 
-check:
+# Regenerates src/server/embedded.ts (gitignored — see scripts/gen-embedded.ts
+# for why). Writes an EMPTY map when dist/ has not been built yet, which is
+# what lets `make check` typecheck on a fresh clone before anything is built.
+embed:
+	bun run scripts/gen-embedded.ts
+
+check: embed
 	bunx tsc --noEmit
 
 check-clean:
@@ -30,10 +36,18 @@ build-web:
 # those tests found nothing to check and passed by skipping, which on a clean
 # checkout (i.e. CI) was every run. They now fail rather than skip, so this
 # ordering is load-bearing: use `make test`, not a bare `bun test`.
+#
+# `embed` reruns AFTER build-web, not before: an earlier `make check` may have
+# already written an EMPTY map (no dist/ yet at that point), and that stale
+# empty map would otherwise sit on disk while the tests run, embedding nothing
+# into the standalone binary tests/embedded.test.ts compiles.
 test: build-web
+	bun run scripts/gen-embedded.ts
 	bun test
 
 build: check check-clean test
+	bun run build:web
+	$(MAKE) embed
 	bun build --compile --target=bun src/server/index.ts --outfile paddock
 
 up:
