@@ -1,4 +1,5 @@
 import { request } from "@server/herdr/socket";
+import type { HerdrPaneRead } from "@shared/herdr-api";
 import type { AgentState } from "@shared/types";
 
 export type ReadSource = "detection" | "visible" | "recent_unwrapped";
@@ -77,16 +78,47 @@ export function resolveWaitTimeoutMs(value: unknown): number {
 const WAIT_TRANSPORT_MARGIN_MS = 5_000;
 
 /**
- * Pick the read source by agent state.
+ * Pick the read source by agent state: scrollback only for an IDLE agent,
+ * the viewport for every other state.
  *
- * `recent` and `recent_unwrapped` return `agent_not_idle` on a BLOCKED agent:
- * its prompt renders on the terminal's alternate screen, whose history "can
- * only be captured by scrolling while idle" — herdr's own error recommends
- * `visible`. This bites precisely on the agents most worth reading, so the
- * choice is state-driven rather than a preference.
+ * The rule this replaced ("blocked reads from visible, everything else from
+ * scrollback") came from one probe of one blocked agent and was wrong. The
+ * constraint herdr actually enforces is not about `blocked` at all — measured
+ * against a live herdr 0.8.0, `recent`/`recent_unwrapped` succeed on a
+ * *working* agent up to the pane's viewport height and fail with
+ * `agent_not_idle` at exactly one line more:
+ *
+ *     visible/lines=2000 -> 64 rows   (the viewport)
+ *     recent_unwrapped/63 -> OK
+ *     recent_unwrapped/64 -> agent_not_idle
+ *
+ * A coding agent renders on the terminal's alternate screen, which keeps no
+ * scrollback buffer. Anything past the viewport therefore has to be recovered
+ * by herdr physically scrolling the pane and capturing — and, as its error
+ * says, that "can only be captured by scrolling while idle".
+ *
+ * So the boundary is `requested lines > viewport rows`, and paddock cannot
+ * evaluate it: no payload it reads carries the pane's row count, and the
+ * default read (`DEFAULT_READ_LINES`, 120) is roughly double a typical
+ * viewport, so the failing side is the normal case, not the edge. The only
+ * predicate available on this side of the socket is the state — hence:
+ *
+ *  - `idle` — the one state in which the scroll is permitted at any depth, so
+ *    it gets `recent_unwrapped` and the extra history that comes with it.
+ *  - everything else — `visible`. It never scrolls, never fails, and is
+ *    served from the live screen in ~2 ms. `working` and `blocked` are the
+ *    states an operator most wants to look at; a viewport of real output
+ *    beats an `agent_not_idle` error every time.
+ *
+ * `done` takes `visible` deliberately rather than by oversight. herdr derives
+ * `done` from idle-plus-unseen, so its pane is *probably* scroll-eligible —
+ * but `pane.report_agent` cannot report `done`, so it could not be produced
+ * on a live socket and the guess could not be measured. Assuming it would
+ * pass is the exact move that produced the rule this one replaces; a `done`
+ * agent gets less scrollback instead of an error until someone can measure it.
  */
 export function readSourceFor(state: AgentState): ReadSource {
-  return state === "blocked" ? "visible" : "recent_unwrapped";
+  return state === "idle" ? "recent_unwrapped" : "visible";
 }
 
 export interface HerdrActions {
@@ -106,20 +138,24 @@ export function createActions(socketPath: string): HerdrActions {
       // that builds the herdr params, so the bound holds for every caller,
       // not only the one that happens to validate first.
       const bounded = resolveReadLines(lines);
-      const res = await request<{ text?: string }>(socketPath, "agent.read", {
+      // Typed with the generated envelope, not an inline shape. The inline
+      // `{ text?: string }` this replaced described a response herdr has
+      // never sent, and an optional field made the mismatch resolve to `""`
+      // instead of failing anywhere.
+      const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
         target, source, lines: bounded, format: "text", strip_ansi: true,
       });
-      const text = res.text ?? "";
-      // "".split("\n") is [""], not [] — a genuinely empty pane (or a
-      // response missing `text`) must report no lines, not one blank line.
+      const text = res.read.text;
+      // "".split("\n") is [""], not [] — a genuinely empty pane must report
+      // no lines, not one blank line.
       return { lines: text === "" ? [] : text.split("\n"), source };
     },
 
     async readDetection(target) {
-      const res = await request<{ text?: string }>(socketPath, "agent.read", {
+      const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
         target, source: "detection", lines: 60, format: "text", strip_ansi: true,
       });
-      return res.text ?? "";
+      return res.read.text;
     },
 
     async sendOptionKey(target, key) {

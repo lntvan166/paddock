@@ -5,6 +5,10 @@ export const HERDR_PROTOCOL = 19 as const;
 
 export type HerdrAgentStatus = "idle" | "working" | "blocked" | "done" | "unknown";
 
+export type HerdrReadSource = "visible" | "recent" | "recent_unwrapped" | "detection";
+
+export type HerdrReadFormat = "text" | "ansi";
+
 /** One entry from `agent.list` -> result.agents[]. */
 export interface HerdrAgentRaw {
   agent?: string | null;
@@ -39,6 +43,31 @@ export interface HerdrStatusChanged {
   display_agent?: string | null;
   title?: string | null;
   state_labels?: Record<string, string>;
+}
+
+/** `agent.read` -> result.read. The text is HERE, not on the envelope. */
+export interface HerdrPaneReadResult {
+  pane_id: string;
+  workspace_id: string;
+  tab_id: string;
+  source: HerdrReadSource;
+  format: HerdrReadFormat;
+  text: string;
+  revision: number;
+  truncated: boolean;
+}
+
+/**
+ * Full `agent.read` response envelope.
+ *
+ * Declared as the envelope rather than as the payload alone because the
+ * defect this type exists to prevent was reading `result.text` — a field
+ * that does not exist on either object. Typing the `request<>` call with
+ * the envelope makes that a compile error instead of an empty pane.
+ */
+export interface HerdrPaneRead {
+  type: "pane_read";
+  read: HerdrPaneReadResult;
 }
 
 export interface HerdrRequest { id: string; method: string; params: object }

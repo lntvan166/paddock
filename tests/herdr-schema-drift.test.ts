@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import type { HerdrAgentRaw, HerdrStatusChanged, HerdrWorkspaceRaw } from "@shared/herdr-api";
+import type {
+  HerdrAgentRaw,
+  HerdrPaneRead,
+  HerdrPaneReadResult,
+  HerdrStatusChanged,
+  HerdrWorkspaceRaw,
+} from "@shared/herdr-api";
 
 // scripts/gen-herdr-types.ts derives only `protocol` and the AgentStatus enum
 // from the schema; all three interface BODIES are hand-written. So the
@@ -89,6 +95,41 @@ const DECLARED_STATUS_FIELDS = Object.keys(
 /** paddock models every field of this event, so nothing is ignored. */
 const IGNORED_STATUS_FIELDS = [] as const;
 
+// `agent.read` -> `{ type: "pane_read", read: PaneReadResult }`. paddock read
+// `result.text` for the whole of v2 — a field on neither object — so every
+// read returned "" and tap-to-answer silently fell back to free text. The
+// envelope is modelled so that mistake is a compile error; this check keeps
+// the payload half of it honest against the installed herdr.
+const DECLARED_READ_FLAGS = {
+  pane_id: true,
+  workspace_id: true,
+  tab_id: true,
+  source: true,
+  format: true,
+  text: true,
+  revision: true,
+  truncated: true,
+} satisfies Record<keyof HerdrPaneReadResult, true>;
+
+const DECLARED_READ_FIELDS = Object.keys(
+  DECLARED_READ_FLAGS,
+) as (keyof HerdrPaneReadResult)[];
+
+/** paddock models every field of PaneReadResult, so nothing is ignored. */
+const IGNORED_READ_FIELDS = [] as const;
+
+// The envelope half. `read` is the field the defect missed; pinning the
+// discriminant and the payload key here means a rename of EITHER fails to
+// compile, not just a rename inside the payload.
+const DECLARED_READ_ENVELOPE_FLAGS = {
+  type: true,
+  read: true,
+} satisfies Record<keyof HerdrPaneRead, true>;
+
+const DECLARED_READ_ENVELOPE_FIELDS = Object.keys(
+  DECLARED_READ_ENVELOPE_FLAGS,
+) as (keyof HerdrPaneRead)[];
+
 async function liveSchema(): Promise<any> {
   const proc = Bun.spawn(["herdr", "api", "schema", "--json"], { stdout: "pipe" });
   return JSON.parse(await new Response(proc.stdout).text());
@@ -129,6 +170,35 @@ test("HerdrWorkspaceRaw has not drifted from the installed herdr's WorkspaceInfo
     DECLARED_WORKSPACE_FIELDS,
     IGNORED_WORKSPACE_FIELDS,
   );
+});
+
+test("HerdrPaneReadResult has not drifted from the installed herdr's PaneReadResult schema", async () => {
+  // `text` is the whole reason paddock calls agent.read. Reading it from the
+  // wrong place is the defect this file now guards; a rename would put the
+  // output pane and every parsed prompt back to empty with no error anywhere.
+  const schema = await liveSchema();
+  expectNoDrift(
+    Object.keys(schema.schemas.success_response.$defs.PaneReadResult.properties),
+    DECLARED_READ_FIELDS,
+    IGNORED_READ_FIELDS,
+  );
+});
+
+test("HerdrPaneRead has not drifted from the installed agent.read response envelope", async () => {
+  // The variant of ResponseResult discriminated by `type: "pane_read"`. If
+  // herdr ever renamed `read`, or moved `text` up onto the envelope, this is
+  // the check that notices — the payload check above would still pass.
+  const schema = await liveSchema();
+  const variants: any[] = schema.schemas.success_response.$defs.ResponseResult.oneOf;
+  const paneRead = variants.find((v) => v.properties?.type?.const === "pane_read");
+  expect(paneRead).toBeDefined();
+  expect(paneRead.properties.read.$ref).toBe(
+    "#/schemas/success_response/$defs/PaneReadResult",
+  );
+  expectNoDrift(Object.keys(paneRead.properties), DECLARED_READ_ENVELOPE_FIELDS, []);
+  // Both fields are required upstream, so paddock declaring them non-optional
+  // is not an over-claim.
+  expect(paneRead.required.sort()).toEqual(["read", "type"]);
 });
 
 test("HerdrStatusChanged has not drifted from the installed pane.agent_status_changed payload", async () => {

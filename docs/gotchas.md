@@ -6,7 +6,7 @@ one, recorded here so they are not reintroduced.
 | Failure | Cause | Design response |
 |---|---|---|
 | Every row shows the same label | Label derived from `basename(cwd)`; agents commonly share a working directory | `name` from `agent.list` is the primary label — this is the defect the project exists to prevent |
-| A field is always empty | Read from the wrong object (pane vs workspace vs agent) | Generated types make a rename a build error — for the three v1 payloads only; see the coverage limit in `docs/roadmap.md` |
+| A field is always empty | Read from the wrong object (pane vs workspace vs agent) | Generated types make a rename a build error — for the three v1 payloads and the `agent.read` envelope only; see the coverage limit in `docs/roadmap.md` |
 | Events dropped with no error | Push script ends `curl -s … >/dev/null 2>&1; exit 0` | Log receipt at INFO; `/api/health` exposes `lastEventAt` |
 | Sensitive paths in access logs | Payload sent as a GET query string | POST bodies only |
 | Service worker silently disabled | Auth check gates every route including `/sw.js` | No app token; Access is the gate |
@@ -29,12 +29,51 @@ one, recorded here so they are not reintroduced.
   connection open, as an event stream, and no further request may be sent on
   that connection.
 
-- **`agent.read` with `recent` or `recent_unwrapped` FAILS on a blocked
-  agent.** herdr returns `agent_not_idle`: the agent's prompt renders on the
-  terminal's alternate screen, whose history "can only be captured by
-  scrolling while idle". Use `detection` (what herdr itself classified from)
-  or `visible`. This bites precisely on the agents you most want to read, so
-  choose the read source by agent state, not by preference.
+- **`agent.read` returns the text at `result.read.text`, not `result.text`.**
+  The envelope is `{ "type": "pane_read", "read": { pane_id, workspace_id,
+  tab_id, source, format, revision, truncated, text } }`. Reading
+  `result.text` yields `undefined`, and `?? ""` then turns it into an empty
+  pane and a `parsePrompt("")` that returns `options: null` — so the output
+  pane was blank for every agent and tap-to-answer silently fell back to the
+  free-text box, with no error anywhere. `HerdrPaneRead` in
+  `shared/herdr-api.d.ts` now models the envelope and both `request<>` calls
+  in `server/herdr/actions.ts` are typed with it, so the same mistake is a
+  compile error; `tests/herdr-schema-drift.test.ts` pins it to the installed
+  herdr's `PaneReadResult`.
+
+- **A test fake that is more permissive than herdr certifies the bug.** The
+  above shipped because `tests/actions.test.ts` answered `agent.read` with
+  `{ text }` — a shape herdr has never sent. Every test passed against the
+  invented shape while production read nothing. Fakes must be built from
+  `herdr api schema --json` or from a live probe, and something must also run
+  against the real socket (`tests/actions-live.test.ts`, which skips with a
+  reason when there is no herdr).
+
+- **`agent.read` from scrollback needs the agent to be IDLE — the gate is not
+  `blocked`.** A coding agent renders on the terminal's alternate screen,
+  which keeps no scrollback buffer, so herdr recovers anything past the
+  viewport by physically scrolling the pane. Measured on herdr 0.8.0 against
+  a *working* agent whose pane is 64 rows: `recent_unwrapped` at `lines=63`
+  succeeds, at `lines=64` it fails with `agent_not_idle` ("its alternate-screen
+  history can only be captured by scrolling while idle"). So the real boundary
+  is `requested lines > viewport rows`, which paddock cannot evaluate — no
+  payload it reads carries the pane's row count, and `DEFAULT_READ_LINES` is
+  120, roughly double a typical viewport. `readSourceFor` therefore gives
+  `recent_unwrapped` to `idle` alone and `visible` to `working`, `blocked` and
+  `done`: `visible` never scrolls, never fails, and answers in ~2 ms.
+  (`done` is the conservative choice, not a measured one — herdr derives it
+  from idle-plus-unseen, but `pane.report_agent` cannot report `done`, so it
+  could not be staged on a live socket.) `detection` is not gated at all and
+  works in every state.
+
+- **Scrollback reads cost real wall time, and stop paying past ~300 lines.**
+  Same probe, idle agent: `recent_unwrapped` is instant up to the viewport,
+  then costs roughly 35 ms per extra line — 120 lines took 3.1 s, 300 lines
+  10.7 s (past `HERDR_TIMEOUT_MS`, so `POST /output` with `lines: 300` fails),
+  and 500/1000/2000 lines each took ~15.8 s and came back with *less* than
+  `visible` returns in 2 ms. `visible` is flat at ~2 ms for any line count.
+  `MAX_READ_LINES` (2000) is therefore not a usable request against an idle
+  agent; see `docs/roadmap.md`.
 
 - **A blocked agent's prompt options are numbered and parseable.** The
   `detection` snapshot carries `1.` / `2.` / `3.` with `❯` on the current

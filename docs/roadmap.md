@@ -107,24 +107,44 @@ surprise.
 
 ## Known v2 gaps
 
-- **The schema-drift guarantee does not cover v2's herdr calls.** `CLAUDE.md`
-  and `docs/gotchas.md` both state that a herdr field rename becomes a build
-  error. That holds for v1's three payloads only — `AgentInfo`,
-  `WorkspaceInfo`, and the `pane.agent_status_changed` event — which are the
-  three `src/shared/herdr-api.d.ts` declares and the three
-  `tests/herdr-schema-drift.test.ts` checks against the installed herdr.
+- **The schema-drift guarantee covers v2's READ call only.** `CLAUDE.md` and
+  `docs/gotchas.md` both state that a herdr field rename becomes a build
+  error. That holds for v1's three payloads — `AgentInfo`, `WorkspaceInfo`,
+  and the `pane.agent_status_changed` event — plus the `agent.read` response
+  envelope (`HerdrPaneRead` / `HerdrPaneReadResult`), which
+  `src/shared/herdr-api.d.ts` declares and `tests/herdr-schema-drift.test.ts`
+  checks against the installed herdr.
 
-  **Not covered:** `agent.read`, `agent.send_keys`, `agent.prompt` and
-  `agent.wait` in `src/server/herdr/actions.ts`. Their params are hand-written
-  object literals and their responses are ad-hoc casts (`request<{ text?:
-  string }>`), so neither the generator nor the drift test sees them. A rename
-  of the read response's `text` would compile, run, and produce an empty output
-  pane with `options: null` — a silent degradation of exactly the kind the
-  drift test exists to prevent, since `options: null` is a legitimate outcome
-  the UI is built to accept.
+  The read call was added because the gap this entry used to describe stopped
+  being hypothetical: `actions.ts` read `result.text` from `agent.read` for
+  the whole of v2, herdr sends the text at `result.read.text`, and the
+  predicted failure — an empty output pane and `options: null` degrading
+  tap-to-answer to the free-text box — is exactly what shipped, found by
+  running against a live herdr rather than by a test.
 
-  Closing this means extending `scripts/gen-herdr-types.ts` to the request
-  params and response shapes of those four methods and adding them to the drift
-  test — a task-sized piece of work the v2 plan never scoped, deliberately
-  recorded here rather than half-done. **Until then, treat a herdr protocol
-  bump as requiring a manual re-read of `actions.ts` against the live schema.**
+  **Still not covered:** `agent.send_keys`, `agent.prompt` and `agent.wait`,
+  and the request *params* of all four methods, which remain hand-written
+  object literals. Their responses are known (`{ type: "ok" }`,
+  `{ type: "agent_prompted", agent }`, `{ type: "agent_info", agent }` —
+  measured against herdr 0.8.0 and reflected in `tests/actions.test.ts`'s
+  fakes) but are not typed, and none of the three is read for a value, so a
+  drift there fails loudly at the socket rather than silently. That is why
+  the read path was closed first.
+
+  Closing the rest means extending `scripts/gen-herdr-types.ts` to the request
+  params and remaining response shapes and adding them to the drift test — a
+  task-sized piece of work the v2 plan never scoped, deliberately recorded
+  here rather than half-done. **Until then, treat a herdr protocol bump as
+  requiring a manual re-read of `actions.ts` against the live schema.**
+
+- **`MAX_READ_LINES` (2000) is not a usable request against an idle agent.**
+  Scrollback lives on the alternate screen, so herdr recovers it by scrolling
+  the pane: measured on herdr 0.8.0, `recent_unwrapped` costs ~35 ms per line
+  past the viewport — 120 lines took 3.1 s, 300 lines 10.7 s (past
+  `HERDR_TIMEOUT_MS`, so `POST /output` with `lines: 300` fails outright), and
+  500/1000/2000 lines each took ~15.8 s and returned *less* than `visible`
+  returns in 2 ms. The clamp bounds the response size, which was its purpose,
+  but not the wall time, and the ceiling is far above what herdr can actually
+  serve. Fixing it properly means either a much lower scrollback ceiling or a
+  transport timeout that scales with the request; both are policy decisions
+  the read-source fix deliberately did not make on its own.
