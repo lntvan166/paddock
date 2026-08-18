@@ -60,6 +60,28 @@ function pipeCount(text: string): number {
   return n;
 }
 
+/**
+ * A plain separator: one box character repeated, nothing else but whitespace.
+ *
+ * This is what distinguishes a horizontal rule from a TABLE rule. A table
+ * rule carries junctions — `├ ┼ ┤ ┬ ┴` — whose positions mark where the
+ * columns fall, so it is meaningful and must stay welded to its rows. A
+ * separator is one character over and over; there is nothing further along to
+ * see, and nothing it needs to line up with.
+ *
+ * Keeping them apart is what lets the agent's input box render without
+ * scrollbars while a table keeps exactly one.
+ */
+export function isSeparator(text: string): boolean {
+  const seen = new Set<string>();
+  for (const ch of text) {
+    if (ch === " " || ch === "\t") continue;
+    if (!BOX_OR_BLOCK.test(ch)) return false;
+    seen.add(ch);
+  }
+  return seen.size === 1;
+}
+
 export function classifyLine(text: string): LineKind {
   // A blank line is spacing, not structure. Grouping it as structure would
   // weld two unrelated tables into one strip.
@@ -84,7 +106,11 @@ export function classifyLine(text: string): LineKind {
 export function groupLines(texts: string[]): Block[] {
   const blocks: Block[] = [];
   for (let i = 0; i < texts.length; i++) {
-    const kind = classifyLine(texts[i]!);
+    // Separators are grouped as `rule` from the start rather than demoted
+    // afterwards, so they never merge with an adjacent structural run. The
+    // input box's lower rule used to be swallowed by the progress bar beneath
+    // it, which gave the box a scrollbar on one side and not the other.
+    const kind: BlockKind = isSeparator(texts[i]!) ? "rule" : classifyLine(texts[i]!);
     const last = blocks[blocks.length - 1];
     if (last && last.kind === kind) last.to = i;
     else blocks.push({ kind, from: i, to: i });

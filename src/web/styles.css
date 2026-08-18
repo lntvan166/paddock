@@ -340,10 +340,16 @@ body {
    positionally here, so it never reflows; it scrolls on its own instead, and
    the surrounding sentences stay put.
 
+   The class name MUST stay in step with `BlockKind` in web/lines.ts, because
+   the renderer builds it as `term-${kind}`. It did not once: adding the `rule`
+   kind renamed this class from `.term-strip` to `.term-structure` in the JSX
+   and not here, so every table silently lost its styling, fell back to the
+   pane's `white-space: normal`, and collapsed.
+
    `overscroll-behavior-x: contain` stops a swipe that reaches the end of the
    strip from turning into the browser's back gesture. A strip narrower than
    the pane simply never scrolls — no affordance appears. */
-.term-strip {
+.term-structure {
   white-space: pre;
   overflow-x: auto;
   overscroll-behavior-x: contain;

@@ -140,3 +140,27 @@ test("rule blocks still tile the buffer with prose and structure", () => {
   for (const b of blocks) for (let i = b.from; i <= b.to; i++) covered.push(i);
   expect(covered).toEqual([0, 1, 2, 3]);
 });
+
+// ── separators never join their neighbours ─────────────────────────────────
+// A plain separator is one box character repeated. A TABLE rule is not: it
+// carries junctions (├ ┼ ┤ ┬ ┴) whose positions mark the columns, so it must
+// stay welded to the rows it belongs to. Separating the two lets the input
+// box's rules stand alone (and therefore stay clipped) without splitting any
+// table.
+
+test("a plain separator does not merge into an adjacent structural run", () => {
+  // The exact tail herdr sends: separator, prompt, separator, then a labelled
+  // progress bar. The second separator used to be swallowed by the bar's run,
+  // which gave the input box a scrollbar on one side and not the other.
+  const lines = ["─".repeat(208), "❯", "─".repeat(208), "  Opus  ████░░░░ 32%"];
+  expect(groupLines(lines).map((b) => b.kind)).toEqual(["rule", "prose", "rule", "structure"]);
+});
+
+test("a table rule has junctions, so it stays welded to its rows", () => {
+  const lines = ["├────┼────┤", "│ a  │ b  │", "├────┼────┤"];
+  expect(groupLines(lines)).toEqual([{ kind: "structure", from: 0, to: 2 }]);
+});
+
+test("a separator run is still one block, whatever characters it uses", () => {
+  expect(groupLines(["────", "════", "━━━━"])).toEqual([{ kind: "rule", from: 0, to: 2 }]);
+});
