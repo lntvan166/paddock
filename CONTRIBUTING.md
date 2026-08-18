@@ -48,3 +48,9 @@ reintroduce it.
 
 Keep pull requests focused. CI runs types, the public-repo scan, the full suite
 and a demo build on every PR.
+
+## Conduct
+
+Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md). Reports
+go to the maintainers privately — this repo publishes no contact email by
+design, so use a [private advisory](https://github.com/lntvan166/paddock/security/advisories/new).
