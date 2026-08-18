@@ -15,9 +15,9 @@ import type { History } from "@web/history";
  * They were previously two Maps inside the component file with NO eviction at
  * all: `store.ts` prunes agents that disappear, but nothing told the caches,
  * so they grew by one entry per agent ever opened rather than per agent that
- * exists. At up to ~146 KB of reconstructed scrollback each, fifty agents
- * across a long session held about 7 MB that no reload-free path could
- * reclaim. `prunePanes` closes that by reusing the signal the agent list
+ * exists. At up to ~300 KB of reconstructed scrollback each (HISTORY_CAP is 4000
+ * lines), fifty agents across a long session held about 15 MB that no
+ * reload-free path could reclaim. `prunePanes` closes that by reusing the signal the agent list
  * already computes.
  */
 

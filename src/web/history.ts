@@ -24,8 +24,21 @@
  * be a change to one file with tests rather than a change to a component.
  */
 
-/** Lines of reconstructed scrollback kept per agent, oldest trimmed first. */
-export const HISTORY_CAP = 2_000;
+/**
+ * Lines of reconstructed scrollback kept per agent, oldest trimmed first.
+ *
+ * Sized for the case it exists to serve: re-reading an agent's analysis while
+ * deciding how to answer it. That decision happens while the agent is BLOCKED,
+ * and herdr refuses every scrollback source in that state (`agent_not_idle`,
+ * measured) — so whatever is not already held here cannot be fetched at the
+ * moment it is wanted. The cap is the entire budget for that.
+ *
+ * At ~75 characters per line with colour, 4000 lines is roughly 300 KB per
+ * agent, and `pane-cache.ts` evicts an agent's copy as soon as it disappears,
+ * so the total tracks the agents that actually exist rather than every one
+ * ever opened.
+ */
+export const HISTORY_CAP = 4_000;
 
 /**
  * Lines that must line up before a scroll is believed.
