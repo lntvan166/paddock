@@ -8,7 +8,7 @@ import { RATE_MS, themeAttr, writePref } from "@web/prefs";
 import { AgentTerminal, floorFor } from "@web/components/AgentTerminal";
 import { Settings } from "@web/components/Settings";
 import { digestOf } from "@shared/screen";
-import { agent, render, settle, stubFetch, unmount } from "./support/render";
+import { agent, render, settle, stubFetch, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 // Bun runs every test file in one process (tests/support/dom.ts documents
@@ -120,4 +120,51 @@ test("choosing a theme in Settings applies it immediately, with no remount", asy
   await settle();
 
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+});
+
+/**
+ * `styles.css` sizes the terminal by COLUMNS VISIBLE:
+ * `font-size: var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))`, with a
+ * comment recording that the metric was measured and the floor fixed once
+ * already. The clamp is only ever reached when the custom property is UNSET.
+ *
+ * With `fontPx` defaulting to a number, `AgentTerminal` wrote the property on
+ * every render for every operator, so the clamp was dead code for all of
+ * them — and 13px is above the clamp's ~12.5px ceiling and far above its
+ * ~9.9px value on a 390px phone, dropping visible columns from roughly 62 to
+ * 48. Same class of silent default flip already caught for `wrap`.
+ */
+test("with no stored font size the pane sets no custom property, leaving the clamp in charge", async () => {
+  expect(localStorage.getItem("paddock.term.fontpx")).toBe(null);
+  const { fn } = stubFetch({ "/output": () => screenOf(["line one"]) });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<AgentTerminal agent={agent()} onBack={() => {}} />);
+  await settle();
+
+  const pane = host.querySelector(".term-pane") as HTMLElement | null;
+  expect(pane).not.toBeNull();
+  expect(pane?.style.getPropertyValue("--term-font-px")).toBe("");
+});
+
+test("clearing the font size in Settings returns the pane to the clamp", async () => {
+  // The operator needs a way BACK to automatic, or "unset by default" is only
+  // true until the first time anyone touches the field.
+  writePref("fontPx", 18);
+  globalThis.fetch = (async () => new Response(JSON.stringify(settingsView()), {
+    headers: { "content-type": "application/json" },
+  })) as unknown as typeof fetch;
+
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  const input = host.querySelector('input[name="fontPx"]') as HTMLInputElement | null;
+  expect(input).not.toBeNull();
+  expect(input!.value).toBe("18");
+
+  typeInto(input!, "");
+  await settle();
+
+  expect(localStorage.getItem("paddock.term.fontpx")).toBe(null);
 });

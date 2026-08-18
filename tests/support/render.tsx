@@ -72,3 +72,38 @@ export function stubFetch(routes: Record<string, () => unknown>) {
   };
   return { fn, calls };
 }
+
+/**
+ * Type into a controlled input the way a person does, so React's `onChange`
+ * actually fires.
+ *
+ * Two separate things make the obvious `node.value = x` a no-op here, and
+ * both fail SILENTLY — the test then asserts against the component's
+ * original state, which reads as coverage while providing none.
+ *
+ * 1. React installs its own `value` accessor on each input instance (its
+ *    "value tracker") to tell a real edit from a re-render. Assigning through
+ *    that accessor updates the tracker too, so React concludes the value did
+ *    not change. Writing through the PROTOTYPE's native setter leaves the
+ *    tracker stale, which is what a real keystroke does.
+ *
+ * 2. React's change plugin decides at import time whether the environment
+ *    supports the `input` event, and under happy-dom it decides NO — so it
+ *    falls back to its polyfill path, which reads the value on
+ *    `keyup`/`keydown`/`selectionchange` against the element it last saw
+ *    `focusin` on, and ignores `input` entirely. Measured: `input` alone
+ *    never fires `onChange`; `focusin` then `keyup` does. `select` elements
+ *    take a different branch, which is why the existing theme test can get
+ *    away with a bare `change` event.
+ *
+ * All three events are dispatched so this keeps working if that decision ever
+ * flips the other way.
+ */
+export function typeInto(node: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  if (!setter) throw new Error("no native value setter on HTMLInputElement.prototype");
+  node.dispatchEvent(new Event("focusin", { bubbles: true }));
+  setter.call(node, value);
+  node.dispatchEvent(new Event("input", { bubbles: true }));
+  node.dispatchEvent(new Event("keyup", { bubbles: true }));
+}

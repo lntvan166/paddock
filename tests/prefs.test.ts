@@ -19,7 +19,13 @@ test("defaults are returned when nothing is stored", () => {
   // recoverable with one tap whereas scrolling every prose line is a
   // permanent tax (AgentTerminal.tsx's former readWrap() rationale, now
   // owned here).
-  expect(readPrefs()).toEqual({ theme: "system", rate: "live", wrap: true, fontPx: 13 });
+  // fontPx defaults to null — "no explicit preference" — NOT to a number.
+  // styles.css sizes .term-pane with
+  // `clamp(0.62rem, 2.3vw, 0.78rem)` as the fallback behind
+  // `var(--term-font-px, …)`, and AgentTerminal only writes that property
+  // when a real preference exists. A numeric default meant the property was
+  // always written, so the responsive clamp never applied to anybody.
+  expect(readPrefs()).toEqual({ theme: "system", rate: "live", wrap: true, fontPx: null });
 });
 
 test("the existing wrap key is reused verbatim, so no operator's setting resets", () => {
@@ -77,22 +83,22 @@ test("an unrecognised stored rate falls back to the default", () => {
 
 test("a non-numeric stored fontPx falls back to the default", () => {
   localStorage.setItem("paddock.term.fontpx", "abc");
-  expect(readPrefs().fontPx).toBe(13);
+  expect(readPrefs().fontPx).toBe(null);
 });
 
 test("a literal 'NaN' stored fontPx falls back to the default", () => {
   localStorage.setItem("paddock.term.fontpx", "NaN");
-  expect(readPrefs().fontPx).toBe(13);
+  expect(readPrefs().fontPx).toBe(null);
 });
 
 test("a stored fontPx below the 10px floor falls back to the default", () => {
   localStorage.setItem("paddock.term.fontpx", "9");
-  expect(readPrefs().fontPx).toBe(13);
+  expect(readPrefs().fontPx).toBe(null);
 });
 
 test("a stored fontPx above the 22px ceiling falls back to the default", () => {
   localStorage.setItem("paddock.term.fontpx", "23");
-  expect(readPrefs().fontPx).toBe(13);
+  expect(readPrefs().fontPx).toBe(null);
 });
 
 test("the fontPx boundaries themselves are accepted, being inclusive", () => {
@@ -130,4 +136,16 @@ test("writePref round-trips wrap false, persisting as '0' rather than falling th
 test("writePref round-trips fontPx", () => {
   writePref("fontPx", 18);
   expect(readPrefs().fontPx).toBe(18);
+});
+
+test("writing a null fontPx REMOVES the key rather than storing the string 'null'", () => {
+  // "Back to automatic" has to leave storage in the same state as "never
+  // touched", or the clamp is only in charge until the operator opens the
+  // field once. `String(null)` would persist the literal "null", which
+  // readPrefs would then have to launder back to a default on every read.
+  writePref("fontPx", 18);
+  expect(localStorage.getItem("paddock.term.fontpx")).toBe("18");
+  writePref("fontPx", null);
+  expect(localStorage.getItem("paddock.term.fontpx")).toBe(null);
+  expect(readPrefs().fontPx).toBe(null);
 });

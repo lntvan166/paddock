@@ -36,6 +36,7 @@ export function Settings({ onBack }: SettingsProps) {
   const [quietStart, setQuietStart] = useState("");
   const [quietEnd, setQuietEnd] = useState("");
   const [cooldownMs, setCooldownMs] = useState(60_000);
+  const [publicUrl, setPublicUrl] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -73,6 +74,7 @@ export function Settings({ onBack }: SettingsProps) {
         setQuietStart(body.notify.quietHours?.start ?? "");
         setQuietEnd(body.notify.quietHours?.end ?? "");
         setCooldownMs(body.notify.cooldownMs);
+        setPublicUrl(body.publicUrl ?? "");
       } catch (e) {
         if (live) setLoadError(e instanceof Error ? e.message : String(e));
       }
@@ -102,6 +104,19 @@ export function Settings({ onBack }: SettingsProps) {
   }
 
   async function save() {
+    // Half a quiet-hours window is an ERROR, not an instruction to delete the
+    // window. `quietStart && quietEnd ? {…} : null` meant that clearing "end"
+    // to retype it and hitting Save silently destroyed the configured window
+    // and reported success — a swallowed failure in a codebase whose central
+    // rule is that errors are surfaced. Both empty stays legitimate: that is
+    // "no quiet hours".
+    if ((quietStart === "") !== (quietEnd === "")) {
+      setSaveError(
+        "Quiet hours needs both a start and an end. Clear both to turn quiet hours off.",
+      );
+      return;
+    }
+
     setSaving(true);
     setSaveError(null);
     const patch: SettingsPatch = {
@@ -112,6 +127,7 @@ export function Settings({ onBack }: SettingsProps) {
         quietHours: quietStart && quietEnd ? { start: quietStart, end: quietEnd } : null,
         cooldownMs,
       },
+      publicUrl: publicUrl.trim() || null,
     };
     try {
       const res = await fetch("/api/settings", {
@@ -207,14 +223,27 @@ export function Settings({ onBack }: SettingsProps) {
 
         <label className="settings-field">
           <span>Font size</span>
+          {/* Empty means "automatic", and that is the DEFAULT, not a reset
+              button: styles.css sizes the pane with
+              `clamp(0.62rem, 2.3vw, 0.78rem)` behind
+              `var(--term-font-px, …)`, so leaving this blank is what keeps
+              the responsive sizing in charge. An empty string must therefore
+              write `null` (which removes the key) rather than `Number("")`,
+              i.e. 0. */}
           <input
             type="number"
             name="fontPx"
             min={10}
             max={22}
-            value={prefs.fontPx}
-            onChange={(e) => setPref("fontPx", Number(e.target.value))}
+            placeholder="Automatic"
+            value={prefs.fontPx ?? ""}
+            onChange={(e) =>
+              setPref("fontPx", e.target.value === "" ? null : Number(e.target.value))
+            }
           />
+          <span className="settings-hint-inline">
+            Leave blank to size the terminal to the screen.
+          </span>
         </label>
 
         <label className="settings-field settings-field-row">
@@ -315,10 +344,58 @@ export function Settings({ onBack }: SettingsProps) {
           </label>
         </div>
 
+        <label className="settings-field">
+          <span>Public URL</span>
+          {/* Without this, every notification ships with no link — which the
+              design calls the whole reason the setting exists. paddock binds
+              loopback and genuinely cannot discover the hostname it is
+              reached by, so nothing but the operator can supply it. Unset is
+              legal; the message is then text only. */}
+          <input
+            type="url"
+            name="publicUrl"
+            inputMode="url"
+            autoComplete="off"
+            placeholder="https://paddock.example.com"
+            value={publicUrl}
+            onChange={(e) => setPublicUrl(e.target.value)}
+          />
+          <span className="settings-hint-inline">
+            Where you reach paddock from your phone. Used to build the link in each message.
+          </span>
+        </label>
+
+        <label className="settings-field">
+          <span>Cooldown (ms)</span>
+          {/* `min` matches the server's own floor (routes.ts MIN_COOLDOWN_MS):
+              0 disarms the per-agent rate limit and reintroduces the
+              send-per-delta hot loop against a failing Telegram. The server
+              rejects it either way — this just says so before the round
+              trip. */}
+          <input
+            type="number"
+            name="cooldownMs"
+            min={1000}
+            step={1000}
+            value={cooldownMs}
+            onChange={(e) => setCooldownMs(Number(e.target.value))}
+          />
+          <span className="settings-hint-inline">
+            Shortest gap between two messages about the same agent.
+          </span>
+        </label>
+
         {saveError && <p className="settings-banner">{saveError}</p>}
 
         <div className="settings-actions">
-          <button type="button" onClick={() => void save()} disabled={saving}>
+          {/* Disabled until the GET has landed. Every field in this section
+              starts at an empty/false/60000 placeholder and is only filled in
+              by that response — so if it fails, `loadError` is shown but Save
+              would PUT `enabled: false, triggers: [], quietHours: null,
+              chatId: null` straight over whatever the operator had
+              configured, destroying the token's companion settings to fix
+              nothing. A form that never loaded cannot be saved. */}
+          <button type="button" onClick={() => void save()} disabled={saving || view === null}>
             {saving ? "Saving…" : "Save"}
           </button>
           <button type="button" onClick={() => void sendTest()} disabled={testing}>

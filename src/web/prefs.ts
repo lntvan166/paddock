@@ -17,7 +17,17 @@ export interface Prefs {
   theme: ThemePref;
   rate: RatePref;
   wrap: boolean;
-  fontPx: number;
+  /**
+   * `null` means "no explicit preference" — NOT a number.
+   *
+   * `styles.css` sizes `.term-pane` by COLUMNS VISIBLE:
+   * `font-size: var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))`, and the
+   * comment above that rule records that the metric was measured and the
+   * floor corrected once already. The clamp is only ever reached when the
+   * custom property is unset, so `AgentTerminal` must write the property only
+   * when this is a number. Consumers: treat `null` as "write nothing".
+   */
+  fontPx: number | null;
 }
 
 /**
@@ -30,8 +40,17 @@ export interface Prefs {
  * `AgentTerminal.tsx`'s own former `readWrap()` carried; it must survive the
  * move here; see `readPrefs()` below for how "never stored" (default `true`)
  * is kept distinct from "explicitly turned off" (`"0"`, default `false`).
+ *
+ * `fontPx` defaults to `null` for the same reason `wrap` defaults to `true`
+ * and not `false`: a default that is indistinguishable from an explicit
+ * choice silently overrides behaviour the operator never asked to change.
+ * The previous numeric default (13) was written to `--term-font-px` on every
+ * render for every operator, so the responsive clamp above was dead code —
+ * and 13px is above the clamp's ~12.5px ceiling and far above its ~9.9px
+ * value on a 390px viewport, dropping visible columns from roughly 62 to 48
+ * on a phone. The clamp stays in charge until someone chooses a size.
  */
-const DEFAULTS: Prefs = { theme: "system", rate: "live", wrap: true, fontPx: 13 };
+const DEFAULTS: Prefs = { theme: "system", rate: "live", wrap: true, fontPx: null };
 
 /** `wrap` is kept verbatim from AgentTerminal's own `WRAP_KEY` so no
  *  operator's current setting resets. All other keys are namespaced the
@@ -75,6 +94,12 @@ export function readPrefs(): Prefs {
 
 export function writePref<K extends keyof Prefs>(k: K, v: Prefs[K]): void {
   try {
+    // `null` REMOVES the key rather than storing the string "null". "Back to
+    // automatic" has to leave storage in exactly the state "never touched"
+    // leaves it, or the clamp is only in charge until the field is opened
+    // once. Only `fontPx` is nullable today; the check is on the value, not
+    // the key, so a future nullable pref inherits the behaviour.
+    if (v === null) { localStorage.removeItem(KEYS[k]); return; }
     localStorage.setItem(KEYS[k], k === "wrap" ? (v ? "1" : "0") : String(v));
   } catch {
     // Safari private mode: the preference simply does not persist, which is

@@ -586,6 +586,21 @@ body {
   font: inherit;
 }
 
+/* Time inputs get the full 44px rather than the 40px baseline: a quiet-hours
+   field is a two-part control (hour, then minute) on a touch keyboard, and it
+   sits beside its twin in a row, so a mis-tap lands in the other field. */
+.settings-field input[type="time"] {
+  min-height: 2.75rem;
+}
+
+/* The one-line explanations under a field. Not a colour defined only inside
+   a media query — `--fg-dim` is a token on bare :root. */
+.settings-hint-inline {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--fg-dim);
+}
+
 /* A checkbox rendered inline with its label, not stacked like a text field —
    this is the shape of a switch, even though it is a plain checkbox input:
    touch devices get the same 44px+ target via .tap conventions elsewhere, and
@@ -597,9 +612,22 @@ body {
   gap: 0.75rem;
 }
 
-.settings-field-row input[type="checkbox"] {
+/* 44px of ROW, not just a bigger box. A 1.35rem checkbox is a ~22px target;
+   the guideline is 44px, and these are the primary controls of a
+   mobile-first feature. The whole label row is the tap target — the input is
+   its child, so a tap anywhere on the row toggles it. */
+.settings-field-row {
+  min-height: 2.75rem;
+}
+
+.settings-field-row input[type="checkbox"],
+.settings-triggers input[type="checkbox"] {
   width: 1.35rem;
   height: 1.35rem;
+  /* Undoes the UA's default margin so the enlarged box does not shove the
+     label off the row on narrow screens. */
+  margin: 0;
+  flex: none;
 }
 
 .settings-token-status {
@@ -607,9 +635,15 @@ body {
   color: var(--fg-dim);
 }
 
+/* `flex-wrap` plus a full-width legend below. A `fieldset` with
+   `display: flex` makes its `<legend>` a flex item, which laid "Notify on"
+   INLINE with the two checkboxes instead of above them — it read as a third
+   option. Wrapping, with the legend claiming the whole first line, puts it
+   back where a legend belongs without needing a wrapper element. */
 .settings-triggers {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0 1rem;
   margin: 0 0 0.85rem;
   padding: 0;
   border: 0;
@@ -617,15 +651,20 @@ body {
 }
 
 .settings-triggers legend {
+  flex: 0 0 100%;
+  width: 100%;
   font-size: 0.75rem;
   color: var(--fg-dim);
   padding: 0 0 0.3rem;
 }
 
+/* The label, not the 22px box, is the tap target — 44px tall, matching
+   .settings-field-row above and the .tap convention used across the app. */
 .settings-triggers label {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.45rem;
+  min-height: 2.75rem;
 }
 
 .settings-banner {

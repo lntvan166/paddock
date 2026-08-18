@@ -4,7 +4,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { Settings } from "@web/components/Settings";
-import { render, settle, unmount } from "./support/render";
+import { render, settle, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 const PREF_KEYS = ["paddock.theme", "paddock.rate", "paddock.term.wrap", "paddock.term.fontpx"];
@@ -118,4 +118,131 @@ test("a failed test message surfaces Telegram's own description, never a silent 
   await settle();
 
   expect(host.textContent).toContain("chat not found");
+});
+
+test("Save is disabled until the settings have loaded, so a failed GET cannot overwrite the server", async () => {
+  // Every field in the "All devices" section starts at an empty/false/60000
+  // placeholder and is only populated by the mount GET. If that GET fails,
+  // `loadError` is shown — but a Save that stayed enabled would PUT
+  // `enabled: false, triggers: [], quietHours: null, chatId: null` over
+  // whatever the operator actually had configured. A form that never loaded
+  // cannot be saved.
+  let puts = 0;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === "PUT") { puts += 1; return new Response("{}"); }
+    throw new Error("network down");
+  }) as unknown as typeof fetch;
+
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  // The failure IS surfaced — this is not a silent degradation.
+  expect(host.textContent).toContain("network down");
+
+  const save = buttonByText(host, "Save");
+  expect(save.disabled).toBe(true);
+  save.click();
+  await settle();
+  expect(puts).toBe(0);
+});
+
+test("clearing one half of quiet hours is refused, not silently applied as 'no quiet hours'", async () => {
+  // Clearing "end" to retype it and hitting Save used to delete the whole
+  // configured window with no message, because the patch read
+  // `quietStart && quietEnd ? {…} : null`. Both fields empty remains a
+  // legitimate "no quiet hours"; exactly one filled is an operator error and
+  // has to say so.
+  let putBody: string | null = null;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === "PUT") {
+      putBody = String(init.body);
+      return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
+    }
+    return new Response(
+      JSON.stringify({ ...view(), notify: { ...view().notify, quietHours: { start: "22:00", end: "08:00" } } }),
+      { headers: { "content-type": "application/json" } },
+    );
+  }) as unknown as typeof fetch;
+
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  const end = host.querySelector('input[name="quietEnd"]') as HTMLInputElement;
+  expect(end.value).toBe("08:00");
+  typeInto(end, "");
+  await settle();
+
+  buttonByText(host, "Save").click();
+  await settle();
+  await settle();
+
+  expect(host.textContent?.toLowerCase()).toContain("quiet hours needs both");
+  expect(putBody).toBe(null);
+
+  // Both empty is still a legal save — this is a validation error, not a
+  // permanent lock on the form.
+  const start = host.querySelector('input[name="quietStart"]') as HTMLInputElement;
+  typeInto(start, "");
+  await settle();
+  buttonByText(host, "Save").click();
+  await settle();
+  await settle();
+  expect(putBody).not.toBe(null);
+  expect(JSON.parse(putBody!).notify.quietHours).toBe(null);
+});
+
+test("publicUrl and cooldownMs have real inputs, and both reach the PUT body", async () => {
+  // Both round-tripped through state with no control at all: validated,
+  // stored, and consumed by the notifier, but unsettable without hand-editing
+  // settings.json. With publicUrl unset EVERY notification ships with no
+  // link, which the design calls the whole reason the setting exists.
+  let putBody: string | null = null;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === "PUT") {
+      putBody = String(init.body);
+      return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  const url = host.querySelector('input[name="publicUrl"]') as HTMLInputElement | null;
+  expect(url).not.toBeNull();
+  const cooldown = host.querySelector('input[name="cooldownMs"]') as HTMLInputElement | null;
+  expect(cooldown).not.toBeNull();
+  // The server's own floor (routes.ts MIN_COOLDOWN_MS): 0 disarms the rate
+  // limit and reintroduces the send-per-delta hot loop.
+  expect(cooldown!.getAttribute("min")).toBe("1000");
+
+  typeInto(url!, "https://paddock.example.com");
+  typeInto(cooldown!, "90000");
+  await settle();
+
+  buttonByText(host, "Save").click();
+  await settle();
+  await settle();
+
+  expect(putBody).not.toBe(null);
+  const sent = JSON.parse(putBody!);
+  expect(sent.publicUrl).toBe("https://paddock.example.com");
+  expect(sent.notify.cooldownMs).toBe(90_000);
+});
+
+test("an existing publicUrl is shown in the field, not silently wiped on the next Save", async () => {
+  globalThis.fetch = (async () => new Response(
+    JSON.stringify({ ...view(), publicUrl: "https://paddock.example.com" }),
+    { headers: { "content-type": "application/json" } },
+  )) as unknown as typeof fetch;
+
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  const url = host.querySelector('input[name="publicUrl"]') as HTMLInputElement;
+  expect(url.value).toBe("https://paddock.example.com");
 });

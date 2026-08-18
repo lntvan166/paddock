@@ -5,11 +5,18 @@ export function HostHeader({
 }: {
   hostId: string | null;
   agents: Agent[];
-  /** Absent only in tests that don't care about navigation; App.tsx always
-   *  supplies it, following the same "component takes a callback, the
-   *  hash write lives in App.tsx" convention as AgentCard/AgentRow's
-   *  `onSelect`. */
-  onOpenSettings?: () => void;
+  /**
+   * REQUIRED, not optional. This is the only route into `#/settings`, and
+   * this branch already lost that entry point once. Optional made the
+   * callback's absence a type-checked non-event: a render that forgot to pass
+   * it compiled, and the gear silently did nothing. Tests that do not care
+   * about navigation pass `() => {}` — one explicit character of noise, in
+   * exchange for the compiler catching a dropped entry point.
+   *
+   * Follows the same "component takes a callback, the hash write lives in
+   * App.tsx" convention as AgentCard/AgentRow's `onSelect`.
+   */
+  onOpenSettings: () => void;
 }) {
   const n = (s: Agent["state"]) => agents.filter((a) => a.state === s).length;
   const parts = [

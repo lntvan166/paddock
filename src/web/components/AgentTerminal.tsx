@@ -182,7 +182,14 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // `fontPx` comment above for why once is enough), and read by callbacks
   // that must not be rebuilt every render to pick up a value that cannot
   // change under them anyway.
-  const floorRef = useRef(floorFor(readPrefs().rate));
+  //
+  // Read through a LAZY initializer, like `wrap` and `fontPx` above.
+  // `useRef(floorFor(readPrefs().rate))` evaluates its argument on every
+  // render and throws the result away on all but the first — four
+  // localStorage reads per render, in a component that re-renders every
+  // 250 ms on the Live preset.
+  const [floorMs] = useState(() => floorFor(readPrefs().rate));
+  const floorRef = useRef(floorMs);
 
   // Current backoff position. A ref, not state: changing it must not re-render
   // the pane, and the polling loop has to read the latest value without being
@@ -492,11 +499,18 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           className="term-pane"
           data-wrap={wrap ? "on" : "off"}
           onScroll={rememberScroll}
-          // `--term-font-px` is read by styles.css:249. Set as a custom
-          // property rather than a `fontSize` style so `.term-exact`'s
-          // `font: inherit` (styles.css:399) picks it up in both wrap modes
+          // `--term-font-px` is read by styles.css's `.term-pane` rule. Set
+          // as a custom property rather than a `fontSize` style so
+          // `.term-exact`'s `font: inherit` picks it up in both wrap modes
           // without a second place to apply it.
-          style={{ "--term-font-px": `${fontPx}px` } as CSSProperties}
+          //
+          // Written ONLY when the operator has chosen a size. That rule reads
+          // `var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))`, so writing
+          // the property unconditionally — which is what a numeric default
+          // for `fontPx` made this do — means the clamp never applies to
+          // anybody and the pane loses roughly a quarter of its columns on a
+          // phone. `undefined` leaves the attribute off entirely.
+          style={fontPx === null ? undefined : ({ "--term-font-px": `${fontPx}px` } as CSSProperties)}
         >
           {/* Spans, not raw text: the escapes carry the structure. Every span's
               content is a React child, so React escapes it — this is agent
