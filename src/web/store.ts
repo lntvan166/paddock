@@ -6,6 +6,34 @@ export interface ClientState {
   hostId: string | null;
   connected: boolean;
   lastMessageAt: number | null;
+  /** The build this tab first saw the server serving. */
+  build: string | null;
+  /** The server is serving a different build than this tab is running. */
+  updateAvailable: boolean;
+}
+
+/**
+ * Track the server's build id, and latch when it changes.
+ *
+ * `index.html` is served `no-cache`, so a FRESH load always gets the current
+ * bundle. That does nothing for a tab already open — it keeps running the
+ * JavaScript it loaded, indefinitely, which on a phone can mean days. Twice in
+ * this project a bug was hunted in code that had already been fixed, because
+ * the tab under test was stale.
+ *
+ * Three rules, each of which exists to avoid a false alarm:
+ *  - the FIRST id seen is adopted, never reported — otherwise every tab
+ *    announces an update the moment it connects;
+ *  - a null id is ignored entirely, because dev mode serves unhashed assets
+ *    and would otherwise show a permanent, un-dismissable prompt;
+ *  - once raised the flag stays raised, because the tab really is running
+ *    stale code until someone reloads it.
+ */
+function trackBuild(state: ClientState, build: string | null | undefined): Partial<ClientState> {
+  if (build == null) return {};
+  if (state.build === null) return { build };
+  if (state.build === build) return {};
+  return { updateAvailable: true };
 }
 
 const STALE_AFTER_MS = 60_000;
@@ -24,6 +52,7 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
   if (msg.type === "snapshot") {
     return {
       ...state,
+      ...trackBuild(state, msg.build),
       hostId: msg.hostId,
       agents: msg.agents,
       lastMessageAt: msg.serverTime,
@@ -33,7 +62,7 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
   // entire job — and must not touch `agents`, so a quiet link keeps proving
   // itself alive without ever redrawing a row.
   if (msg.type === "heartbeat") {
-    return { ...state, lastMessageAt: msg.serverTime };
+    return { ...state, ...trackBuild(state, msg.build), lastMessageAt: msg.serverTime };
   }
   const byId = new Map(state.agents.map((a) => [a.agentId, a]));
   for (const a of msg.upserted) byId.set(a.agentId, a);
@@ -49,7 +78,13 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
  * Hub.startHeartbeat), so a live link refreshes `lastMessageAt` three times
  * inside this window even when no agent has moved for hours.
  */
-export function isStale(state: ClientState, now: number, thresholdMs = STALE_AFTER_MS): boolean {
+export function isStale(
+  // Only the fields it reads: a wider type would force every caller to
+  // supply state this function has no opinion about.
+  state: Pick<ClientState, "connected" | "lastMessageAt">,
+  now: number,
+  thresholdMs = STALE_AFTER_MS,
+): boolean {
   if (!state.connected) return true;
   if (state.lastMessageAt === null) return true;
   return now - state.lastMessageAt > thresholdMs;
@@ -127,6 +162,8 @@ export const useStore = create<Store>((set, get) => {
     hostId: null,
     connected: false,
     lastMessageAt: null,
+  build: null,
+  updateAvailable: false,
     connect,
   };
 });

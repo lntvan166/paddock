@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@server/routes";
@@ -14,6 +15,7 @@ import { StreamKeeper } from "@server/herdr/keeper";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
 import { Hub, type HubClient } from "@server/ws/hub";
+import { buildIdFrom } from "@server/build-id";
 
 const args = new Set(Bun.argv.slice(2));
 const DEMO = args.has("--demo");
@@ -32,7 +34,35 @@ const socketPath =
 
 const hostId = DEMO ? DEMO_HOST_ID : (process.env.PADDOCK_HOST_ID ?? "local");
 const store = new AgentStore(hostId);
-const hub = new Hub();
+/**
+ * The build currently on disk, re-read rather than captured at startup.
+ *
+ * `make dev` rebuilds the UI without restarting this process, so a value read
+ * once would go stale in exactly the workflow that most needs it. Cached
+ * against the file's mtime, so the common case is a stat rather than a read,
+ * and a rebuild is picked up on the next heartbeat.
+ */
+const STATIC_DIR = process.env.PADDOCK_STATIC_DIR ?? "dist";
+
+let buildCache: { mtimeMs: number; id: string | null } | null = null;
+
+function currentBuildId(): string | null {
+  try {
+    const file = `${STATIC_DIR}/index.html`;
+    const { mtimeMs } = statSync(file);
+    if (buildCache?.mtimeMs !== mtimeMs) {
+      buildCache = { mtimeMs, id: buildIdFrom(readFileSync(file, "utf8")) };
+    }
+    return buildCache.id;
+  } catch {
+    // No built UI (dev through Vite, or a fresh checkout). Null means "cannot
+    // tell", and the client treats that as "no update to announce" rather
+    // than announcing one on every heartbeat forever.
+    return null;
+  }
+}
+
+const hub = new Hub({ build: currentBuildId });
 
 let supervisor: Supervisor | null = null;
 let demo: DemoSource | null = null;

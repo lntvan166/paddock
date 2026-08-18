@@ -164,7 +164,7 @@ export type OutputResult =
   | { unchanged?: false; lines: string[]; source: string; digest: string };
 
 export type ServerMessage =
-  | { type: "snapshot"; hostId: string; agents: Agent[]; serverTime: number }
+  | { type: "snapshot"; hostId: string; agents: Agent[]; serverTime: number; build?: string | null }
   | { type: "delta"; upserted: Agent[]; removedIds: string[]; serverTime: number }
   /**
    * "I am still here" — carries no agent data and changes nothing on screen.
@@ -177,7 +177,12 @@ export type ServerMessage =
    * declaring itself stale at T+60s and leaving the operator unable to tell
    * "nothing is happening" from "the link died".
    */
-  | { type: "heartbeat"; serverTime: number };
+  /**
+   * Carries the server's current build id so an ALREADY-OPEN tab can notice it
+   * is running stale JavaScript. `index.html` is `no-cache`, which fixes fresh
+   * loads and does nothing for a tab left open on a phone for days.
+   */
+  | { type: "heartbeat"; serverTime: number; build?: string | null };
 
 export const SECTION_ORDER = ["needs-you", "working", "idle"] as const;
 export type Section = (typeof SECTION_ORDER)[number];

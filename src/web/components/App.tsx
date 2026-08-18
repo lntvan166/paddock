@@ -10,9 +10,10 @@ import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/
 import { staleAttrs } from "@web/components/staleness";
 import { agentHash, useAgentRoute } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
+import { UpdateBar } from "@web/components/UpdateBar";
 
 export function App() {
-  const { agents, hostId, connected, lastMessageAt, connect } = useStore();
+  const { agents, hostId, connected, lastMessageAt, updateAvailable, connect } = useStore();
   const [now, setNow] = useState(() => Date.now());
   // Expanded by default. Collapsed, idle agents render as chips that carry a
   // name and nothing else — no task line, no elapsed time — so the section
@@ -49,7 +50,7 @@ export function App() {
   }, [agentIds]);
 
   const groups = groupAgents(agents);
-  const stale = isStale({ agents, hostId, connected, lastMessageAt }, now);
+  const stale = isStale({ connected, lastMessageAt }, now);
   // Re-derived from the live list every render, never cached: if the selected
   // agent is pruned from a snapshot (or reconnects under a new id), the view
   // falls back to the list instead of showing dangling data. This also makes a
@@ -79,6 +80,10 @@ export function App() {
 
   return (
     <main className="mx-auto max-w-2xl safe-bottom">
+      {/* Shown ABOVE the staleness banner and outside the dimming wrapper: this
+          is the one message that explains why everything else might be wrong,
+          so it must never be dimmed as "possibly stale data". */}
+      {updateAvailable && <UpdateBar />}
       {stale && (
         <ConnectionBanner connected={connected} lastMessageAt={lastMessageAt} now={now} />
       )}

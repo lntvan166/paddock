@@ -13,6 +13,7 @@ export interface HubOptions {
    */
   heartbeatMs?: number;
   now?: () => number;
+  build?: () => string | null;
 }
 
 /**
@@ -30,11 +31,17 @@ export class Hub {
   private readonly coalesceMs: number;
   private readonly heartbeatMs: number;
   private readonly now: () => number;
+  /**
+   * Injected rather than read here: the hub knows nothing about the filesystem
+   * or about how the UI is built, and must stay testable without either.
+   */
+  private readonly build: () => string | null;
 
   constructor(opts: HubOptions = {}) {
     this.coalesceMs = opts.coalesceMs ?? 100;
     this.heartbeatMs = opts.heartbeatMs ?? 20_000;
     this.now = opts.now ?? Date.now;
+    this.build = opts.build ?? (() => null);
   }
 
   get clientCount(): number {
@@ -67,7 +74,7 @@ export class Hub {
 
   /** One liveness frame to every connected browser. Carries no agent data. */
   sendHeartbeat(): void {
-    const msg: ServerMessage = { type: "heartbeat", serverTime: this.now() };
+    const msg: ServerMessage = { type: "heartbeat", serverTime: this.now(), build: this.build() };
     for (const client of [...this.clients]) this.sendTo(client, msg);
   }
 
@@ -80,7 +87,7 @@ export class Hub {
   }
 
   sendSnapshot(client: HubClient, hostId: string, agents: Agent[]): void {
-    this.sendTo(client, { type: "snapshot", hostId, agents, serverTime: this.now() });
+    this.sendTo(client, { type: "snapshot", hostId, agents, serverTime: this.now(), build: this.build() });
   }
 
   queue(delta: { upserted: Agent[]; removedIds: string[] }): void {

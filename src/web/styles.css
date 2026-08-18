@@ -461,3 +461,29 @@ body {
   letter-spacing: 0.04em;
   color: var(--warn);
 }
+
+/* Never dimmed with stale data: this is the message that explains why the rest
+   might be wrong. Accent-coloured rather than warn — a new build is good news,
+   not a fault. */
+.update-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.8rem;
+}
+
+.update-bar button {
+  min-height: 2.25rem;
+  padding: 0 0.8rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: rgb(255 255 255 / 0.18);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}

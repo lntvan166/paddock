@@ -149,11 +149,40 @@ test("the default heartbeat interval sits comfortably inside the 60s staleness t
 });
 
 test("a heartbeat carries no agent data", () => {
+  // Asserted by ABSENCE of agent fields rather than by exact equality: the
+  // frame also carries the build id, and pinning the whole object made adding
+  // that look like a regression in a test whose subject is agent data.
   const hub = new Hub({ now: () => NOW });
   const { client, sent } = fakeClient();
   hub.add(client);
   hub.sendHeartbeat();
-  expect(sent).toEqual([{ type: "heartbeat", serverTime: NOW }]);
+  expect(sent).toHaveLength(1);
+  const msg = sent[0] as Record<string, unknown>;
+  expect(msg.type).toBe("heartbeat");
+  expect(msg.serverTime).toBe(NOW);
+  for (const field of ["agents", "upserted", "removedIds", "hostId"]) {
+    expect(msg[field]).toBeUndefined();
+  }
+});
+
+test("a heartbeat carries the build id, so an open tab can notice it is stale", () => {
+  // `index.html` is served no-cache, which fixes a FRESH load and does nothing
+  // for a tab already open — the tab an operator leaves running on a phone.
+  const hub = new Hub({ now: () => NOW, build: () => "index-ABC123.js" });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.sendHeartbeat();
+  expect((sent[0] as Record<string, unknown>).build).toBe("index-ABC123.js");
+});
+
+test("with no built UI the build id is null, not a made-up value", () => {
+  // Dev mode serves unhashed assets. Inventing an id would make every client
+  // believe a new build had landed, on every heartbeat, forever.
+  const hub = new Hub({ now: () => NOW });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.sendHeartbeat();
+  expect((sent[0] as Record<string, unknown>).build).toBeNull();
 });
 
 test("startHeartbeat is idempotent — a second call does not double the rate", async () => {
