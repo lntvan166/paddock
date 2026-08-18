@@ -130,9 +130,39 @@ const DECLARED_READ_ENVELOPE_FIELDS = Object.keys(
   DECLARED_READ_ENVELOPE_FLAGS,
 ) as (keyof HerdrPaneRead)[];
 
-async function liveSchema(): Promise<any> {
-  const proc = Bun.spawn(["herdr", "api", "schema", "--json"], { stdout: "pipe" });
-  return JSON.parse(await new Response(proc.stdout).text());
+/**
+ * The installed herdr's schema, or null when herdr is not present.
+ *
+ * These tests compare hand-written declarations against a LIVE herdr, so
+ * without herdr there is nothing to compare and they must skip — with the
+ * reason stated, not silently. CI runners have no herdr installed, and a
+ * suite that fails there for an environmental reason trains everyone to
+ * ignore a red build.
+ *
+ * The distinction from `immutable-cache.test.ts`, which deliberately FAILS
+ * rather than skips when `dist/` is missing: CI can produce `dist/`, so a
+ * skip there would hide a real gap on every run. CI cannot produce a herdr
+ * installation. Skip only what the environment genuinely cannot supply.
+ */
+async function liveSchema(): Promise<any | null> {
+  try {
+    const proc = Bun.spawn(["herdr", "api", "schema", "--json"], {
+      stdout: "pipe", stderr: "ignore",
+    });
+    const text = await new Response(proc.stdout).text();
+    if ((await proc.exited) !== 0 || text.trim() === "") return null;
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+const HAVE_HERDR = (await liveSchema()) !== null;
+if (!HAVE_HERDR) {
+  console.info(
+    "herdr-schema-drift: herdr not installed — drift checks skipped. " +
+      "They compare paddock's hand-written types against a LIVE `herdr api schema`.",
+  );
 }
 
 /**
@@ -152,7 +182,7 @@ function expectNoDrift(
   expect(liveProperties.filter((property) => !known.has(property))).toEqual([]);
 }
 
-test("HerdrAgentRaw has not drifted from the installed herdr's AgentInfo schema", async () => {
+test.skipIf(!HAVE_HERDR)("HerdrAgentRaw has not drifted from the installed herdr's AgentInfo schema", async () => {
   const schema = await liveSchema();
   expectNoDrift(
     Object.keys(schema.schemas.success_response.$defs.AgentInfo.properties),
@@ -161,7 +191,7 @@ test("HerdrAgentRaw has not drifted from the installed herdr's AgentInfo schema"
   );
 });
 
-test("HerdrWorkspaceRaw has not drifted from the installed herdr's WorkspaceInfo schema", async () => {
+test.skipIf(!HAVE_HERDR)("HerdrWorkspaceRaw has not drifted from the installed herdr's WorkspaceInfo schema", async () => {
   // `label` is the whole reason paddock reads workspace.list. A rename here
   // renders every workspace label empty, with no error anywhere.
   const schema = await liveSchema();
@@ -172,7 +202,7 @@ test("HerdrWorkspaceRaw has not drifted from the installed herdr's WorkspaceInfo
   );
 });
 
-test("HerdrPaneReadResult has not drifted from the installed herdr's PaneReadResult schema", async () => {
+test.skipIf(!HAVE_HERDR)("HerdrPaneReadResult has not drifted from the installed herdr's PaneReadResult schema", async () => {
   // `text` is the whole reason paddock calls agent.read. Reading it from the
   // wrong place is the defect this file now guards; a rename would put the
   // output pane and every parsed prompt back to empty with no error anywhere.
@@ -184,7 +214,7 @@ test("HerdrPaneReadResult has not drifted from the installed herdr's PaneReadRes
   );
 });
 
-test("HerdrPaneRead has not drifted from the installed agent.read response envelope", async () => {
+test.skipIf(!HAVE_HERDR)("HerdrPaneRead has not drifted from the installed agent.read response envelope", async () => {
   // The variant of ResponseResult discriminated by `type: "pane_read"`. If
   // herdr ever renamed `read`, or moved `text` up onto the envelope, this is
   // the check that notices — the payload check above would still pass.
@@ -201,7 +231,7 @@ test("HerdrPaneRead has not drifted from the installed agent.read response envel
   expect(paneRead.required.sort()).toEqual(["read", "type"]);
 });
 
-test("HerdrStatusChanged has not drifted from the installed pane.agent_status_changed payload", async () => {
+test.skipIf(!HAVE_HERDR)("HerdrStatusChanged has not drifted from the installed pane.agent_status_changed payload", async () => {
   // This is the push path: a rename in `agent_status` or `title` freezes every
   // row's state or task line until the next healing reconcile papers over it.
   const schema = await liveSchema();
