@@ -4,7 +4,7 @@ import type { Agent, ServerMessage } from "@shared/types";
 import { wsUrlFrom } from "@web/store";
 
 const NOW = 1_700_000_000_000;
-const EMPTY: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false };
+const EMPTY: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null };
 
 function agent(over: Partial<Agent> = {}): Agent {
   return {
@@ -128,6 +128,38 @@ test("state is stale when no message has arrived within the threshold", () => {
   const s = { ...EMPTY, connected: true, lastMessageAt: NOW };
   expect(isStale(s, NOW + 61_000)).toBe(true);
   expect(isStale(s, NOW + 10_000)).toBe(false);
+});
+
+test("a heartbeat's latestKnown reaches state", () => {
+  const next = applyMessage(EMPTY, { type: "heartbeat", serverTime: NOW, latestKnown: "9.9.9" });
+  expect(next.latestKnown).toBe("9.9.9");
+});
+
+test("a snapshot's latestKnown reaches state too", () => {
+  const next = applyMessage(EMPTY, {
+    type: "snapshot", hostId: "dev-box", agents: [], serverTime: NOW, latestKnown: "9.9.9",
+  });
+  expect(next.latestKnown).toBe("9.9.9");
+});
+
+test("latestKnown does NOT latch — unlike updateAvailable, it clears once the operator updates", () => {
+  let s = applyMessage(EMPTY, { type: "heartbeat", serverTime: NOW, latestKnown: "9.9.9" });
+  expect(s.latestKnown).toBe("9.9.9");
+  // The server's own check re-evaluates isNewer() against whatever binary is
+  // now running; once it is current, latestKnown genuinely becomes null
+  // again, and the dashboard must stop nagging about an update that already
+  // happened.
+  s = applyMessage(s, { type: "heartbeat", serverTime: NOW + 1, latestKnown: null });
+  expect(s.latestKnown).toBeNull();
+});
+
+test("a message with no latestKnown field at all leaves the prior value alone", () => {
+  // Distinguishes "the server says null" (a real, current answer) from "this
+  // message does not carry the field" (e.g. a delta, which never does) —
+  // only the latter must be a no-op.
+  let s = applyMessage(EMPTY, { type: "heartbeat", serverTime: NOW, latestKnown: "9.9.9" });
+  s = applyMessage(s, { type: "delta", upserted: [], removedIds: [], serverTime: NOW + 1 });
+  expect(s.latestKnown).toBe("9.9.9");
 });
 
 test("connect() is not re-entrant: a second call opens no additional socket", () => {

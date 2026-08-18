@@ -55,3 +55,18 @@ export async function checkForUpdate(o: CheckOpts): Promise<string | null> {
   await writeFile(file, JSON.stringify({ at: o.now, latest }, null, 2));
   return latest && isNewer(latest, o.current) ? latest : null;
 }
+
+/**
+ * The env-var opt-out (`PADDOCK_NO_UPDATE_CHECK=1`), isolated so the mapping
+ * itself has a unit test.
+ *
+ * Fix round 1: this used to be an inline `process.env.PADDOCK_NO_UPDATE_CHECK
+ * === "1"` at the `index.ts` call site, exercised only via `checkForUpdate`'s
+ * library-level `disabled: true` — which proves the library respects the
+ * flag, not that `index.ts` reads the right variable or the right operator. A
+ * `!==` for `===` typo (or the wrong variable name entirely) would have
+ * compiled and passed every existing test.
+ */
+export function noUpdateCheckRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.PADDOCK_NO_UPDATE_CHECK === "1";
+}

@@ -29,15 +29,20 @@ export function HostHeader({
    */
   onOpenSettings: () => void;
   /**
-   * The health body's `latestKnown`: a version string when the server's
-   * once-a-day check has found something newer than the running build, or
-   * `null` before that check has run or when the running build is current.
+   * A version string when the server's once-a-day check has found something
+   * newer than the running build, or `null` before that check has run or
+   * when the running build is current.
+   *
+   * Sourced from the store's `latestKnown` (see `@web/store`), which rides
+   * the WebSocket snapshot/heartbeat envelope rather than a one-shot
+   * `/api/health` fetch — this component itself has no opinion about that,
+   * it only renders whatever it is given.
    *
    * REQUIRED, not optional, for the same reason as `onOpenSettings` above —
-   * ruling P5 on `HealthBody` exists precisely so an edit that stops passing
-   * this is a type error at every call site, not a silently absent line.
-   * Callers that have no health data yet (a fixture, a test that does not
-   * care) pass `null` explicitly.
+   * ruling P5 on `HealthBody` (the field's origin on the server) exists
+   * precisely so an edit that stops passing this is a type error at every
+   * call site, not a silently absent line. Callers that have no value yet
+   * (a fixture, a test that does not care) pass `null` explicitly.
    */
   latestKnown: string | null;
 }) {

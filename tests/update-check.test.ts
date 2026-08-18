@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkForUpdate } from "@server/update-check";
+import { checkForUpdate, noUpdateCheckRequested } from "@server/update-check";
 
 const dir = async () => mkdtemp(join(tmpdir(), "paddock-uc-"));
 
@@ -48,4 +48,16 @@ test("a corrupt cache file does not crash the check", async () => {
   await writeFile(join(d, "update-check.json"), "{ not json");
   expect(await checkForUpdate({ dir: d, current: "0.1.0", now: 1000, fetchImpl: fetchOk }))
     .toBe("9.9.9");
+});
+
+test("noUpdateCheckRequested reads PADDOCK_NO_UPDATE_CHECK=1, and only that value", () => {
+  // Fix round 1: this mapping used to live inline at the index.ts call site,
+  // covered only by checkForUpdate's library-level `disabled: true` — which
+  // would still pass even if index.ts read the wrong variable, or compared
+  // it with `!==` instead of `===`. Testing the mapping itself closes that.
+  expect(noUpdateCheckRequested({ PADDOCK_NO_UPDATE_CHECK: "1" })).toBe(true);
+  expect(noUpdateCheckRequested({})).toBe(false);
+  expect(noUpdateCheckRequested({ PADDOCK_NO_UPDATE_CHECK: "0" })).toBe(false);
+  expect(noUpdateCheckRequested({ PADDOCK_NO_UPDATE_CHECK: "true" })).toBe(false);
+  expect(noUpdateCheckRequested({ PADDOCK_NO_UPDATE_CHECK: "" })).toBe(false);
 });

@@ -185,6 +185,32 @@ test("with no built UI the build id is null, not a made-up value", () => {
   expect((sent[0] as Record<string, unknown>).build).toBeNull();
 });
 
+test("a heartbeat carries latestKnown too, so a reconnecting tab still learns of an update", () => {
+  // Same reasoning as `build` above: the hub does not know or care that this
+  // came from a once-a-day GitHub check cached on disk, only that it is read
+  // fresh on every frame.
+  const hub = new Hub({ now: () => NOW, latestKnown: () => "9.9.9" });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.sendHeartbeat();
+  expect((sent[0] as Record<string, unknown>).latestKnown).toBe("9.9.9");
+});
+
+test("with no latestKnown injected, the heartbeat reports null, not undefined", () => {
+  const hub = new Hub({ now: () => NOW });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.sendHeartbeat();
+  expect((sent[0] as Record<string, unknown>).latestKnown).toBeNull();
+});
+
+test("a snapshot carries latestKnown too, so a fresh connect learns of an update immediately", () => {
+  const hub = new Hub({ now: () => NOW, latestKnown: () => "9.9.9" });
+  const { client, sent } = fakeClient();
+  hub.sendSnapshot(client, "dev-box", []);
+  expect((sent[0] as Record<string, unknown>).latestKnown).toBe("9.9.9");
+});
+
 test("startHeartbeat is idempotent — a second call does not double the rate", async () => {
   const hub = new Hub({ heartbeatMs: 20 });
   const { client, sent } = fakeClient();

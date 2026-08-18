@@ -14,6 +14,10 @@ export interface HubOptions {
   heartbeatMs?: number;
   now?: () => number;
   build?: () => string | null;
+  /** Same injection shape as `build`: the hub knows nothing about how this
+   *  value is produced (a GitHub release check, cached on disk), only that
+   *  it is read fresh on every snapshot/heartbeat. */
+  latestKnown?: () => string | null;
 }
 
 /**
@@ -36,12 +40,14 @@ export class Hub {
    * or about how the UI is built, and must stay testable without either.
    */
   private readonly build: () => string | null;
+  private readonly latestKnown: () => string | null;
 
   constructor(opts: HubOptions = {}) {
     this.coalesceMs = opts.coalesceMs ?? 100;
     this.heartbeatMs = opts.heartbeatMs ?? 20_000;
     this.now = opts.now ?? Date.now;
     this.build = opts.build ?? (() => null);
+    this.latestKnown = opts.latestKnown ?? (() => null);
   }
 
   get clientCount(): number {
@@ -74,7 +80,9 @@ export class Hub {
 
   /** One liveness frame to every connected browser. Carries no agent data. */
   sendHeartbeat(): void {
-    const msg: ServerMessage = { type: "heartbeat", serverTime: this.now(), build: this.build() };
+    const msg: ServerMessage = {
+      type: "heartbeat", serverTime: this.now(), build: this.build(), latestKnown: this.latestKnown(),
+    };
     for (const client of [...this.clients]) this.sendTo(client, msg);
   }
 
@@ -87,7 +95,10 @@ export class Hub {
   }
 
   sendSnapshot(client: HubClient, hostId: string, agents: Agent[]): void {
-    this.sendTo(client, { type: "snapshot", hostId, agents, serverTime: this.now(), build: this.build() });
+    this.sendTo(client, {
+      type: "snapshot", hostId, agents, serverTime: this.now(),
+      build: this.build(), latestKnown: this.latestKnown(),
+    });
   }
 
   queue(delta: { upserted: Agent[]; removedIds: string[] }): void {

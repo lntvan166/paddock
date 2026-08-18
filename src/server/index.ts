@@ -22,7 +22,7 @@ import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs } from "@server/cli";
 import { VERSION } from "@server/version";
 import { runUpdate } from "@server/update";
-import { checkForUpdate } from "@server/update-check";
+import { checkForUpdate, noUpdateCheckRequested } from "@server/update-check";
 
 const { command, flags } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
@@ -100,7 +100,24 @@ function currentBuildId(): string | null {
   }
 }
 
-const hub = new Hub({ build: currentBuildId });
+/**
+ * Filled in asynchronously, below, and read on every heartbeat/snapshot (via
+ * the Hub, so an already-open tab learns of it too — see shared/types.ts's
+ * comment on ServerMessage) and by `health()` on every request.
+ *
+ * Fired WITHOUT awaiting — a version check must never delay the server
+ * binding its port, and this variable simply stays `null` (its honest "don't
+ * know yet" value) until the one background check resolves.
+ */
+let latestKnown: string | null = null;
+void checkForUpdate({
+  dir: defaultConfigDir(),
+  current: VERSION,
+  now: Date.now(),
+  disabled: noUpdateCheckRequested(),
+}).then((v) => { latestKnown = v; });
+
+const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown });
 
 const settings = new SettingsStore(defaultConfigDir());
 await settings.load();
@@ -221,21 +238,6 @@ if (DEMO) {
     process.exit(1);
   }
 }
-
-/**
- * Filled in asynchronously, below, and read by `health()` on every request.
- *
- * Fired WITHOUT awaiting — a version check must never delay the server
- * binding its port, and this variable simply stays `null` (its honest "don't
- * know yet" value) until the one background check resolves.
- */
-let latestKnown: string | null = null;
-void checkForUpdate({
-  dir: defaultConfigDir(),
-  current: VERSION,
-  now: Date.now(),
-  disabled: process.env.PADDOCK_NO_UPDATE_CHECK === "1",
-}).then((v) => { latestKnown = v; });
 
 const app = createApp({
   store,
