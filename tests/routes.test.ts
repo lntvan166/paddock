@@ -3,7 +3,9 @@ import { createApp } from "@server/routes";
 import { AgentStore } from "@server/state/store";
 import { Hub } from "@server/ws/hub";
 
-function app(over: Partial<{ lastEventAt: number | null; herdrConnected: boolean }> = {}) {
+function app(
+  over: Partial<{ lastEventAt: number | null; herdrConnected: boolean; lastNotifyError: string | null }> = {},
+) {
   const store = new AgentStore("dev-box");
   const hub = new Hub();
   return createApp({
@@ -13,6 +15,7 @@ function app(over: Partial<{ lastEventAt: number | null; herdrConnected: boolean
       ok: true, hostId: "dev-box", agents: store.snapshot().length,
       clients: hub.clientCount, herdrConnected: over.herdrConnected ?? true,
       lastEventAt: over.lastEventAt ?? null,
+      lastNotifyError: over.lastNotifyError ?? null,
     }),
   });
 }
@@ -24,6 +27,18 @@ test("GET /api/health returns ok and exposes lastEventAt", async () => {
   expect(body.ok).toBe(true);
   expect(body.lastEventAt).toBe(1_700_000_000_000);
   expect(body).toHaveProperty("herdrConnected");
+});
+
+// A broken Telegram token must be visible within seconds via /api/health, not
+// never. Type-level requiredness on HealthBody protects the health() literal
+// at the composition root; this protects the actual serialized response —
+// a key silently dropped by a future refactor of health() would not show up
+// as a type error if the object were spread or reshaped, only here.
+test("GET /api/health exposes lastNotifyError", async () => {
+  const res = await app({ lastNotifyError: "bad token" }).request("/api/health");
+  const body = await res.json();
+  expect(body).toHaveProperty("lastNotifyError");
+  expect(body.lastNotifyError).toBe("bad token");
 });
 
 test("GET /api/agents returns the snapshot", async () => {

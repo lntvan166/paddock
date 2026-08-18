@@ -37,7 +37,7 @@ function harness(a: Agent = agent()) {
   const hub = new Hub({ now: () => NOW });
   const app = createApp({
     store, hub, actions, now: () => NOW,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null }),
   });
   return { app, store, calls };
 }
@@ -219,7 +219,7 @@ test("ack works with no herdr actions wired up at all, as in --demo", async () =
   store.replaceAll([agent({ state: "done" })], NOW);
   const app = createApp({
     store, hub: new Hub({ now: () => NOW }), now: () => NOW,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null }),
   });
   const res = await post(app, "/api/agents/w1:p1/ack");
   expect(res.status).toBe(200);
@@ -234,7 +234,7 @@ test("the herdr-backed routes stay absent with no actions", async () => {
   store.replaceAll([agent()], NOW);
   const app = createApp({
     store, hub: new Hub({ now: () => NOW }), now: () => NOW,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null }),
   });
   for (const route of ["output", "prompt", "answer"]) {
     expect((await post(app, `/api/agents/w1:p1/${route}`, { key: "1" })).status).toBe(404);
@@ -253,7 +253,7 @@ test("a failed action reports ok:false rather than throwing", async () => {
       async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
     },
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null }),
   });
   const res = await post(app2, "/api/agents/w1:p1/answer", { key: "1" });
   expect(res.status).toBe(502);
@@ -364,7 +364,7 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
       async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
     },
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null }),
   });
   const res = await post(app2, "/api/agents/w1:p1/key", { key: "enter" });
   expect(res.status).toBe(502);

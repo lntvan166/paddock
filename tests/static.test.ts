@@ -11,7 +11,7 @@ function app() {
     store, hub,
     health: () => ({
       ok: true, hostId: "dev-box", agents: 0, clients: 0,
-      herdrConnected: true, lastEventAt: null,
+      herdrConnected: true, lastEventAt: null, lastNotifyError: null,
     }),
     staticDir: "dist",
   });
