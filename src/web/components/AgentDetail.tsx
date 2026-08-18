@@ -187,7 +187,10 @@ export function AgentDetail({ agent, onClose }: { agent: Agent; onClose: () => v
   async function loadOutput(accept: () => boolean) {
     try {
       const o = await fetchOutput(agent.agentId);
-      if (accept()) {
+      // This view never sends `since`, so the server always returns a screen;
+      // the guard is here because the CONTRACT allows "unchanged" and a cast
+      // would be a lie waiting to become a blank pane.
+      if (accept() && !o.unchanged) {
         setOutput(o.lines);
         setOutputError(null);
       }

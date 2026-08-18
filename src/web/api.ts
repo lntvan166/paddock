@@ -1,6 +1,14 @@
-import type { ActionResult, ParsedPrompt } from "@shared/types";
+import type { ActionResult, KeyResult, NavKey, OutputResult, ParsedPrompt } from "@shared/types";
 
-type Fetch = typeof fetch;
+/**
+ * Just the call signature these helpers use — not `typeof fetch`.
+ *
+ * `typeof fetch` drags in runtime-specific extras (Bun adds `preconnect`),
+ * which a test stub cannot satisfy, which is what pushed every call site into
+ * `as any` — and a cast in a test disables the checking the test exists for.
+ * Exported so tests share this contract rather than redeclaring it.
+ */
+export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
 /** Agent ids contain a colon (`w1:p1`), so they must be encoded. */
 const url = (id: string, action: string) => `/api/agents/${encodeURIComponent(id)}/${action}`;
@@ -43,8 +51,17 @@ async function readJson<T>(path: string, body: object, f: Fetch): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchOutput(id: string, lines?: number, f: Fetch = fetch) {
-  return readJson<{ lines: string[]; source: string }>(url(id, "output"), { lines }, f);
+/**
+ * `scrollback` defaults to false so the first paint is the cheap read.
+ * Requesting history costs a herdr pane-scroll (~35 ms per line past the
+ * viewport), which belongs after something is already on screen, not before.
+ */
+export async function fetchOutput(
+  id: string, lines?: number, scrollback = false, since?: string | null, f: Fetch = fetch,
+) {
+  return readJson<OutputResult>(
+    url(id, "output"), { lines, scrollback, since: since ?? undefined }, f,
+  );
 }
 
 export async function fetchPrompt(id: string, f: Fetch = fetch) {
@@ -75,3 +92,39 @@ export const answerWithText = (id: string, text: string, f: Fetch = fetch) =>
 
 export const acknowledge = (id: string, f: Fetch = fetch) =>
   act(url(id, "ack"), {}, f);
+
+/**
+ * Send a navigation key and take back the screen it produced.
+ *
+ * Uses the action convention, not the read convention: a rejected key is a
+ * normal outcome the operator should see reported next to the keypad, not an
+ * exception that tears down the terminal view they are working in. `lines`
+ * defaults to empty on failure so the caller can render the result without a
+ * shape check, and callers must therefore branch on `ok` before replacing the
+ * screen — an empty `lines` on a failed key means "no new screen", never "the
+ * pane is empty".
+ */
+export async function sendKey(id: string, key: NavKey, f: Fetch = fetch): Promise<KeyResult> {
+  try {
+    const res = await request(url(id, "key"), { key }, f);
+    return (await res.json()) as KeyResult;
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
+/**
+ * Type into the terminal, in any state.
+ *
+ * Distinct from `answerWithText`, which answers a PROMPT and is refused with a
+ * 409 once the agent stops being blocked. Pointing the terminal's reply box at
+ * `/answer` is what made it fail in three states out of four.
+ */
+export async function sendText(id: string, text: string, f: Fetch = fetch): Promise<KeyResult> {
+  try {
+    const res = await request(url(id, "text"), { text }, f);
+    return (await res.json()) as KeyResult;
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}

@@ -11,6 +11,17 @@
   --accent: #4a55c7;
   --warn: #9a6600;
   --ok: #1a7f37;
+
+  /* The terminal ground is dark in BOTH themes, and is therefore correctly
+     defined once here rather than redefined below. This is not an oversight
+     of the theme rule — it is a consequence of where the colours come from.
+     herdr sends the agent's own truecolor escapes, and a coding agent picks
+     them for a dark terminal: `38;2;255;255;255` is white text, which on a
+     white pane is invisible. paddock cannot re-map an arbitrary RGB triple to
+     a light background without inventing colours the agent did not choose, so
+     the pane keeps the ground those colours were written for. */
+  --term-bg: #0b0d10;
+  --term-fg: #d6d9de;
 }
 
 /* System dark, unless the user explicitly chose light. */
@@ -84,15 +95,23 @@ body {
 
 /* Bottom sheet on a narrow screen, side panel on a wide one. A width media
    query only — no device detection anywhere in this project. */
+/* A column, not one scrolling block. The transcript is the only part that
+   scrolls; the header and the answer controls stay pinned. Scrolling the whole
+   sheet meant a long transcript pushed the option buttons below the fold — on
+   the one screen whose entire purpose is answering a blocked agent. */
 .detail {
   position: fixed;
   inset: auto 0 0 0;
-  max-height: 80vh;
-  overflow-y: auto;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+.detail header,
+.detail .answer { flex: none; }
 
 @media (min-width: 640px) {
   .detail {
@@ -112,6 +131,189 @@ body {
 /* Options scroll; labels wrap. Never truncate an option label. */
 .detail .options { display: grid; gap: 0.5rem; max-height: 40vh; overflow-y: auto; }
 .detail .options button { white-space: normal; text-align: left; min-height: 2.75rem; }
-.detail .output { white-space: pre-wrap; overflow-x: auto; font-family: ui-monospace, monospace; }
+/* Terminal output is fixed-width by construction: box drawing, aligned
+   columns and indentation all carry meaning positionally. `pre-wrap` reflowed
+   it to the viewport, which folded an 80-column table into a ~40-column phone
+   and made `overflow-x: auto` dead code — nothing can overflow a box whose
+   content wraps to fit. `pre` keeps every line intact and lets the pane scroll
+   sideways instead, which is the only presentation that preserves the
+   alignment the agent drew.
+
+   `overscroll-behavior-x: contain` keeps that sideways scroll from turning
+   into the browser's back-swipe gesture at the end of a line. */
+.detail .output {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  white-space: pre;
+  tab-size: 4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Fluid, because the useful measure here is COLUMNS VISIBLE, not points. A
+     fixed size shows ~40 columns on a small phone and wastes half a tablet.
+     Floor and ceiling are both legibility bounds. */
+  font-size: clamp(0.7rem, 2.6vw, 0.8rem);
+  line-height: 1.4;
+  background: var(--bg);
+  border-block: 1px solid var(--border);
+  color: var(--fg);
+}
 .detail .warn { color: var(--warn); }
 .detail .ok { color: var(--ok); }
+
+/* ── Full-screen terminal view ─────────────────────────────────────────────
+   A screen, not an overlay. On a phone the transcript needs every row it can
+   get, and a sheet floating over a dimmed list spends a third of the viewport
+   redrawing a list the operator has already navigated away from.
+
+   The column is fixed: only .term-pane scrolls. The keypad and the reply box
+   must stay reachable no matter how long the transcript is — they are the
+   reason the screen exists. */
+.term {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.term-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.term-header button {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.term-back { font-weight: 600; }
+
+.term-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.5rem; }
+.term-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-state { font-size: 0.7rem; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* Same reasoning as .detail .output: terminal output is fixed-width, so it
+   scrolls sideways rather than reflowing. Wrapping it folds an 80-column
+   table into a phone and destroys the alignment the agent drew. */
+.term-pane {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  white-space: pre;
+  tab-size: 4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Sized by COLUMNS VISIBLE, not by points. The previous floor of 0.7rem
+     showed ~46 columns on a 390px phone, so an 80-column TUI was clipped
+     mid-word on every line and had to be scrolled sideways to be read at all.
+     ~0.62rem fits low 50s, which covers most of what an agent draws. */
+  font-size: clamp(0.62rem, 2.3vw, 0.78rem);
+  line-height: 1.35;
+  background: var(--term-bg);
+  color: var(--term-fg);
+}
+
+.term-error, .term-note { flex: none; margin: 0; padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+
+/* Three columns: the two wide keys on the last row span the leftover space.
+   Every key clears 44px because this is the primary control surface, and a
+   mis-tap here sends a real keystroke to a real agent. */
+/* Two rows, split by how often a key is actually pressed. Answering a prompt
+   is ↑/↓ then Enter; everything else is occasional and gets a shorter row. */
+.term-keys {
+  flex: none;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Enter is widest because it is the committing action and the one that must
+   not be mis-tapped. */
+.term-keys-primary { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 0.35rem; }
+.term-keys-secondary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; }
+
+.term-key {
+  min-height: 2.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* Still a 40px target. Below the 44px guideline for the PRIMARY row only
+   because these five are secondary by design, and buying back a row of
+   transcript on a phone is worth more than four extra pixels on Tab. */
+.term-key-sm { min-height: 2.5rem; font-size: 0.8rem; }
+
+.term-key:active { background: var(--border); }
+.term-key:disabled { opacity: 0.5; }
+
+.term-reply {
+  flex: none;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.term-reply input {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.term-reply button {
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.term-reply button:disabled { opacity: 0.5; }
+
+/* Label kept for screen readers; the placeholder carries it visually. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A pane whose polling has failed. Warn-coloured and always visible: the
+   alternative is a frozen transcript that looks live. */
+.term-stalled { font-size: 0.65rem; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; }

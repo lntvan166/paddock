@@ -2,18 +2,23 @@ import { useEffect, useState } from "react";
 import { isStale, useStore } from "@web/store";
 import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
-import { AgentDetail } from "@web/components/AgentDetail";
+import { AgentTerminal } from "@web/components/AgentTerminal";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
 import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { staleAttrs } from "@web/components/staleness";
+import { agentHash, useAgentRoute } from "@web/route";
 
 export function App() {
   const { agents, hostId, connected, lastMessageAt, connect } = useStore();
   const [now, setNow] = useState(() => Date.now());
-  const [idleOpen, setIdleOpen] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // Expanded by default. Collapsed, idle agents render as chips that carry a
+  // name and nothing else — no task line, no elapsed time — so the section
+  // that usually holds MOST of the agents was also the one showing least
+  // about them. Collapsing stays available; it is just no longer the default.
+  const [idleOpen, setIdleOpen] = useState(true);
+  const openId = useAgentRoute();
 
   useEffect(() => {
     connect();
@@ -28,9 +33,31 @@ export function App() {
   const groups = groupAgents(agents);
   const stale = isStale({ agents, hostId, connected, lastMessageAt }, now);
   // Re-derived from the live list every render, never cached: if the selected
-  // agent is pruned from a snapshot (or reconnects under a new id), the sheet
-  // closes itself instead of showing dangling data.
+  // agent is pruned from a snapshot (or reconnects under a new id), the view
+  // falls back to the list instead of showing dangling data. This also makes a
+  // stale deep link (a notification for an agent that has since finished and
+  // been pruned) land somewhere useful rather than on an empty screen.
   const openAgent = agents.find((a) => a.agentId === openId) ?? null;
+
+  // A full screen, not an overlay. The terminal needs every row it can get on
+  // a phone, and a sheet over a dimmed list spends a third of the viewport
+  // re-showing a list the operator has already left.
+  //
+  // key={agentId} forces a fresh AgentTerminal per agent. Without it, React
+  // reuses the instance across a hash change and every per-agent field —
+  // output, reply, busy, feedback — carries over: a reply typed for A, or A's
+  // in-flight key resolving AFTER the operator navigated to B, would land on
+  // B's screen. Resetting fields in an effect cannot stop that late write;
+  // only unmounting the old instance can.
+  if (openAgent) {
+    return (
+      <AgentTerminal
+        key={openAgent.agentId}
+        agent={openAgent}
+        onBack={() => { location.hash = ""; }}
+      />
+    );
+  }
 
   return (
     <main className="mx-auto max-w-2xl safe-bottom">
@@ -61,20 +88,23 @@ export function App() {
                 ? list.map((a) => (
                     <AgentCard
                       key={a.agentId} agent={a} now={now}
-                      onSelect={() => setOpenId(a.agentId)}
+                      onSelect={() => { location.hash = agentHash(a.agentId); }}
                     />
                   ))
                 : open
                   ? list.map((a) => (
                       <AgentRow
                         key={a.agentId} agent={a} now={now}
-                        onSelect={() => setOpenId(a.agentId)}
+                        onSelect={() => { location.hash = agentHash(a.agentId); }}
                       />
                     ))
                   : (
                     <div className="flex flex-wrap gap-1.5 px-3 pb-3">
                       {list.map((a) => (
-                        <AgentChip key={a.agentId} agent={a} />
+                        <AgentChip
+                          key={a.agentId} agent={a}
+                          onSelect={() => { location.hash = agentHash(a.agentId); }}
+                        />
                       ))}
                     </div>
                   )}
@@ -88,30 +118,6 @@ export function App() {
           </p>
         )}
       </div>
-
-      {/* Outside the data-stale wrapper for the same reason as ConnectionBanner:
-          it is a foreground control surface, not background data, so it must
-          never dim along with the list underneath it. */}
-      {openAgent && (
-        // key={agentId} forces a fresh AgentDetail instance per selected agent.
-        // Without it, switching the selection reuses the same component
-        // instance, and every field in there — result, reply, busy included —
-        // is per-agent state: a reply typed for A, or A's in-flight action
-        // resolving with a 409 AFTER the operator has already switched to B,
-        // would land on B's sheet under B's header. Resetting those fields in
-        // an effect does not stop that late resolution from writing after the
-        // switch; only unmounting the old instance (so its setState calls
-        // become no-ops) does. Do not replace this with field resets.
-        //
-        // The key covers IDENTITY only, and must not be widened to include
-        // `agent.state`: the defining outcome of a successful answer is the
-        // agent leaving `blocked`, so keying on state would unmount the sheet
-        // on the very delta the answer caused and destroy the confirmation
-        // with it. Attribution across TIME — one agent's prompt A vs. its
-        // later prompt B — is handled inside AgentDetail instead, by tagging
-        // the reply and the result with the prompt they belong to.
-        <AgentDetail key={openAgent.agentId} agent={openAgent} onClose={() => setOpenId(null)} />
-      )}
     </main>
   );
 }

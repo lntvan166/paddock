@@ -1,10 +1,17 @@
 import { expect, test } from "bun:test";
-import { answerWithKey, fetchOutput } from "@web/api";
+import { answerWithKey, fetchOutput, type Fetch } from "@web/api";
 
+// Typed as the real `fetch`, so call sites need no `as any`.
+//
+// They previously did, and that cast silently absorbed a change to
+// `fetchOutput`'s signature: the stub was being passed as the parameter that
+// had become `scrollback`, `tsc` accepted it, and the break only surfaced at
+// runtime as "fetch() URL is invalid". A cast in a test disables the check the
+// test exists to provide.
 function stubFetch(status: number, body: object) {
-  const seen: { url: string; init: any }[] = [];
-  const fn = async (url: string, init: any) => {
-    seen.push({ url, init });
+  const seen: { url: string; init: RequestInit }[] = [];
+  const fn: Fetch = async (url, init) => {
+    seen.push({ url: String(url), init });
     return new Response(JSON.stringify(body), {
       status, headers: { "content-type": "application/json" },
     });
@@ -14,23 +21,25 @@ function stubFetch(status: number, body: object) {
 
 test("fetchOutput POSTs and returns the parsed body", async () => {
   const { fn, seen } = stubFetch(200, { lines: ["a"], source: "visible" });
-  const out = await fetchOutput("w1:p1", 40, fn as any);
+  const out = await fetchOutput("w1:p1", 40, false, null, fn);
   expect(seen[0]!.init.method).toBe("POST");
   expect(seen[0]!.url).toBe("/api/agents/w1%3Ap1/output");
+  expect(out.unchanged).toBeFalsy();
+  if (out.unchanged) throw new Error("unreachable: stub returns a screen");
   expect(out.lines).toEqual(["a"]);
 });
 
 // A refusal is information the operator needs, not an exception to swallow.
 test("a refusal surfaces ok:false with the server's reason", async () => {
   const { fn } = stubFetch(409, { ok: false, detail: "agent is working, no longer blocked" });
-  const res = await answerWithKey("w1:p1", "1", fn as any);
+  const res = await answerWithKey("w1:p1", "1", fn);
   expect(res.ok).toBe(false);
   expect(res.detail).toContain("no longer blocked");
 });
 
 test("a network failure becomes an ActionResult, not a throw", async () => {
   const fn = async () => { throw new Error("offline"); };
-  const res = await answerWithKey("w1:p1", "1", fn as any);
+  const res = await answerWithKey("w1:p1", "1", fn);
   expect(res.ok).toBe(false);
   expect(res.detail).toContain("offline");
 });
@@ -42,12 +51,12 @@ test("a network failure becomes an ActionResult, not a throw", async () => {
 // server's reason.
 test("fetchOutput rejects on a 404 with the server's detail in the message", async () => {
   const { fn } = stubFetch(404, { ok: false, detail: "unknown agent" });
-  await expect(fetchOutput("w1:p1", 40, fn as any)).rejects.toThrow(/unknown agent/);
+  await expect(fetchOutput("w1:p1", 40, false, null, fn)).rejects.toThrow(/unknown agent/);
 });
 
 test("fetchOutput rejects on a 502 with the server's detail in the message", async () => {
   const { fn } = stubFetch(502, { ok: false, detail: "herdr socket unreachable" });
-  await expect(fetchOutput("w1:p1", 40, fn as any)).rejects.toThrow(/herdr socket unreachable/);
+  await expect(fetchOutput("w1:p1", 40, false, null, fn)).rejects.toThrow(/herdr socket unreachable/);
 });
 
 // Pins the asymmetry deliberately: reads reject on non-2xx, but actions must
@@ -56,7 +65,7 @@ test("fetchOutput rejects on a 502 with the server's detail in the message", asy
 // destroying the refusal message.
 test("answerWithKey still resolves (not rejects) with the server's detail on a 409", async () => {
   const { fn } = stubFetch(409, { ok: false, detail: "agent is working, no longer blocked" });
-  const res = await answerWithKey("w1:p1", "1", fn as any);
+  const res = await answerWithKey("w1:p1", "1", fn);
   expect(res.ok).toBe(false);
   expect(res.detail).toContain("no longer blocked");
 });

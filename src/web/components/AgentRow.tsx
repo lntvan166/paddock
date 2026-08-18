@@ -60,13 +60,27 @@ export function AgentRow({
   );
 }
 
-export function AgentChip({ agent }: { agent: Agent }) {
+/**
+ * The collapsed form of an idle agent.
+ *
+ * It opens the terminal like every other representation of an agent. It used
+ * to be an inert `<span>`, which made the Idle section — five of six agents on
+ * a typical screen — completely untappable: the operator taps a name, nothing
+ * happens, and there is no way to tell a dead control from a slow one. Every
+ * place an agent's name appears is a way in.
+ *
+ * A real `<button>` rather than a div with a click handler, so it is
+ * focusable, keyboard-activatable and announced as a control for free.
+ */
+export function AgentChip({ agent, onSelect }: { agent: Agent; onSelect?: () => void }) {
   return (
-    <span
-      className="rounded-full px-2.5 py-1 text-[10px]"
+    <button
+      type="button"
+      className="tap rounded-full px-2.5 py-1 text-[10px]"
       style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--fg-dim)" }}
+      onClick={onSelect}
     >
       {agent.name}
-    </span>
+    </button>
   );
 }
