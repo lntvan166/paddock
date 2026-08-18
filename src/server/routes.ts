@@ -6,7 +6,7 @@ import { sendTelegram } from "@server/notify/telegram";
 import type { SettingsStore } from "@server/settings/store";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
-import { isNavKey, type SettingsPatch } from "@shared/types";
+import { isNavKey, type NotifyTrigger, type SettingsPatch } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 
 export interface HealthBody {
@@ -121,6 +121,137 @@ function pruneScreens(liveIds: Set<string>): void {
 async function jsonBody(c: Context): Promise<Record<string, unknown>> {
   const body: unknown = await c.req.json().catch(() => null);
   return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+}
+
+/**
+ * A request body as an object, or a 400 reason — unlike `jsonBody`, which
+ * folds malformed JSON into `{}` so its callers can treat "sent nothing
+ * useful" as "sent no fields". `PUT /api/settings` cannot reuse that: folding
+ * malformed JSON into an empty object would make a broken request body look
+ * exactly like a no-op patch and answer 200, and an uncaught parse error
+ * falling past this into Hono's default handler answers a bare 500 with no
+ * reason — the task's ban on reporting a save that did not happen extends to
+ * never reporting "ok" (implicitly, via 200) for a request that was never
+ * understood.
+ */
+async function strictJsonBody(
+  c: Context,
+): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; detail: string }> {
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch (e) {
+    return { ok: false, detail: `malformed JSON body: ${(e as Error).message}` };
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { ok: false, detail: "request body must be a JSON object" };
+  }
+  return { ok: true, body: raw as Record<string, unknown> };
+}
+
+/** "HH:MM", 24-hour, zero-padded — the one shape `quietHours.start`/`.end` may take. */
+function isHHMM(v: unknown): v is string {
+  return typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+}
+
+function isNullableString(v: unknown): v is string | null {
+  return v === null || typeof v === "string";
+}
+
+/**
+ * Floor for a patched `notify.cooldownMs`. Task 4 spent two fix rounds
+ * eliminating an unbounded-retry hot loop that fired on every delta when a
+ * Telegram send failed; `cooldownMs: 0` disarms the rate limit entirely and
+ * reintroduces exactly that loop. 1000 ms is a floor against that specific
+ * failure mode, not a recommendation — the store's own default
+ * (`DEFAULT_COOLDOWN_MS`) is 60_000 ms. Do not relax this without re-reading
+ * why Task 4 needed it.
+ */
+const MIN_COOLDOWN_MS = 1000;
+
+/**
+ * Validates a raw PUT body into a `SettingsPatch`, or a 400 reason.
+ *
+ * `SettingsStore.patch()` merges whatever it is given with no validation of
+ * its own, and a bare `as SettingsPatch` cast does no runtime check — so
+ * without this, a wrong-typed field (`telegram.token: 12345`,
+ * `notify.triggers: "nope"`) type-checks past the cast and is persisted to
+ * settings.json verbatim. Unknown top-level keys are silently ignored rather
+ * than rejected, so a client on a newer/older schema than this server still
+ * gets its recognised fields applied.
+ */
+function validateSettingsPatch(
+  body: Record<string, unknown>,
+): { ok: true; patch: SettingsPatch } | { ok: false; detail: string } {
+  const patch: SettingsPatch = {};
+
+  if ("telegram" in body) {
+    const t = body.telegram;
+    if (typeof t !== "object" || t === null) return { ok: false, detail: "telegram must be an object" };
+    const tt = t as Record<string, unknown>;
+    const out: NonNullable<SettingsPatch["telegram"]> = {};
+    if ("token" in tt) {
+      if (!isNullableString(tt.token)) return { ok: false, detail: "telegram.token must be a string or null" };
+      out.token = tt.token;
+    }
+    if ("chatId" in tt) {
+      if (!isNullableString(tt.chatId)) return { ok: false, detail: "telegram.chatId must be a string or null" };
+      out.chatId = tt.chatId;
+    }
+    patch.telegram = out;
+  }
+
+  if ("notify" in body) {
+    const n = body.notify;
+    if (typeof n !== "object" || n === null) return { ok: false, detail: "notify must be an object" };
+    const nn = n as Record<string, unknown>;
+    const out: NonNullable<SettingsPatch["notify"]> = {};
+
+    if ("enabled" in nn) {
+      if (typeof nn.enabled !== "boolean") return { ok: false, detail: "notify.enabled must be a boolean" };
+      out.enabled = nn.enabled;
+    }
+
+    if ("triggers" in nn) {
+      const triggers = nn.triggers;
+      if (!Array.isArray(triggers) || !triggers.every((x) => x === "blocked" || x === "done")) {
+        return { ok: false, detail: `notify.triggers must be an array of "blocked" or "done"` };
+      }
+      out.triggers = triggers as NotifyTrigger[];
+    }
+
+    if ("quietHours" in nn) {
+      const qh = nn.quietHours;
+      if (qh !== null) {
+        if (typeof qh !== "object") {
+          return { ok: false, detail: "notify.quietHours must be null or {start, end}" };
+        }
+        const q = qh as Record<string, unknown>;
+        if (!isHHMM(q.start) || !isHHMM(q.end)) {
+          return { ok: false, detail: `notify.quietHours.start and .end must be "HH:MM" 24-hour` };
+        }
+      }
+      out.quietHours = qh as { start: string; end: string } | null;
+    }
+
+    if ("cooldownMs" in nn) {
+      const cooldownMs = nn.cooldownMs;
+      if (typeof cooldownMs !== "number" || !Number.isFinite(cooldownMs) || cooldownMs < MIN_COOLDOWN_MS) {
+        return { ok: false, detail: `notify.cooldownMs must be a number >= ${MIN_COOLDOWN_MS}` };
+      }
+      out.cooldownMs = cooldownMs;
+    }
+
+    patch.notify = out;
+  }
+
+  if ("publicUrl" in body) {
+    const u = body.publicUrl;
+    if (!isNullableString(u)) return { ok: false, detail: "publicUrl must be a string or null" };
+    patch.publicUrl = u;
+  }
+
+  return { ok: true, patch };
 }
 
 export interface AppDeps {
@@ -378,9 +509,14 @@ export function createApp(deps: AppDeps) {
 
     // PUT, never GET: a payload in a query string lands in edge access logs.
     app.put("/api/settings", async (c) => {
-      const patch = (await c.req.json()) as SettingsPatch;
+      const parsed = await strictJsonBody(c);
+      if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
+
+      const validated = validateSettingsPatch(parsed.body);
+      if (!validated.ok) return c.json({ ok: false, detail: validated.detail }, 400);
+
       try {
-        await settings.patch(patch);
+        await settings.patch(validated.patch);
       } catch (e) {
         // Reporting a save that did not happen is worse than reporting none.
         return c.json({ ok: false, detail: (e as Error).message }, 500);

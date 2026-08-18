@@ -82,3 +82,54 @@ test("a failed patch returns 500 with the reason, never a silent success", async
   expect(body.detail).toContain("disk full");
   settings.patch = original;
 });
+
+test("a malformed JSON PUT body returns 400 with a reason, not a generic 500", async () => {
+  const { app } = await harness();
+  const res = await app.request("/api/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: "{not json",
+  });
+  expect(res.status).toBe(400);
+  const body = await res.json();
+  expect(body.ok).toBe(false);
+  expect(typeof body.detail).toBe("string");
+});
+
+test("a wrong-typed notify.triggers is rejected and leaves stored settings unchanged", async () => {
+  const { app, settings } = await harness();
+  const before = settings.current();
+  const res = await app.request("/api/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ notify: { triggers: "nope" } }),
+  });
+  expect(res.status).toBe(400);
+  const body = await res.json();
+  expect(body.ok).toBe(false);
+  expect(settings.current()).toEqual(before);
+});
+
+test("a wrong-typed telegram.token is rejected and leaves stored settings unchanged", async () => {
+  const { app, settings } = await harness();
+  const before = settings.current();
+  const res = await app.request("/api/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ telegram: { token: 12345 } }),
+  });
+  expect(res.status).toBe(400);
+  const body = await res.json();
+  expect(body.ok).toBe(false);
+  expect(settings.current()).toEqual(before);
+});
+
+test("cooldownMs: 0 is rejected — it would disarm the cooldown and reintroduce the retry hot loop", async () => {
+  const { app, settings } = await harness();
+  const before = settings.current();
+  const res = await app.request("/api/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ notify: { cooldownMs: 0 } }),
+  });
+  expect(res.status).toBe(400);
+  const body = await res.json();
+  expect(body.ok).toBe(false);
+  expect(settings.current()).toEqual(before);
+});
