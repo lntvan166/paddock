@@ -291,11 +291,26 @@ bundle it claims to describe the moment the hashes changed. Generating it
 fresh — and writing an empty map when `dist/` does not yet exist — is what
 lets a clean checkout's `make check` typecheck before anything has been built.
 
-`PADDOCK_STATIC_DIR` is what keeps `make dev` and the Docker image serving a
-UI that gets rebuilt constantly without recompiling the binary: both run the
-interpreted server (`bun src/server/index.ts`) against a `dist/` on disk
-rather than an embedded snapshot baked into a compiled executable, so a Vite
-rebuild is visible on the next request with no server restart.
+**Docker serves from the embedded manifest, not from `staticDir`.** The image's
+build stage runs `bun run build:web` *and* `bun run scripts/gen-embedded.ts`,
+and the runtime stage copies the resulting `src/` — so `EMBEDDED` is populated
+in the container and `serve()`, which checks it first, never reaches the
+`staticDir` branch. That generation step is not optional bookkeeping: it is
+what makes the image bootable at all, because `routes.ts` imports
+`@server/embedded` unconditionally and a `src/` without it dies at startup with
+`Cannot find module '@server/embedded'`. `.dockerignore` excludes
+`src/server/embedded.ts` for the same reason — `COPY . .` does not honour
+`.gitignore`, so without it the image would silently inherit whatever manifest
+happened to be lying in the developer's working tree, and an image that boots
+on the machine that built it would fail from a clean clone.
+
+`PADDOCK_STATIC_DIR` exists for **`make dev`**. There the UI is served by Vite
+and rebuilt constantly, `scripts/dev.sh` generates an *empty* manifest (no
+`dist/` yet on a fresh clone), and the interpreted server reads `dist/` off
+disk when there is one — so a rebuild is visible on the next request with no
+server restart and nothing to recompile. It is also the escape hatch for
+pointing a binary at a UI it was not built with, which is a debugging tool
+rather than a shipping path.
 
 ## Serving several machines
 

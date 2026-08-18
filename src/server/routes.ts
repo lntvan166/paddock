@@ -581,9 +581,13 @@ export function createApp(deps: AppDeps) {
   // API 404s must stay JSON, so this guard comes before the SPA fallback.
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 
-  // Embedded assets first, disk second. The binary must be the whole product;
-  // `staticDir` is what keeps `make dev` and the Docker image working, where
-  // the UI is rebuilt constantly and embedding it would be wrong.
+  // Embedded assets first, disk second. The binary must be the whole product,
+  // and so must the Docker image — its build stage generates the manifest too,
+  // so in the container this branch answers and `staticDir` is never reached.
+  // `staticDir` is for `make dev`, where the UI is served by Vite and rebuilt
+  // constantly, and as an escape hatch for pointing a binary at a UI it was
+  // not built with. See docs/architecture.md, "Embedded UI, and where
+  // `staticDir` fits".
   const serve = async (path: string): Promise<Response | null> => {
     const embedded = EMBEDDED[path];
     if (embedded) return new Response(Bun.file(embedded), { headers: headersFor(path) });

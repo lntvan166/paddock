@@ -1,10 +1,27 @@
 export UID := $(shell id -u)
 export GID := $(shell id -g)
 
-VERSION := $(shell git describe --tags --exact-match 2>/dev/null || echo 0.0.0-dev)
+# No `2>/dev/null`. CLAUDE.md forbids it, this branch's own
+# tests/install-script.test.ts enforces against it in install.sh, and a
+# Makefile that breaks the rule while the tests enforce it is the repo
+# contradicting itself. `git describe --exact-match` writes to stderr on any
+# untagged commit — the normal case — which is why the old form silenced it.
+# `git tag --points-at HEAD` answers the same question with an empty stdout
+# and no error at all, so nothing needs suppressing. Outside a git work tree
+# it still says so on stderr, and VERSION falls back; that message is
+# information, not noise.
+#
+# The leading `v` is stripped, matching .github/workflows/release.yml's
+# `${GITHUB_REF_NAME#v}` — otherwise a local build of tag v0.2.0 would report
+# `v0.2.0` while the released binary for the same tag reports `0.2.0`.
+TAG := $(firstword $(shell git tag --points-at HEAD))
+VERSION := $(if $(TAG),$(TAG:v%=%),0.0.0-dev)
 
 .PHONY: dev types icons check check-clean embed build-web test build up down logs restart
 
+# scripts/dev.sh regenerates src/server/embedded.ts before it starts the
+# server — deliberately inside the script rather than as a prerequisite here,
+# so that running the script directly works too. See the comment there.
 dev:
 	bash scripts/dev.sh
 

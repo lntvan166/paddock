@@ -1,0 +1,39 @@
+# Docker's build context does NOT honour .gitignore. Without this file,
+# `COPY . .` copies whatever happens to be lying in the developer's working
+# tree — and the entry that matters is `src/server/embedded.ts`.
+#
+# That file is generated (`make embed`) and gitignored. A machine that has run
+# `make build` has one on disk, so the image built there boots; a clean clone
+# has none, and the image built from it dies at startup with
+# "Cannot find module '@server/embedded'". That difference is exactly how a
+# build that cannot boot survives review: it works on the reviewer's machine.
+# The build stage generates the manifest itself (see Dockerfile), so the only
+# correct copy is the one made inside the image.
+src/server/embedded.ts
+
+# Built inside the image by `bun run build:web`. A stale local copy riding in
+# would let the image serve a UI that no longer matches the source.
+dist/
+dist-demo/
+
+# Installed inside the image by `bun install --frozen-lockfile`. Copying the
+# host's tree in would also make it the wrong platform's binaries.
+node_modules/
+
+# Agent scratch space and isolated workspaces. Gitignored precisely because
+# they hold real names, real paths and session state — never bake them into an
+# image that may be pushed somewhere.
+.worktrees/
+.superpowers/
+.claude/
+.private-denylist
+
+# Secrets. Only .env.example is ever committed, and the image needs neither.
+.env
+.env.*
+
+# Nothing in the build needs these, and .git/ is the largest thing in the tree.
+.git/
+*.log
+paddock
+paddock-*
