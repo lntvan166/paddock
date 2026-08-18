@@ -74,6 +74,30 @@ test("a failed send does NOT consume the transition, so the next delta retries",
   expect(h.sent).toHaveLength(2);
 });
 
+test("a sustained failure does not send once per delta — cooldown arms on the attempt, not the success", async () => {
+  // A broken token fails every send. Without the cooldown arming on the
+  // ATTEMPT (not just success), the reverted `lastSeen` would keep
+  // re-detecting the transition and each of these deltas — arriving as a
+  // blocked agent's task line keeps updating — would fire its own POST.
+  const h = harness();
+  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
+  h.fail("Bad Request: chat not found");
+  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
+  await Bun.sleep(1);
+  expect(h.sent).toHaveLength(1);
+
+  // Three more deltas for the same transition, all still inside the
+  // 60_000ms cooldown window and all still failing.
+  h.n.observe({ upserted: [agent({ state: "blocked", task: "output A" })], removedIds: [] });
+  await Bun.sleep(1);
+  h.n.observe({ upserted: [agent({ state: "blocked", task: "output B" })], removedIds: [] });
+  await Bun.sleep(1);
+  h.n.observe({ upserted: [agent({ state: "blocked", task: "output C" })], removedIds: [] });
+  await Bun.sleep(1);
+
+  expect(h.sent).toHaveLength(1);
+});
+
 test("quiet hours wrap past midnight — 22:00-08:00 is the ordinary case", () => {
   // Read naively as start <= t < end, the most common setting silences nothing.
   const qh = { start: "22:00", end: "08:00" };

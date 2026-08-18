@@ -75,6 +75,17 @@ export class Notifier {
     const since = now - (this.#lastSentAt.get(a.agentId) ?? Number.NEGATIVE_INFINITY);
     if (since < s.notify.cooldownMs) return;
 
+    // Recorded synchronously too, alongside `lastSeen` above, and NOT reverted
+    // on failure below. A broken token fails every send, but `lastSeen` still
+    // reverts so the transition keeps re-detecting — if the attempt itself
+    // were not also recorded here, every one of those re-detections would see
+    // `lastSentAt` still unset (since = Infinity) and fire immediately, i.e.
+    // one Telegram POST per delta forever for a blocked agent whose task line
+    // keeps changing. Recording the attempt (not just successes) is what
+    // makes the cooldown bound the retry rate instead of the retry being lost
+    // (reverted `lastSeen`) while its own rate limit is (bugged) unarmed.
+    this.#lastSentAt.set(a.agentId, now);
+
     // Trailing slash stripped: a free-text publicUrl field will collect one,
     // and `${url}/${hash}` with url already ending in "/" would produce
     // "https://host//#/agent/...".
@@ -82,12 +93,13 @@ export class Notifier {
     const r = await this.o.send(`${a.name} is ${a.state}\n${a.task}${link}`);
     if (r.ok) {
       this.lastError = null;
-      this.#lastSentAt.set(a.agentId, now);
       return;
     }
-    // Revert the optimistic write above so the next delta re-detects this
-    // transition and retries. Guarded on nothing else having moved `lastSeen`
-    // in the meantime: only undo it if it still holds the value we wrote.
+    // Revert the optimistic `lastSeen` write above so the next delta
+    // re-detects this transition and retries. Guarded on nothing else having
+    // moved `lastSeen` in the meantime: only undo it if it still holds the
+    // value we wrote. `lastSentAt` is deliberately NOT reverted — the retry is
+    // bounded by the cooldown, not unbounded.
     if (this.#lastSeen.get(a.agentId) === a.state) this.#lastSeen.set(a.agentId, prev);
     this.lastError = r.detail ?? "send failed";
   }
