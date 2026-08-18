@@ -66,6 +66,76 @@ one, recorded here so they are not reintroduced.
   could not be staged on a live socket.) `detection` is not gated at all and
   works in every state.
 
+- **A first paint must not wait on a scrollback read.** `readSourceFor` answers
+  "the richest source this state permits", which is NOT the same question as
+  "what should the first read ask for". Using it for both meant opening an
+  `idle` agent with real scrollback paid a full pane-scroll (~35 ms per line
+  past the viewport) before anything was drawn at all. `resolveSource` now
+  splits the two: every read defaults to `visible` (flat ~2 ms, never fails),
+  and `POST /output` takes an opt-IN `{ scrollback: true }` that the UI sends
+  as a SECOND request once something is already on screen. Opt-in, not opt-out
+  — a default that is occasionally slow is a default that is slow on exactly
+  the agents with the most history.
+
+- **Never render a blank pane while a read is in flight.** `AgentTerminal`
+  seeds its state from a module-level `screenCache` keyed by agent id, so
+  re-opening an agent paints the last screen immediately and the fetch only
+  replaces it. Measured with CDP at 390×844: a cold deep link went from 13 ms
+  with one blank frame to **0 ms with none**. Over a local socket that gap is
+  a single frame; over a phone on a ~250 ms link it is the entire impression
+  of slowness, and a blank pane is also indistinguishable from "this agent
+  produced no output". The comparison system does the same thing — its
+  `openTerminal` switches view synchronously from already-cached state and
+  leaves the previous content in place until new content arrives.
+
+- **herdr cannot tell you that a pane's output changed, so paddock must poll.**
+  Probed directly rather than inferred. There are 27 subscribable event types
+  and none of them is an output-changed notification: `pane_output_changed`
+  exists only in the `EventKind` *response* enum, not in `Subscription`. The
+  closest candidate, `pane.output_matched`, is **edge-triggered and one-shot**
+  — subscribing with a match-anything regex (`.`) produced ZERO events across
+  five output bursts, and a substring that appeared three times produced
+  exactly one event, on the transition to matching. It answers "did this text
+  start appearing", not "did the screen change".
+
+  This is why the refresh loop exists and why moving output onto the WebSocket
+  would not remove it: something has to poll herdr either way, and the only
+  question is whether the browser or the server does it. See the byte
+  measurements below.
+
+- **`idle` means READY FOR INPUT, not silent.** A pane changes whenever anyone
+  types at the desk, so an idle agent's screen is not safe to stop reading.
+  This was got wrong once, with a real cost: the terminal view suppressed its
+  refresh entirely while showing an idle agent's scrollback, on the reasoning
+  that such an agent "by definition is not producing output". The pane then
+  froze, and a frozen pane is indistinguishable from a quiet one.
+
+- **Moving the API onto the WebSocket saves ~1%; the payload is where the
+  bytes are.** Measured rather than argued, because the intuition points the
+  wrong way. One `/output` response: 10,805 B of body against 111 B of HTTP
+  headers, so the entire saving available from dropping HTTP framing is about
+  1% — bought at the price of request/response correlation IDs, reconnect-safe
+  error handling, and status codes, which is why spec §4 rejected it. What did
+  work, on the same payload: `gzip` takes it to 2,435 B (terminal output is
+  extremely repetitive), and digest revalidation takes a steady-state poll to
+  **38 B**, because consecutive 3s polls differ by 3 lines out of 63.
+
+  The comparison system's socket was also measured directly rather than
+  assumed: over 20s it pushed only `agents` (the FULL list, every 2s) and one
+  `agent_update`, and **no terminal content at all** — pane content is
+  request/response there too. Its status channel costs 2.3 MB/hour; paddock's
+  delta-based one costs 0.34 MB/hour for the same information. The WebSocket
+  paddock already has is the more efficient of the two.
+
+- **A WebSocket read is not a free read.** It is worth stating plainly because
+  the opposite looks true from a browser's Network tab: a comparable dashboard
+  appears to open a terminal with no request at all, and in fact sends
+  `{type:'read_pane'}` over its socket and shells out to `herdr pane read`.
+  Moving paddock's `POST /output` onto its WebSocket would relabel the same
+  round trip, not remove it. Measured end to end, paddock's read is ~0 ms
+  locally; the latency worth attacking was the blank frame and the scrollback
+  default above, neither of which is a transport problem.
+
 - **Scrollback reads cost real wall time, and stop paying past ~300 lines.**
   Same probe, idle agent: `recent_unwrapped` is instant up to the viewport,
   then costs roughly 35 ms per extra line — 120 lines took 3.1 s, 300 lines
@@ -74,6 +144,26 @@ one, recorded here so they are not reintroduced.
   `visible` returns in 2 ms. `visible` is flat at ~2 ms for any line count.
   `MAX_READ_LINES` (2000) is therefore not a usable request against an idle
   agent; see `docs/roadmap.md`.
+
+- **The option cursor WRAPS, so nav keys can silently select a persistent
+  grant.** Measured against a live Claude Code permission prompt: `↓` moves
+  `1 → 2 → 3` and then wraps back to `1`. The middle option is routinely
+  "Yes, and don't ask again for: <command> *" — a standing policy change, not
+  a one-off approval. On a phone, one extra tap of `↓` moves the selection
+  somewhere the operator did not intend, and the ONLY indication of where the
+  cursor now sits is the `❯` inside the terminal text. Observed for real: a
+  run that pressed `↓` twice from option 2 wrapped to option 1 and committed
+  "Yes" — the right answer by luck, not by design. This is the strongest
+  argument for rendering the parsed option buttons ALONGSIDE the keypad: a
+  button carries its own label, so committing it cannot be off by one. The
+  keypad remains the fallback for prompts the parser cannot read.
+
+- **Declining an option settles the agent on `done`, not `idle` or `working`.**
+  Confirmed end to end against a live prompt: selecting "No" moved the agent
+  `blocked → done`. This is why `waitUntilUnblocked` waits on
+  `["working", "idle", "done"]` — the original `--until working` would have
+  reported a false failure on this exact path, and so would a wait that had
+  been "corrected" to `["working", "idle"]`.
 
 - **A blocked agent's prompt options are numbered and parseable.** The
   `detection` snapshot carries `1.` / `2.` / `3.` with `❯` on the current

@@ -27,6 +27,18 @@ surprise.
   cosmetic: an install prompt with a generic icon is a weaker nudge to add to
   the Home Screen, and the Home Screen add is the only way iOS delivers push
   at all.
+- **History on demand in the terminal view.** `POST /output` already takes
+  `{scrollback: true}` and the server side is tested, but nothing in the UI
+  sends it. It used to be sent automatically for `idle` agents on open, and
+  that was removed: the refresh loop reads `visible`, the two sources return
+  different content, so the digest could never match — and suppressing the
+  poll to stop the pane oscillating left it FROZEN. The reasoning given for
+  that suppression ("an idle agent by definition is not producing output") was
+  wrong: `idle` means ready for input, and a pane changes the moment anyone
+  types at the desk. Bringing history back means an explicit control plus a
+  visible "showing history / back to live" mode, so the operator always knows
+  whether the screen tracks reality — not a hidden second request.
+
 - **Stuck-agent detection.** `working` for more than N minutes with no output
   change is worth surfacing. `pane.output_matched` may serve.
 - **Preact swap** if first-load size disappoints (~45 KB → ~4 KB gzipped,

@@ -96,3 +96,247 @@ Two independent things can be "up", and the operator can tell them apart.
   nothing at all — no agent changed, so no delta — so the hub sends a
   `heartbeat` every 20s. Without it, an overnight session of idle agents
   (the primary use case) would show the staleness banner on a healthy link.
+
+## Sequence: how a request actually flows
+
+Four paths cover everything paddock does. `herdrd` is the herdr daemon behind
+the unix socket at `$HOME/.config/herdr/herdr.sock`.
+
+### 1. Startup and first load
+
+One port serves the UI, the API and the WebSocket. `Bun.serve` upgrades
+`/ws` and hands every other path to Hono — see "One port, one origin" below.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant P as paddock (:8787)
+    participant H as herdrd (unix socket)
+
+    Note over P,H: process start
+    P->>H: agent.list
+    H-->>P: agents[]
+    P->>P: adapter → store.replaceAll()
+    P->>H: events.subscribe(pane.agent_status_changed, per pane_id)
+    Note right of H: subscription needs a pane_id,<br/>so the pane set is reconciled FIRST
+
+    B->>P: GET /  (Cache-Control: no-cache)
+    P-->>B: index.html + hashed assets (immutable)
+    B->>P: WS upgrade /ws
+    P-->>B: {type:"snapshot", hostId, agents[]}
+    Note over B: list renders; no further request needed
+```
+
+### 2. An agent changes state — the push path
+
+The only thing paddock streams. Costs 0.34 MB/hour idle.
+
+```mermaid
+sequenceDiagram
+    participant H as herdrd
+    participant P as paddock
+    participant B1 as Phone
+    participant B2 as Laptop tab
+
+    H-->>P: pane_agent_status_changed
+    P->>P: applyStatusEvent() → carryAcknowledged()
+    P->>P: store diff
+    P-->>B1: {type:"delta", upserted[], removedIds[]}
+    P-->>B2: {type:"delta", ...}
+    Note over B1,B2: both agree without either asking
+
+    Note over P,B1: when nothing happens at all
+    P-->>B1: {type:"heartbeat"} every 30s
+    Note right of B1: distinct from an empty delta:<br/>"link alive" ≠ "nothing changed"
+```
+
+### 3. Opening a terminal, then keeping it live
+
+Output is **never** pushed — herdr has no subscribable output-changed event
+(27 subscribable types; `pane.output_matched` needs a match pattern), so the
+screen is always pulled.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant P as paddock
+    participant H as herdrd
+
+    B->>B: tap agent → location.hash = #/agent/<id>
+    B->>B: paint from screenCache (0 ms, never blank)
+
+    B->>P: POST /output {scrollback:false}
+    P->>H: agent.read(source:"visible", format:"ansi")
+    H-->>P: read.text (~2 ms, flat)
+    P-->>B: {lines[], source, digest}
+    B->>B: parseAnsi() → styled spans
+
+    opt agent is idle
+        B->>P: POST /output {scrollback:true}
+        P->>H: agent.read(source:"recent_unwrapped")
+        Note right of H: ~35 ms per line past the viewport —<br/>which is why it is the SECOND request
+        H-->>P: read.text
+        P-->>B: {lines[], digest}
+        Note over B: polling suspends while history is shown:<br/>the two sources differ, so digests<br/>could never match and the pane would oscillate
+    end
+
+    loop adaptive: 1 s floor → ×1.5 → 10 s ceiling
+        B->>P: POST /output {since: digest}
+        P->>H: agent.read(source:"visible")
+        alt screen moved
+            P-->>B: {lines[], digest}  (~2.4 KB gzipped)
+            B->>B: interval resets to 1 s
+        else identical
+            P-->>B: {unchanged:true}  (38 B)
+            B->>B: interval × 1.5, screen untouched
+        end
+    end
+```
+
+### 4. Answering a blocked agent
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant P as paddock
+    participant H as herdrd
+
+    Note over B: keypad is live in EVERY state
+    B->>P: POST /key {key:"down"}
+    P->>P: isNavKey() — closed 9-key allowlist
+    P->>H: agent.send_keys([down])
+    P->>P: wait KEY_SETTLE_MS (120 ms) for the TUI repaint
+    P->>H: agent.read(source:"visible")
+    H-->>P: read.text
+    P-->>B: {ok:true, lines[]}
+    Note over B: the ❯ cursor has visibly moved
+
+    B->>P: POST /key {key:"enter"}
+    P->>H: agent.send_keys([enter])
+    H-->>P: ok
+    H-->>P: pane_agent_status_changed (blocked → working|idle|done)
+    P-->>B: delta
+
+    Note over B,P: typing instead of navigating
+    B->>P: POST /text {text}
+    Note right of P: any state — the operator is looking at the screen
+    P->>H: agent.prompt(text)
+
+    Note over B,P: answering a PARSED prompt option
+    B->>P: POST /answer {key:"2"}
+    Note right of P: blocked-only, 409 otherwise —<br/>a reply composed for prompt A must<br/>never land on prompt B
+    P->>H: agent.send_keys(["2"])
+    P->>H: agent.wait(until:["working","idle","done"])
+```
+
+## One port, one origin
+
+`Bun.serve` binds a single port and routes by path: `/ws` upgrades to the
+WebSocket, everything else goes to the Hono app, which serves `/api/*` and
+then falls through to the built UI in `dist/`.
+
+This is a deliberate choice, not an accident of convenience:
+
+- **Same origin means no CORS**, no preflight on every POST, and no second
+  place for a misconfiguration to hide.
+- **The client derives its WebSocket URL from `location`, unconditionally**
+  (see `docs/gotchas.md`). Splitting the API onto another origin would force
+  the client to learn that origin from somewhere — config, build-time
+  constant, or a hostname test — and a hostname test is exactly how a working
+  dashboard silently becomes a demo screen.
+- **One hostname means one Cloudflare Access policy.** Two origins means two,
+  and the failure mode of the second one being wrong is a dashboard that
+  loads but cannot talk to anything.
+
+Splitting them is possible — the UI is static files and the API is a Hono app
+— but it buys nothing here and costs all three of the above.
+
+## Serving several machines
+
+Today `hostId` comes from `PADDOCK_HOST_ID` (default `"local"`) and one
+paddock talks to one local herdr socket. A colleague's machine on the same LAN
+cannot currently appear in the same dashboard.
+
+The seams exist: `hostId` is on every `Agent` record, rides the delta path,
+and is carried in the snapshot. **The blocker is one line of the store** —
+`server/state/store.ts` keys its `Map` by `agentId` alone (the herdr
+`pane_id`), so two machines can hand out colliding `pane_id`s (`w1:p1` is not
+unique across hosts) and silently overwrite each other. Multi-host requires
+re-keying by `${hostId}:${agentId}` first. See `docs/roadmap.md`.
+
+The intended shape, once that is done: each machine runs a paddock *agent*
+process that pushes its local herdr state to one tunnel-owning *hub*, and
+visibility is scoped by Cloudflare Access identity. The reserved
+`paddock agent` / `paddock hub` verbs exit with a pointer to the roadmap
+rather than doing something half-working.
+
+## Push or pull? The rule for adding anything new
+
+paddock is already both. The seam is not a compromise — it follows from what
+herdr can and cannot tell us, and any future capability should be placed by
+the same test rather than by preference.
+
+**Push it when all four hold:**
+
+1. **herdr has an event for it.** Without one, "push" just means the server
+   polls instead of the browser, which is the same work in a different place —
+   measured at about 1% of the bytes. This is the test that actually decides
+   most cases.
+2. **It is small.** A delta is broadcast to every connected client; a payload
+   that only one of them is looking at does not belong there.
+3. **Every client needs it.** Shared state — which agents exist, what they are
+   doing — must not disagree between a phone and a laptop tab.
+4. **It changes less often than clients look at it.** Otherwise push
+   degenerates into streaming, which spec §11 names as the one reliable way to
+   make paddock slow.
+
+**Pull it when any one holds:** no herdr event; large payload; only the client
+currently looking needs it; or it changes continuously while being watched.
+
+### Where that lands today
+
+| Data | Route | Why |
+|---|---|---|
+| Agent status (`blocked`/`working`/…) | **push** — `pane.agent_status_changed`, per pane | event-backed, tiny, shared, infrequent |
+| Agent appears | **push** — `pane.agent_detected` | event-backed, tiny, shared |
+| Agent/pane goes away | **push** — `pane.closed`, `pane.exited` | event-backed, tiny, shared |
+| Liveness | **push** — `heartbeat` every 30s | nothing else proves a quiet link is alive |
+| `acknowledgedAt` | **push** — paddock's own state, rides the delta | shared: dismissing on a phone must clear the laptop |
+| Terminal output | **pull** — `POST /output` | **no herdr event exists**; large; only the viewer needs it; changes constantly |
+| Parsed prompt | **pull** — `POST /prompt` | derived from output, same reasoning |
+| Everything else | 30s reconcile | a healing net, not a discovery path |
+
+### Known gaps, by the same rule
+
+Both are event-backed, small and shared, so both *should* be pushed and are
+currently caught only by the 30s reconcile:
+
+- **`workspace.renamed`** — `Agent.workspaceLabel` is part of the payload, so
+  a rename can sit stale on screen for up to 30 seconds.
+- **`pane.moved`** — a pane moved between workspaces gets a NEW `pane_id`
+  (`docs/gotchas.md`), and `agentId` IS the `pane_id`. Today that reads as a
+  remove plus an add, so the detail view of a moved agent closes itself. This
+  one matters more than it looks, because it is the same identity question
+  multi-host has to answer.
+
+### The one content signal herdr does offer
+
+`pane.output_matched` is **edge-triggered and one-shot** — it fires on the
+transition to matching and then goes quiet (measured: a substring printed
+three times produced exactly one event; a match-anything regex produced none
+at all). That makes it useless for keeping a screen in sync, which is why
+output is pulled.
+
+But the same property makes it exactly right for **alerts**, and that is where
+it should be used when it is: stuck-agent detection (`docs/roadmap.md`), or
+Web Push when a specific pattern appears. Do not reach for it as a sync
+mechanism; it is a doorbell, not a feed.
+
+### Adding a new pushed event
+
+1. Add the subscribe name to `server/herdr/socket.ts` — dotted for the three
+   `SubscriptionEventKind` types, and remember delivered names are
+   **underscored** for everything else (`pane.closed` arrives as `pane_closed`).
+2. Map it in `server/herdr/adapter.ts`. herdr vocabulary stops there.
+3. If it changes an `Agent` field, it rides the existing delta path with no
+   transport work at all — that is what the layering buys.
