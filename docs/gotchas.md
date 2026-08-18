@@ -9,7 +9,7 @@ one, recorded here so they are not reintroduced.
 | A field is always empty | Read from the wrong object (pane vs workspace vs agent) | Generated types make a rename a build error — for the three v1 payloads and the `agent.read` envelope only; see the coverage limit in `docs/roadmap.md` |
 | Events dropped with no error | Push script ends `curl -s … >/dev/null 2>&1; exit 0` | Log receipt at INFO; `/api/health` exposes `lastEventAt` |
 | Sensitive paths in access logs | Payload sent as a GET query string | POST bodies only |
-| Service worker silently disabled | Auth check gates every route including `/sw.js` | No app token; Access is the gate |
+| Service worker silently disabled | Auth check gates every route including `/sw.js` | No app token; Access is the gate — its cookie rides a same-origin fetch, a bearer token has nothing to ride |
 | Works on one hostname, not another | Hostname allowlist in the client | Derive the WebSocket URL from `location`, unconditionally |
 | Route order load-bearing | Hand-rolled request dispatch | Hono's explicit routing |
 | A repeated alert never fires again | Dedup key too coarse; a failed send consumes the attempt | Dedup on the state transition; a failed delivery does not consume it |
@@ -270,3 +270,32 @@ one, recorded here so they are not reintroduced.
   default for malformed ones — and `{key}` is constrained to an option digit,
   since spec §6 provides no general-purpose key-send endpoint and a control
   sequence is a larger capability than the free text already allowed.
+
+## Deployment and Access
+
+- **Access gates `/sw.js` as well, and that is survivable — an application
+  token would not be.** Measured against a live deployment: requested without
+  a session, `/`, `/api/health`, `/api/agents`, `/ws` and `/sw.js` every one
+  returned `302` to the Access login. The service worker still registers,
+  because registration is a same-origin fetch that carries the
+  `CF_Authorization` cookie the browser already holds. This is the whole
+  reason the rule in `CLAUDE.md` is "no application token" rather than "do not
+  gate `/sw.js`": a bearer token has nothing to ride on a browser-initiated
+  worker fetch, so it fails where a cookie succeeds. On paper the two look
+  like the same gate. In a browser they behave oppositely.
+
+- **An expired Access session turns a service-worker fetch into an HTML login
+  page, not an error.** The redirect is a `302` to the identity provider, so
+  a worker that wakes and fetches JSON gets markup with a `200` at the end of
+  the redirect chain — a parse failure at best, and silence at worst. This
+  constrains Web Push before it is written: the notification payload must
+  carry the agent name and state itself, rather than waking the worker to go
+  and ask. The failure would otherwise appear exactly when the operator has
+  been away long enough for the session to lapse, which is precisely when the
+  notification was worth sending. A longer Access session duration lowers the
+  frequency and removes nothing.
+
+- **A verification request must come from a context holding no Access
+  session.** An already-authenticated browser renders the dashboard whether or
+  not the policy is correct, so it cannot tell a working gate from a missing
+  one. See `docs/deploy-cloudflare.md` for the check and the expected result.
