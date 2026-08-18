@@ -47,6 +47,25 @@ jobs:
           build bun-darwin-x64   paddock-macos-x86_64
           build bun-darwin-arm64 paddock-macos-aarch64
 
+      # A released binary that reports 0.0.0-dev is not a cosmetic bug: update.ts
+      # REFUSES to update a 0.0.0-dev build by design, so `paddock update` would
+      # then decline on every release — the headline feature of this release
+      # pipeline, dead, with every test still green. The `--define` above nests
+      # quotes inside a shell string, which is exactly the kind of thing that
+      # breaks silently, so the stamp is read back off the real artifact.
+      - name: Smoke — the compiled binary reports this tag's version
+        env:
+          PADDOCK_NO_UPDATE_CHECK: "1"
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          GOT="$(out/paddock-linux-x86_64 --version)"
+          echo "paddock --version -> '$GOT' (expected '$VERSION')"
+          if [ "$GOT" != "$VERSION" ]; then
+            echo "version stamp mismatch: the --define did not reach the binary" >&2
+            exit 1
+          fi
+
       - name: Checksums
         run: cd out && sha256sum paddock-* > SHA256SUMS && cat SHA256SUMS
 

@@ -31,3 +31,23 @@ test("release is created if it does not exist, or uploads into it if it does", (
   expect(wf).toContain("gh release create");
   expect(wf).toContain("gh release upload");
 });
+
+test("the compiled artifact's version stamp is smoke-tested before it is published", () => {
+  // Nothing else in this pipeline runs a binary. If the `--define` quoting on
+  // the Compile step ever breaks, every released binary reports 0.0.0-dev —
+  // and update.ts refuses to update a 0.0.0-dev build by design, so `paddock
+  // update` would decline on every release with the suite still green.
+  //
+  // The step must run AFTER Compile (there is no binary before it) and BEFORE
+  // the release is created, so a bad stamp fails the job instead of shipping.
+  const compileAt = wf.indexOf("- name: Compile");
+  const smokeAt = wf.indexOf("--version");
+  const publishAt = wf.indexOf("- name: Attach to the release");
+  expect(smokeAt, "no step ever runs the binary and reads its version").toBeGreaterThan(-1);
+  expect(smokeAt).toBeGreaterThan(compileAt);
+  expect(smokeAt).toBeLessThan(publishAt);
+  // Compared against the tag, not merely printed. A step that echoes the
+  // version and always exits 0 would satisfy an "is it mentioned" check.
+  expect(wf).toContain("out/paddock-linux-x86_64 --version");
+  expect(wf).toMatch(/if \[ "\$GOT" != "\$VERSION" \]; then/);
+});
