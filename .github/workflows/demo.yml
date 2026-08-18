@@ -38,6 +38,12 @@ jobs:
       - run: make test
 
       - run: bun run build:demo
+
+      # install.sh is served from the Pages site, so it must ride along in the
+      # artifact. Without this the published install command 404s while every
+      # other page on the site keeps working — a failure that looks like health.
+      - run: cp install.sh dist-demo/install.sh
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
