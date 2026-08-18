@@ -64,6 +64,18 @@ export interface ParsedPrompt {
    * free-text reply. A mislabelled Approve button is worse than no button.
    */
   options: PromptOption[] | null;
+  /**
+   * The line the agent's `❯` cursor sits on, marker stripped, or null.
+   *
+   * Reported INDEPENDENTLY of `options`, and that independence is the point.
+   * The keypad's ↓ wraps from the last option back to the first, and the
+   * middle option of a permission prompt is routinely a persistent grant
+   * ("and don't ask again"), so one tap too many can commit a standing
+   * permission. The wrap is not really the hazard — the wrap being invisible
+   * is. Showing what Enter will commit removes it, and keeps working on
+   * prompt shapes the option parser deliberately refuses to read.
+   */
+  selected: string | null;
   /** The snapshot as read. Always present, so the UI can always show something. */
   raw: string;
 }
@@ -110,6 +122,13 @@ export function isNavKey(value: unknown): value is NavKey {
 export interface KeyResult extends ActionResult {
   lines: string[];
   source: string;
+  /**
+   * The cursor line after the key landed, so the "Enter will select" preview
+   * tracks every ↓ without a second round trip. Null when no cursor is on
+   * screen — which is the normal case for an agent that is not being asked
+   * anything.
+   */
+  selected?: string | null;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parsePrompt } from "@server/herdr/prompt-parse";
+import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
 
 // Structure copied from a real Claude Code permission prompt; content invented.
 const REAL_SHAPE = `
@@ -114,4 +114,87 @@ test("does not let a stale question from an earlier run attach to a later one", 
 test("parses a menu that ends the buffer with no trailing newline", () => {
   const p = parsePrompt("Pick one?\n ❯ 1. A\n   2. B");
   expect(p.options!.map((o) => o.label)).toEqual(["A", "B"]);
+});
+
+// ── the selected line ──────────────────────────────────────────────────────
+// Independent of whether the option LIST parsed. The keypad's ↓ wraps from the
+// last option back to the first, and the middle option of a permission prompt
+// is routinely a persistent grant — so one tap too many can commit a standing
+// permission. The wrap is not the danger; the wrap being INVISIBLE is. Showing
+// what Enter will commit removes it, and works on prompt shapes the list
+// parser cannot read at all.
+
+test("the cursor line is reported for a permission prompt", () => {
+  const raw = [
+    " Do you want to proceed?",
+    "   1. Yes",
+    " ❯ 2. Yes, and don't ask again for: build *",
+    "   3. No",
+  ].join("\n");
+  expect(parsePrompt(raw).selected).toBe("2. Yes, and don't ask again for: build *");
+});
+
+test("the cursor line is reported even when the option LIST cannot be parsed", () => {
+  // The shape that defeats the list parser: each option followed by indented
+  // description lines, so no two options are contiguous. The list is null and
+  // the selection is still known — which is the whole point.
+  const raw = [
+    "Which approach should we take?",
+    " ❯ 1. Add the index now (Recommended)",
+    "      Costs one migration, pays off immediately.",
+    "   2. Defer until the next release",
+    "      Cheaper today, more work later.",
+    "─────────────────────────────",
+    "   3. Chat about this",
+  ].join("\n");
+  const p = parsePrompt(raw);
+  expect(p.options).toBeNull();
+  expect(p.selected).toBe("1. Add the index now (Recommended)");
+});
+
+test("no cursor means no selection, rather than a guess at the first option", () => {
+  const raw = ["Proceed?", "   1. Yes", "   2. No"].join("\n");
+  expect(parsePrompt(raw).selected).toBeNull();
+});
+
+test("the LAST cursor wins, since the live prompt is at the bottom", () => {
+  // A resolved earlier prompt can still be in the snapshot with its marker.
+  const raw = [
+    " ❯ 1. An older, already-answered choice",
+    "   some output since",
+    " Do you want to proceed?",
+    "   1. Yes",
+    " ❯ 2. No",
+  ].join("\n");
+  expect(parsePrompt(raw).selected).toBe("2. No");
+});
+
+test("an empty snapshot has no selection", () => {
+  expect(parsePrompt("").selected).toBeNull();
+});
+
+test("a cursor on a non-option line is still reported", () => {
+  // Some prompts mark a free-text row. Reporting it verbatim beats reporting
+  // nothing: the operator sees what Enter will do either way.
+  expect(parsePrompt(" ❯ Type something").selected).toBe("Type something");
+});
+
+test("the cursor is found even when the line carries ANSI escapes", () => {
+  // The two callers read with different settings: `/prompt` strips ANSI, but
+  // `/key` re-reads the live screen with colour KEPT, so the cursor line
+  // begins with escape bytes rather than whitespace. Matching only clean text
+  // made the preview work on load and then vanish on the first arrow-down —
+  // precisely when it is protecting against arrowing one step too far.
+  const raw = [
+    "\x1b[0m Do you want to proceed?",
+    "\x1b[2m   1. Yes\x1b[0m",
+    "\x1b[1m\x1b[38;2;255;255;255m \u276f 2. Yes, and always allow: curl *\x1b[0m",
+    "\x1b[2m   3. No\x1b[0m",
+  ].join("\n");
+  expect(selectedLine(raw)).toBe("2. Yes, and always allow: curl *");
+});
+
+test("selectedLine agrees with parsePrompt on clean text", () => {
+  const raw = [" Proceed?", "   1. Yes", " \u276f 2. No"].join("\n");
+  expect(selectedLine(raw)).toBe(parsePrompt(raw).selected);
 });

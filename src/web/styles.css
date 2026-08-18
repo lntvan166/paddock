@@ -409,3 +409,55 @@ body {
    screen scrolled faster than it was sampled. Saying so is the honest
    alternative to presenting a transcript that looks continuous and is not. */
 .term-gapnote { color: var(--warn); font-weight: 500; }
+
+/* Parsed options, shown only when the parser was confident. Labels are the
+   agent's own and must never be truncated — a clipped
+   "Yes, and always allow acce…" is unreadable as a choice, which is the exact
+   ambiguity rendering real labels exists to remove. */
+.term-options {
+  flex: none;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.term-question { margin: 0 0 0.15rem; font-size: 0.8rem; color: var(--fg-dim); }
+
+.term-option {
+  min-height: 2.75rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.term-option[aria-pressed="true"] { border-color: var(--accent); }
+.term-option:disabled { opacity: 0.5; }
+
+/* What Enter would commit. Warn-coloured because the thing it prevents is
+   committing a persistent grant by arrowing one step too far. */
+.term-selected {
+  flex: none;
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--fg);
+  border-top: 1px solid var(--border);
+}
+
+.term-selected-label {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--warn);
+}

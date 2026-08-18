@@ -5,6 +5,50 @@ const OPTION_RE = /^\s*(❯\s*)?(\d+)\.\s+(.*\S)\s*$/;
 const QUESTION_RE = /^\s*(\S.*\?)\s*$/;
 
 /**
+ * Any line carrying the cursor marker, whether or not it looks like an option.
+ *
+ * Deliberately looser than OPTION_RE: some prompts park the cursor on a
+ * free-text row ("Type something"), and reporting that verbatim beats
+ * reporting nothing. The operator sees what Enter will do either way.
+ */
+const CURSOR_RE = /^\s*❯\s*(\S.*?)\s*$/;
+
+/**
+ * The line the cursor sits on, marker stripped, or null.
+ *
+ * Exported so the `/key` route can re-derive it from the screen it already
+ * re-reads after a keystroke. The alternative — letting the browser parse it —
+ * would put TUI knowledge in `web/`, and the dependency rule keeps every
+ * herdr-shaped assumption on this side of the socket.
+ *
+ * The LAST marker wins: a resolved earlier prompt can still carry one, and the
+ * live prompt is always further down the buffer.
+ */
+export function selectedLine(text: string): string | null {
+  let selected: string | null = null;
+  for (const line of text.split("\n")) {
+    const cur = CURSOR_RE.exec(stripAnsi(line));
+    if (cur) selected = cur[1]!;
+  }
+  return selected;
+}
+
+/**
+ * Escapes are removed before matching because the two callers read with
+ * different settings. `/prompt` asks for `strip_ansi: true`, but `/key`
+ * re-reads the LIVE screen with colour kept, so the cursor line starts with
+ * escape bytes rather than whitespace. Matching only clean text made the
+ * preview appear on load and then vanish on the first arrow-down — exactly
+ * when it exists to stop the operator arrowing one step too far.
+ */
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b[()][A-Za-z0-9]|\u001b./g;
+
+function stripAnsi(line: string): string {
+  return line.replace(ANSI_RE, "");
+}
+
+/**
  * Turn a `detection` snapshot into options paddock can render.
  *
  * Returning `options: null` is a first-class outcome, not a failure: the UI
@@ -31,7 +75,16 @@ export function parsePrompt(raw: string): ParsedPrompt {
   let lastRun: PromptOption[] = [];
   let lastRunQuestion: string | null = null;
 
+  // The cursor is tracked in this same pass, but INDEPENDENTLY of the option
+  // runs: the last marker anywhere in the buffer wins, so a selection is still
+  // reported when the run guards refuse to produce a list. A resolved earlier
+  // prompt can still carry a marker, and the live one is always further down.
+  let selected: string | null = null;
+
   for (const line of raw.split("\n")) {
+    const cur = CURSOR_RE.exec(line);
+    if (cur) selected = cur[1]!;
+
     const opt = OPTION_RE.exec(line);
     if (opt) {
       if (currentRun.length === 0) {
@@ -75,5 +128,5 @@ export function parsePrompt(raw: string): ParsedPrompt {
     lastRun.length >= 2 && lastRun.every((o, i) => o.key === String(i + 1));
   const usable = contiguous && lastRunQuestion !== null;
 
-  return { question: lastRunQuestion, options: usable ? lastRun : null, raw };
+  return { question: lastRunQuestion, options: usable ? lastRun : null, selected, raw };
 }

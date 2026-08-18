@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
-import { parsePrompt } from "@server/herdr/prompt-parse";
+import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { isNavKey } from "@shared/types";
@@ -211,7 +211,11 @@ export function createApp(deps: AppDeps) {
         // pressing it again.
         await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
         const out = await actions.readOutput(agent.agentId, agent.state);
-        return c.json({ ok: true, ...out });
+        // Re-derived server-side rather than in the browser: the cursor has
+        // just moved, and the preview that tells the operator what Enter will
+        // commit has to move with it. Parsing it in `web/` would put TUI
+        // knowledge on the wrong side of the dependency rule.
+        return c.json({ ok: true, ...out, selected: selectedLine(out.lines.join("\n")) });
       } catch (err) {
         return c.json({ ok: false, detail: String(err), lines: [], source: "" }, 502);
       }

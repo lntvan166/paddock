@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import type { ActionResult, Agent, NavKey, OutputResult } from "@shared/types";
-import { fetchOutput, sendKey, sendText } from "@web/api";
+import type { ActionResult, Agent, NavKey, OutputResult, ParsedPrompt } from "@shared/types";
+import { answerWithKey, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
 import { mergeSnapshot, type History } from "@web/history";
@@ -190,6 +190,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const [busy, setBusy] = useState(false);
   const [wrap, setWrap] = useState(readWrap);
   const [shownHistory, setShownHistory] = useState(0);
+  const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
   const [reply, setReply] = useState("");
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
@@ -299,6 +300,22 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   }, [load, agent.state]);
 
   /**
+   * The prompt, fetched only while the agent is actually blocked.
+   *
+   * Cleared the moment it is not: an option list left on screen after the
+   * agent moved on would offer buttons that answer a question nobody is
+   * asking any more, and `/answer` would refuse them with a 409 anyway.
+   */
+  useEffect(() => {
+    if (agent.state !== "blocked") { setPrompt(null); return; }
+    let live = true;
+    void fetchPrompt(agent.agentId)
+      .then((p) => { if (live) setPrompt(p); })
+      .catch(() => { if (live) setPrompt(null); });
+    return () => { live = false; };
+  }, [agent.agentId, agent.state]);
+
+  /**
    * Keep the open pane live.
    *
    * Spec §5's "never streamed" rule is about pushing SEVERAL terminals
@@ -374,6 +391,10 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
     // key that simply did not go through.
     if (res.ok) {
       apply(res.lines);
+      // The cursor has moved, so the preview must move with it.
+      if (res.selected !== undefined) {
+        setPrompt((p) => (p ? { ...p, selected: res.selected ?? null } : p));
+      }
     } else {
       setFeedback({ ok: false, detail: res.detail ?? "Key failed." });
     }
@@ -510,6 +531,50 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
       {feedback && (
         <p className={feedback.ok ? "term-note ok" : "term-note warn"} role="status">
           {feedback.ok ? "Sent." : (feedback.detail ?? "Failed.")}
+        </p>
+      )}
+
+      {/* Real option buttons, but ONLY when the parser was confident. Each
+          carries the agent's own label verbatim — no reordering, no
+          summarising, no generic "Approve" — so committing one cannot be off
+          by one the way arrowing to it can. When the parser refuses (it does,
+          on prompts whose options are separated by description lines) there
+          are simply no buttons, and the keypad below is the floor. */}
+      {prompt?.options && prompt.options.length > 0 && (
+        <div className="term-options" role="group" aria-label="Answer">
+          {prompt.question && <p className="term-question">{prompt.question}</p>}
+          {prompt.options.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              className="term-option"
+              disabled={busy}
+              aria-pressed={o.selected}
+              onClick={() => {
+                setBusy(true);
+                void answerWithKey(agent.agentId, o.key)
+                  .then((r) => setFeedback(r))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* What Enter would commit, right where the thumb is.
+
+          The keypad's ↓ wraps from the last option back to the first, and the
+          middle option of a permission prompt is routinely a persistent grant
+          ("and don't ask again"). The wrap was never really the hazard — the
+          wrap being INVISIBLE was. This is shown whenever a cursor exists, so
+          it covers the prompt shapes the option parser refuses to read, which
+          are exactly the ones where the keypad is the only way to answer. */}
+      {prompt?.selected && (
+        <p className="term-selected" role="status">
+          <span className="term-selected-label">⏎ Enter selects</span>
+          {prompt.selected}
         </p>
       )}
 
