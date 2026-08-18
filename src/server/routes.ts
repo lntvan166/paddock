@@ -31,6 +31,20 @@ export interface HealthBody {
    * to notice.
    */
   lastNotifyError: string | null;
+  /**
+   * The running build's own version string (see `@server/version`).
+   * Required for the same reason as `lastNotifyError`: an operator debugging
+   * a report against "whatever paddock happened to be running" should never
+   * have to guess it from a binary that may since have been replaced.
+   */
+  version: string;
+  /**
+   * The newest version `checkForUpdate` has seen on GitHub, or `null` if none
+   * is known yet or none is newer than `version`. Required, not optional —
+   * the same reasoning as `lastNotifyError`: a future edit that drops this
+   * field from `health()` must be a type error, not a silently missing key.
+   */
+  latestKnown: string | null;
 }
 
 // Vite's content hash is base64url (letters, digits, "_", "-"), joined to the

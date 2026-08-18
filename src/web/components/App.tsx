@@ -24,10 +24,33 @@ export function App() {
   const [idleOpen, setIdleOpen] = useState(true);
   const openId = useAgentRoute();
   const showSettings = useSettingsRoute();
+  // `/api/health`'s `latestKnown`: null until the fetch below resolves, or
+  // forever if it fails — a version notice is not worth an error state on a
+  // dashboard that is otherwise working fine. Same `live`-guarded pattern as
+  // Settings.tsx's own GET effect, so a slow response resolving after the
+  // operator has navigated away does not write into an unmounted tree.
+  const [latestKnown, setLatestKnown] = useState<string | null>(null);
 
   useEffect(() => {
     connect();
   }, [connect]);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/health");
+        const body = (await res.json()) as { latestKnown?: string | null };
+        if (live && typeof body.latestKnown === "string") setLatestKnown(body.latestKnown);
+      } catch {
+        // Silent: the server's own check already logs and degrades to `null`
+        // rather than surfacing an error, and a fetch failure here is the
+        // same non-event — nothing to tell the operator about a dashboard
+        // that is otherwise working.
+      }
+    })();
+    return () => { live = false; };
+  }, []);
 
   // Establishes the theme on a cold page load, before Settings has ever been
   // opened. This does NOT cover a live change: `main.tsx` mounts `App` once,
@@ -111,7 +134,7 @@ export function App() {
       <div {...staleAttrs(stale)}>
         <InstallHint />
         <HostHeader
-          hostId={hostId} agents={agents}
+          hostId={hostId} agents={agents} latestKnown={latestKnown}
           onOpenSettings={() => { location.hash = "#/settings"; }}
         />
 

@@ -22,6 +22,7 @@ import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs } from "@server/cli";
 import { VERSION } from "@server/version";
 import { runUpdate } from "@server/update";
+import { checkForUpdate } from "@server/update-check";
 
 const { command, flags } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
@@ -221,6 +222,21 @@ if (DEMO) {
   }
 }
 
+/**
+ * Filled in asynchronously, below, and read by `health()` on every request.
+ *
+ * Fired WITHOUT awaiting — a version check must never delay the server
+ * binding its port, and this variable simply stays `null` (its honest "don't
+ * know yet" value) until the one background check resolves.
+ */
+let latestKnown: string | null = null;
+void checkForUpdate({
+  dir: defaultConfigDir(),
+  current: VERSION,
+  now: Date.now(),
+  disabled: process.env.PADDOCK_NO_UPDATE_CHECK === "1",
+}).then((v) => { latestKnown = v; });
+
 const app = createApp({
   store,
   hub,
@@ -237,6 +253,8 @@ const app = createApp({
     // A broken token fails every send silently otherwise; exposed here so it
     // is visible within seconds rather than never.
     lastNotifyError: notifier.lastError,
+    version: VERSION,
+    latestKnown,
   }),
   staticDir: process.env.PADDOCK_STATIC_DIR ?? "dist",
 });
