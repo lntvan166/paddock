@@ -81,3 +81,24 @@ export function writePref<K extends keyof Prefs>(k: K, v: Prefs[K]): void {
     // preferable to an uncaught throw taking the whole settings view down.
   }
 }
+
+/**
+ * The attribute value `styles.css`'s `:root[data-theme="dark"]` (and the
+ * `:not([data-theme="light"])` escape from the system-dark media query)
+ * listens for.
+ *
+ * `null` for "system" rather than the literal string, because "system" means
+ * "defer to `prefers-color-scheme`", which is exactly what having NO
+ * attribute already does. Exported and tested directly rather than asserting
+ * on `dataset.theme` after setting it, which would only prove the DOM
+ * reflects an attribute back — not that paddock chose the right one.
+ *
+ * Lives here (not in `App.tsx`, where it was first written) rather than in
+ * either of its two callers: `App.tsx`'s mount effect and `Settings.tsx`'s
+ * live-apply-on-change both need it, and `App.tsx` already imports
+ * `Settings.tsx` — a second import in the other direction would be a
+ * circular module dependency for no reason beyond convenience.
+ */
+export function themeAttr(pref: ThemePref): "light" | "dark" | null {
+  return pref === "system" ? null : pref;
+}

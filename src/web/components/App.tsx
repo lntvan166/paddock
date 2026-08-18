@@ -12,22 +12,7 @@ import { staleAttrs } from "@web/components/staleness";
 import { agentHash, useAgentRoute, useSettingsRoute } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { UpdateBar } from "@web/components/UpdateBar";
-import { readPrefs, type ThemePref } from "@web/prefs";
-
-/**
- * The attribute value `styles.css`'s `:root[data-theme="dark"]` (and the
- * `:not([data-theme="light"])` escape from the system-dark media query) has
- * been listening for since before this feature — nothing had ever set it.
- *
- * `null` for "system" rather than the literal string, because "system" means
- * "defer to `prefers-color-scheme`", which is exactly what having NO
- * attribute already does. Exported and tested directly rather than asserting
- * on `dataset.theme` after setting it, which would only prove happy-dom
- * reflects an attribute back — not that paddock chose the right one.
- */
-export function themeAttr(pref: ThemePref): "light" | "dark" | null {
-  return pref === "system" ? null : pref;
-}
+import { readPrefs, themeAttr } from "@web/prefs";
 
 export function App() {
   const { agents, hostId, connected, lastMessageAt, updateAvailable, connect } = useStore();
@@ -44,9 +29,14 @@ export function App() {
     connect();
   }, [connect]);
 
-  // Applied once on mount: Settings is a separate full-screen view that
-  // unmounts this component (see the early return below), so a preference
-  // change there is picked up on the remount that follows navigating back.
+  // Establishes the theme on a cold page load, before Settings has ever been
+  // opened. This does NOT cover a live change: `main.tsx` mounts `App` once,
+  // unkeyed, for the life of the page — `App` itself never unmounts, only its
+  // CHILDREN swap between `<Settings>`, `<AgentTerminal>`, and the agent list
+  // at this same early-return tree position. So `[]` deps here fire exactly
+  // once and would otherwise leave a theme switch inert until a full reload.
+  // `Settings.tsx`'s `setPref` applies `themeAttr` directly for that reason —
+  // the two are complementary, not redundant.
   useEffect(() => {
     const attr = themeAttr(readPrefs().theme);
     if (attr === null) delete document.documentElement.dataset.theme;

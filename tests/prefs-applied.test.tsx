@@ -4,9 +4,9 @@
 import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
-import { RATE_MS, writePref } from "@web/prefs";
+import { RATE_MS, themeAttr, writePref } from "@web/prefs";
 import { AgentTerminal, floorFor } from "@web/components/AgentTerminal";
-import { themeAttr } from "@web/components/App";
+import { Settings } from "@web/components/Settings";
 import { digestOf } from "@shared/screen";
 import { agent, render, settle, stubFetch, unmount } from "./support/render";
 
@@ -20,6 +20,21 @@ afterEach(async () => {
   await unmount();
   globalThis.fetch = realFetch;
   for (const k of PREF_KEYS) localStorage.removeItem(k);
+  // `App`'s mount effect and `Settings`' live-apply both write this attribute
+  // straight onto `document.documentElement`, which outlives any one test's
+  // render tree — left set, it leaks into whichever DOM test runs next in
+  // this same Bun process (tests/support/dom.ts documents this class of
+  // cross-file pollution already causing real failures here).
+  delete document.documentElement.dataset.theme;
+});
+
+// Minimal `SettingsView`, matching what `Settings.tsx`'s mount-time GET
+// expects (shared/types.ts). Only the shape matters here: no test in this
+// file asserts on its content.
+const settingsView = () => ({
+  telegram: { configured: false, hint: null, chatId: null },
+  notify: { enabled: false, triggers: [], quietHours: null, cooldownMs: 60_000 },
+  publicUrl: null, error: null,
 });
 
 const screenOf = (lines: string[]) => ({ lines, source: "visible", digest: digestOf(lines) });
@@ -66,4 +81,43 @@ test("fontPx is applied to the terminal pane as a CSS custom property", async ()
 
   const pane = host.querySelector(".term-pane") as HTMLElement | null;
   expect(pane?.style.getPropertyValue("--term-font-px")).toBe("18px");
+});
+
+/**
+ * The gap this guards: `main.tsx` mounts `App` exactly once, unkeyed, for the
+ * life of the page. Its theme effect has `[]` deps, so it fires once at cold
+ * load and never again — `App` itself never unmounts; only its CHILDREN swap
+ * (between `<Settings>`, `<AgentTerminal>`, and the agent list) at the same
+ * early-return tree position in `App.tsx`. Without a live apply in
+ * `Settings.tsx` itself, an operator who opens Settings and switches to Dark
+ * sees nothing change until a full browser reload. Rendering `Settings`
+ * directly (no `App`, no remount) is what proves the fix lives in
+ * `Settings.tsx` and not in some effect upstream that a real navigation would
+ * happen to re-run.
+ */
+test("choosing a theme in Settings applies it immediately, with no remount", async () => {
+  globalThis.fetch = (async () => new Response(JSON.stringify(settingsView()), {
+    headers: { "content-type": "application/json" },
+  })) as unknown as typeof fetch;
+
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  const select = host.querySelector('select[name="theme"]') as HTMLSelectElement | null;
+  expect(select).not.toBeNull();
+
+  select!.value = "dark";
+  select!.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+
+  expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+
+  // "system" must DELETE the attribute, not set it to the literal string —
+  // the same distinction `themeAttr` makes for App.tsx's mount-time apply.
+  select!.value = "system";
+  select!.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+
+  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
 });

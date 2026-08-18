@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
-import { RATE_MS, readPrefs, writePref, type Prefs, type RatePref, type ThemePref } from "@web/prefs";
+import {
+  RATE_MS, readPrefs, themeAttr, writePref,
+  type Prefs, type RatePref, type ThemePref,
+} from "@web/prefs";
 
 const RATE_LABELS: Record<RatePref, string> = { live: "Live", balanced: "Balanced", frugal: "Frugal" };
 
@@ -80,6 +83,18 @@ export function Settings({ onBack }: SettingsProps) {
   function setPref<K extends keyof Prefs>(k: K, v: Prefs[K]) {
     writePref(k, v);
     setPrefs((p) => ({ ...p, [k]: v }));
+    // `App.tsx`'s own theme effect only runs once, at the page's initial
+    // mount — `App` is never unmounted (see its comment on `main.tsx`'s
+    // single, unkeyed `createRoot(...).render(<App />)`), so nothing upstream
+    // re-applies a change made here. Every other pref in this section is
+    // read straight from `readPrefs()` by whatever consumes it, but the DOM
+    // attribute the CSS switches on has no consumer that re-reads it later —
+    // it must be pushed, immediately, right here.
+    if (k === "theme") {
+      const attr = themeAttr(v as ThemePref);
+      if (attr === null) delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = attr;
+    }
   }
 
   function toggleTrigger(t: NotifyTrigger) {
@@ -168,6 +183,7 @@ export function Settings({ onBack }: SettingsProps) {
         <label className="settings-field">
           <span>Theme</span>
           <select
+            name="theme"
             value={prefs.theme}
             onChange={(e) => setPref("theme", e.target.value as ThemePref)}
           >
