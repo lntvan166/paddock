@@ -34,3 +34,7 @@ paddock-*
 .superpowers/
 .claude/
 *.local.md
+
+# Isolated workspaces for subagent-driven execution.
+.worktrees/
+.superpowers/
