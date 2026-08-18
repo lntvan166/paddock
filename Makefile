@@ -4,7 +4,7 @@ export GID := $(shell id -g)
 .PHONY: dev types icons check check-clean build-web test build up down logs restart
 
 dev:
-	bun run dev:server & bun run dev:web; kill %1
+	bash scripts/dev.sh
 
 types:
 	bun run scripts/gen-herdr-types.ts
