@@ -116,3 +116,23 @@ export class Notifier {
     this.lastError = r.detail ?? "send failed";
   }
 }
+
+/**
+ * The composition root's fan-out, extracted so it can be unit-tested directly
+ * rather than only by exercising `src/server/index.ts` as a whole.
+ *
+ * `index.ts` and `tests/notify-wiring.test.ts` both call this one function, so
+ * a regression here — dropping either destination — is caught in the test
+ * without the test needing to import or run the composition root itself.
+ * Parameter types are structural (not `Hub` / `Notifier` directly) so a test
+ * can pass plain stubs without casting.
+ */
+export function fanOut(
+  hub: { queue: (d: Delta) => void },
+  notifier: { observe: (d: Delta) => void },
+): (d: Delta) => void {
+  return (d) => {
+    hub.queue(d);
+    notifier.observe(d);
+  };
+}

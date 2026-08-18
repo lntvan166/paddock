@@ -16,6 +16,9 @@ import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
 import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
+import { SettingsStore, defaultConfigDir } from "@server/settings/store";
+import { sendTelegram } from "@server/notify/telegram";
+import { Notifier, fanOut } from "@server/notify/notifier";
 
 const args = new Set(Bun.argv.slice(2));
 const DEMO = args.has("--demo");
@@ -64,6 +67,22 @@ function currentBuildId(): string | null {
 
 const hub = new Hub({ build: currentBuildId });
 
+const settings = new SettingsStore(defaultConfigDir());
+await settings.load();
+// Never log settings.error's cause verbatim if that ever changes to include
+// file contents — today it is only "unreadable" / "not valid JSON" messages,
+// never the token, but the rule is never swallow errors either way.
+if (settings.error) console.error(`[settings] ${settings.error}`);
+
+const notifier = new Notifier({
+  settings,
+  send: async (text) => {
+    const s = settings.current();
+    if (!s.telegram.token || !s.telegram.chatId) return { ok: false, detail: "not configured" };
+    return sendTelegram({ token: s.telegram.token, chatId: s.telegram.chatId, text });
+  },
+});
+
 let supervisor: Supervisor | null = null;
 let demo: DemoSource | null = null;
 // Demo has no herdr to act on, so the herdr-backed action routes stay unset
@@ -111,7 +130,10 @@ if (DEMO) {
   supervisor = new Supervisor({
     client,
     store,
-    onDelta: (d) => hub.queue(d),
+    // Fan out, do not replace: the hub keeps every browser current, and the
+    // notifier is a leaf hanging off the composition root so that neither
+    // store.ts nor hub.ts has to learn that Telegram exists.
+    onDelta: fanOut(hub, notifier),
     // The event-driven refreshes and the 30s healing reconcile are awaited by
     // nobody, so a rejection there used to be a log line and nothing more.
     // Arming the keeper makes a background failure self-heal instead.
@@ -155,6 +177,7 @@ const app = createApp({
   store,
   hub,
   actions,
+  settings,
   health: () => ({
     ok: true,
     hostId,
@@ -163,6 +186,9 @@ const app = createApp({
     // Demo mode has no herdr; otherwise this is the stream's own answer.
     herdrConnected: DEMO ? true : (stream?.connected ?? false),
     lastEventAt: supervisor?.lastEventAt ?? (demo ? Date.now() : null),
+    // A broken token fails every send silently otherwise; exposed here so it
+    // is visible within seconds rather than never.
+    lastNotifyError: notifier.lastError,
   }),
   staticDir: process.env.PADDOCK_STATIC_DIR ?? "dist",
 });

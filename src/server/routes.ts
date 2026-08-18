@@ -21,6 +21,13 @@ export interface HealthBody {
    * event while reporting success.
    */
   lastEventAt: number | null;
+  /**
+   * The notifier's last send failure (a bad token, an unreachable API), or
+   * `null` if the most recent attempt succeeded or none has been made yet.
+   * Optional so existing tests that stub `health` need not change: a broken
+   * token should be visible within seconds via `/api/health`, not never.
+   */
+  lastNotifyError?: string | null;
 }
 
 // Vite's content hash is base64url (letters, digits, "_", "-"), joined to the
