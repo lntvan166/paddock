@@ -3,6 +3,7 @@ import type { ActionResult, Agent, NavKey, OutputResult } from "@shared/types";
 import { fetchOutput, sendKey, sendText } from "@web/api";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
+import { mergeSnapshot, type History } from "@web/history";
 
 /**
  * Undefined for an unstyled span, so the common run of plain text costs no
@@ -155,6 +156,21 @@ export function nextRefreshMs(current: number, changed: boolean): number {
  */
 const screenCache = new Map<string, { lines: string[]; digest: string | null }>();
 
+/**
+ * Reconstructed scrollback per agent, for the life of the page.
+ *
+ * Session-only and in memory, deliberately. It is the simplest thing that
+ * delivers the value — scrolling back over what happened while you were
+ * watching — and it keeps an operator's work content out of on-device storage.
+ * IndexedDB is a contained upgrade if surviving a reload turns out to matter.
+ *
+ * See `web/history.ts` for why this cannot simply append.
+ */
+const historyCache = new Map<string, History>();
+
+/** Settled lines revealed per tap of "show earlier". */
+const HISTORY_PAGE = 200;
+
 export interface AgentTerminalProps {
   agent: Agent;
   onBack: () => void;
@@ -173,6 +189,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [wrap, setWrap] = useState(readWrap);
+  const [shownHistory, setShownHistory] = useState(0);
   const [reply, setReply] = useState("");
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
@@ -195,6 +212,14 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const apply = useCallback((lines: string[], digest: string | null = null) => {
     digestRef.current = digest;
     screenCache.set(agent.agentId, { lines, digest });
+    // Every live screen is folded into the reconstructed scrollback. Only
+    // lines that have provably left the viewport are committed — see
+    // `web/history.ts`, which is what stops a redrawn spinner being pasted
+    // into history on every poll.
+    historyCache.set(
+      agent.agentId,
+      mergeSnapshot(historyCache.get(agent.agentId) ?? { settled: [], gaps: 0 }, lines),
+    );
     setOutput(lines);
     setError(null);
     setStalled(false);
@@ -374,7 +399,19 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // Parsed once per render and shared by both modes. `parseAnsi` carries style
   // ACROSS lines, so it must see the whole buffer in order — slicing the
   // result is safe, slicing the input would not be.
-  const lineSpans = parseAnsi(output);
+  // Reconstructed scrollback, revealed only as far as the operator asked.
+  // Nothing of it renders by default: the pane costs exactly what it did
+  // before until "show earlier" is tapped, which is what keeps a 2000-line
+  // history from becoming 36,000 DOM nodes nobody asked for.
+  const history = historyCache.get(agent.agentId) ?? { settled: [], gaps: 0 };
+  const revealed = shownHistory > 0
+    ? history.settled.slice(Math.max(0, history.settled.length - shownHistory))
+    : [];
+
+  // parseAnsi carries style ACROSS lines, so it must see history and the live
+  // screen as one sequence — parsing them separately would drop any colour a
+  // scrolled-off line had opened.
+  const lineSpans = parseAnsi([...revealed, ...output]);
   const blocks = groupLines(lineSpans.map((spans) => spans.map((sp) => sp.text).join("")));
 
   return (
@@ -402,6 +439,28 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           ↻
         </button>
       </header>
+
+      {/* Only offered when there is something to show. Revealing PREPENDS
+          content, which would otherwise shove the screen down and lose the
+          operator's place, so the scroll position is pinned across the growth
+          in the handler below. */}
+      {!error && history.settled.length > revealed.length && (
+        <button
+          type="button"
+          className="term-earlier"
+          onClick={() => {
+            const el = paneRef.current;
+            const before = el ? el.scrollHeight - el.scrollTop : 0;
+            setShownHistory((n) => n + HISTORY_PAGE);
+            requestAnimationFrame(() => {
+              if (el) el.scrollTop = el.scrollHeight - before;
+            });
+          }}
+        >
+          Show earlier · {history.settled.length - revealed.length} lines
+          {history.gaps > 0 && <span className="term-gapnote"> · {history.gaps} gaps</span>}
+        </button>
+      )}
 
       {error ? (
         <p className="term-error warn" role="alert">Could not load output: {error}</p>

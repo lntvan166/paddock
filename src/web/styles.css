@@ -388,3 +388,24 @@ body {
   border-radius: 0.4rem;
 }
 .term-wrap-toggle[aria-pressed="false"] { color: var(--fg-dim); }
+
+/* Reveals reconstructed scrollback. Sits above the pane rather than inside it
+   so that revealing more cannot be mistaken for output the agent produced. */
+.term-earlier {
+  flex: none;
+  width: 100%;
+  min-height: 2.25rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* History is reconstructed from snapshots, so it can have holes where the
+   screen scrolled faster than it was sampled. Saying so is the honest
+   alternative to presenting a transcript that looks continuous and is not. */
+.term-gapnote { color: var(--warn); font-weight: 500; }

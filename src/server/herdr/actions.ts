@@ -139,6 +139,38 @@ export function resolveSource(state: AgentState, scrollback: boolean): ReadSourc
   return scrollback ? readSourceFor(state) : "visible";
 }
 
+/**
+ * Lines to request for a HISTORY read, and the ceiling it needs.
+ *
+ * Both are measured, and both are paddock's rather than the caller's.
+ *
+ * 400 is a sweet spot with a cliff on either side. Measured on herdr 0.8.0
+ * against real agents, `recent` at 400 returns ~400 lines; the same call at
+ * 2000 returns SIXTY-THREE — fewer than the smaller request — after ~16s. So
+ * a caller cannot be allowed to ask for more, because more is worse.
+ *
+ * The timeout exists because herdr recovers alternate-screen history by
+ * physically scrolling the pane, which took 11-14 SECONDS in every
+ * measurement. Under the default 10s transport ceiling this call aborts every
+ * single time; history is simply unreachable without raising it. The live
+ * read keeps the default deliberately — `visible` answers in ~2ms, and giving
+ * it a 25s ceiling would turn a wedged socket into a 25s hang on the one path
+ * that has to stay instant.
+ */
+export const HISTORY_LINES = 400;
+
+export function historyTimeoutMs(): number {
+  return 25_000;
+}
+
+/**
+ * The line count for a read. A history read ignores the caller entirely; a
+ * live read clamps them, as it always has.
+ */
+export function readLinesFor(history: boolean, lines?: number): number {
+  return history ? HISTORY_LINES : resolveReadLines(lines);
+}
+
 export interface HerdrActions {
   readOutput(
     target: string, state: AgentState, lines?: number, scrollback?: boolean,
@@ -165,7 +197,7 @@ export function createActions(socketPath: string): HerdrActions {
       // Clamped here as well as at the route boundary: this is the function
       // that builds the herdr params, so the bound holds for every caller,
       // not only the one that happens to validate first.
-      const bounded = resolveReadLines(lines);
+      const bounded = readLinesFor(scrollback, lines);
       // Typed with the generated envelope, not an inline shape. The inline
       // `{ text?: string }` this replaced described a response herdr has
       // never sent, and an optional field made the mismatch resolve to `""`
@@ -180,9 +212,10 @@ export function createActions(socketPath: string): HerdrActions {
       // `readDetection` below deliberately keeps stripping, because its
       // consumer is the prompt PARSER, and escapes there would break the
       // option matching rather than inform it.
+      // A history read gets its own, much larger ceiling — see historyTimeoutMs.
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
         target, source, lines: bounded, format: "ansi", strip_ansi: false,
-      });
+      }, scrollback ? historyTimeoutMs() : undefined);
       const text = res.read.text;
       // "".split("\n") is [""], not [] — a genuinely empty pane must report
       // no lines, not one blank line.
