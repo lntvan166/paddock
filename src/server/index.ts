@@ -37,10 +37,21 @@ if (flags.has("--version") || flags.has("-V")) {
 // herdr socket or bind a port.
 if (command === "update") {
   process.exit(await runUpdate({
-    // Bun.argv[0] (and process.execPath) point at the running bun binary in
-    // a source checkout, not at a paddock executable — runUpdate refuses
-    // before this path is ever used unless VERSION is a real release.
-    selfPath: Bun.argv[0]!,
+    // MUST be process.execPath, not Bun.argv[0]. In a COMPILED binary
+    // (`bun build --compile`, which is what this ships as), Bun.argv[0] is
+    // the literal string "bun" — not a path at all — when the binary is
+    // invoked as a bare name off PATH (measured by compiling a probe and
+    // running it as a bare name: argv0 was "bun", execPath was the probe's
+    // real absolute path). dirname("bun") is ".", so using Bun.argv[0] here
+    // would write .paddock.new into the operator's CURRENT WORKING
+    // DIRECTORY and rename over ./paddock — a stray file wherever they
+    // happened to be standing, and the real install never touched.
+    // process.execPath is the compiled binary's actual absolute path in
+    // both the compiled and interpreted (`bun src/server/index.ts`) cases.
+    // In a source checkout it resolves to the operator's own bun
+    // installation — Ruling P1 (the 0.0.0-dev refusal above) is what makes
+    // that case safe, not this path choice.
+    selfPath: process.execPath,
     platform: process.platform,
     arch: process.arch,
     current: VERSION,
