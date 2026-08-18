@@ -187,4 +187,8 @@ surprise.
   delta again. Closing this means moving that composition out of `index.ts`
   into a side-effect-free module a test can import directly, without booting
   `Bun.serve` and the herdr socket the way exercising `index.ts` itself
-  would require.
+  would require. Note that the `--demo` branch one `if` away is a legitimate
+  instance of exactly that bypass — it wires `onDelta: (d) => hub.queue(d)`
+  deliberately, so a demo run cannot fire real Telegram messages about
+  synthetic agents — so whatever closes this gap has to distinguish the two
+  call sites rather than forbid the shape.

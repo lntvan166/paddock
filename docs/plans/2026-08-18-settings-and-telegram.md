@@ -712,7 +712,15 @@ export class Notifier {
     if (since < s.notify.cooldownMs) { this.#lastSeen.set(a.agentId, a.state); return; }
 
     const link = s.publicUrl ? `\n${s.publicUrl}/${agentHash(a.agentId)}` : "";
-    const r = await this.o.send(`${a.name} is ${a.state}\n${a.task}${link}`);
+    // CORRECTION (2026-08-18, final review): this line as originally written
+    // was `\n${a.task}${link}` and CONTRADICTED the design, which says the
+    // message is "the agent name, the new state, and a deep link… Never
+    // terminal output, and never the task text, which may carry pasted
+    // secrets." `task` is `terminal_title_stripped` — live agent-authored
+    // text. The defect survived every task review because reviewers compared
+    // the code to this plan rather than to the design. The design is binding;
+    // where the two disagree the design wins. Shipped without `a.task`.
+    const r = await this.o.send(`${a.name} is ${a.state}${link}`);
     if (r.ok) {
       this.lastError = null;
       this.#lastSentAt.set(a.agentId, now);
