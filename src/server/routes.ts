@@ -65,15 +65,22 @@ const MAX_TEXT_LEN = 10_000;
  * Recently-served screens per agent, so a patch can be computed against
  * whatever the client is actually holding.
  *
- * Two per agent, not one: with several tabs watching, one may be a step behind
- * the other, and keeping only the newest would push every one of them onto the
- * full-screen path. Anything older than that falls back to a full screen,
- * which is always correct and only ever costs bandwidth.
+ * Several per agent, not one or two. Every watcher polls on its own cadence,
+ * so with N clients the server is simultaneously the "previous screen" for N
+ * different digests — and a cache of two evicts them faster than they can be
+ * used. Measured with just TWO clients on one agent and a depth of 2: 69 of 99
+ * responses fell back to full screens, against 116 of 116 served as patches
+ * with a single client. The optimisation quietly stopped working the moment a
+ * second tab was open.
+ *
+ * Eight screens is ~40 KB per agent and covers several watchers several steps
+ * apart. Anything older still falls back to a full screen, which is always
+ * correct and only ever costs bandwidth.
  *
  * Bounded by the agent list, and evicted with it — see `pruneScreens`.
  */
 const recentScreens = new Map<string, { digest: string; lines: string[] }[]>();
-const SCREENS_PER_AGENT = 2;
+const SCREENS_PER_AGENT = 8;
 
 function rememberScreen(agentId: string, digest: string, lines: string[]): void {
   const held = recentScreens.get(agentId) ?? [];
