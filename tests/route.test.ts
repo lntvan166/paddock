@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { agentHash, agentIdFromHash } from "@web/route";
+import { agentHash as sharedAgentHash, agentIdFromHash as sharedAgentIdFromHash } from "@shared/route";
 
 test("an agent id round-trips through the hash", () => {
   // Agent ids are herdr pane ids and always contain a colon, which must be
@@ -29,4 +30,12 @@ test("an empty id addresses no agent", () => {
   // Returning "" would send the caller looking up an agent whose id is the
   // empty string, which no store can answer.
   expect(agentIdFromHash("#/agent/")).toBeNull();
+});
+
+test("the URL helpers are importable from shared, so server code may use them", () => {
+  // The notifier builds a deep link and lives under src/server/, which may
+  // never import @web/. If these move back, the notifier's link silently
+  // stops matching the app it points at.
+  expect(sharedAgentHash("w1:p1")).toBe("#/agent/w1%3Ap1");
+  expect(sharedAgentIdFromHash("#/agent/w1%3Ap1")).toBe("w1:p1");
 });
