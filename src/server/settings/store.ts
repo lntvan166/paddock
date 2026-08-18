@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
@@ -29,6 +29,24 @@ const defaults = (): Settings => ({
 
 export function defaultConfigDir(): string {
   return process.env.PADDOCK_CONFIG_DIR ?? join(homedir(), ".config", "paddock");
+}
+
+/**
+ * The ONE definition of "this credential field is configured". Import it;
+ * never re-derive it.
+ *
+ * Four call sites used to disagree — `view()` here tested `!== null && !== ""`,
+ * `notifier.ts` tested `!== null`, and `index.ts` / `routes.ts` used plain
+ * falsiness. With `PADDOCK_TELEGRAM_TOKEN=""` exported (which `.env.example`
+ * invites an operator to set), that disagreement produced a live loop:
+ * `GET /api/settings` reported `configured: false` while the notifier read the
+ * empty string as present, fired the send closure, got "not configured" back,
+ * reverted the transition, and re-attempted once per cooldown forever with
+ * `/api/health` pinned to `lastNotifyError`. An empty string is not a
+ * credential; it is the shape an unset environment variable takes.
+ */
+export function isConfigured(v: string | null | undefined): v is string {
+  return typeof v === "string" && v !== "";
 }
 
 export class SettingsStore {
@@ -71,14 +89,27 @@ export class SettingsStore {
     }
   }
 
-  current(): Settings { return this.#s; }
+  /**
+   * A DEEP COPY, never `#s` itself.
+   *
+   * Returning the live object made every caller a potential mutator of the
+   * store's private state, and it silently defanged three route tests:
+   * `const before = settings.current()` aliased the same object, so
+   * `expect(settings.current()).toEqual(before)` compared an object to itself
+   * and passed even when a rejected patch had in fact been applied. Those
+   * "leaves stored settings unchanged" assertions are only load-bearing if
+   * this returns a snapshot. `structuredClone` rather than a spread because
+   * `telegram`, `notify` and `notify.quietHours` are all nested — a shallow
+   * copy would alias exactly the fields a patch writes.
+   */
+  current(): Settings { return structuredClone(this.#s); }
 
   view(): SettingsView {
     const t = this.#s.telegram.token;
     return {
       telegram: {
-        configured: t !== null && t !== "",
-        hint: t ? t.slice(-4) : null,
+        configured: isConfigured(t),
+        hint: isConfigured(t) ? t.slice(-4) : null,
         chatId: this.#s.telegram.chatId,
       },
       notify: { ...this.#s.notify, triggers: [...this.#s.notify.triggers] },
@@ -97,12 +128,29 @@ export class SettingsStore {
     await this.persist();
   }
 
-  /** Atomic: a crash midway through a direct overwrite truncates the file, and
-   *  the value lost is the token — the one field the UI cannot regenerate. */
+  /**
+   * Atomic: a crash midway through a direct overwrite truncates the file, and
+   * the value lost is the token — the one field the UI cannot regenerate.
+   *
+   * `fsync` before the `rename`, not merely write-then-rename. `rename()` is
+   * atomic with respect to the DIRECTORY entry, but that says nothing about
+   * the tmp file's CONTENTS having reached the disk: without the sync a crash
+   * can leave the rename durable while the data behind it is not, which lands
+   * settings.json pointing at a zero-length or partially written file — and
+   * the value lost is, again, the token.
+   */
   private async persist(): Promise<void> {
     await mkdir(this.dir, { recursive: true, mode: 0o700 });
     const tmp = `${this.file}.tmp`;
-    await writeFile(tmp, JSON.stringify(this.#s, null, 2), { mode: 0o600 });
+    const fh = await open(tmp, "w", 0o600);
+    try {
+      await fh.writeFile(JSON.stringify(this.#s, null, 2));
+      await fh.sync();
+    } finally {
+      // Closed on the failure path too, or a rejected write leaks the handle.
+      await fh.close();
+    }
+    // `open`'s mode is subject to the process umask; this is not.
     await chmod(tmp, 0o600);
     await rename(tmp, this.file);
   }

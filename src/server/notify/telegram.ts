@@ -28,6 +28,15 @@ export async function sendTelegram(o: SendOpts): Promise<TelegramResult> {
     if (body.ok === true) return { ok: true, detail: null };
     return { ok: false, detail: body.description ?? `HTTP ${res.status}` };
   } catch (e) {
+    // `(e as Error).message` ONLY — never the error object, never `e.cause`,
+    // never a JSON.stringify of it. Bun attaches the request `url` to a fetch
+    // error, and this URL contains the bot token
+    // (`api.telegram.org/bot<token>/sendMessage`). This string is handed
+    // straight to the notifier's `lastError`, which `/api/health` publishes
+    // and the settings view renders — so serialising the error, or walking
+    // its `cause` chain to "get more detail", would leak the one credential
+    // the design says is never logged at any level. A future sweep that
+    // unifies the project's error idiom must leave this call site alone.
     return { ok: false, detail: (e as Error).message };
   } finally {
     clearTimeout(timer);

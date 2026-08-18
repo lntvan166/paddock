@@ -53,3 +53,35 @@ test("environment seeds the FIRST run only, never overriding a saved value", asy
   await again.load();
   expect(again.view().telegram.chatId).toBe("777");
 });
+
+test("an empty-string token from the environment is NOT configured", async () => {
+  // `export PADDOCK_TELEGRAM_TOKEN=` (or a `.env` line with nothing after
+  // the `=`) seeds an empty string, not an absent value. Four call sites used
+  // to disagree about whether that counts as configured, which had the view
+  // reporting `false` while the notifier fired against it — see
+  // `isConfigured`'s comment in settings/store.ts. One predicate now answers
+  // for all of them.
+  const s = new SettingsStore(await dir(), {
+    PADDOCK_TELEGRAM_TOKEN: "", PADDOCK_TELEGRAM_CHAT_ID: "555",
+  });
+  await s.load();
+  expect(s.view().telegram.configured).toBe(false);
+  expect(s.view().telegram.hint).toBe(null);
+});
+
+test("current() hands back a snapshot, so a caller cannot mutate the store through it", async () => {
+  // Returning `#s` by reference made `const before = store.current()` an
+  // ALIAS: `expect(store.current()).toEqual(before)` then compared an object
+  // to itself and passed no matter what happened in between, which silently
+  // defanged three route tests. Asserted here at the store, where the
+  // property belongs, as well as being relied on there.
+  const s = new SettingsStore(await dir(), {});
+  await s.load();
+  const snapshot = s.current();
+  snapshot.notify.enabled = true;
+  snapshot.notify.triggers.push("done");
+  snapshot.telegram.token = "tampered";
+  expect(s.current().notify.enabled).toBe(false);
+  expect(s.current().notify.triggers).toEqual(["blocked"]);
+  expect(s.current().telegram.token).toBe(null);
+});

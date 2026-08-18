@@ -3,7 +3,7 @@ import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
 import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
-import type { SettingsStore } from "@server/settings/store";
+import { isConfigured, type SettingsStore } from "@server/settings/store";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { isNavKey, type NotifyTrigger, type SettingsPatch } from "@shared/types";
@@ -516,7 +516,21 @@ export function createApp(deps: AppDeps) {
     // handler in this block.
     app.get("/api/settings", (c) => c.json(settings.view()));
 
-    // PUT, never GET: a payload in a query string lands in edge access logs.
+    /**
+     * PUT, never GET: a payload in a query string lands in edge access logs.
+     *
+     * And PUT, never POST — do NOT "simplify" the verb. paddock has no
+     * authentication of its own; a Cloudflare Access policy in front is the
+     * only gate, and a browser that already holds an Access session will
+     * attach it to a cross-origin request just as readily as to a first-party
+     * one. What actually stops a drive-by site writing this route is CORS
+     * preflight: `PUT` is not a CORS-simple method, so the browser sends an
+     * `OPTIONS` preflight first, and nothing here answers it. The same
+     * handler mounted on `POST` would be reachable cross-origin from a plain
+     * form submit with `enctype="text/plain"` — no preflight, no
+     * same-origin check — because `strictJsonBody` parses the body without
+     * ever inspecting the content type. The verb is the CSRF control.
+     */
     app.put("/api/settings", async (c) => {
       const parsed = await strictJsonBody(c);
       if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
@@ -535,7 +549,10 @@ export function createApp(deps: AppDeps) {
 
     app.post("/api/settings/telegram/test", async (c) => {
       const s = settings.current();
-      if (!s.telegram.token || !s.telegram.chatId) {
+      // One shared predicate (see settings/store.ts), not local falsiness:
+      // an empty-string token must read as unconfigured here, in the view,
+      // and in the notifier alike.
+      if (!isConfigured(s.telegram.token) || !isConfigured(s.telegram.chatId)) {
         return c.json({ ok: false, detail: "token and chat id must both be set" }, 400);
       }
       const r = await sendTest({

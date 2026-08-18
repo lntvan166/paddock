@@ -16,7 +16,7 @@ import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
 import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
-import { SettingsStore, defaultConfigDir } from "@server/settings/store";
+import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 
@@ -78,7 +78,12 @@ const notifier = new Notifier({
   settings,
   send: async (text) => {
     const s = settings.current();
-    if (!s.telegram.token || !s.telegram.chatId) return { ok: false, detail: "not configured" };
+    // The same `isConfigured` the store's view() and the routes use — one
+    // definition, four call sites. Falsiness here and `!== null` in the
+    // notifier used to disagree over an empty-string token.
+    if (!isConfigured(s.telegram.token) || !isConfigured(s.telegram.chatId)) {
+      return { ok: false, detail: "not configured" };
+    }
     return sendTelegram({ token: s.telegram.token, chatId: s.telegram.chatId, text });
   },
 });
@@ -99,6 +104,15 @@ let stream: HerdrStream | null = null;
 if (DEMO) {
   // Every tick goes through the store, so `/api/agents` and a browser that
   // loads the page an hour in both see current state — not startup state.
+  //
+  // DELIBERATELY `hub.queue` alone, NOT `fanOut(hub, notifier)`. The demo
+  // agents are synthetic and cycle through `blocked` and `done` on a timer;
+  // wiring the notifier here would fire real Telegram messages, at a
+  // synthetic agent's tempo, to whatever chat the operator has configured —
+  // and `--demo` is the mode README screenshots are taken in. This is the one
+  // legitimate instance of the bypass `docs/roadmap.md` warns about under
+  // "Nothing guards index.ts's call site for the delta fan-out": a future
+  // guard against that bypass must exempt this line rather than "fix" it.
   demo = createDemoSource({ store, onDelta: (d) => hub.queue(d) });
   store.replaceAll(demo.snapshot(), Date.now());
   demo.start();

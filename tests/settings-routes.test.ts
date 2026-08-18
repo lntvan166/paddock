@@ -14,7 +14,14 @@ import { Hub } from "@server/ws/hub";
  */
 async function harness(sendTest?: (o: { token: string; chatId: string; text: string }) =>
   Promise<{ ok: boolean; detail: string | null }>) {
-  const settings = new SettingsStore(await mkdtemp(join(tmpdir(), "paddock-r-")));
+  // `{}` explicitly, never the real `process.env` default. `.env.example`
+  // tells operators to export `PADDOCK_TELEGRAM_TOKEN` and
+  // `PADDOCK_TELEGRAM_CHAT_ID`, and `SettingsStore.load()` seeds a fresh
+  // config from them — so on a machine where the operator has actually
+  // followed the README, the store under test starts pre-configured and
+  // tests that assert on the unconfigured default fail. Measured: 2 of 9
+  // failed. tests/settings-store.test.ts already does this.
+  const settings = new SettingsStore(await mkdtemp(join(tmpdir(), "paddock-r-")), {});
   await settings.load();
   const app = createApp({
     store: new AgentStore("dev-box"), hub: new Hub({ build: () => "test" }),
@@ -66,8 +73,13 @@ test("the test route refuses when nothing is configured, rather than reporting a
 
 test("a failed patch returns 500 with the reason, never a silent success", async () => {
   const { app, settings } = await harness();
-  // Force a write failure by breaking the persisted directory into a file so
-  // `mkdir(dir, { recursive: true })` inside `persist()` rejects.
+  // The failure is injected by replacing `settings.patch` with one that
+  // throws — NOT by breaking anything on disk. What is under test here is the
+  // route's handling of a rejected patch (500 with the reason, never a
+  // silently swallowed error reported as success), so the cheapest rejection
+  // that reaches that handler is the right one. `original` is restored at the
+  // end because `settings` is shared with nothing else in this test, but a
+  // leaked stub would be a nasty thing to debug.
   const original = settings.patch.bind(settings);
   settings.patch = async () => {
     throw new Error("disk full");

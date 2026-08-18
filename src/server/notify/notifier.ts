@@ -1,7 +1,7 @@
 import { agentHash } from "@shared/route";
 import type { Agent, AgentState } from "@shared/types";
 import type { Delta } from "@server/state/store";
-import type { SettingsStore } from "@server/settings/store";
+import { isConfigured, type SettingsStore } from "@server/settings/store";
 
 const minutes = (hhmm: string): number => {
   const [h, m] = hhmm.split(":").map(Number);
@@ -42,7 +42,18 @@ export class Notifier {
    * latency in front of every browser update.
    */
   observe(d: Delta): void {
-    for (const a of d.upserted) void this.#one(a);
+    for (const a of d.upserted) {
+      // `#one` is deliberately never awaited (see above), so nothing else is
+      // left to observe a rejection — and Bun TERMINATES the process on an
+      // unhandled rejection. A `fetch` that throws rather than resolving
+      // would take the whole dashboard down over a notification. Recorded on
+      // `lastError`, which `/api/health` exposes, rather than swallowed: the
+      // design says `observe` "catches its own failures", and the project's
+      // standing rule says a caught error is surfaced, never discarded.
+      void this.#one(a).catch((e: unknown) => {
+        this.lastError = e instanceof Error ? e.message : String(e);
+      });
+    }
     for (const id of d.removedIds) { this.#lastSeen.delete(id); this.#lastSentAt.delete(id); }
   }
 
@@ -62,7 +73,11 @@ export class Notifier {
     const s = this.o.settings.current();
     const fires = s.notify.enabled
       && s.notify.triggers.includes(a.state as never)
-      && s.telegram.token !== null && s.telegram.chatId !== null;
+      // `isConfigured`, not `!== null`: the two are NOT the same for an empty
+      // string, and the store's `view()` and the routes both answer with this
+      // predicate. Disagreeing here is what made the notifier fire against a
+      // credential the rest of the process considered absent.
+      && isConfigured(s.telegram.token) && isConfigured(s.telegram.chatId);
     if (!fires) return;
 
     const now = (this.o.now ?? Date.now)();
@@ -102,7 +117,17 @@ export class Notifier {
     // and `${url}/${hash}` with url already ending in "/" would produce
     // "https://host//#/agent/...".
     const link = s.publicUrl ? `\n${s.publicUrl.replace(/\/+$/, "")}/${agentHash(a.agentId)}` : "";
-    const r = await this.o.send(`${a.name} is ${a.state}\n${a.task}${link}`);
+    // Name, state, link. NOTHING ELSE — and specifically NOT `a.task`.
+    //
+    // `task` is `terminal_title_stripped` (shared/types.ts): live,
+    // agent-authored text that carries whatever the agent last echoed,
+    // including a pasted credential. Telegram bot messages are not
+    // end-to-end encrypted and Telegram can read them; the design accepts
+    // that cost and names content minimalism as the ONLY mitigation for
+    // choosing Telegram over Web Push. Adding a field here — task, terminal
+    // output, cwd, anything agent-authored — spends that mitigation.
+    // `tests/notifier.test.ts` asserts the task text is absent.
+    const r = await this.o.send(`${a.name} is ${a.state}${link}`);
     if (r.ok) {
       this.lastError = null;
       return;
