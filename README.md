@@ -47,7 +47,39 @@ Against a real herdr:
 make dev        # vite HMR + server reload
 ```
 
-paddock finds herdr at `$HOME/.config/herdr/herdr.sock`; override with `PADDOCK_HERDR_SOCKET`. It binds `127.0.0.1:8787` by default — put [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/) or an equivalent in front of it before exposing it to the internet. paddock has **no application-level auth of its own**, deliberately: an app token would gate `/sw.js` and silently break the service worker. See [`docs/decisions.md`](docs/decisions.md).
+paddock finds herdr at `$HOME/.config/herdr/herdr.sock`; override with `PADDOCK_HERDR_SOCKET`.
+
+## It runs locally, on purpose
+
+paddock is **one process on the same machine as herdr**, bound to `127.0.0.1:8787`. That is a design decision, not a limitation waiting to be fixed:
+
+- It reads herdr over a **unix domain socket**, which is a filesystem object with no network form. There is nothing to connect to remotely.
+- It has **no authentication of its own**, deliberately — an app token would also gate `/sw.js` and silently disable the service worker and push. See [`docs/decisions.md`](docs/decisions.md).
+
+> [!WARNING]
+> **Do not port-forward `8787` or bind it to `0.0.0.0`.** paddock can send keystrokes and arbitrary text to your agents, answer their permission prompts, and read everything on their screens. Anyone who reaches the port can do all of that. There is no login to stop them.
+
+### Reaching it from your phone
+
+Put an authenticating tunnel in front of it — the tunnel terminates at your machine, and the identity check happens before any request reaches paddock:
+
+- **[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) + [Zero Trust Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)** — what this was designed against. `cloudflared` dials out, so no inbound port is opened, and an Access policy gates the hostname on your identity provider.
+- **[Tailscale](https://tailscale.com/)** or any WireGuard mesh — your phone joins the private network and reaches `127.0.0.1:8787` on the host directly.
+- **An SSH tunnel** — fine for a laptop, awkward on a phone.
+
+Whichever you choose, the requirement is the same: **something must authenticate the request before paddock sees it.**
+
+### herdr on another machine
+
+Also possible, and it needs no code change: forward the remote socket to a local path.
+
+```bash
+# the second path is the REMOTE user's socket, absolute on that machine
+ssh -N -L /tmp/remote-herdr.sock:/path/to/remote/.config/herdr/herdr.sock operator@lan-box
+PADDOCK_HERDR_SOCKET=/tmp/remote-herdr.sock bun src/server/index.ts
+```
+
+Verified through a relayed socket, event stream included. Note this gives you **one** remote herdr per paddock, not several machines in one dashboard — that is still [on the roadmap](docs/roadmap.md).
 
 ## What it does not do
 
@@ -55,7 +87,7 @@ Worth knowing before you install it:
 
 - **Output is pulled, not streamed.** herdr exposes no output-changed event and no byte stream, so there is nothing to stream. Updates arrive on an adaptive poll.
 - **History only covers what a tab watched.** An agent nobody was watching has none, and reconstruction records a *gap* rather than guessing when the screen scrolls faster than it was sampled.
-- **One machine.** Multi-host is designed but not built — the store is keyed by herdr's `pane_id`, which is not unique across machines. See [`docs/roadmap.md`](docs/roadmap.md).
+- **One machine, and localhost by design.** paddock runs beside herdr and binds `127.0.0.1` — see [It runs locally, on purpose](#it-runs-locally-on-purpose). Multi-host is designed but not built: the store is keyed by herdr's `pane_id`, which is not unique across machines.
 - **No push notifications yet.** You still have to open the dashboard to find out something is blocked. That's the next increment.
 
 The [live demo](https://lntvan166.github.io/paddock/) shows the interface, not the herdr integration — it proves the UI works, not that it can talk to your agents.
