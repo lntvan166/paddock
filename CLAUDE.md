@@ -1,7 +1,7 @@
 # paddock — instructions for Claude sessions
 
 A mobile-first web dashboard for watching and answering
-[herdr](https://github.com/dcolinmorgan/herdr) coding agents from a phone.
+[herdr](https://github.com/herdrdev/herdr) coding agents from a phone.
 
 **Read `docs/design/2026-08-17-paddock-design.md` first.** It is the approved design
 and the source of truth for architecture, data model, and UI decisions. Everything

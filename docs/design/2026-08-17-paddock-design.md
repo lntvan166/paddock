@@ -4,7 +4,7 @@
 **Date:** 2026-08-17
 
 A mobile-first web dashboard for watching and answering
-[herdr](https://github.com/dcolinmorgan/herdr) coding agents from a phone.
+[herdr](https://github.com/herdrdev/herdr) coding agents from a phone.
 
 ---
 

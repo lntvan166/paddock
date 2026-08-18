@@ -6,7 +6,7 @@
 
 <p align="center"><strong>Watch and answer your coding agents from your phone.</strong></p>
 
-You have several coding agents running in [herdr](https://github.com/dcolinmorgan/herdr) panes. You step away from the desk. One of them finishes, another hits a permission prompt, and both sit there waiting — because the only way to find out is to walk back and look.
+You have several coding agents running in [herdr](https://github.com/herdrdev/herdr) panes. You step away from the desk. One of them finishes, another hits a permission prompt, and both sit there waiting — because the only way to find out is to walk back and look.
 
 paddock is one local process on the same machine as your agents. It reads herdr over its unix socket and serves a single screen on `127.0.0.1:8787`, ordered by **what needs you** rather than alphabetically. Tap an agent to read its terminal in colour, scroll back through what it did, and answer it — with the agent's own option labels, never a guessed "Approve".
 
