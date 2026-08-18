@@ -127,7 +127,14 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
   let expected: string | undefined;
   try {
     const [binRes, sumRes] = await Promise.all([f(`${base}/${asset}`), f(`${base}/SHA256SUMS`)]);
-    if (!binRes.ok || !sumRes.ok) { log("paddock: download failed"); return 1; }
+    // Named the same way the release-API branch above names its failure, and
+    // the same way install.sh names its own: an operator who cannot tell a 404
+    // (no such asset for this platform, or a release published without
+    // assets) from a 403 (rate-limited) has been told nothing they can act on.
+    if (!binRes.ok || !sumRes.ok) {
+      log(`paddock: download failed (HTTP ${binRes.status} for ${asset}, HTTP ${sumRes.status} for SHA256SUMS)`);
+      return 1;
+    }
     bytes = new Uint8Array(await binRes.arrayBuffer());
     expected = (await sumRes.text())
       .split("\n").find((l) => l.trim().endsWith(asset))?.trim().split(/\s+/)[0];

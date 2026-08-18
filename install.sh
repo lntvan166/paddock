@@ -42,13 +42,56 @@ ASSET="$(asset_name)"
 
 if [ "${1:-}" = "--print-asset" ]; then echo "$ASSET"; exit 0; fi
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-
 BASE="https://github.com/$REPO/releases/latest/download"
+
+# The binary is downloaded INTO the destination directory, under a dot name,
+# so the final step is a rename(2) within one filesystem — atomic, exactly as
+# `paddock update` does it (src/server/update.ts writes .paddock.new beside the
+# binary and renames over it).
+#
+# The obvious alternative, `mv "$TMP/paddock" "$BIN"` out of `mktemp -d`, is
+# not atomic: $TMPDIR is usually a different filesystem from $HOME, so
+# rename(2) fails EXDEV and mv degrades to a byte-by-byte copy made DIRECTLY at
+# the install path. Traced: `renameat2(...) = -1 EXDEV` followed by
+# `openat("<bindir>/paddock", O_WRONLY|O_CREAT|O_EXCL)`. Interrupted, or out of
+# disk, that leaves a truncated file at ~/.local/bin/paddock — executable, on
+# PATH, and half a binary.
+#
+# SHA256SUMS stays in $TMP: it is read, never installed, so where it lands does
+# not matter.
+mkdir -p "$BIN_DIR"
+TMP="$(mktemp -d)"
+NEW="$BIN_DIR/.paddock.new.$$"
+trap 'rm -rf "$TMP"; rm -f "$NEW"' EXIT
+
+# `curl -fsSL` says NOTHING on an HTTP error — `-f` suppresses the error body
+# and `-s` suppresses curl's own message — and `set -e` then ends the script
+# before anything can be printed. The operator saw "paddock: downloading
+# paddock-linux-x86_64" and then a bare non-zero exit. The likeliest first-run
+# case is exactly this: installing before a release with assets exists.
+#
+# `-w '%{http_code}'` makes the status available even on the failure path, and
+# the `|| rc=$?` form keeps `set -e` from killing us before we can use it.
+download() {
+  url="$1"
+  dest="$2"
+  rc=0
+  code="$("$CURL" -fsSL -w '%{http_code}' -o "$dest" "$url")" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "paddock: download failed" >&2
+    echo "  url         $url" >&2
+    echo "  http status ${code:-000}" >&2
+    echo "  curl exit   $rc" >&2
+    echo "" >&2
+    echo "paddock: if no release has been published yet there is nothing to install." >&2
+    echo "  check https://github.com/$REPO/releases" >&2
+    exit 1
+  fi
+}
+
 echo "paddock: downloading $ASSET"
-"$CURL" -fsSL "$BASE/$ASSET" -o "$TMP/paddock"
-"$CURL" -fsSL "$BASE/SHA256SUMS" -o "$TMP/SHA256SUMS"
+download "$BASE/$ASSET" "$NEW"
+download "$BASE/SHA256SUMS" "$TMP/SHA256SUMS"
 
 echo "paddock: verifying checksum"
 EXPECTED="$(grep " $ASSET\$" "$TMP/SHA256SUMS" | awk '{print $1}')"
@@ -57,9 +100,9 @@ if [ -z "$EXPECTED" ]; then
   exit 1
 fi
 if command -v sha256sum >/dev/null; then
-  ACTUAL="$(sha256sum "$TMP/paddock" | awk '{print $1}')"
+  ACTUAL="$(sha256sum "$NEW" | awk '{print $1}')"
 else
-  ACTUAL="$(shasum -a 256 "$TMP/paddock" | awk '{print $1}')"
+  ACTUAL="$(shasum -a 256 "$NEW" | awk '{print $1}')"
 fi
 if [ "$EXPECTED" != "$ACTUAL" ]; then
   echo "paddock: CHECKSUM MISMATCH — refusing to install" >&2
@@ -68,9 +111,12 @@ if [ "$EXPECTED" != "$ACTUAL" ]; then
   exit 1
 fi
 
-mkdir -p "$BIN_DIR"
-chmod +x "$TMP/paddock"
-mv "$TMP/paddock" "$BIN"
+chmod +x "$NEW"
+# Same directory, so this is a rename(2): the old binary is replaced whole or
+# not at all, and nothing else ever observes a partial file at $BIN. The EXIT
+# trap's `rm -f "$NEW"` is a no-op afterwards, and cleans up every path where
+# this line is not reached.
+mv "$NEW" "$BIN"
 echo "paddock: installed to $BIN"
 
 case ":$PATH:" in

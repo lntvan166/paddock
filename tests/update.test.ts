@@ -216,3 +216,37 @@ test("a truncated download is reported, not thrown", async () => {
   expect(code).not.toBe(0);
   expect(await readFile(h.self, "utf8")).toBe("OLD BINARY");
 });
+
+test("a failed download names the HTTP status for each half, not just 'download failed'", async () => {
+  // Same class as install.sh's silent curl failure: "paddock: download failed"
+  // with no status leaves the operator unable to tell a missing asset from a
+  // rate limit. The release-API branch above already reports its status; these
+  // two must read the same way.
+  const dir = await mkdtemp(join(tmpdir(), "paddock-up-"));
+  const self = join(dir, "paddock");
+  await writeFile(self, "OLD BINARY");
+  const fetchImpl = (async (url: string) => {
+    if (String(url).includes("releases/latest")) {
+      return new Response(JSON.stringify({ tag_name: "v9.9.9" }));
+    }
+    if (String(url).endsWith("SHA256SUMS")) return new Response("nope", { status: 403 });
+    return new Response("nope", { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const said: string[] = [];
+  const code = await runUpdate({
+    selfPath: self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl, log: (s) => said.push(s),
+  });
+  expect(code).toBe(1);
+  const out = said.join("\n");
+  expect(out).toContain("download failed");
+  expect(out).toContain("HTTP 404");
+  expect(out).toContain("paddock-linux-x86_64");
+  expect(out).toContain("HTTP 403");
+  expect(out).toContain("SHA256SUMS");
+  // And nothing was written: a failed download must leave the working binary
+  // and no leftovers beside it.
+  expect(await readFile(self, "utf8")).toBe("OLD BINARY");
+  expect((await readdir(dir)).sort()).toEqual(["paddock"]);
+});
