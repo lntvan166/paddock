@@ -59,7 +59,7 @@ export class Notifier {
   /** Last send ATTEMPT (not success) per agent, for the cooldown. */
   #lastSentAt = new Map<string, number>();
   /**
-   * Which EPISODE of a state an arm belongs to. Bumped on every genuine
+   * Which EPISODE of a state an arm belongs to. Stamped on every genuine
    * transition, so anything that resumes AFTER `await send` can ask whether
    * the episode it was armed for is still the current one.
    *
@@ -69,8 +69,20 @@ export class Notifier {
    * had already cleared it for the SECOND episode, whose timer then reads
    * "already announced" and drops the send. It would also let a failed first
    * episode's retry re-arm over the second episode's live timer.
+   *
+   * The id comes from `#nextEpisode`, which is monotonic across the whole
+   * notifier and NEVER per-agent. A per-agent counter collides on a reused
+   * herdr `pane_id`: `#forget` deletes the entry (it must, or the map grows
+   * without bound), first sight does not stamp, so the returning agent's first
+   * real transition takes the id the departed agent's in-flight send is still
+   * holding — and that send then writes `#lastNotified` for an agent it knows
+   * nothing about, or retries with the PREVIOUS agent's name in the message.
+   * A global counter cannot be reissued, so reuse is impossible by
+   * construction rather than by argument.
    */
   #episode = new Map<string, number>();
+  /** Source of episode ids. Only ever incremented; see `#episode`. */
+  #nextEpisode = 0;
   /** In-flight settle windows. At most one per agent — `#arm` cancels before
    *  it sets, and a timer callback only ever removes its OWN entry. */
   #pending = new Map<string, { state: NotifyTrigger; timer: TimerHandle; attempts: number }>();
@@ -139,11 +151,13 @@ export class Notifier {
     // void. THIS is the cancel that fixes the subagent handoff; the check at
     // fire time is a guard against a race, not the mechanism.
     this.#cancel(a.agentId);
-    // The episode the old state described is over. Bumped for EVERY genuine
+    // The episode the old state described is over. Stamped for EVERY genuine
     // transition, including into a non-trigger state, so that
     // `blocked → working → blocked` gives the two blocked episodes different
-    // numbers — see `#episode`.
-    const episode = (this.#episode.get(a.agentId) ?? 0) + 1;
+    // ids. Drawn from the notifier-wide counter, never from this agent's
+    // previous value — see `#episode` for the pane-id reuse that a per-agent
+    // counter reissues an id into.
+    const episode = ++this.#nextEpisode;
     this.#episode.set(a.agentId, episode);
     // `#lastNotified` exists to stop a re-announcement WITHIN one held
     // episode (the `prev === a.state` return above already handles that

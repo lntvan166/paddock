@@ -197,3 +197,65 @@ test("a timer callback replayed after its own entry is gone leaves the live wind
   await h.advance(60_000);
   expect(h.attempts).toEqual(["schema-migration is blocked"]);
 });
+
+/**
+ * A herdr `pane_id` is reused: the pane closes and a different agent opens in
+ * the same slot. `#forget` deletes every per-agent entry, including the episode
+ * id — it must, or the maps grow for the life of the process — so an episode id
+ * drawn from the DEPARTED agent's own previous value is reissued to the
+ * ARRIVING one, and a send still in flight for the first agent then passes the
+ * `current` check while holding the second agent's slot.
+ *
+ * Both halves of that are driven below, because the two harms are different:
+ * a success writes `#lastNotified` and silently eats the new agent's first
+ * notification, and a failure re-arms — cancelling the new agent's live window
+ * and sending a message composed from the DEPARTED agent, carrying its name.
+ *
+ * Each assertion names what was sent rather than counting sends, or "the new
+ * agent's message was dropped" is indistinguishable from "it has not gone out
+ * yet", and "sent under the wrong name" is indistinguishable from "sent".
+ */
+const departed = (state: Agent["state"]): Agent => agent({ state, name: "docs-cleanup" });
+const arrived = (state: Agent["state"]): Agent => agent({ state, name: "flaky-test-fix" });
+
+test("a reused pane id does not inherit the departed agent's in-flight send (success)", async () => {
+  const h = harness();
+  h.n.observe({ upserted: [departed("working")], removedIds: [] });
+  h.n.observe({ upserted: [departed("blocked")], removedIds: [] });
+  await h.advance(5_000);
+  expect(h.attempts).toEqual(["docs-cleanup is blocked"]);
+
+  // The pane closes mid-send, and a different agent takes the id.
+  h.n.observe({ upserted: [], removedIds: ["w1:p1"] });
+  h.n.observe({ upserted: [arrived("working")], removedIds: [] });
+  h.n.observe({ upserted: [arrived("blocked")], removedIds: [] });
+  expect(h.pending()).toBe(1);
+
+  // The departed agent's send finally succeeds. It must write nothing.
+  await h.resolve({ ok: true, detail: null });
+  expect(h.pending()).toBe(1);
+
+  await h.advance(5_000);
+  expect(h.attempts).toEqual(["docs-cleanup is blocked", "flaky-test-fix is blocked"]);
+  await h.resolve({ ok: true, detail: null });
+});
+
+test("a reused pane id does not inherit the departed agent's retry (failure)", async () => {
+  const h = harness();
+  h.n.observe({ upserted: [departed("working")], removedIds: [] });
+  h.n.observe({ upserted: [departed("blocked")], removedIds: [] });
+  await h.advance(5_000);
+
+  h.n.observe({ upserted: [], removedIds: ["w1:p1"] });
+  h.n.observe({ upserted: [arrived("working")], removedIds: [] });
+  h.n.observe({ upserted: [arrived("blocked")], removedIds: [] });
+
+  // The departed agent's send fails. Its retry belongs to an agent that is
+  // gone, so it must neither fire nor cancel the arriving agent's window.
+  await h.resolve({ ok: false, detail: "chat not found" });
+  expect(h.n.lastError).toBe("chat not found");
+
+  await h.advance(5_000);
+  expect(h.attempts).toEqual(["docs-cleanup is blocked", "flaky-test-fix is blocked"]);
+  await h.resolve({ ok: true, detail: null });
+});
