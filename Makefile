@@ -19,10 +19,23 @@ VERSION := $(if $(TAG),$(TAG:v%=%),0.0.0-dev)
 
 .PHONY: dev types icons check check-clean embed build-web test build up down logs restart
 
+# A real directory target, deliberately NOT in .PHONY: make compares its mtime
+# against package.json and bun.lock, so this installs on a fresh clone or after
+# a dependency change and is a no-op otherwise. `touch` because bun does not
+# always bump the directory's mtime when it decides there is nothing to do,
+# which would re-run the install on every single target.
+#
+# Only the targets that actually need a dependency depend on this. `types` and
+# `embed` import nothing outside Bun and node builtins, and keeping them free
+# of it means the herdr type generator still runs on a clone with no install.
+node_modules: package.json bun.lock
+	bun install
+	touch node_modules
+
 # scripts/dev.sh regenerates src/server/embedded.ts before it starts the
 # server — deliberately inside the script rather than as a prerequisite here,
 # so that running the script directly works too. See the comment there.
-dev:
+dev: node_modules
 	bash scripts/dev.sh
 
 types:
@@ -41,13 +54,20 @@ icons:
 embed:
 	bun run scripts/gen-embedded.ts
 
-check: embed
-	bunx tsc --noEmit
+# NOT `bunx tsc`. With node_modules absent, bunx resolves TypeScript from the
+# REGISTRY instead of the pin in package.json, so a fresh clone typechecked
+# against whatever major is newest — TS 7, which has REMOVED `baseUrl`. That
+# turned the fresh-clone path the `embed` comment above exists to support into
+# a hard `error TS5102` on a tsconfig.json that is correct for the pinned
+# compiler. Running the binary out of node_modules is what makes the `^5.7.0`
+# in package.json the thing that actually decides.
+check: node_modules embed
+	./node_modules/.bin/tsc --noEmit
 
 check-clean:
 	bash scripts/check-private.sh .
 
-build-web:
+build-web: node_modules
 	bun run build:web
 
 # The UI is built FIRST. Part of the suite reads real build output —
