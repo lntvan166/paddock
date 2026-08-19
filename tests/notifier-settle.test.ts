@@ -186,6 +186,23 @@ test("dispose clears pending timers", async () => {
   expect(h.sent).toEqual([]);
 });
 
+test("a removal cancels a live settle window", async () => {
+  // The spec requires BOTH `dispose()` and `removedIds` to clear pending
+  // timers, and the removal test below cannot see the second half: it uses a
+  // zero window, so nothing is ever pending when the removal arrives and
+  // deleting `#cancel` from `#forget` turns nothing red. A real window is what
+  // makes the cancel load-bearing — a pane that closes mid-window must not
+  // leave a timer behind for a process that may be about to shut down.
+  const h = harness();
+  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
+  h.n.observe({ upserted: [agent({ state: "done" })], removedIds: [] });
+  expect(h.pending()).toBe(1);
+  h.n.observe({ upserted: [], removedIds: ["w1:p1"] });
+  expect(h.pending()).toBe(0);
+  await h.advance(60_000);
+  expect(h.sent).toEqual([]);
+});
+
 test("a removed agent forgets that it was notified, so a returning id can notify again", async () => {
   // #lastNotified surviving a removal would silently suppress the first real
   // notification for whatever agent next holds that pane id.

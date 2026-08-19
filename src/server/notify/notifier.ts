@@ -58,7 +58,21 @@ export class Notifier {
   #lastNotified = new Map<string, AgentState>();
   /** Last send ATTEMPT (not success) per agent, for the cooldown. */
   #lastSentAt = new Map<string, number>();
-  /** In-flight settle windows. At most one per agent. */
+  /**
+   * Which EPISODE of a state an arm belongs to. Bumped on every genuine
+   * transition, so anything that resumes AFTER `await send` can ask whether
+   * the episode it was armed for is still the current one.
+   *
+   * State alone cannot answer that. `blocked → working → blocked` leaves
+   * `#lastSeen` reading "blocked" again, so a late continuation of the FIRST
+   * blocked episode looks current: it would set `#lastNotified` after `#see`
+   * had already cleared it for the SECOND episode, whose timer then reads
+   * "already announced" and drops the send. It would also let a failed first
+   * episode's retry re-arm over the second episode's live timer.
+   */
+  #episode = new Map<string, number>();
+  /** In-flight settle windows. At most one per agent — `#arm` cancels before
+   *  it sets, and a timer callback only ever removes its OWN entry. */
   #pending = new Map<string, { state: NotifyTrigger; timer: TimerHandle; attempts: number }>();
   lastError: string | null = null;
 
@@ -109,6 +123,9 @@ export class Notifier {
     // earned and its first real notification is silently dropped.
     this.#lastNotified.delete(agentId);
     this.#lastSentAt.delete(agentId);
+    // A send that was already in flight for the removed agent resumes with no
+    // episode to match, so it writes nothing — which is what removal means.
+    this.#episode.delete(agentId);
   }
 
   #see(a: Agent): void {
@@ -122,6 +139,12 @@ export class Notifier {
     // void. THIS is the cancel that fixes the subagent handoff; the check at
     // fire time is a guard against a race, not the mechanism.
     this.#cancel(a.agentId);
+    // The episode the old state described is over. Bumped for EVERY genuine
+    // transition, including into a non-trigger state, so that
+    // `blocked → working → blocked` gives the two blocked episodes different
+    // numbers — see `#episode`.
+    const episode = (this.#episode.get(a.agentId) ?? 0) + 1;
+    this.#episode.set(a.agentId, episode);
     // `#lastNotified` exists to stop a re-announcement WITHIN one held
     // episode (the `prev === a.state` return above already handles that
     // case without reaching here). A genuine transition ends the episode the
@@ -134,24 +157,43 @@ export class Notifier {
 
     const s = this.o.settings.current();
     if (!s.notify.triggers.includes(a.state)) return;
-    this.#arm(a, a.state, s.notify.settleMs[a.state], 0);
+    this.#arm(a, a.state, s.notify.settleMs[a.state], 0, episode);
   }
 
-  #arm(a: Agent, state: NotifyTrigger, ms: number, attempts: number): void {
+  #arm(a: Agent, state: NotifyTrigger, ms: number, attempts: number, episode: number): void {
+    // FIRST, always. An arm REPLACES whatever this agent had pending, and
+    // `#pending.set` over a live entry loses the handle: the old timer stays
+    // armed but is no longer reachable by `#cancel` or `dispose()`, so the
+    // shutdown path cannot clear it and "at most one per agent" stops holding.
+    this.#cancel(a.agentId);
+    // Assigned after `#setTimer` returns; the callback cannot run before then.
+    let handle: TimerHandle | undefined;
     const timer = this.#setTimer(() => {
-      this.#pending.delete(a.agentId);
+      // Its OWN entry, never whatever happens to be there. Depth rather than a
+      // reachable path — the cancel above means no other arm can have replaced
+      // this one without clearing this timer first — but a stale callback
+      // deleting a LIVE entry would orphan that entry's timer in exactly the
+      // way the cancel exists to prevent, so the delete is identity-checked.
+      const p = this.#pending.get(a.agentId);
+      if (p !== undefined && p.timer === handle) this.#pending.delete(a.agentId);
       // Nothing else is left to observe a rejection here, and Bun TERMINATES
       // the process on an unhandled one — a `fetch` that throws rather than
       // resolving would take the whole dashboard down over a notification.
       // Recorded on `lastError`, which /api/health exposes, never swallowed.
-      void this.#fire(a, state, attempts).catch((e: unknown) => {
+      // A rejection deliberately gets NO retry, unlike a resolved
+      // `{ok: false}`: `sendTelegram` converts every throw into
+      // `{ok: false, detail}`, so reaching here means something outside the
+      // send contract broke, and silence is the safe direction for a fault
+      // paddock cannot characterise.
+      void this.#fire(a, state, attempts, episode).catch((e: unknown) => {
         this.lastError = e instanceof Error ? e.message : String(e);
       });
     }, ms);
+    handle = timer;
     this.#pending.set(a.agentId, { state, timer, attempts });
   }
 
-  async #fire(a: Agent, state: NotifyTrigger, attempts: number): Promise<void> {
+  async #fire(a: Agent, state: NotifyTrigger, attempts: number, episode: number): Promise<void> {
     if (this.#lastSeen.get(a.agentId) !== state) return;
     if (this.#lastNotified.get(a.agentId) === state) return;
 
@@ -175,7 +217,7 @@ export class Notifier {
       // message went out moments earlier. `attempts` is unchanged — a
       // deferral is not a failure, and counting it would let a busy agent
       // burn its retries on deferrals and never send at all.
-      this.#arm(a, state, s.notify.cooldownMs - since, attempts);
+      this.#arm(a, state, s.notify.cooldownMs - since, attempts, episode);
       return;
     }
 
@@ -186,16 +228,36 @@ export class Notifier {
 
     const m = composeMessage(a, state, s.publicUrl);
     const r = await this.o.send(m.text, m.replyMarkup);
+
+    // EVERYTHING BELOW RESUMES LATER — a Telegram POST takes up to 10s, and
+    // the agent can have transitioned several times in the meantime. So
+    // nothing here may write per-agent state without first asking whether the
+    // episode this send was about is still the current one. `lastError` is the
+    // exception, and deliberately: it describes THIS send's outcome, and
+    // /api/health must show a broken token whenever it broke.
+    const current = this.#episode.get(a.agentId) === episode;
     if (r.ok) {
-      this.#lastNotified.set(a.agentId, state);
       this.lastError = null;
+      // Guarded, or a late success resurrects a suppression its episode had
+      // already ended: `#see` cleared `#lastNotified` on the transition, and
+      // writing it back here makes the NEXT episode's timer read "already
+      // announced" and drop a real notification.
+      if (current) this.#lastNotified.set(a.agentId, state);
       return;
     }
     this.lastError = r.detail ?? "send failed";
     // Bounded. v2 "retried on the next delta", which for a finished agent can
     // never happen — a quiet `done` agent produces no further deltas, so a
     // failed finish notification was lost outright.
-    if (attempts + 1 < MAX_ATTEMPTS) this.#arm(a, state, s.notify.cooldownMs, attempts + 1);
+    //
+    // Guarded by `current` too. A retry for a finished episode has nothing
+    // true left to say (the fire path's `#lastSeen` check would drop it), and
+    // arming it would CANCEL the live episode's own timer to install a send
+    // that then declines to fire — losing the notification the operator was
+    // waiting for.
+    if (current && attempts + 1 < MAX_ATTEMPTS) {
+      this.#arm(a, state, s.notify.cooldownMs, attempts + 1, episode);
+    }
   }
 }
 
