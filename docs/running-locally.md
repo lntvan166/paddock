@@ -52,9 +52,15 @@ The detached process's stdout and stderr go to
 appended — it holds one run's output, not a growing history.
 
 `paddock start`/`stop`/`status` do not give you restart-on-boot or
-restart-on-crash; nothing here loops or supervises. For that, use your
-platform's service manager (systemd, launchd, …) and point its unit at the
-same `paddock start` / `paddock stop` invocations.
+restart-on-crash; nothing here loops or supervises. They are the interactive
+path, for a developer at a terminal, not a supervision mechanism — do not
+point a service unit at them. A service manager should instead run plain
+`paddock` (no verb) in the foreground and own restart itself: systemd's
+default `Type=simple` tracks the process it launched directly, which is
+exactly what a foreground paddock is. `paddock start`'s detached child would
+leave `ExecStart` exiting 0 immediately, and there is no pid file to hand a
+`Type=forking` unit either — paddock deliberately does not write one; see
+`docs/design/2026-08-19-lifecycle-commands-design.md`.
 
 ## Then add it to your Home Screen
 
