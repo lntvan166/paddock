@@ -110,3 +110,36 @@ session does not silently re-litigate them.
     structural rather than a convention. There is no indefinite mute;
     `notify.enabled` is that control, and two controls for one state is how
     an operator ends up muted without knowing why.
+
+12. **`content-type: application/json` is required on every settings write.**
+    The design mandated `POST /api/settings/mute` and never mentioned CORS.
+    POST stays, for the reasons the design gives: the server stamps the mute
+    instant from a client-supplied duration, and mute applies immediately while
+    every other field waits for Save, which a separate endpoint makes
+    structural rather than a convention.
+
+    But POST is a CORS-*simple* method, and `PUT /api/settings` is deliberately
+    PUT precisely because PUT is not — a cross-origin write of that route
+    forces an `OPTIONS` preflight that nothing answers. paddock has no
+    authentication of its own (decision 3), and a browser holding a Cloudflare
+    Access session attaches it to a cross-origin request as readily as to a
+    first-party one, so that preflight is the whole CSRF control. Hono's
+    `c.req.json()` is `text().then(JSON.parse)` and ignores the content type,
+    which left the mute route reachable from an `enctype="text/plain"` form on
+    any page the operator visits: a silent multi-day mute or unmute, which is
+    exactly the "operator stops trusting the channel" failure the settle work
+    exists to fix. The same door made the test route's chat id
+    attacker-choosable — the operator's own bot posting into a chat of someone
+    else's choosing. Capability exposure, not credential exposure: the token
+    never leaves the server.
+
+    So `strictJsonBody` refuses any body whose media type is not
+    `application/json`, which restores the preflight requirement for all three
+    settings routes at one point. A `charset` parameter is accepted — the match
+    is on the media type, not the whole header — because
+    `application/json; charset=utf-8` is what several ordinary clients send.
+
+    Scale honestly: the pre-existing action routes are POST already and carry
+    larger levers, so this is not new in kind. It is a floor, not a fix for
+    CSRF in general, and it is not a reason to reintroduce an application auth
+    token (decision 3 still stands).

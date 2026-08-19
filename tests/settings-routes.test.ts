@@ -385,3 +385,49 @@ test("a failed mute returns 500 with the reason, never a silent success", async 
   expect(body.detail).toContain("disk full");
   settings.patchMute = original;
 });
+
+test("a body sent as text/plain is refused on every settings route", async () => {
+  // paddock has no authentication of its own — a Cloudflare Access policy in
+  // front is the only gate, and a browser holding that session attaches it to
+  // a cross-origin request too. `PUT /api/settings` is safe because PUT is not
+  // a CORS-simple method, so a drive-by page cannot send it without a
+  // preflight nothing answers. POST *is* simple, and Hono's `c.req.json()`
+  // ignores the content type, so an `enctype="text/plain"` form on any page
+  // the operator visits would otherwise reach the two POST routes below —
+  // muting the dashboard for a week, or pointing the operator's own bot at a
+  // chat id of the attacker's choosing. The PUT is in the loop because the
+  // check lives in the shared `strictJsonBody`, and a helper that hardens two
+  // of three callers is the kind of gap nobody notices later.
+  const { app, settings } = await harness();
+  const cases = [
+    { path: "/api/settings", method: "PUT", body: JSON.stringify({ notify: { enabled: true } }) },
+    { path: "/api/settings/mute", method: "POST", body: JSON.stringify({ forMs: 60_000 }) },
+    { path: "/api/settings/telegram/test", method: "POST", body: JSON.stringify({ token: "1:A", chatId: "555" }) },
+  ];
+  for (const c of cases) {
+    const res = await app.request(c.path, {
+      method: c.method,
+      headers: { "content-type": "text/plain;charset=UTF-8" },
+      body: c.body,
+    });
+    expect(res.status, `${c.method} ${c.path} accepted a text/plain body`).toBe(400);
+    expect((await res.json()).detail).toContain("content-type");
+  }
+  // And nothing was applied on the way to the rejection.
+  expect(settings.current().notify.enabled).toBe(false);
+  expect(settings.current().notify.mutedUntil).toBeNull();
+});
+
+test("a charset parameter on an application/json body is still accepted", async () => {
+  // `application/json; charset=utf-8` is what several HTTP clients send by
+  // default. Matching the whole header rather than the media type would refuse
+  // it, turning a CSRF guard into an outage for anyone not using the UI.
+  const { app, settings } = await harness(undefined, () => 1_700_000_000_000);
+  const res = await app.request("/api/settings/mute", {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ forMs: 60_000 }),
+  });
+  expect(res.status).toBe(200);
+  expect(settings.current().notify.mutedUntil).toBe(1_700_000_000_000 + 60_000);
+});

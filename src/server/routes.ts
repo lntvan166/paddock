@@ -7,6 +7,7 @@ import {
   isConfigured,
   isTokenShape,
   MAX_SETTLE_MS,
+  MIN_COOLDOWN_MS,
   TOKEN_SHAPE_DETAIL,
   type SettingsStore,
 } from "@server/settings/store";
@@ -154,7 +155,11 @@ async function jsonBody(c: Context): Promise<Record<string, unknown>> {
 }
 
 /**
- * A request body as an object, or a 400 reason — unlike `jsonBody`, which
+ * A request body as an object, or a 400 reason — and the one place the
+ * settings routes require `content-type: application/json`, for the CSRF
+ * reason spelled out below.
+ *
+ * Unlike `jsonBody`, which
  * folds malformed JSON into `{}` so its callers can treat "sent nothing
  * useful" as "sent no fields". `PUT /api/settings` cannot reuse that: folding
  * malformed JSON into an empty object would make a broken request body look
@@ -167,6 +172,25 @@ async function jsonBody(c: Context): Promise<Record<string, unknown>> {
 async function strictJsonBody(
   c: Context,
 ): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; detail: string }> {
+  // Refused BEFORE the body is read, and the reason is CSRF, not tidiness.
+  // `c.req.json()` is `text().then(JSON.parse)` and never looks at the header,
+  // so without this a POST here is a CORS-SIMPLE request: an
+  // `enctype="text/plain"` form on any page the operator visits submits it
+  // cross-origin with no preflight, and a browser holding a Cloudflare Access
+  // session attaches that session just as readily as to a first-party request.
+  // paddock has no authentication of its own, so the preflight IS the control.
+  // `PUT /api/settings` gets it from its verb (see the comment on that route);
+  // `POST /api/settings/mute` and the telegram test route cannot, and would
+  // otherwise hand a drive-by page a multi-day mute or a bot message sent to a
+  // chat id of its choosing.
+  //
+  // Matched on the MEDIA TYPE alone: `application/json; charset=utf-8` is a
+  // perfectly ordinary thing for a client to send.
+  const mediaType = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+  if (mediaType !== "application/json") {
+    return { ok: false, detail: "content-type must be application/json" };
+  }
+
   let raw: unknown;
   try {
     raw = await c.req.json();
@@ -182,17 +206,6 @@ async function strictJsonBody(
 function isNullableString(v: unknown): v is string | null {
   return v === null || typeof v === "string";
 }
-
-/**
- * Floor for a patched `notify.cooldownMs`. Task 4 spent two fix rounds
- * eliminating an unbounded-retry hot loop that fired on every delta when a
- * Telegram send failed; `cooldownMs: 0` disarms the rate limit entirely and
- * reintroduces exactly that loop. 1000 ms is a floor against that specific
- * failure mode, not a recommendation — the store's own default
- * (`DEFAULT_COOLDOWN_MS`) is 60_000 ms. Do not relax this without re-reading
- * why Task 4 needed it.
- */
-const MIN_COOLDOWN_MS = 1000;
 
 /** A week. Long enough for a holiday, short enough that a fat-fingered mute
  *  cannot silence paddock for a year. */
@@ -562,9 +575,12 @@ export function createApp(deps: AppDeps) {
      * preflight: `PUT` is not a CORS-simple method, so the browser sends an
      * `OPTIONS` preflight first, and nothing here answers it. The same
      * handler mounted on `POST` would be reachable cross-origin from a plain
-     * form submit with `enctype="text/plain"` — no preflight, no
-     * same-origin check — because `strictJsonBody` parses the body without
-     * ever inspecting the content type. The verb is the CSRF control.
+     * form submit with `enctype="text/plain"` — no preflight, no same-origin
+     * check — were the content type not also required (`strictJsonBody`), and
+     * that requirement is what the sibling POST routes have to lean on
+     * instead. Here the verb is the CSRF control, and it is the stronger of
+     * the two: it holds whether or not a future handler remembers to call the
+     * helper. Do not trade it for the helper's check.
      */
     app.put("/api/settings", async (c) => {
       const parsed = await strictJsonBody(c);
@@ -588,6 +604,10 @@ export function createApp(deps: AppDeps) {
      * phone with a skewed clock cannot set a wrong one. And mute must apply
      * immediately while every other field waits for Save — a separate
      * endpoint makes that structural instead of a rule to remember.
+     *
+     * POST, not PUT, so it does not inherit the sibling route's
+     * not-CORS-simple verb; `strictJsonBody`'s content-type requirement is
+     * what restores the preflight here. See docs/decisions.md.
      */
     app.post("/api/settings/mute", async (c) => {
       const parsed = await strictJsonBody(c);
