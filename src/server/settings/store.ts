@@ -68,6 +68,24 @@ export function isConfigured(v: string | null | undefined): v is string {
   return typeof v === "string" && v !== "";
 }
 
+/**
+ * The ONE definition of "this string is shaped like a bot token".
+ *
+ * `sendTelegram` builds `api.telegram.org/bot${token}/sendMessage`, so the
+ * token lands in a URL PATH. A token containing `/` or `..` therefore
+ * addresses a different Telegram method than the call site intends. Nothing
+ * validated this before — it is a pre-existing hole on the stored-token path,
+ * not one the on-screen-credentials route introduces.
+ *
+ * Real tokens are `<digits>:<base64url-ish>`; this is deliberately a little
+ * wider than that, because guessing Telegram's exact format and being wrong
+ * would lock out a valid credential. It is a path-safety guard, not a format
+ * checker.
+ */
+export function isTokenShape(v: string): boolean {
+  return v.length <= 200 && /^[A-Za-z0-9:_-]+$/.test(v);
+}
+
 const obj = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 

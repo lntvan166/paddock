@@ -149,3 +149,40 @@ test("cooldownMs: 0 is rejected — it would disarm the cooldown and reintroduce
   expect(body.ok).toBe(false);
   expect(settings.current()).toEqual(before);
 });
+
+test("a token containing a slash is refused, because it would redirect the API path", async () => {
+  // sendTelegram builds api.telegram.org/bot${token}/sendMessage — the token
+  // is interpolated into a URL PATH, so "1:A/../getUpdates" addresses a
+  // different Telegram method than this code intends.
+  const { app } = await harness();
+  const res = await app.request("/api/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ telegram: { token: "1:A/../getUpdates" } }),
+  });
+  expect(res.status).toBe(400);
+  const body = await res.json();
+  expect(body.detail).toContain("telegram.token");
+  // The rejected value must never come back out.
+  expect(JSON.stringify(body)).not.toContain("getUpdates");
+});
+
+test("a well-formed token is accepted", async () => {
+  const { app } = await harness();
+  const res = await app.request("/api/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ telegram: { token: "123456:AAHfake-Token_value" } }),
+  });
+  expect(res.status).toBe(200);
+});
+
+test("clearing the token with null is still allowed", async () => {
+  const { app } = await harness();
+  const res = await app.request("/api/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ telegram: { token: null } }),
+  });
+  expect(res.status).toBe(200);
+});

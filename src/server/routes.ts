@@ -3,7 +3,7 @@ import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
 import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
-import { isConfigured, MAX_SETTLE_MS, type SettingsStore } from "@server/settings/store";
+import { isConfigured, isTokenShape, MAX_SETTLE_MS, type SettingsStore } from "@server/settings/store";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { EMBEDDED } from "@server/embedded";
@@ -211,6 +211,15 @@ function validateSettingsPatch(
     const out: NonNullable<SettingsPatch["telegram"]> = {};
     if ("token" in tt) {
       if (!isNullableString(tt.token)) return { ok: false, detail: "telegram.token must be a string or null" };
+      // Empty string clears it, same as null (see isConfigured). Any other
+      // value must be path-safe — the detail names the rule and NEVER echoes
+      // the value, which is the credential.
+      if (tt.token !== null && tt.token !== "" && !isTokenShape(tt.token)) {
+        return {
+          ok: false,
+          detail: "telegram.token may contain only letters, digits, ':', '_' and '-', max 200 characters",
+        };
+      }
       out.token = tt.token;
     }
     if ("chatId" in tt) {
