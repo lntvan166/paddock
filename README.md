@@ -62,6 +62,10 @@ paddock
 `ctrl+c` stops it. `paddock update` upgrades it; paddock never updates itself
 unasked. `paddock --demo` runs it with synthetic agents and no herdr.
 
+It checks for a newer release at most once a day, caching the answer in
+`~/.config/paddock/update-check.json` — set `PADDOCK_NO_UPDATE_CHECK=1` and it
+makes no request and writes nothing.
+
 > [!WARNING]
 > paddock binds `127.0.0.1` and has **no login of its own**. Anyone who reaches
 > the port can send keystrokes to your agents and read their screens. To use it
