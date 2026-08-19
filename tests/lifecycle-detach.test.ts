@@ -57,41 +57,22 @@ test("a detached child genuinely outlives the parent that started it", async () 
   // (8787) and the common 3000/5173/8000/8080/9090-style dev-server ports,
   // while still ephemeral-but-unassigned rather than a registered service
   // port.
-  function pickPort(): number {
-    return 41_000 + Math.floor(performance.now() % 40);
-  }
-
-  /** One spawn-and-wait attempt. Resolves once the parent process (which
-   *  forks the real, detached server and exits) has exited. */
-  async function attempt(port: number) {
-    const parent = Bun.spawn(["bun", "src/server/index.ts", "start", "--demo"], {
-      env: {
-        ...process.env,
-        PADDOCK_PORT: String(port),
-        PADDOCK_CONFIG_DIR: cfg,
-        PADDOCK_NO_UPDATE_CHECK: "1",
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const code = await parent.exited;
-    const out = await new Response(parent.stdout).text();
-    return { parent, code, out };
-  }
-
-  let port = pickPort();
-  let { parent, code, out } = await attempt(port);
-  // Retry once on a port collision rather than merely picking a wider range:
-  // the range only makes the collision IMPROBABLE, and a single retry makes
-  // this specific failure mode cheap to shrug off outright, without building
-  // a real port-allocation harness for one test.
-  if (code !== 0 && out.includes("is already in use")) {
-    port = pickPort();
-    ({ parent, code, out } = await attempt(port));
-  }
+  const port = 41_000 + Math.floor(performance.now() % 40);
+  const parent = Bun.spawn(["bun", "src/server/index.ts", "start", "--demo"], {
+    env: {
+      ...process.env,
+      PADDOCK_PORT: String(port),
+      PADDOCK_CONFIG_DIR: cfg,
+      PADDOCK_NO_UPDATE_CHECK: "1",
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
   let child = 0;
   try {
+    const code = await parent.exited;
+    const out = await new Response(parent.stdout).text();
     expect(code, `paddock start failed: ${out}`).toBe(0);
 
     const s = JSON.parse(await readFile(stateFile(cfg), "utf8"));
