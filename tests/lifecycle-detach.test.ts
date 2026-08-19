@@ -72,8 +72,15 @@ test("a detached child genuinely outlives the parent that started it", async () 
   let child = 0;
   try {
     const code = await parent.exited;
-    const out = await new Response(parent.stdout).text();
-    expect(code, `paddock start failed: ${out}`).toBe(0);
+    // BOTH streams. `stderr` is piped, so anything written there is captured
+    // and then thrown away unless it is read — and a startup diagnostic is
+    // exactly the thing that goes to stderr. A failure on this branch could not
+    // be identified because this message was built from stdout alone.
+    const [out, err] = await Promise.all([
+      new Response(parent.stdout).text(),
+      new Response(parent.stderr).text(),
+    ]);
+    expect(code, `paddock start failed\n--- stdout ---\n${out}\n--- stderr ---\n${err}`).toBe(0);
 
     const s = JSON.parse(await readFile(stateFile(cfg), "utf8"));
     child = s.pid;

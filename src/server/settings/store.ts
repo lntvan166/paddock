@@ -36,6 +36,23 @@ export const DEFAULT_SETTLE_MS: Record<NotifyTrigger, number> = { blocked: 5_000
 
 export const MAX_SETTLE_MS = 600_000;
 
+/**
+ * Floor for `notify.cooldownMs`, enforced both by the PUT route's validator and
+ * by `migrate()` on load.
+ *
+ * Task 4 spent two fix rounds eliminating an unbounded-retry hot loop that
+ * fired on every delta when a Telegram send failed; `cooldownMs: 0` disarms the
+ * rate limit entirely and reintroduces exactly that loop. 1000 ms is a floor
+ * against that specific failure mode, not a recommendation — the default
+ * (`DEFAULT_COOLDOWN_MS`) is 60_000 ms. Do not relax this without re-reading
+ * why Task 4 needed it.
+ *
+ * It lives here rather than in `routes.ts` because the two enforcement points
+ * must not be able to disagree, and `routes.ts` may import from settings while
+ * settings may not import from routes.
+ */
+export const MIN_COOLDOWN_MS = 1000;
+
 const defaults = (): Settings => ({
   version: 2,
   telegram: { token: null, chatId: null },
@@ -102,6 +119,30 @@ const num = (v: unknown, fallback: number): number =>
   typeof v === "number" && Number.isFinite(v) ? v : fallback;
 
 /**
+ * A stored number brought back inside its legal range, with the correction
+ * NAMED rather than applied silently — the same rule this file already follows
+ * for a discarded quiet-hours window and an unrecognised trigger.
+ *
+ * Presence is not enough for these fields. `settleMs.blocked: -5` restores the
+ * edge-firing the settle window exists to remove (`setTimeout` treats a
+ * negative delay as 0), and `cooldownMs: 0` disarms the per-agent rate limit
+ * that bounds a failing send. The PUT route refuses both, but the file is also
+ * reachable by a text editor, and a silently degraded notifier is precisely
+ * what `migrate()` exists to prevent.
+ */
+const clamped = (
+  v: number, lo: number, hi: number, field: string, log: (m: string) => void,
+): number => {
+  const c = Math.min(Math.max(v, lo), hi);
+  // The corrected value names the bound that was hit, so the message does not
+  // have to print a range whose upper end is `MAX_SAFE_INTEGER`.
+  if (c !== v) {
+    log(`[settings] notify.${field} was ${v}, outside its allowed range, and has been corrected to ${c}.`);
+  }
+  return c;
+};
+
+/**
  * Every stored shape, past or present, normalised to a complete v2 `Settings`.
  *
  * This replaces `{ ...defaults(), ...parsed }`, which was a SHALLOW merge: a
@@ -154,11 +195,14 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
       enabled: typeof n.enabled === "boolean" ? n.enabled : d.notify.enabled,
       triggers,
       settleMs: {
-        blocked: num(s.blocked, DEFAULT_SETTLE_MS.blocked),
-        done: num(s.done, DEFAULT_SETTLE_MS.done),
+        blocked: clamped(num(s.blocked, DEFAULT_SETTLE_MS.blocked), 0, MAX_SETTLE_MS, "settleMs.blocked", log),
+        done: clamped(num(s.done, DEFAULT_SETTLE_MS.done), 0, MAX_SETTLE_MS, "settleMs.done", log),
       },
       mutedUntil: typeof n.mutedUntil === "number" && Number.isFinite(n.mutedUntil) ? n.mutedUntil : null,
-      cooldownMs: num(n.cooldownMs, d.notify.cooldownMs),
+      cooldownMs: clamped(
+        num(n.cooldownMs, d.notify.cooldownMs),
+        MIN_COOLDOWN_MS, Number.MAX_SAFE_INTEGER, "cooldownMs", log,
+      ),
     },
     publicUrl: typeof p.publicUrl === "string" ? p.publicUrl : null,
   };

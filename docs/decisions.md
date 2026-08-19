@@ -92,6 +92,16 @@ session does not silently re-litigate them.
     can never happen, because a quiet `done` agent produces no further
     deltas — so a failed finish notification was simply lost.
 
+    A third map, `#episode`, exists because the send is `await`ed: a Telegram
+    POST takes up to 10s, and the agent can transition several times before
+    `#fire` resumes. Neither `#lastNotified` nor the retry may then be written
+    on behalf of an episode that has ended, and STATE CANNOT IDENTIFY AN
+    EPISODE — `blocked → working → blocked` leaves `#lastSeen` reading
+    "blocked" again, so a `#lastSeen === state` check calls the first episode's
+    late continuation current. A counter bumped on every genuine transition
+    can tell them apart; that is the whole reason it is there, and it is not a
+    redundant third copy of `#lastSeen`.
+
 11. **Mute until, rather than quiet hours.** Quiet hours was one `HH:MM`
     range in *server local* time, with no timezone field and no way to
     express a second window. An absolute epoch-ms instant cannot be misread

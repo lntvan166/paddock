@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdtemp, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { migrate, SettingsStore } from "@server/settings/store";
+import {
+  MAX_SETTLE_MS, migrate, MIN_COOLDOWN_MS, SettingsStore,
+} from "@server/settings/store";
 
 const dir = async () => mkdtemp(join(tmpdir(), "paddock-settings-"));
 
@@ -209,4 +211,38 @@ test("view() reports the server's own clock so the UI can render a countdown", a
   const s = new SettingsStore(await dir(), {});
   await s.load();
   expect(s.view(1_700_000_000_000).serverNow).toBe(1_700_000_000_000);
+});
+
+test("an out-of-range settleMs or cooldownMs is corrected, and the correction is named", async () => {
+  // `migrate()` validated PRESENCE but not RANGE, so a hand-edited file was a
+  // second door to the two failures it exists to close: a negative settleMs
+  // restores edge-firing (setTimeout treats it as 0), and cooldownMs 0 disarms
+  // the per-agent rate limit that bounds a failing send. The PUT route refuses
+  // both; a text editor does not go through the PUT route.
+  const logged: string[] = [];
+  const s = migrate(
+    { version: 2, notify: { settleMs: { blocked: -5, done: 9_000_000 }, cooldownMs: 0 } },
+    (m) => logged.push(m),
+  );
+  expect(s.notify.settleMs.blocked).toBe(0);
+  expect(s.notify.settleMs.done).toBe(MAX_SETTLE_MS);
+  expect(s.notify.cooldownMs).toBe(MIN_COOLDOWN_MS);
+  // Named, not silently corrected — the same rule as the quiet-hours discard.
+  const all = logged.join(" ");
+  expect(all).toContain("settleMs.blocked");
+  expect(all).toContain("settleMs.done");
+  expect(all).toContain("cooldownMs");
+});
+
+test("an in-range settleMs and cooldownMs are left exactly alone, and nothing is logged", async () => {
+  // The other half: a clamp that silently rewrote legal values, or logged on
+  // every boot, would be its own defect.
+  const logged: string[] = [];
+  const s = migrate(
+    { version: 2, notify: { settleMs: { blocked: 0, done: MAX_SETTLE_MS }, cooldownMs: MIN_COOLDOWN_MS } },
+    (m) => logged.push(m),
+  );
+  expect(s.notify.settleMs).toEqual({ blocked: 0, done: MAX_SETTLE_MS });
+  expect(s.notify.cooldownMs).toBe(MIN_COOLDOWN_MS);
+  expect(logged).toEqual([]);
 });

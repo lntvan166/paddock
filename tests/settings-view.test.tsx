@@ -175,7 +175,7 @@ test("publicUrl and cooldownMs have real inputs, and both reach the PUT body", a
   expect(url).not.toBeNull();
   const cooldown = host.querySelector('input[name="cooldownMs"]') as HTMLInputElement | null;
   expect(cooldown).not.toBeNull();
-  // The server's own floor (routes.ts MIN_COOLDOWN_MS): 0 disarms the rate
+  // The server's own floor (`MIN_COOLDOWN_MS`, in the settings store): 0 disarms the rate
   // limit and reintroduces the send-per-delta hot loop.
   expect(cooldown!.getAttribute("min")).toBe("1000");
 

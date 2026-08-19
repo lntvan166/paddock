@@ -88,11 +88,23 @@ test("staying in the same state does not notify again", async () => {
   expect(h.sent).toHaveLength(1);
 });
 
-test("a sustained failure does not send once per delta — cooldown arms on the attempt, not the success", async () => {
-  // A broken token fails every send. Without the cooldown arming on the
-  // ATTEMPT (not just success), the reverted `lastSeen` would keep
-  // re-detecting the transition and each of these deltas — arriving as a
-  // blocked agent's task line keeps updating — would fire its own POST.
+test("a sustained failure does not send once per delta — an unchanged state arms nothing", async () => {
+  // A broken token fails every send, and the deltas below keep arriving
+  // because a blocked agent's task line keeps updating. Two things bound the
+  // traffic, and neither is the cooldown:
+  //
+  //  - `#see` returns early when the state has not changed, so a task-line
+  //    delta arms no timer and reaches no send at all.
+  //  - the failed send's retry is armed ONCE, on a timer at the cooldown, and
+  //    capped at three attempts — it is not "retry on the next delta", which
+  //    is the v2 mechanism this branch deleted and the shape this test's
+  //    original comment described.
+  //
+  // Stamping `#lastSentAt` on the attempt rather than the success is a
+  // separate guarantee and is NOT what this test pins: moving that write onto
+  // the success path leaves this file green (measured). It is pinned by "a
+  // cooldown deferral does not consume a retry attempt" in
+  // tests/notifier-timing.test.ts, which is where the retry path is driven.
   const h = harness();
   h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
   h.fail("Bad Request: chat not found");

@@ -21,7 +21,10 @@ and the public URL used for a notification's deep link, plus:
 
 - **notification triggers** (`blocked`, `done`) and a **settle window** per
   trigger — how long the state must hold before a message is sent. `blocked`
-  defaults to 5s and `done` to 10s. 0 sends on the state change itself.
+  defaults to 5s and `done` to 10s. 0 sends on the state change itself, and
+  600s is the ceiling. A hand-edited `settings.json` holding a window outside
+  that range (or a cooldown under 1s) is corrected on load, and the correction
+  is logged rather than applied silently.
 
 - **mute** — silence every notification for 1, 4 or 8 hours. Stored as an
   absolute instant stamped by the server, so it has no timezone to be misread
@@ -75,13 +78,17 @@ ignoring:
   message that is true when sent and stale when read. Waiting for the state to
   hold means the message describes something that is still the case.
 
-  10s is a starting value. If false finishes persist, raise `done` to 30–60s —
-  a main agent that spends 20s composing a review before its status flips back
-  is inside 10s but outside nothing longer.
+  10s is a starting value. If false finishes persist, raise `done` to 30–60s.
+  A main agent that spends about 20 seconds composing a review before its
+  status flips back to `working` is not covered by a 10s window — the window
+  closes first and the message goes out — but a 30–60s one covers it.
 
 - **mute drops rather than queues** — a pile delivered when mute lifts
   describes agents unblocked hours earlier, which is noise wearing the costume
   of signal.
-- a **failed send does not consume the transition**, so the next update
-  retries; the per-agent cooldown bounds that, and is floored at 1 s so it
-  cannot be disarmed
+- **a failed send is retried on a timer**, at the cooldown, for at most 3
+  attempts in total; after that it stops and the reason is on `/api/health` as
+  `lastNotifyError`. Retrying was not always on a timer: it used to wait for
+  the agent's next update, which a finished agent never sends — so a `done`
+  notification that failed was simply lost. The cooldown is floored at 1 s so
+  the retry cannot become a hot loop
