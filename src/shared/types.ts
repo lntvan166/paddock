@@ -8,18 +8,30 @@ export interface SettingsView {
   notify: {
     enabled: boolean;
     triggers: NotifyTrigger[];
-    /** "22:00"/"08:00", server local time. Wraps midnight when start > end. */
-    quietHours: { start: string; end: string } | null;
+    /** Per trigger, how long the state must hold before a message is sent.
+     *  0 fires on the edge, which is what v2 did unconditionally. */
+    settleMs: Record<NotifyTrigger, number>;
+    /** Epoch ms. Notifications are suppressed while `serverNow < mutedUntil`.
+     *  An absolute instant rather than a schedule: it has no timezone to be
+     *  misread by a phone in one zone and a server in another. */
+    mutedUntil: number | null;
     cooldownMs: number;
   };
   publicUrl: string | null;
+  /** The server's clock at the moment this view was built. The UI renders
+   *  "muted until 07:14 (in 6h 22m)" from `mutedUntil`, and the phone's clock
+   *  is not the server's — so the offset is computed from this, not Date.now(). */
+  serverNow: number;
   /** Non-null when settings.json failed to load. Surfaced, never swallowed. */
   error: string | null;
 }
 
 export interface SettingsPatch {
   telegram?: { token?: string | null; chatId?: string | null };
-  notify?: Partial<SettingsView["notify"]>;
+  /** `mutedUntil` is deliberately absent: mute is POST /api/settings/mute, so
+   *  the server stamps the instant from a client-supplied duration, and so
+   *  that "applies immediately" is structural rather than a convention. */
+  notify?: Partial<Omit<SettingsView["notify"], "mutedUntil">>;
   publicUrl?: string | null;
 }
 

@@ -25,8 +25,9 @@ const SECRET_TOKEN = "very-secret-token-9f21xyz";
 
 const view = () => ({
   telegram: { configured: true, hint: "7f21", chatId: "555" },
-  notify: { enabled: true, triggers: ["blocked"], quietHours: null, cooldownMs: 60_000 },
-  publicUrl: null, error: null,
+  notify: { enabled: true, triggers: ["blocked"], settleMs: { blocked: 5_000, done: 10_000 },
+            mutedUntil: null, cooldownMs: 60_000 },
+  publicUrl: null, serverNow: 1_700_000_000_000, error: null,
 });
 
 test("the token is never rendered — only the hint", async () => {
@@ -124,9 +125,8 @@ test("Save is disabled until the settings have loaded, so a failed GET cannot ov
   // Every field in the "All devices" section starts at an empty/false/60000
   // placeholder and is only populated by the mount GET. If that GET fails,
   // `loadError` is shown — but a Save that stayed enabled would PUT
-  // `enabled: false, triggers: [], quietHours: null, chatId: null` over
-  // whatever the operator actually had configured. A form that never loaded
-  // cannot be saved.
+  // `enabled: false, triggers: [], chatId: null` over whatever the operator
+  // actually had configured. A form that never loaded cannot be saved.
   let puts = 0;
   globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
     if (init?.method === "PUT") { puts += 1; return new Response("{}"); }
@@ -145,52 +145,6 @@ test("Save is disabled until the settings have loaded, so a failed GET cannot ov
   save.click();
   await settle();
   expect(puts).toBe(0);
-});
-
-test("clearing one half of quiet hours is refused, not silently applied as 'no quiet hours'", async () => {
-  // Clearing "end" to retype it and hitting Save used to delete the whole
-  // configured window with no message, because the patch read
-  // `quietStart && quietEnd ? {…} : null`. Both fields empty remains a
-  // legitimate "no quiet hours"; exactly one filled is an operator error and
-  // has to say so.
-  let putBody: string | null = null;
-  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-    if (init?.method === "PUT") {
-      putBody = String(init.body);
-      return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
-    }
-    return new Response(
-      JSON.stringify({ ...view(), notify: { ...view().notify, quietHours: { start: "22:00", end: "08:00" } } }),
-      { headers: { "content-type": "application/json" } },
-    );
-  }) as unknown as typeof fetch;
-
-  const host = await render(<Settings onBack={() => {}} />);
-  await settle();
-  await settle();
-
-  const end = host.querySelector('input[name="quietEnd"]') as HTMLInputElement;
-  expect(end.value).toBe("08:00");
-  typeInto(end, "");
-  await settle();
-
-  buttonByText(host, "Save").click();
-  await settle();
-  await settle();
-
-  expect(host.textContent?.toLowerCase()).toContain("quiet hours needs both");
-  expect(putBody).toBe(null);
-
-  // Both empty is still a legal save — this is a validation error, not a
-  // permanent lock on the form.
-  const start = host.querySelector('input[name="quietStart"]') as HTMLInputElement;
-  typeInto(start, "");
-  await settle();
-  buttonByText(host, "Save").click();
-  await settle();
-  await settle();
-  expect(putBody).not.toBe(null);
-  expect(JSON.parse(putBody!).notify.quietHours).toBe(null);
 });
 
 test("publicUrl and cooldownMs have real inputs, and both reach the PUT body", async () => {

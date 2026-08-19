@@ -3,7 +3,7 @@ import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
 import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
-import { isConfigured, type SettingsStore } from "@server/settings/store";
+import { isConfigured, MAX_SETTLE_MS, type SettingsStore } from "@server/settings/store";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { EMBEDDED } from "@server/embedded";
@@ -173,11 +173,6 @@ async function strictJsonBody(
   return { ok: true, body: raw as Record<string, unknown> };
 }
 
-/** "HH:MM", 24-hour, zero-padded — the one shape `quietHours.start`/`.end` may take. */
-function isHHMM(v: unknown): v is string {
-  return typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
-}
-
 function isNullableString(v: unknown): v is string | null {
   return v === null || typeof v === "string";
 }
@@ -244,18 +239,23 @@ function validateSettingsPatch(
       out.triggers = triggers as NotifyTrigger[];
     }
 
-    if ("quietHours" in nn) {
-      const qh = nn.quietHours;
-      if (qh !== null) {
-        if (typeof qh !== "object") {
-          return { ok: false, detail: "notify.quietHours must be null or {start, end}" };
-        }
-        const q = qh as Record<string, unknown>;
-        if (!isHHMM(q.start) || !isHHMM(q.end)) {
-          return { ok: false, detail: `notify.quietHours.start and .end must be "HH:MM" 24-hour` };
-        }
+    if ("settleMs" in nn) {
+      const raw = nn.settleMs;
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        return { ok: false, detail: "notify.settleMs must be an object of {blocked, done}" };
       }
-      out.quietHours = qh as { start: string; end: string } | null;
+      const sm = raw as Record<string, unknown>;
+      const out2: Record<string, number> = {};
+      for (const k of ["blocked", "done"] as const) {
+        const v = sm[k];
+        // Both keys required: a partial object would leave the other trigger's
+        // window undefined once merged, and undefined fires immediately.
+        if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > MAX_SETTLE_MS) {
+          return { ok: false, detail: `notify.settleMs.${k} must be a number between 0 and ${MAX_SETTLE_MS}` };
+        }
+        out2[k] = v;
+      }
+      out.settleMs = out2 as Record<NotifyTrigger, number>;
     }
 
     if ("cooldownMs" in nn) {

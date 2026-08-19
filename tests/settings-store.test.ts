@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, open, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SettingsStore } from "@server/settings/store";
+import { migrate, SettingsStore } from "@server/settings/store";
 
 const dir = async () => mkdtemp(join(tmpdir(), "paddock-settings-"));
 
@@ -133,4 +133,70 @@ test("no .tmp file is left behind after a save", async () => {
   await s.load();
   await s.patch({ telegram: { token: "123456:ABCDEF" } });
   expect((await readdir(d)).sort()).toEqual(["settings.json"]);
+});
+
+test("a v1 file gains settleMs defaults instead of loading without them", async () => {
+  // A shallow `{...defaults(), ...parsed}` merge replaces `notify` wholesale,
+  // so a v1 file would arrive with no settleMs at all — and `setTimeout`
+  // coerces undefined to 0, silently restoring the edge-firing bug this
+  // whole change exists to remove. A missing window must never mean "fire
+  // immediately".
+  const d = await dir();
+  await writeFile(join(d, "settings.json"), JSON.stringify({
+    version: 1,
+    telegram: { token: "1:A", chatId: "555" },
+    notify: { enabled: true, triggers: ["blocked"], quietHours: { start: "22:00", end: "08:00" }, cooldownMs: 60_000 },
+    publicUrl: null,
+  }));
+  const s = new SettingsStore(d, {});
+  await s.load();
+  const cur = s.current();
+  expect(cur.version).toBe(2);
+  expect(cur.notify.settleMs).toEqual({ blocked: 5_000, done: 10_000 });
+  expect(cur.notify.mutedUntil).toBeNull();
+  expect("quietHours" in cur.notify).toBe(false);
+  // The operator's real settings survive the migration.
+  expect(cur.telegram.token).toBe("1:A");
+  expect(cur.notify.enabled).toBe(true);
+});
+
+test("migrating a v1 file rewrites it once, so disk matches the code that reads it", async () => {
+  const d = await dir();
+  await writeFile(join(d, "settings.json"), JSON.stringify({ version: 1, notify: { cooldownMs: 5_000 } }));
+  const s = new SettingsStore(d, {});
+  await s.load();
+  const onDisk = JSON.parse(await readFile(join(d, "settings.json"), "utf8"));
+  expect(onDisk.version).toBe(2);
+  expect(onDisk.notify.settleMs.done).toBe(10_000);
+  expect(onDisk.notify.cooldownMs).toBe(5_000);
+});
+
+test("a discarded quiet-hours window is named, never dropped silently", async () => {
+  const logged: string[] = [];
+  migrate({ version: 1, notify: { quietHours: { start: "22:00", end: "08:00" } } }, (m) => logged.push(m));
+  expect(logged.join(" ")).toContain("22:00");
+  expect(logged.join(" ")).toContain("Mute");
+});
+
+test("a v2 file is not rewritten on load", async () => {
+  // Persisting on every load would rewrite settings.json — and the token
+  // inside it — on every boot, for no reason.
+  const d = await dir();
+  const path = join(d, "settings.json");
+  await writeFile(path, JSON.stringify({
+    version: 2, telegram: { token: null, chatId: null },
+    notify: { enabled: false, triggers: ["blocked"], settleMs: { blocked: 5_000, done: 10_000 },
+              mutedUntil: null, cooldownMs: 60_000 },
+    publicUrl: null,
+  }));
+  const before = (await stat(path)).mtimeMs;
+  const s = new SettingsStore(d, {});
+  await s.load();
+  expect((await stat(path)).mtimeMs).toBe(before);
+});
+
+test("view() reports the server's own clock so the UI can render a countdown", async () => {
+  const s = new SettingsStore(await dir(), {});
+  await s.load();
+  expect(s.view(1_700_000_000_000).serverNow).toBe(1_700_000_000_000);
 });

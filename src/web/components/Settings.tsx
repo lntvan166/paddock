@@ -33,8 +33,6 @@ export function Settings({ onBack }: SettingsProps) {
   const [chatId, setChatId] = useState("");
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const [triggers, setTriggers] = useState<NotifyTrigger[]>([]);
-  const [quietStart, setQuietStart] = useState("");
-  const [quietEnd, setQuietEnd] = useState("");
   const [cooldownMs, setCooldownMs] = useState(60_000);
   const [publicUrl, setPublicUrl] = useState("");
 
@@ -71,8 +69,6 @@ export function Settings({ onBack }: SettingsProps) {
         setChatId(body.telegram.chatId ?? "");
         setNotifyEnabled(body.notify.enabled);
         setTriggers(body.notify.triggers);
-        setQuietStart(body.notify.quietHours?.start ?? "");
-        setQuietEnd(body.notify.quietHours?.end ?? "");
         setCooldownMs(body.notify.cooldownMs);
         setPublicUrl(body.publicUrl ?? "");
       } catch (e) {
@@ -104,19 +100,6 @@ export function Settings({ onBack }: SettingsProps) {
   }
 
   async function save() {
-    // Half a quiet-hours window is an ERROR, not an instruction to delete the
-    // window. `quietStart && quietEnd ? {…} : null` meant that clearing "end"
-    // to retype it and hitting Save silently destroyed the configured window
-    // and reported success — a swallowed failure in a codebase whose central
-    // rule is that errors are surfaced. Both empty stays legitimate: that is
-    // "no quiet hours".
-    if ((quietStart === "") !== (quietEnd === "")) {
-      setSaveError(
-        "Quiet hours needs both a start and an end. Clear both to turn quiet hours off.",
-      );
-      return;
-    }
-
     setSaving(true);
     setSaveError(null);
     const patch: SettingsPatch = {
@@ -124,7 +107,6 @@ export function Settings({ onBack }: SettingsProps) {
       notify: {
         enabled: notifyEnabled,
         triggers,
-        quietHours: quietStart && quietEnd ? { start: quietStart, end: quietEnd } : null,
         cooldownMs,
       },
       publicUrl: publicUrl.trim() || null,
@@ -323,27 +305,6 @@ export function Settings({ onBack }: SettingsProps) {
           </label>
         </fieldset>
 
-        <div className="settings-field-row">
-          <label className="settings-field">
-            <span>Quiet hours start</span>
-            <input
-              type="time"
-              name="quietStart"
-              value={quietStart}
-              onChange={(e) => setQuietStart(e.target.value)}
-            />
-          </label>
-          <label className="settings-field">
-            <span>Quiet hours end</span>
-            <input
-              type="time"
-              name="quietEnd"
-              value={quietEnd}
-              onChange={(e) => setQuietEnd(e.target.value)}
-            />
-          </label>
-        </div>
-
         <label className="settings-field">
           <span>Public URL</span>
           {/* Without this, every notification ships with no link — which the
@@ -391,10 +352,10 @@ export function Settings({ onBack }: SettingsProps) {
           {/* Disabled until the GET has landed. Every field in this section
               starts at an empty/false/60000 placeholder and is only filled in
               by that response — so if it fails, `loadError` is shown but Save
-              would PUT `enabled: false, triggers: [], quietHours: null,
-              chatId: null` straight over whatever the operator had
-              configured, destroying the token's companion settings to fix
-              nothing. A form that never loaded cannot be saved. */}
+              would PUT `enabled: false, triggers: [], chatId: null` straight
+              over whatever the operator had configured, destroying the
+              token's companion settings to fix nothing. A form that never
+              loaded cannot be saved. */}
           <button type="button" onClick={() => void save()} disabled={saving || view === null}>
             {saving ? "Saving…" : "Save"}
           </button>
