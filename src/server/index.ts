@@ -101,7 +101,7 @@ if (command === "stop") {
 // verb, and IS the thing that binds a port) and waits for that child's own
 // state file and health endpoint to confirm it is actually serving.
 if (command === "start") {
-  process.exit(await runStart({ dir: defaultConfigDir() }));
+  process.exit(await runStart({ dir: defaultConfigDir(), demo: DEMO }));
 }
 
 const socketPath =

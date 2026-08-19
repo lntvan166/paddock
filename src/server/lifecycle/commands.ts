@@ -213,6 +213,18 @@ export async function runStop(o: StopOpts): Promise<number> {
   return 0;
 }
 
+export interface ChildCommandOpts {
+  /**
+   * Forward `--demo` to the detached child. Narrow on purpose: this is not a
+   * general flag-forwarding mechanism, it is the one flag `serve` (what the
+   * child's bare re-invocation runs as) currently understands. Silently
+   * dropping it would detach a REAL, non-demo instance while the operator
+   * believed they asked for the demo one — the same shape as `paddock updte`
+   * once silently becoming `serve` instead of being refused (see cli.ts).
+   */
+  demo?: boolean;
+}
+
 /**
  * How to re-invoke this exact build, detached.
  *
@@ -221,10 +233,11 @@ export async function runStop(o: StopOpts): Promise<number> {
  * be passed on. Under `bun src/server/index.ts`, `execPath` is bun and the
  * script path IS needed.
  */
-export function childCommand(): string[] {
+export function childCommand(opts: ChildCommandOpts = {}): string[] {
   const script = Bun.argv[1];
   const compiled = script === undefined || script.startsWith("/$bunfs/");
-  return compiled ? [process.execPath] : [process.execPath, script];
+  const base = compiled ? [process.execPath] : [process.execPath, script];
+  return opts.demo ? [...base, "--demo"] : base;
 }
 
 export interface StartOpts {
@@ -232,6 +245,8 @@ export interface StartOpts {
   probe?: Probe;
   log?: (line: string) => void;
   waitMs?: number;
+  /** Forwarded to the real, uninjected spawn path — see ChildCommandOpts. */
+  demo?: boolean;
   spawn?: () => { pid: number; exited: Promise<number> };
   healthCheck?: (port: number) => Promise<boolean>;
   logTail?: () => Promise<string>;
@@ -279,9 +294,21 @@ export async function runStart(o: StartOpts): Promise<number> {
       break;
     case "none":
       break;
+    default: {
+      // Exhaustiveness guard, not dead code kept out of habit: a sixth
+      // `StateCheck` variant added later, with no case added here, would
+      // otherwise fall through silently to spawning a second paddock — the
+      // single most consequential thing this function does — for a case
+      // nobody considered. `_exhaustive: never` turns that omission into a
+      // compile error instead of a silent wrong action; the throw is the
+      // runtime backstop for the (currently impossible) case this guard is
+      // bypassed some other way.
+      const _exhaustive: never = existing;
+      throw new Error(`paddock: unhandled state check: ${JSON.stringify(_exhaustive)}`);
+    }
   }
 
-  const child = o.spawn ? o.spawn() : await spawnDetached(o.dir);
+  const child = o.spawn ? o.spawn() : await spawnDetached(o.dir, { demo: o.demo });
   const deadline = Date.now() + waitMs;
   let childGone = false;
   void child.exited.then(() => { childGone = true; });
@@ -305,13 +332,16 @@ export async function runStart(o: StartOpts): Promise<number> {
   return 1;
 }
 
-async function spawnDetached(dir: string): Promise<{ pid: number; exited: Promise<number> }> {
+async function spawnDetached(
+  dir: string,
+  opts: ChildCommandOpts = {},
+): Promise<{ pid: number; exited: Promise<number> }> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
   // Truncated, not appended: an unrotated log that only grows is a slow bug,
   // and one run's output is the useful scope.
   const fh = await open(logFile(dir), "w", 0o600);
   try {
-    const p = Bun.spawn(childCommand(), {
+    const p = Bun.spawn(childCommand(opts), {
       stdio: ["ignore", fh.fd, fh.fd],
       env: process.env,
     });

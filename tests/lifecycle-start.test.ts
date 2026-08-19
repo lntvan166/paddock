@@ -16,6 +16,20 @@ test("the child command re-invokes this build, not a guess at it", () => {
   expect(cmd.some((a) => a.startsWith("/$bunfs/"))).toBe(false);
 });
 
+test("childCommand forwards --demo only when the parent was started with it", () => {
+  // `paddock start --demo` used to silently detach a REAL, non-demo instance
+  // — the flag was typed and discarded. That is the same shape as `paddock
+  // updte` once silently becoming `serve` (see cli.ts): a flag or verb typed
+  // and thrown away instead of acted on or refused. Forward it; do not
+  // refuse it — a detached demo instance is a legitimate thing to want, and
+  // this project's own screenshots depend on `--demo` being a real mode.
+  const withDemo = childCommand({ demo: true });
+  expect(withDemo).toContain("--demo");
+  const without = childCommand();
+  expect(without).not.toContain("--demo");
+  expect(childCommand({ demo: false })).not.toContain("--demo");
+});
+
 test("start refuses when one is already running, and does not spawn", async () => {
   const d = await dir();
   await writeState(d, { pid: 4242, args: "paddock", port: 8787, version: "0.4.0", startedAt: Date.now() });
@@ -112,5 +126,28 @@ test("a stale state file is cleared before spawning, not left for the poll loop 
   expect(code, "no child ever wrote state, so this must time out, not succeed").not.toBe(0);
   // The old stale file must be gone, not left in place for a future poll to
   // misread as "running".
+  await expect(readFile(stateFile(d), "utf8")).rejects.toThrow();
+});
+
+test("a mismatched state file (pid recycled) is cleared before spawning, not left for the poll loop to trip over", async () => {
+  // `mismatch` and `stale` are structurally identical in runStart — both
+  // clear the old state and fall through to spawning — but only `stale` had
+  // a test. Same proof as above, applied to the other untested arm: the
+  // recorded pid is alive but running something else now, so if the old
+  // file were left in place the poll loop could misread it. The child in
+  // this test never writes a state file of its own, so success is
+  // impossible unless the mismatched file was actually cleared.
+  const d = await dir();
+  await writeState(d, { pid: 4242, args: "paddock", port: 8787, version: "0.4.0", startedAt: Date.now() });
+  const probe: Probe = { isAlive: () => true, argsOf: () => "/usr/bin/postgres -D /var/lib/pg" };
+  const code = await runStart({
+    dir: d,
+    probe,
+    log: () => {},
+    waitMs: 300,
+    spawn: () => ({ pid: 999, exited: new Promise(() => {}) }),
+    healthCheck: async () => true,
+  });
+  expect(code, "no child ever wrote state, so this must time out, not succeed").not.toBe(0);
   await expect(readFile(stateFile(d), "utf8")).rejects.toThrow();
 });
