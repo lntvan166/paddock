@@ -34,7 +34,8 @@ walk back and look.
 - **triage** — grouped into *needs you*, *working*, *idle*, not alphabetically
 - **read** — full ANSI colour; prose reflows to the screen, tables keep their columns
 - **answer** — the agent's own option labels, and what Enter will commit before you tap it
-- **notify** — a Telegram message when an agent needs you, with quiet hours and a per-agent cooldown. [settings →](docs/settings.md)
+- **notify** — a Telegram message when an agent needs you, sent only once the
+  state has held, with mute and a per-agent cooldown. [settings →](docs/settings.md)
 - **install as an app** — Add to Home Screen gives it an icon and no browser chrome
 - **cheap to watch** — adaptive polling, and only changed lines on the wire
 

@@ -71,3 +71,42 @@ session does not silently re-litigate them.
    the desktop UI visible) rather than treat the sentence above as evidence in
    itself. The behaviour could also change upstream without anything here
    failing.
+
+10. **Settling a state instead of notifying on the change.** Notifying on a
+    state *change* was wrong in a way that only shows up against real agents:
+    a main agent that delegates goes `working → done` the moment a subagent
+    finishes, and back to `working` seconds later. Every delegated task
+    produced a "done" message that was already false when the phone buzzed.
+    The cooldown does not help — it bounds how *often* paddock speaks, not
+    whether what it says is still true.
+
+    The notifier now arms a per-trigger timer and the next transition cancels
+    it, so a message is only sent about a state that has held. `blocked`
+    settles in 5s because a blocked agent is waiting on a human; `done`
+    settles in 10s because `done` is the state that lies.
+
+    Two follow-on effects worth knowing. `#lastSeen` split into `#lastSeen`
+    plus `#lastNotified`, which deleted the optimistic-write-and-revert dance
+    that one map doing two jobs had required. And the retry became explicit
+    and bounded: v2 "retried on the next delta", which for a finished agent
+    can never happen, because a quiet `done` agent produces no further
+    deltas — so a failed finish notification was simply lost.
+
+11. **Mute until, rather than quiet hours.** Quiet hours was one `HH:MM`
+    range in *server local* time, with no timezone field and no way to
+    express a second window. An absolute epoch-ms instant cannot be misread
+    by a phone in one zone and a server in another, and it is self-describing
+    in the UI: "muted until 07:14" needs no explanation, where "22:00–08:00"
+    silently invites the question *whose 22:00*.
+
+    It also matches when silence is actually wanted — now, because the
+    operator is going to bed — rather than on a schedule set once and
+    forgotten.
+
+    Mute is `POST /api/settings/mute` taking a **duration**, not a patch
+    field taking an instant, for two reasons: the server stamps the time so a
+    skewed phone clock cannot set a wrong one, and mute applies immediately
+    while every other field waits for Save. A separate endpoint makes that
+    structural rather than a convention. There is no indefinite mute;
+    `notify.enabled` is that control, and two controls for one state is how
+    an operator ends up muted without knowing why.

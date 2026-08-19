@@ -63,6 +63,40 @@ surprise.
   re-exports them), because `server/notify/notifier.ts` needs the same format
   to build a Telegram message's deep link and the dependency rule forbids
   server code importing from `web/`.
+- **A Telegram tap cannot open the iOS PWA, and only Web Push can.**
+  Investigated in `docs/design/2026-08-19-notifications-and-settings-design.md`
+  §9. iOS opens `https://` links in Safari even when the URL is inside an
+  installed web app's scope: there are no `url_handlers`, no protocol handlers
+  in Safari, and Universal Links need a native app. Telegram's own `openLink`
+  on iOS forces the external browser, making it worse rather than better.
+
+  There is exactly one documented exception: a **Web Push notification from
+  the installed PWA opens the PWA** (iOS 16.4+). Two consequences. Safari
+  keeps a storage container separate from the Home Screen app, so a Telegram
+  tap can mean re-doing a Cloudflare Access login already held in the PWA.
+  And the Web Push entry above was retired on the reasoning that Telegram
+  "works today on any device" — still true, and this is the evidence on the
+  other side of that trade, because push is the only mechanism that lands a
+  tap *inside* the app on iOS. What shipped instead is an inline "Open in
+  paddock" keyboard button, which is a better tap target and still lands in
+  Safari.
+
+- **Spawning an agent from paddock.** Feasible, measured against herdr
+  protocol 19, and deliberately unbuilt — see
+  `docs/design/2026-08-19-notifications-and-settings-design.md` §10 for the
+  full findings. In short: `tab.create` takes
+  `{workspace_id?, cwd?, label?, env?, focus}` and `agent.start` takes
+  `{name, kind, pane_id, args?, timeout_ms?}` with `kind` a fixed enum
+  including `claude`, `codex`, `gemini`, `pi`. Three constraints for whoever
+  picks it up. `agent.start` blocks on readiness for up to 30s by default
+  while `socket.ts` sets `HERDR_TIMEOUT_MS = 10_000`, so it needs a per-call
+  timeout override. `tab.create`'s result shape is not in
+  `src/shared/herdr-api.d.ts`, and this repo has already shipped a bug from
+  assuming one (`result.text` versus `result.read.text`), so it needs
+  `scripts/gen-herdr-types.ts` extended rather than a hand-written literal.
+  And it would be paddock's first **creating** action — every action today
+  drives an agent that already exists — which deserves its own decisions
+  about permitted kinds and where `cwd` may point.
 
 ## Known v1 gaps
 
@@ -192,6 +226,39 @@ surprise.
   deliberately, so a demo run cannot fire real Telegram messages about
   synthetic agents — so whatever closes this gap has to distinguish the two
   call sites rather than forbid the shape.
+
+- **Three component tests emit React `act()` warnings that a green
+  `make test` doesn't surface.** `tests/settings-view.test.tsx`,
+  `tests/prefs-applied.test.tsx`, and `tests/settings-save-bar.test.tsx` (new
+  on this branch, for the sticky save bar) each render `<Settings>` and print
+  `Warning: An update to Settings inside a test was not wrapped in act(...)`.
+  Measured against a full `make test` run: 9, 3, and 20 occurrences
+  respectively. Not a regression in the two pre-existing files: at the commit
+  this branch forked from, those same two files together already produced 16
+  (13 from `settings-view`, 3 from `prefs-applied`) — this branch's own edits
+  to `settings-view.test.tsx` in fact lowered that to 9.
+  `settings-save-bar.test.tsx` is new, and inherits the same pattern rather
+  than avoiding it.
+
+  `tests/support/dom.ts` already sets `IS_REACT_ACT_ENVIRONMENT`, so a missing
+  global is not the cause. `tests/support/render.tsx`'s `render()` wraps only
+  the synchronous `root.render(node)` call in `act()`, and `settle()` flushes
+  exactly one queued microtask per call, inside `act()`. A stubbed `fetch`
+  response takes more microtask turns than that to fully resolve — the mock's
+  own async function, then `Response.json()`'s parse — so a click followed by
+  a fixed one or two `settle()` calls does not always drain the chain before
+  the test's last `act()` closes; the trailing `setState` fires after, against
+  whatever is still mounted. `settings-save-bar.test.tsx` drives the most
+  clicks per test (save, mute, unmute, the test-message button) and produces
+  the most warnings; `prefs-applied.test.tsx` barely touches `<Settings>` and
+  produces the fewest.
+
+  Not chased down here: the warnings do not fail the suite, and fixing test
+  harness timing is out of scope for a docs task. Closing it means replacing
+  the fixed-count `settle()` with one that loops flushing microtasks until the
+  mocked `fetch` calls are provably settled, rather than guessing a number of
+  calls — a change to `tests/support/render.tsx` that every file using
+  `stubFetch` would inherit, not a per-file fix.
 
 ## Known v3 gaps
 

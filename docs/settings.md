@@ -16,9 +16,17 @@ is whether the connection is metered, not which precise interval is optimal.
 
 ## All devices
 
-Telegram token and chat id, the notification switch, which states fire one
-(`blocked`, `done`), quiet hours, the per-agent cooldown, and the public URL
-used for a notification's deep link.
+Telegram token and chat id, the notification switch, the per-agent cooldown,
+and the public URL used for a notification's deep link, plus:
+
+- **notification triggers** (`blocked`, `done`) and a **settle window** per
+  trigger — how long the state must hold before a message is sent. `blocked`
+  defaults to 5s and `done` to 10s. 0 sends on the state change itself.
+
+- **mute** — silence every notification for 1, 4 or 8 hours. Stored as an
+  absolute instant stamped by the server, so it has no timezone to be misread
+  by a phone in one zone and a dashboard in another. There is no indefinite
+  mute: the Notifications switch is already that control.
 
 These live on the paddock **process**, one copy for every device that connects
 to it, because **sending happens on the server**: turning notifications off
@@ -61,8 +69,19 @@ ignoring:
   does not repeat
 - **first sight after boot is silent**, or restarting paddock would ping once
   per already-blocked agent
-- **quiet hours drop rather than queue** — a pile delivered at 08:00 describes
-  agents unblocked five hours earlier
+- **a settle window is not a delay, it is a confirmation.** A main agent that
+  delegates goes `working → done` the instant a subagent returns, then back to
+  `working` when it reviews the result. Notifying on that change produces a
+  message that is true when sent and stale when read. Waiting for the state to
+  hold means the message describes something that is still the case.
+
+  10s is a starting value. If false finishes persist, raise `done` to 30–60s —
+  a main agent that spends 20s composing a review before its status flips back
+  is inside 10s but outside nothing longer.
+
+- **mute drops rather than queues** — a pile delivered when mute lifts
+  describes agents unblocked hours earlier, which is noise wearing the costume
+  of signal.
 - a **failed send does not consume the transition**, so the next update
   retries; the per-agent cooldown bounds that, and is floored at 1 s so it
   cannot be disarmed
