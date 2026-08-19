@@ -52,9 +52,31 @@ Three facts established by probe, because each one shapes the design:
   `comm=paddock`, but a dev run reports `comm=bun` — the script name never
   appears. Verification must use the full argument string, which carries the
   identifying information in both cases.
-- **`ps -p <pid> -o args=` works on both Linux and macOS**, unlike
-  `/proc/<pid>/exe`, which is Linux-only. It is the portable way to ask what a
-  PID actually is.
+- **`ps -p <pid> -o args=` is NOT portable enough on its own.** It works on a
+  normal Linux box and on macOS, and it fails in the image this project ships:
+  `oven/bun:1-alpine` has busybox `ps`, which supports neither `-p` nor a
+  selectable `args` column. `ps -p 1 -o args=` there exits 1 with a usage
+  message. Relying on it alone would have made `stop` refuse *every* time
+  inside Docker, because the identity string would be empty at both ends and
+  the mismatch branch would fire.
+- **`/proc/<pid>/cmdline` is the answer on Linux, and matches `ps` exactly.**
+  Measured on the same compiled binary: `/proc` gave
+  `"./bin/probe start --demo"` and `ps` gave `"./bin/probe start --demo"` —
+  byte-identical. It is readable inside `oven/bun:1-alpine`, needs no
+  subprocess, and does not exist on macOS. So identity is read from `/proc`
+  when it is there and from `ps` when it is not.
+- **That string cannot be reconstructed from inside the process.** Measured on
+  a compiled binary invoked as `./bin/probe start --demo`: `ps` reports
+  `"./bin/probe start --demo"` — the invocation *as typed*, relative path and
+  all — while `Bun.argv` reports `["bun", "/$bunfs/root/probe", "start",
+  "--demo"]` and `process.execPath` reports the resolved absolute path. No
+  combination of the two yields what `ps` will later say.
+
+  So the running process must capture **its own** `ps -p $$ -o args=` at
+  startup and store that. `stop` then compares like with like: the same command
+  asked about the same PID, once at start and once at stop. Building the string
+  from `Bun.argv` would produce a value that never matches, and the identity
+  check would reject every legitimate stop.
 
 ## Command surface
 
@@ -89,9 +111,14 @@ instances possible.
 It is JSON, not a bare PID, because a bare PID cannot be verified:
 
 ```json
-{ "pid": 12345, "args": "/home/…/.local/bin/paddock start", "port": 8787,
+{ "pid": 12345, "args": "paddock start", "port": 8787,
   "version": "0.4.0", "startedAt": 1787000000000 }
 ```
+
+`args` is whatever `ps` said about this process at startup, verbatim — see the
+measurement above. It is not derived from `Bun.argv`, and its exact form
+depends on how the operator invoked paddock, which is precisely why it
+identifies the process.
 
 Written `0600` by the same atomic tmp-then-rename path `settings.json` uses.
 
