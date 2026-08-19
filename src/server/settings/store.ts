@@ -86,6 +86,15 @@ export function isTokenShape(v: string): boolean {
   return v.length <= 200 && /^[A-Za-z0-9:_-]+$/.test(v);
 }
 
+/**
+ * The one rejection message for a shape-invalid token, shared by both call
+ * sites (`validateSettingsPatch` and the test route). Names the rule, never
+ * the value. Hoisted so the two 400 responses cannot drift from each other
+ * or from `isTokenShape` itself if the charset or length bound ever changes.
+ */
+export const TOKEN_SHAPE_DETAIL =
+  "telegram.token may contain only letters, digits, ':', '_' and '-', max 200 characters";
+
 const obj = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
