@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 import {
-  RATE_MS, readPrefs, themeAttr, writePref,
-  type Prefs, type RatePref, type ThemePref,
+  readPrefs, themeAttr, writePref,
+  type Prefs, type ThemePref,
 } from "@web/prefs";
-
-const RATE_LABELS: Record<RatePref, string> = { live: "Live", balanced: "Balanced", frugal: "Frugal" };
+import { DeviceSection } from "@web/components/settings/DeviceSection";
+import { TelegramSection } from "@web/components/settings/TelegramSection";
+import { NotifySection } from "@web/components/settings/NotifySection";
 
 interface SettingsProps {
   onBack: () => void;
@@ -172,72 +173,7 @@ export function Settings({ onBack }: SettingsProps) {
       {view?.error && <p className="settings-banner">{view.error}</p>}
       {loadError && <p className="settings-banner">{loadError}</p>}
 
-      <section className="settings-section">
-        <h2>This device</h2>
-        <p className="settings-hint">
-          Stored in this browser only. Each device you open paddock on keeps its own copy.
-        </p>
-
-        <label className="settings-field">
-          <span>Theme</span>
-          <select
-            name="theme"
-            value={prefs.theme}
-            onChange={(e) => setPref("theme", e.target.value as ThemePref)}
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </label>
-
-        <label className="settings-field">
-          <span>Refresh rate</span>
-          <select
-            value={prefs.rate}
-            onChange={(e) => setPref("rate", e.target.value as RatePref)}
-          >
-            {(Object.keys(RATE_MS) as RatePref[]).map((r) => (
-              <option key={r} value={r}>{RATE_LABELS[r]}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="settings-field">
-          <span>Font size</span>
-          {/* Empty means "automatic", and that is the DEFAULT, not a reset
-              button: styles.css sizes the pane with
-              `clamp(0.62rem, 2.3vw, 0.78rem)` behind
-              `var(--term-font-px, …)`, so leaving this blank is what keeps
-              the responsive sizing in charge. An empty string must therefore
-              write `null` (which removes the key) rather than `Number("")`,
-              i.e. 0. */}
-          <input
-            type="number"
-            name="fontPx"
-            min={10}
-            max={22}
-            placeholder="Automatic"
-            value={prefs.fontPx ?? ""}
-            onChange={(e) =>
-              setPref("fontPx", e.target.value === "" ? null : Number(e.target.value))
-            }
-          />
-          <span className="settings-hint-inline">
-            Leave blank to size the terminal to the screen.
-          </span>
-        </label>
-
-        <label className="settings-field settings-field-row">
-          <span>Wrap long lines</span>
-          <input
-            type="checkbox"
-            name="wrap"
-            checked={prefs.wrap}
-            onChange={(e) => setPref("wrap", e.target.checked)}
-          />
-        </label>
-      </section>
+      <DeviceSection prefs={prefs} setPref={setPref} />
 
       <section className="settings-section">
         <h2>All devices</h2>
@@ -245,106 +181,27 @@ export function Settings({ onBack }: SettingsProps) {
           These are server settings and affect every device, not just this one.
         </p>
 
-        <label className="settings-field">
-          <span>Telegram token</span>
-          <input
-            type="password"
-            name="token"
-            value={token}
-            autoComplete="off"
-            placeholder={tokenPlaceholder}
-            onChange={(e) => setToken(e.target.value)}
-          />
-          {/* The placeholder attribute alone is not enough: it never shows
-              while the field has focus, and a placeholder is not something
-              an operator can screenshot-search or a test can rely on being
-              painted. This status line is the same string, rendered as
-              actual text. */}
-          <span className="settings-token-status">{tokenPlaceholder}</span>
-        </label>
+        <TelegramSection
+          token={token}
+          setToken={setToken}
+          chatId={chatId}
+          setChatId={setChatId}
+          tokenPlaceholder={tokenPlaceholder}
+          testing={testing}
+          testResult={testResult}
+          onTest={() => void sendTest()}
+        />
 
-        <label className="settings-field">
-          <span>Chat id</span>
-          <input
-            type="text"
-            name="chatId"
-            value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
-          />
-        </label>
-
-        <label className="settings-field settings-field-row">
-          <span>Notifications</span>
-          <input
-            type="checkbox"
-            name="notifyEnabled"
-            checked={notifyEnabled}
-            onChange={(e) => setNotifyEnabled(e.target.checked)}
-          />
-        </label>
-
-        <fieldset className="settings-triggers">
-          <legend>Notify on</legend>
-          <label>
-            <input
-              type="checkbox"
-              name="trigger-blocked"
-              checked={triggers.includes("blocked")}
-              onChange={() => toggleTrigger("blocked")}
-            />
-            Blocked
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="trigger-done"
-              checked={triggers.includes("done")}
-              onChange={() => toggleTrigger("done")}
-            />
-            Done
-          </label>
-        </fieldset>
-
-        <label className="settings-field">
-          <span>Public URL</span>
-          {/* Without this, every notification ships with no link — which the
-              design calls the whole reason the setting exists. paddock binds
-              loopback and genuinely cannot discover the hostname it is
-              reached by, so nothing but the operator can supply it. Unset is
-              legal; the message is then text only. */}
-          <input
-            type="url"
-            name="publicUrl"
-            inputMode="url"
-            autoComplete="off"
-            placeholder="https://paddock.example.com"
-            value={publicUrl}
-            onChange={(e) => setPublicUrl(e.target.value)}
-          />
-          <span className="settings-hint-inline">
-            Where you reach paddock from your phone. Used to build the link in each message.
-          </span>
-        </label>
-
-        <label className="settings-field">
-          <span>Cooldown (ms)</span>
-          {/* `min` matches the server's own floor (routes.ts MIN_COOLDOWN_MS):
-              0 disarms the per-agent rate limit and reintroduces the
-              send-per-delta hot loop against a failing Telegram. The server
-              rejects it either way — this just says so before the round
-              trip. */}
-          <input
-            type="number"
-            name="cooldownMs"
-            min={1000}
-            step={1000}
-            value={cooldownMs}
-            onChange={(e) => setCooldownMs(Number(e.target.value))}
-          />
-          <span className="settings-hint-inline">
-            Shortest gap between two messages about the same agent.
-          </span>
-        </label>
+        <NotifySection
+          notifyEnabled={notifyEnabled}
+          setNotifyEnabled={setNotifyEnabled}
+          triggers={triggers}
+          toggleTrigger={toggleTrigger}
+          cooldownMs={cooldownMs}
+          setCooldownMs={setCooldownMs}
+          publicUrl={publicUrl}
+          setPublicUrl={setPublicUrl}
+        />
 
         {saveError && <p className="settings-banner">{saveError}</p>}
 
@@ -359,16 +216,7 @@ export function Settings({ onBack }: SettingsProps) {
           <button type="button" onClick={() => void save()} disabled={saving || view === null}>
             {saving ? "Saving…" : "Save"}
           </button>
-          <button type="button" onClick={() => void sendTest()} disabled={testing}>
-            {testing ? "Sending…" : "Send test message"}
-          </button>
         </div>
-
-        {testResult && (
-          <p className={testResult.ok ? "settings-ok" : "settings-banner"}>
-            {testResult.ok ? "Test message sent." : testResult.detail}
-          </p>
-        )}
       </section>
     </main>
   );
