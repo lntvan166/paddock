@@ -111,44 +111,61 @@ test("the reserved verbs still exit 2 and still point at the roadmap", () => {
   }
 });
 
-test("start and stop refuse rather than fall through to a live dashboard", () => {
-  // `start` and `stop` are recognised Command values (cli.test.ts's "the
-  // three verbs parse" in lifecycle-status.test.ts), but index.ts does not
-  // dispatch either to real behaviour yet — that lands in the next two
-  // commits. Before the gate this test guards existed, both fell through
-  // every `if` in index.ts all the way to Bun.serve: `paddock stop`, typed
-  // to STOP a detached instance, instead started a SECOND live one right
-  // next to it — the literal opposite of the verb, and worse than doing
-  // nothing.
-  //
-  // A bogus, guaranteed-nonexistent herdr socket path plus no `--demo` means
-  // a regression back to the fall-through would try the real herdr-connect
-  // path and fail fast (ENOENT), not hang — but `timeout` is a safety net
-  // regardless: a real serving instance keeps the event loop alive forever,
-  // and an un-timed spawnSync would hang this test suite rather than fail
-  // it.
-  for (const verb of ["start", "stop"]) {
-    const r = Bun.spawnSync(["bun", "src/server/index.ts", verb], {
-      env: {
-        ...process.env,
-        PADDOCK_NO_UPDATE_CHECK: "1",
-        PADDOCK_CONFIG_DIR: CONFIG,
-        PADDOCK_HERDR_SOCKET: join(CONFIG, "no-such-herdr.sock"),
-      },
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 5000,
-      killSignal: "SIGKILL",
-    });
-    const out = new TextDecoder().decode(r.stdout);
-    const err = new TextDecoder().decode(r.stderr);
-    expect(r.exitedDueToTimeout, `paddock ${verb} never exited on its own — it is serving`)
-      .not.toBe(true);
-    expect(r.exitCode, `paddock ${verb}`).not.toBe(0);
-    expect(out, `paddock ${verb} printed the listening line — it bound a port`)
-      .not.toContain("paddock listening");
-    expect(err).toContain("not implemented");
-  }
+// A bogus, guaranteed-nonexistent herdr socket path plus no `--demo` means a
+// regression back to the old fall-through would try the real herdr-connect
+// path and fail fast (ENOENT), not hang — but `timeout` is a safety net
+// regardless: a real serving instance keeps the event loop alive forever, and
+// an un-timed spawnSync would hang this test suite rather than fail it.
+function runVerb(verb: string, extraArgs: string[] = []) {
+  const r = Bun.spawnSync(["bun", "src/server/index.ts", verb, ...extraArgs], {
+    env: {
+      ...process.env,
+      PADDOCK_NO_UPDATE_CHECK: "1",
+      PADDOCK_CONFIG_DIR: CONFIG,
+      PADDOCK_HERDR_SOCKET: join(CONFIG, "no-such-herdr.sock"),
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 5000,
+    killSignal: "SIGKILL",
+  });
+  return {
+    timedOut: r.exitedDueToTimeout,
+    code: r.exitCode,
+    out: new TextDecoder().decode(r.stdout),
+    err: new TextDecoder().decode(r.stderr),
+  };
+}
+
+test("start refuses rather than fall through to a live dashboard", () => {
+  // `start` is a recognised Command value (see lifecycle-status.test.ts's
+  // "the three verbs parse"), but index.ts does not dispatch it to real
+  // behaviour yet — that lands in Task 5. Before the gate this test guards
+  // existed, it fell through every `if` in index.ts all the way to
+  // Bun.serve: `paddock start` silently became a foreground `serve` rather
+  // than the detach-and-return the verb promises.
+  const r = runVerb("start");
+  expect(r.timedOut, "paddock start never exited on its own — it is serving").not.toBe(true);
+  expect(r.code, "paddock start").not.toBe(0);
+  expect(r.out, "paddock start printed the listening line — it bound a port")
+    .not.toContain("paddock listening");
+  expect(r.err).toContain("not implemented");
+});
+
+test("stop never binds a port or opens a herdr socket, whether or not anything is running", () => {
+  // `stop` is now dispatched to real behaviour (runStop, tested in
+  // lifecycle-stop.test.ts), so it legitimately exits 0 when nothing is
+  // running — the "not implemented" assertion no longer applies to it. What
+  // must remain true regardless of outcome: `stop` answers using only the
+  // state file and a signal-0 probe, so it must never bind a port or reach
+  // for the (bogus) herdr socket above.
+  const r = runVerb("stop");
+  expect(r.timedOut, "paddock stop never exited on its own — it is serving").not.toBe(true);
+  expect(r.out, "paddock stop printed the listening line — it bound a port")
+    .not.toContain("paddock listening");
+  // Nothing was started in this CONFIG dir, so this is the legitimate
+  // "not running" case: exit 0, not an error.
+  expect(r.code, "paddock stop with nothing running").toBe(0);
 });
 
 test("--version still works with no verb, which is what the release smoke step runs", () => {

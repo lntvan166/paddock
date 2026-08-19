@@ -18,7 +18,7 @@ import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { capturedArgs, removeState, writeState } from "@server/lifecycle/state";
-import { runStatus } from "@server/lifecycle/commands";
+import { runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, USAGE } from "@server/cli";
@@ -40,17 +40,16 @@ if (command === "agent" || command === "hub") {
   process.exit(2);
 }
 
-// TEMPORARY, for this branch only: `start` and `stop` are recognised Command
-// values (see cli.ts) so their parsing can be tested ahead of their dispatch,
-// but neither has a real implementation yet — that lands in the next two
-// commits. Without this gate they fell through every `if` below, all the way
-// to Bun.serve: `paddock stop`, typed to STOP a detached instance, instead
-// started a second live dashboard right next to it. That is not "not yet
-// done", it is the opposite of the verb, so refuse loudly rather than guess.
-// Each of the next two commits deletes this branch and replaces it with a
-// real `runStop`/`runStart` dispatch, in the same spot, the same way
-// `update` and `status` are wired in below.
-if (command === "start" || command === "stop") {
+// TEMPORARY, for this branch only: `start` is a recognised Command value (see
+// cli.ts) so its parsing can be tested ahead of its dispatch, but it has no
+// real implementation yet — that lands in Task 5. Without this gate it fell
+// through every `if` below, all the way to Bun.serve: `paddock start`
+// silently became a foreground `serve`, not the detach-and-return the verb
+// promises. That is not "not yet done", it is a different command, so refuse
+// loudly rather than guess. Task 5 deletes this branch and replaces it with a
+// real `runStart` dispatch, in the same spot, the same way `update`, `status`
+// and `stop` are wired in below.
+if (command === "start") {
   console.error(`paddock ${command}: not implemented yet on this branch`);
   process.exit(2);
 }
@@ -101,6 +100,13 @@ if (command === "update") {
 // question that only needs the state file and a signal-0 probe.
 if (command === "status") {
   process.exit(await runStatus({ dir: defaultConfigDir() }));
+}
+
+// Must run before any server setup below, same reasoning as `update` and
+// `status` above: `stop` should not open a herdr socket or bind a port just
+// to signal a pid it reads from the state file.
+if (command === "stop") {
+  process.exit(await runStop({ dir: defaultConfigDir(), force: flags.has("--force") }));
 }
 
 const socketPath =
