@@ -668,6 +668,27 @@ body {
   min-height: 2.75rem;
 }
 
+.settings-mute {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+  color: var(--fg);
+}
+
+.settings-mute button { min-height: 2.75rem; padding-inline: 1rem; }
+
+.settings-settle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+}
+
+.settings-settle input { width: 4rem; min-height: 2.75rem; }
+
 .settings-banner {
   margin: 0 0 0.85rem;
   padding: 0.5rem 0.65rem;

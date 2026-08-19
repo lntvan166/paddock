@@ -87,3 +87,7 @@ test("the toast does not animate under reduced motion", () => {
   const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
   expect(reduced).toContain(".settings-toast");
 });
+
+test("the mute buttons are full touch targets", () => {
+  expect(declaration(".settings-mute button", "min-height")).toBe(TOUCH_TARGET);
+});

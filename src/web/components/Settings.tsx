@@ -38,6 +38,13 @@ export function Settings({ onBack }: SettingsProps) {
   const [triggers, setTriggers] = useState<NotifyTrigger[]>([]);
   const [cooldownMs, setCooldownMs] = useState(60_000);
   const [publicUrl, setPublicUrl] = useState("");
+  const [settleMs, setSettleMsState] = useState<Record<NotifyTrigger, number>>({ blocked: 5_000, done: 10_000 });
+  const [mutedUntil, setMutedUntil] = useState<number | null>(null);
+  const [serverNow, setServerNow] = useState(0);
+  const [muting, setMuting] = useState(false);
+
+  const setSettleMs = (t: NotifyTrigger, ms: number) =>
+    setSettleMsState((cur) => ({ ...cur, [t]: ms }));
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -64,7 +71,9 @@ export function Settings({ onBack }: SettingsProps) {
       notifyEnabled !== baseline.notify.enabled ||
       triggers.join(",") !== [...baseline.notify.triggers].join(",") ||
       cooldownMs !== baseline.notify.cooldownMs ||
-      publicUrl !== (baseline.publicUrl ?? "")
+      publicUrl !== (baseline.publicUrl ?? "") ||
+      settleMs.blocked !== baseline.notify.settleMs.blocked ||
+      settleMs.done !== baseline.notify.settleMs.done
     );
 
   /**
@@ -97,6 +106,9 @@ export function Settings({ onBack }: SettingsProps) {
         setTriggers(body.notify.triggers);
         setCooldownMs(body.notify.cooldownMs);
         setPublicUrl(body.publicUrl ?? "");
+        setSettleMsState(body.notify.settleMs);
+        setMutedUntil(body.notify.mutedUntil);
+        setServerNow(body.serverNow);
       } catch (e) {
         if (live) setLoadError(e instanceof Error ? e.message : String(e));
       }
@@ -142,6 +154,7 @@ export function Settings({ onBack }: SettingsProps) {
         enabled: notifyEnabled,
         triggers,
         cooldownMs,
+        settleMs,
       },
       publicUrl: publicUrl.trim() || null,
     };
@@ -170,6 +183,39 @@ export function Settings({ onBack }: SettingsProps) {
       if (mountedRef.current) setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
       if (mountedRef.current) setSaving(false);
+    }
+  }
+
+  /**
+   * Its own request, not part of the form. The server stamps the instant from
+   * this duration — a phone's clock is not the server's — and mute takes
+   * effect immediately, because the operator taps it on their way to bed.
+   */
+  async function mute(forMs: number) {
+    setMuting(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/settings/mute", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ forMs }),
+      });
+      const body = await res.json();
+      if (!mountedRef.current) return;
+      if (!res.ok) {
+        setSaveError(typeof body?.detail === "string" ? body.detail : `mute failed: ${res.status}`);
+        return;
+      }
+      const v = body as SettingsView;
+      setView(v);
+      setMutedUntil(v.notify.mutedUntil);
+      setServerNow(v.serverNow);
+      // Deliberately NOT setBaseline: mute is not one of the form's fields,
+      // so it must neither create nor clear unsaved changes.
+    } catch (e) {
+      if (mountedRef.current) setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mountedRef.current) setMuting(false);
     }
   }
 
@@ -244,6 +290,12 @@ export function Settings({ onBack }: SettingsProps) {
           setCooldownMs={setCooldownMs}
           publicUrl={publicUrl}
           setPublicUrl={setPublicUrl}
+          settleMs={settleMs}
+          setSettleMs={setSettleMs}
+          mutedUntil={mutedUntil}
+          serverNow={serverNow}
+          onMute={(forMs) => void mute(forMs)}
+          muting={muting}
         />
 
         {saveError && <p className="settings-banner">{saveError}</p>}

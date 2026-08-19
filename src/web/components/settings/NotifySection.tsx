@@ -5,11 +5,34 @@ interface NotifySectionProps {
   triggers: NotifyTrigger[]; toggleTrigger: (t: NotifyTrigger) => void;
   cooldownMs: number; setCooldownMs: (v: number) => void;
   publicUrl: string; setPublicUrl: (v: string) => void;
+  settleMs: Record<NotifyTrigger, number>; setSettleMs: (t: NotifyTrigger, ms: number) => void;
+  mutedUntil: number | null; serverNow: number;
+  onMute: (forMs: number) => void; muting: boolean;
+}
+
+const HOUR_MS = 3_600_000;
+
+/** Server-clock instant rendered as a local wall-clock time. `serverNow` is
+ *  the server's reading at load; the offset from the device's clock is applied
+ *  once so a skewed phone still shows a sane countdown.
+ *
+ *  Deliberately NOT a live ticker. A per-second re-render of the settings
+ *  screen to age a label by one minute is not worth a timer, and the label is
+ *  recomputed on every render anyway — including after the mute POST returns
+ *  a fresh `serverNow`. */
+function muteLabel(mutedUntil: number, serverNow: number): string {
+  const skew = Date.now() - serverNow;
+  const at = new Date(mutedUntil + skew);
+  const remaining = Math.max(0, mutedUntil - serverNow);
+  const h = Math.floor(remaining / HOUR_MS);
+  const m = Math.round((remaining % HOUR_MS) / 60_000);
+  const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  return `Muted until ${clock} (in ${h}h ${m}m)`;
 }
 
 export function NotifySection({
   notifyEnabled, setNotifyEnabled, triggers, toggleTrigger, cooldownMs, setCooldownMs,
-  publicUrl, setPublicUrl,
+  publicUrl, setPublicUrl, settleMs, setSettleMs, mutedUntil, serverNow, onMute, muting,
 }: NotifySectionProps) {
   return (
     <>
@@ -23,6 +46,36 @@ export function NotifySection({
         />
       </label>
 
+      {/* Only 1h / 4h / 8h, plus Unmute while muted — deliberately no
+          "mute indefinitely" button. `notifyEnabled` above is already that
+          control, and two controls for one state is how an operator ends up
+          muted with no idea why. */}
+      <div className="settings-mute">
+        {mutedUntil !== null && mutedUntil > serverNow ? (
+          <>
+            <span>{muteLabel(mutedUntil, serverNow)}</span>
+            <button type="button" name="unmute" disabled={muting} onClick={() => onMute(0)}>
+              Unmute
+            </button>
+          </>
+        ) : (
+          <>
+            <span>Mute for</span>
+            {([1, 4, 8] as const).map((h) => (
+              <button
+                key={h}
+                type="button"
+                name={`mute-${h}h`}
+                disabled={muting}
+                onClick={() => onMute(h * HOUR_MS)}
+              >
+                {h}h
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+
       <fieldset className="settings-triggers">
         <legend>Notify on</legend>
         <label>
@@ -34,6 +87,18 @@ export function NotifySection({
           />
           Blocked
         </label>
+        <label className="settings-settle">
+          wait
+          <input
+            type="number"
+            name="settle-blocked"
+            min={0}
+            max={600}
+            value={Math.round(settleMs.blocked / 1000)}
+            onChange={(e) => setSettleMs("blocked", Number(e.target.value) * 1000)}
+          />
+          s before sending
+        </label>
         <label>
           <input
             type="checkbox"
@@ -43,7 +108,25 @@ export function NotifySection({
           />
           Done
         </label>
+        <label className="settings-settle">
+          wait
+          <input
+            type="number"
+            name="settle-done"
+            min={0}
+            max={600}
+            value={Math.round(settleMs.done / 1000)}
+            onChange={(e) => setSettleMs("done", Number(e.target.value) * 1000)}
+          />
+          s before sending
+        </label>
       </fieldset>
+
+      <p className="settings-hint">
+        Only notify once the agent has held this state for the whole wait. A
+        subagent finishing flips an agent to done for a moment; waiting means
+        you hear about the real finish, not that blip.
+      </p>
 
       <label className="settings-field">
         <span>Public URL</span>

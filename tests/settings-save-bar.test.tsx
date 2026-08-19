@@ -157,3 +157,100 @@ test("the test button posts the on-screen token, not an empty body", async () =>
   const call = stub.calls.find((c) => c.url.includes("/telegram/test"))!;
   expect(call.body).toEqual({ token: "999:BBtyped", chatId: "555" });
 });
+
+test("mute applies immediately and does not go through Save", async () => {
+  // The operator taps Mute because they are going to bed, not because they
+  // intend to hunt for a Save button.
+  const stub = stubFetch({
+    "/api/settings/mute": () => ({ ...view(), notify: { ...view().notify, mutedUntil: 1_700_000_000_000 + 3_600_000 } }),
+    "/api/settings": () => view(),
+  });
+  globalThis.fetch = stub.fn as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+  host.querySelector<HTMLButtonElement>('button[name="mute-1h"]')!.click();
+  await settle();
+  await settle();
+  const call = stub.calls.find((c) => c.url.includes("/api/settings/mute"))!;
+  expect(call.body).toEqual({ forMs: 3_600_000 });
+  // A mute is not an unsaved edit.
+  expect(host.querySelector(".settings-save-bar")).toBeNull();
+});
+
+test("mute never establishes a baseline the operator never confirmed", async () => {
+  // If the initial GET fails, `baseline` stays null, `dirty` stays false, and
+  // no Save button renders at all — see settings-view.test.tsx's "a form that
+  // never loaded cannot be saved". A `setBaseline` call in the mute handler
+  // would go undetected by the previous test (its stub echoes back exactly
+  // what was already loaded, so the compared fields never move) — but IS
+  // caught here: mute succeeding while the GET has failed would newly arm
+  // `dirty`/Save off the mute route's fields, which is exactly the failed-load
+  // scenario the guard exists to prevent, just reached by a second door.
+  const muteStub = stubFetch({
+    "/api/settings/mute": () => ({ ...view(), notify: { ...view().notify, mutedUntil: 1_700_000_000_000 + 3_600_000 } }),
+  });
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).includes("/api/settings/mute")) return muteStub.fn(input, init);
+    throw new Error("network down");
+  }) as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+  expect(host.textContent).toContain("network down");
+  host.querySelector<HTMLButtonElement>('button[name="mute-1h"]')!.click();
+  await settle();
+  await settle();
+  expect(host.querySelector(".settings-save-bar")).toBeNull();
+});
+
+test("a muted dashboard says until when, computed from the server's clock", async () => {
+  const muted = {
+    ...view(),
+    notify: { ...view().notify, mutedUntil: 1_700_000_000_000 + 3_600_000 },
+  };
+  const stub = stubFetch({ "/api/settings": () => muted });
+  globalThis.fetch = stub.fn as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+  const el = host.querySelector(".settings-mute")!;
+  expect(el.textContent).toContain("Muted until");
+  expect(el.querySelector('button[name="unmute"]')).not.toBeNull();
+});
+
+test("unmute posts a zero duration", async () => {
+  const muted = { ...view(), notify: { ...view().notify, mutedUntil: 1_700_000_000_000 + 3_600_000 } };
+  const stub = stubFetch({ "/api/settings/mute": () => view(), "/api/settings": () => muted });
+  globalThis.fetch = stub.fn as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+  host.querySelector<HTMLButtonElement>('button[name="unmute"]')!.click();
+  await settle();
+  await settle();
+  expect(stub.calls.find((c) => c.url.includes("/mute"))!.body).toEqual({ forMs: 0 });
+});
+
+test("a settle window is edited in seconds and saved in milliseconds", async () => {
+  const stub = stubFetch({ "/api/settings": () => view() });
+  globalThis.fetch = stub.fn as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+  const done = host.querySelector<HTMLInputElement>('input[name="settle-done"]')!;
+  expect(done.value).toBe("10");
+  typeInto(done, "30");
+  await settle();
+  host.querySelector<HTMLButtonElement>(".settings-save-bar button")!.click();
+  await settle();
+  await settle();
+  // The LAST match, not the first: the mount's own GET also hits
+  // "/api/settings" and is recorded before the save, with no body. `.find`
+  // would silently grab that GET (body undefined) instead of the save's PUT,
+  // and the assertion below would fail for the wrong reason.
+  const puts = stub.calls.filter((c) => c.url.includes("/api/settings") && !c.url.includes("/mute"));
+  const put = puts[puts.length - 1]!;
+  expect((put.body as { notify: { settleMs: unknown } }).notify.settleMs)
+    .toEqual({ blocked: 5_000, done: 30_000 });
+});
