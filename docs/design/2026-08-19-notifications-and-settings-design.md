@@ -146,6 +146,14 @@ optimistic-write-and-revert dance in today's `#one()` — three of the longest
 comments in the file, all of them explaining a subtlety that only exists
 because one map was doing both jobs.
 
+`#lastNotified`'s job is to stop a re-announcement *within* one held episode
+(a task-line-only delta arriving while the state has not changed) — not
+across episodes. It is cleared the moment the episode it describes ends, i.e.
+on every genuine transition (§4.2 step 3), not only on `removedIds`: a
+`blocked → working → blocked` flap is two distinct episodes, both worth
+telling the operator about, and an entry left over from the first would
+silently drop the second forever.
+
 ### 4.2 Flow
 
 On each upserted agent in a delta:
@@ -157,7 +165,9 @@ On each upserted agent in a delta:
    restart is its own noise problem.
 2. `prev === a.state`: return. (A task-line-only update.)
 3. State changed. **Cancel any pending timer for this agent** — the claim it
-   was going to make is void — and set `#lastSeen` to the new state.
+   was going to make is void — set `#lastSeen` to the new state, and **clear
+   `#lastNotified` for this agent**: the episode it recorded has just ended,
+   so the dedup has served its purpose and must not suppress the next one.
 4. If the new state is not in `triggers`, return.
 5. Arm a timer for `settleMs[state]`. `unref()` it.
 
