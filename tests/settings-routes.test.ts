@@ -187,6 +187,20 @@ test("clearing the token with null is still allowed", async () => {
   expect(res.status).toBe(200);
 });
 
+test("clearing the token with an empty string is still allowed", async () => {
+  // isConfigured treats "" the same as null (see its doc comment: four call
+  // sites once disagreed on this and produced a live retry loop). The
+  // `tt.token !== ""` exemption in validateSettingsPatch must let this
+  // through rather than running it against isTokenShape.
+  const { app } = await harness();
+  const res = await app.request("/api/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ telegram: { token: "" } }),
+  });
+  expect(res.status).toBe(200);
+});
+
 test("the test route sends with the credentials in the body, not the stored ones", async () => {
   // The operator pastes a token and presses "Send test message" — the only
   // order that lets them find out whether it works BEFORE committing it.
@@ -211,6 +225,25 @@ test("a blank field falls back to the stored value, per field", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ chatId: "777" }),
+  });
+  expect(res.status).toBe(200);
+  expect(calls.map((c) => ({ token: c.token, chatId: c.chatId })))
+    .toEqual([{ token: "1:A", chatId: "777" }]);
+});
+
+test("an explicit empty-string token in the body falls back to the stored token, per field", async () => {
+  // Distinct from "a blank field falls back...", which omits the field
+  // entirely. Here the body sends token: "" outright, exercising the
+  // isConfigured("") branch of `pick` rather than the `typeof typed ===
+  // "string"` branch failing on `undefined`. A differing stored chat id
+  // proves resolution still happens per field, not all-or-nothing.
+  const calls: { token: string; chatId: string; text: string }[] = [];
+  const { app, settings } = await harness(async (o) => { calls.push(o); return { ok: true, detail: null }; });
+  await settings.patch({ telegram: { token: "1:A", chatId: "555" } });
+  const res = await app.request("/api/settings/telegram/test", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: "", chatId: "777" }),
   });
   expect(res.status).toBe(200);
   expect(calls.map((c) => ({ token: c.token, chatId: c.chatId })))

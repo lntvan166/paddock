@@ -3,7 +3,13 @@ import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
 import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
-import { isConfigured, isTokenShape, MAX_SETTLE_MS, type SettingsStore } from "@server/settings/store";
+import {
+  isConfigured,
+  isTokenShape,
+  MAX_SETTLE_MS,
+  TOKEN_SHAPE_DETAIL,
+  type SettingsStore,
+} from "@server/settings/store";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { EMBEDDED } from "@server/embedded";
@@ -215,10 +221,7 @@ function validateSettingsPatch(
       // value must be path-safe — the detail names the rule and NEVER echoes
       // the value, which is the credential.
       if (tt.token !== null && tt.token !== "" && !isTokenShape(tt.token)) {
-        return {
-          ok: false,
-          detail: "telegram.token may contain only letters, digits, ':', '_' and '-', max 200 characters",
-        };
+        return { ok: false, detail: TOKEN_SHAPE_DETAIL };
       }
       out.token = tt.token;
     }
@@ -594,15 +597,12 @@ export function createApp(deps: AppDeps) {
       // Checked before the request, so a path-unsafe token never reaches a
       // URL. The detail names the rule and never echoes the value.
       if (!isTokenShape(token)) {
-        return c.json({
-          ok: false,
-          detail: "telegram.token may contain only letters, digits, ':', '_' and '-', max 200 characters",
-        }, 400);
+        return c.json({ ok: false, detail: TOKEN_SHAPE_DETAIL }, 400);
       }
 
       // Deliberately does NOT save. A probe is not a commit.
-      // `sendTest` is the local already resolved at routes.ts:526
-      // (`deps.sendTest ?? sendTelegram`) — do not re-resolve it here.
+      // `sendTest` is `deps.sendTest ?? sendTelegram`, resolved once above —
+      // do not re-resolve it here.
       const r = await sendTest({
         token, chatId,
         text: "paddock test message — notifications are wired up.",
