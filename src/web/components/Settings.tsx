@@ -159,26 +159,9 @@ export function Settings({ onBack }: SettingsProps) {
         setSaveError(typeof body?.detail === "string" ? body.detail : `save failed: ${res.status}`);
         return;
       }
-      // Re-synced from the response exactly like the mount GET above, not
-      // left at whatever was typed. `patch.publicUrl` above is
-      // `publicUrl.trim() || null`: whatever the server actually persists (and
-      // echoes back here) is not guaranteed to be byte-identical to local
-      // state — trimming is the concrete example today, and normalisation is
-      // exactly the kind of thing a server is allowed to do to a PUT body
-      // without that counting as a bug. If only `baseline` were replaced here,
-      // `dirty` would keep comparing local state against a baseline it can
-      // never again equal, and the save bar would sit there saying "Unsaved
-      // changes" after a perfectly successful save. Pulling every field back
-      // from the response, the same way the mount GET does, is what keeps
-      // `dirty` honest.
       const saved = body as SettingsView;
       setView(saved);
       setBaseline(saved);
-      setChatId(saved.telegram.chatId ?? "");
-      setNotifyEnabled(saved.notify.enabled);
-      setTriggers(saved.notify.triggers);
-      setCooldownMs(saved.notify.cooldownMs);
-      setPublicUrl(saved.publicUrl ?? "");
       setSavedAt(Date.now());
       // The token is write-only: once it has been sent, the field goes back
       // to empty rather than continuing to display what was just typed.
