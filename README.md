@@ -67,10 +67,25 @@ It checks for a newer release at most once a day, caching the answer in
 makes no request and writes nothing.
 
 > [!WARNING]
-> paddock binds `127.0.0.1` and has **no login of its own**. Anyone who reaches
-> the port can send keystrokes to your agents and read their screens. To use it
-> from a phone, put an authenticating tunnel in front — never a port-forward.
-> [running locally →](docs/running-locally.md)
+> paddock has **no login of its own**. Anyone who reaches its port can send
+> keystrokes to your agents, answer their prompts, and read their screens.
+> Never port-forward it or bind `0.0.0.0`.
+
+## from your phone
+
+paddock stays on `127.0.0.1`. Put an authenticating tunnel in front — a
+[Cloudflare Tunnel with Zero Trust Access](docs/deploy-cloudflare.md) dials
+out, so no inbound port is opened and the identity check happens before any
+request reaches paddock.
+
+Then **Share → Add to Home Screen**, and it is an app: its own icon, no browser
+chrome, and it opens where you left off.
+
+<p align="center">
+  <img src="docs/images/05-home-screen.jpg" alt="paddock on an iPhone Home Screen, in a folder named herdr" width="28%">
+</p>
+
+[running locally →](docs/running-locally.md)
 
 ## docs
 
