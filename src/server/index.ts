@@ -18,6 +18,7 @@ import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { capturedArgs, removeState, writeState } from "@server/lifecycle/state";
+import { runStatus } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, USAGE } from "@server/cli";
@@ -78,6 +79,13 @@ if (command === "update") {
     current: VERSION,
     checkOnly: flags.has("--check"),
   }));
+}
+
+// Must run before any server setup below, same reasoning as `update` above:
+// `status` should not open a herdr socket or bind a port just to answer a
+// question that only needs the state file and a signal-0 probe.
+if (command === "status") {
+  process.exit(await runStatus({ dir: defaultConfigDir() }));
 }
 
 const socketPath =
