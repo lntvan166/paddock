@@ -572,15 +572,39 @@ export function createApp(deps: AppDeps) {
     });
 
     app.post("/api/settings/telegram/test", async (c) => {
+      const parsed = await strictJsonBody(c);
+      if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
+      const body = parsed.body;
+
+      // Resolved PER FIELD: an absent or blank value falls back to the stored
+      // one via the same `isConfigured` predicate the view and the notifier
+      // use. This is what lets an operator verify a pasted token before
+      // committing it — the only order anyone actually tries.
       const s = settings.current();
-      // One shared predicate (see settings/store.ts), not local falsiness:
-      // an empty-string token must read as unconfigured here, in the view,
-      // and in the notifier alike.
-      if (!isConfigured(s.telegram.token) || !isConfigured(s.telegram.chatId)) {
+      const pick = (typed: unknown, stored: string | null): string | null => {
+        if (typeof typed === "string" && isConfigured(typed)) return typed;
+        return isConfigured(stored) ? stored : null;
+      };
+      const token = pick(body.token, s.telegram.token);
+      const chatId = pick(body.chatId, s.telegram.chatId);
+
+      if (token === null || chatId === null) {
         return c.json({ ok: false, detail: "token and chat id must both be set" }, 400);
       }
+      // Checked before the request, so a path-unsafe token never reaches a
+      // URL. The detail names the rule and never echoes the value.
+      if (!isTokenShape(token)) {
+        return c.json({
+          ok: false,
+          detail: "telegram.token may contain only letters, digits, ':', '_' and '-', max 200 characters",
+        }, 400);
+      }
+
+      // Deliberately does NOT save. A probe is not a commit.
+      // `sendTest` is the local already resolved at routes.ts:526
+      // (`deps.sendTest ?? sendTelegram`) — do not re-resolve it here.
       const r = await sendTest({
-        token: s.telegram.token, chatId: s.telegram.chatId,
+        token, chatId,
         text: "paddock test message — notifications are wired up.",
       });
       return c.json(r);
