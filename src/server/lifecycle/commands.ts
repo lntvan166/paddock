@@ -1,6 +1,12 @@
 import { mkdir, open, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { checkState, removeState, systemProbe, type Probe } from "@server/lifecycle/state";
+import {
+  checkState,
+  removeState,
+  stateFile,
+  systemProbe,
+  type Probe,
+} from "@server/lifecycle/state";
 
 export interface StatusOpts {
   dir: string;
@@ -17,6 +23,32 @@ function uptime(ms: number): string {
 }
 
 /** Exit code: 0 running, 1 not. That is what makes it usable from a script. */
+/**
+ * Remove the state file, reporting a failure instead of throwing it.
+ *
+ * Every call site has ALREADY determined the outcome it is about to report —
+ * the process stopped, the pid was stale, the identity did not match. A
+ * cleanup failure (an unwritable config directory) must not turn a correct
+ * answer into a stack trace: `paddock stop` printing "stopped" and then
+ * crashing is a worse report than either half alone.
+ *
+ * Announced, never swallowed. The operator is told the file survived and
+ * where it is, because the next call will read it again.
+ */
+async function clearState(
+  dir: string,
+  log: (line: string) => void,
+): Promise<void> {
+  try {
+    await removeState(dir);
+  } catch (e) {
+    log(
+      `paddock: could not remove ${stateFile(dir)} (${(e as Error).message}) ` +
+        "— remove it by hand, or the next run will read it again",
+    );
+  }
+}
+
 export async function runStatus(o: StatusOpts): Promise<number> {
   const log = o.log ?? console.log;
   const now = (o.now ?? Date.now)();
@@ -39,12 +71,16 @@ export async function runStatus(o: StatusOpts): Promise<number> {
     case "stale":
       // Say it once. A crash left this behind and silently tidying it up hides
       // that anything happened.
-      log(`paddock — not running (stale state for pid ${got.state.pid}, cleared)`);
-      await removeState(o.dir);
+      log(
+        `paddock — not running (stale state for pid ${got.state.pid}, cleared)`,
+      );
+      await clearState(o.dir, log);
       return 1;
     case "mismatch":
-      log(`paddock — not running (pid ${got.state.pid} is now: ${got.actual ?? "unknown"})`);
-      await removeState(o.dir);
+      log(
+        `paddock — not running (pid ${got.state.pid} is now: ${got.actual ?? "unknown"})`,
+      );
+      await clearState(o.dir, log);
       return 1;
     case "running":
       log(
@@ -65,7 +101,9 @@ export interface StopOpts {
   waitMs?: number;
 }
 
-const sendSignal = (pid: number, sig: NodeJS.Signals) => { process.kill(pid, sig); };
+const sendSignal = (pid: number, sig: NodeJS.Signals) => {
+  process.kill(pid, sig);
+};
 
 type SignalOutcome = "ok" | "gone" | "denied";
 
@@ -114,19 +152,25 @@ export async function runStop(o: StopOpts): Promise<number> {
       // tell whether something is running, so refuse, send no signal, and
       // leave the file in place rather than destroy the one clue an
       // operator has.
-      log(`paddock — could not read state (${got.error}), refusing to guess — nothing signalled`);
+      log(
+        `paddock — could not read state (${got.error}), refusing to guess — nothing signalled`,
+      );
       return 1;
     case "stale":
-      log(`paddock — not running (stale state for pid ${got.state.pid}, cleared)`);
-      await removeState(o.dir);
+      log(
+        `paddock — not running (stale state for pid ${got.state.pid}, cleared)`,
+      );
+      await clearState(o.dir, log);
       return 0;
     case "mismatch":
       // Refuse. This is the whole reason the state file carries more than a
       // pid: killing someone else's process is the worst outcome this
       // feature can produce.
-      log(`paddock: pid ${got.state.pid} is not paddock any more — refusing to signal it`);
+      log(
+        `paddock: pid ${got.state.pid} is not paddock any more — refusing to signal it`,
+      );
       log(`  it is now: ${got.actual ?? "unknown"}`);
-      await removeState(o.dir);
+      await clearState(o.dir, log);
       return 1;
     case "running":
       break;
@@ -137,11 +181,13 @@ export async function runStop(o: StopOpts): Promise<number> {
   const term = trySignal(send, pid, "SIGTERM");
   if (term === "gone") {
     log(`paddock: pid ${pid} was already gone — nothing to stop`);
-    await removeState(o.dir);
+    await clearState(o.dir, log);
     return 0;
   }
   if (term === "denied") {
-    log(`paddock: cannot signal pid ${pid} — permission denied (started by another user?)`);
+    log(
+      `paddock: cannot signal pid ${pid} — permission denied (started by another user?)`,
+    );
     return 1;
   }
 
@@ -166,7 +212,7 @@ export async function runStop(o: StopOpts): Promise<number> {
   while (Date.now() < deadline) {
     if (!probe.isAlive(pid)) {
       log(`paddock: stopped (pid ${pid})`);
-      await removeState(o.dir);
+      await clearState(o.dir, log);
       return 0;
     }
     const actual = probe.argsOf(pid);
@@ -177,9 +223,11 @@ export async function runStop(o: StopOpts): Promise<number> {
       // used to call it a success and delete the state file, which is how a
       // live, still-running paddock could be made permanently untrackable by
       // a `stop` that reported "already gone, nothing further to do".
-      log(`paddock: pid ${pid} is not paddock any more — refusing to signal it`);
+      log(
+        `paddock: pid ${pid} is not paddock any more — refusing to signal it`,
+      );
       log(`  it is now: ${actual}`);
-      await removeState(o.dir);
+      await clearState(o.dir, log);
       return 1;
     }
     // `actual === null` is NOT that case, and must not be treated as one:
@@ -211,28 +259,36 @@ export async function runStop(o: StopOpts): Promise<number> {
       // already cannot identify the process must not also lose the record
       // naming it. The recycled case below is different — there the pid
       // provably is not ours, so the record is stale and worth clearing.
-      log(`paddock: cannot confirm pid ${pid} is still paddock — refusing to send SIGKILL`);
-      log("  its state file is left in place; check the pid by hand, then try again");
+      log(
+        `paddock: cannot confirm pid ${pid} is still paddock — refusing to send SIGKILL`,
+      );
+      log(
+        "  its state file is left in place; check the pid by hand, then try again",
+      );
       return 1;
     }
-    log(`paddock: pid ${pid} is not paddock any more — refusing to send SIGKILL`);
+    log(
+      `paddock: pid ${pid} is not paddock any more — refusing to send SIGKILL`,
+    );
     log(`  it is now: ${actual}`);
-    await removeState(o.dir);
+    await clearState(o.dir, log);
     return 1;
   }
 
   const kill = trySignal(send, pid, "SIGKILL");
   if (kill === "gone") {
     log(`paddock: pid ${pid} was already gone — nothing to kill`);
-    await removeState(o.dir);
+    await clearState(o.dir, log);
     return 0;
   }
   if (kill === "denied") {
-    log(`paddock: cannot signal pid ${pid} — permission denied (started by another user?)`);
+    log(
+      `paddock: cannot signal pid ${pid} — permission denied (started by another user?)`,
+    );
     return 1;
   }
   log(`paddock: killed (pid ${pid})`);
-  await removeState(o.dir);
+  await clearState(o.dir, log);
   return 0;
 }
 
@@ -297,14 +353,20 @@ export async function runStart(o: StartOpts): Promise<number> {
       // file is "cannot tell", not "nothing running". Guessing the latter
       // would let this spawn a second paddock right alongside one already
       // serving — the exact guess this module refuses to make.
-      log(`paddock: could not read state (${existing.error}), refusing to guess — not starting`);
+      log(
+        `paddock: could not read state (${existing.error}), refusing to guess — not starting`,
+      );
       return 1;
     case "running":
-      log(`paddock: already running (pid ${existing.state.pid}, port ${existing.state.port})`);
+      log(
+        `paddock: already running (pid ${existing.state.pid}, port ${existing.state.port})`,
+      );
       return 1;
     case "mismatch":
-      log(`paddock: pid ${existing.state.pid} is not paddock any more — clearing stale state`);
-      await removeState(o.dir);
+      log(
+        `paddock: pid ${existing.state.pid} is not paddock any more — clearing stale state`,
+      );
+      await clearState(o.dir, log);
       break;
     case "stale":
       // A crash left this behind. Cleared deliberately, before spawning: left
@@ -313,7 +375,7 @@ export async function runStart(o: StartOpts): Promise<number> {
       // new child happened to overwrite it with its own — working by
       // accident, not by design.
       log(`paddock: clearing stale state for pid ${existing.state.pid}`);
-      await removeState(o.dir);
+      await clearState(o.dir, log);
       break;
     case "none":
       break;
@@ -327,7 +389,9 @@ export async function runStart(o: StartOpts): Promise<number> {
       // runtime backstop for the (currently impossible) case this guard is
       // bypassed some other way.
       const _exhaustive: never = existing;
-      throw new Error(`paddock: unhandled state check: ${JSON.stringify(_exhaustive)}`);
+      throw new Error(
+        `paddock: unhandled state check: ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 
@@ -348,7 +412,9 @@ export async function runStart(o: StartOpts): Promise<number> {
   }
   const deadline = Date.now() + waitMs;
   let childGone = false;
-  void child.exited.then(() => { childGone = true; });
+  void child.exited.then(() => {
+    childGone = true;
+  });
 
   const health = o.healthCheck ?? defaultHealthCheck;
   while (Date.now() < deadline) {
@@ -380,7 +446,9 @@ export async function runStart(o: StartOpts): Promise<number> {
     // Deliberately hedged: the child records its state only after it binds,
     // so one that is still coming up may not be visible to `status`/`stop`
     // yet. The pid above is the handle that always works.
-    log("  once it has recorded state, 'paddock status' shows it and 'paddock stop' stops it");
+    log(
+      "  once it has recorded state, 'paddock status' shows it and 'paddock stop' stops it",
+    );
     if (tail.trim() !== "") log(tail.trim());
     log(`  full log: ${logFile(o.dir)}`);
     return 1;
@@ -400,7 +468,10 @@ export async function runStart(o: StartOpts): Promise<number> {
  * anticipate keep its stack trace.
  */
 class ConfigDirUnusable extends Error {
-  constructor(readonly file: string, readonly reason: string) {
+  constructor(
+    readonly file: string,
+    readonly reason: string,
+  ) {
     super(`${file}: ${reason}`);
     this.name = "ConfigDirUnusable";
   }

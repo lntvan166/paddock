@@ -84,7 +84,7 @@ export async function writeState(dir: string, s: PaddockState): Promise<void> {
   } finally {
     await fh.close();
   }
-  await chmod(tmp, 0o600);   // `open`'s mode is subject to the umask; this is not
+  await chmod(tmp, 0o600); // `open`'s mode is subject to the umask; this is not
   await rename(tmp, file);
 }
 
@@ -179,7 +179,8 @@ export async function checkState(
   let s: PaddockState;
   try {
     s = JSON.parse(raw) as PaddockState;
-    if (typeof s.pid !== "number" || typeof s.args !== "string") throw new Error("shape");
+    if (typeof s.pid !== "number" || typeof s.args !== "string")
+      throw new Error("shape");
   } catch (e) {
     // "none" is the right answer — treating garbage as "running" would let one
     // garbled file block every start — but it must not be a silent one. This
@@ -194,7 +195,25 @@ export async function checkState(
   }
 
   if (!probe.isAlive(s.pid)) return { kind: "stale", state: s };
-  const actual = probe.argsOf(s.pid);
+
+  let actual: string | null;
+  try {
+    actual = probe.argsOf(s.pid);
+  } catch (e) {
+    // argsOf can throw, not merely return null: the default probe falls back
+    // to Bun.spawnSync(["ps", ...]) where /proc does not exist, and that
+    // THROWS when `ps` is absent rather than returning a non-zero exit.
+    //
+    // Letting it escape crashes all three verbs. Reporting it as `mismatch`
+    // would be worse than crashing — every mismatch arm deletes the state
+    // file, so one machine without `ps` would quietly untrack a healthy
+    // instance. "Could not look" is precisely what `unreadable` already means,
+    // and every caller already refuses on it without touching the file.
+    return {
+      kind: "unreadable",
+      error: `could not identify pid ${s.pid} (${(e as Error).message})`,
+    };
+  }
   if (actual !== s.args) return { kind: "mismatch", state: s, actual };
   return { kind: "running", state: s };
 }

@@ -1,13 +1,19 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runStop } from "@server/lifecycle/commands";
 import { stateFile, writeState, type Probe } from "@server/lifecycle/state";
 
 const dir = () => mkdtemp(join(tmpdir(), "paddock-stop-"));
-const s = { pid: 4242, args: "paddock", port: 8787, version: "0.4.0", startedAt: Date.now() };
+const s = {
+  pid: 4242,
+  args: "paddock",
+  port: 8787,
+  version: "0.4.0",
+  startedAt: Date.now(),
+};
 
 /** Alive until the Nth liveness check, then dead — models a process obeying SIGTERM. */
 function dyingProbe(afterChecks: number, args: string): { probe: Probe } {
@@ -23,11 +29,16 @@ test("stop on a recycled pid REFUSES to signal it", async () => {
   const sent: string[] = [];
   const code = await runStop({
     dir: d,
-    probe: { isAlive: () => true, argsOf: () => "/usr/bin/postgres -D /var/lib/pg" },
+    probe: {
+      isAlive: () => true,
+      argsOf: () => "/usr/bin/postgres -D /var/lib/pg",
+    },
     signal: (pid, sig) => sent.push(`${sig}->${pid}`),
     log: () => {},
   });
-  expect(sent, "a signal was sent to a process that is not paddock").toEqual([]);
+  expect(sent, "a signal was sent to a process that is not paddock").toEqual(
+    [],
+  );
   expect(code).not.toBe(0);
 });
 
@@ -37,7 +48,11 @@ test("stop signals SIGTERM and reports success once it exits", async () => {
   const sent: string[] = [];
   const { probe } = dyingProbe(1, "paddock");
   const code = await runStop({
-    dir: d, probe, signal: (pid, sig) => sent.push(`${sig}->${pid}`), log: () => {}, waitMs: 500,
+    dir: d,
+    probe,
+    signal: (pid, sig) => sent.push(`${sig}->${pid}`),
+    log: () => {},
+    waitMs: 500,
   });
   expect(sent).toEqual(["SIGTERM->4242"]);
   expect(code).toBe(0);
@@ -78,8 +93,12 @@ test("--force escalates to SIGKILL, and only then", async () => {
 
 test("stop with nothing running is not an error", async () => {
   const code = await runStop({
-    dir: await dir(), probe: { isAlive: () => false, argsOf: () => null },
-    signal: () => { throw new Error("must not signal"); }, log: () => {},
+    dir: await dir(),
+    probe: { isAlive: () => false, argsOf: () => null },
+    signal: () => {
+      throw new Error("must not signal");
+    },
+    log: () => {},
   });
   expect(code).toBe(0);
 });
@@ -101,13 +120,19 @@ test("an unreadable state file is refused, not guessed at — and left in place"
     signal: (pid, sig) => sent.push(`${sig}->${pid}`),
     log: (l) => out.push(l),
   });
-  expect(sent, "an unreadable state file must never be signalled against").toEqual([]);
+  expect(
+    sent,
+    "an unreadable state file must never be signalled against",
+  ).toEqual([]);
   expect(code).not.toBe(0);
   expect(out.join(" ").toLowerCase()).toContain("could not read");
   // The third part of the requirement: don't delete it either. It is the one
   // clue an operator has, and adding a stray `removeState` to the
   // `unreadable` branch would leave the first two assertions above green.
-  expect(existsSync(stateFile(d)), "the unreadable state file must be left in place").toBe(true);
+  expect(
+    existsSync(stateFile(d)),
+    "the unreadable state file must be left in place",
+  ).toBe(true);
 });
 
 test("a pid recycled right as the wait expires is treated as gone, not escalated", async () => {
@@ -132,13 +157,18 @@ test("a pid recycled right as the wait expires is treated as gone, not escalated
     force: true,
     probe: {
       isAlive: () => true,
-      argsOf: () => (Date.now() - start < waitMs ? "paddock" : "/usr/bin/postgres -D /var/lib/pg"),
+      argsOf: () =>
+        Date.now() - start < waitMs
+          ? "paddock"
+          : "/usr/bin/postgres -D /var/lib/pg",
     },
     signal: (pid, sig) => sent.push(`${sig}->${pid}`),
     log: (l) => out.push(l),
     waitMs,
   });
-  expect(sent, "no SIGKILL may reach a pid that is no longer paddock").toEqual(["SIGTERM->4242"]);
+  expect(sent, "no SIGKILL may reach a pid that is no longer paddock").toEqual([
+    "SIGTERM->4242",
+  ]);
   expect(code).not.toBe(0);
 });
 
@@ -159,7 +189,9 @@ test("a pid that already exited between the check and the signal (ESRCH) is repo
   const code = await runStop({
     dir: d,
     probe: { isAlive: () => true, argsOf: () => "paddock" },
-    signal: () => { throw errnoError("ESRCH"); },
+    signal: () => {
+      throw errnoError("ESRCH");
+    },
     log: (l) => out.push(l),
   });
   expect(code).toBe(0);
@@ -177,7 +209,9 @@ test("a pid owned by another user (EPERM) is refused by name, not an unhandled t
   const code = await runStop({
     dir: d,
     probe: { isAlive: () => true, argsOf: () => "paddock" },
-    signal: () => { throw errnoError("EPERM"); },
+    signal: () => {
+      throw errnoError("EPERM");
+    },
     log: (l) => out.push(l),
   });
   expect(code).not.toBe(0);
@@ -203,16 +237,26 @@ test("a pid recycled DURING the wait is refused and reported, not called a succe
     dir: d,
     // Matches for checkState and the first poll, then the number belongs to
     // something else. Alive throughout: this is a recycle, not an exit.
-    probe: { isAlive: () => true, argsOf: () => (++calls <= 2 ? "paddock" : "/usr/bin/postgres -D /var/lib/pg") },
+    probe: {
+      isAlive: () => true,
+      argsOf: () =>
+        ++calls <= 2 ? "paddock" : "/usr/bin/postgres -D /var/lib/pg",
+    },
     signal: (pid, sig) => sent.push(`${sig}->${pid}`),
     log: (l) => out.push(l),
     waitMs: 2000,
   });
-  expect(sent, "nothing further may be signalled once the pid is not ours").toEqual(["SIGTERM->4242"]);
+  expect(
+    sent,
+    "nothing further may be signalled once the pid is not ours",
+  ).toEqual(["SIGTERM->4242"]);
   expect(code, "a recycled pid is a refusal, not a success").not.toBe(0);
   expect(out.join(" ")).toContain("not paddock any more");
   expect(out.join(" ")).toContain("postgres");
-  expect(existsSync(stateFile(d)), "the file names a pid that is no longer ours").toBe(false);
+  expect(
+    existsSync(stateFile(d)),
+    "the file names a pid that is no longer ours",
+  ).toBe(false);
 });
 
 test("an indeterminate argsOf during the wait concludes nothing and keeps polling", async () => {
@@ -231,16 +275,27 @@ test("an indeterminate argsOf during the wait concludes nothing and keeps pollin
   let args = 0;
   const code = await runStop({
     dir: d,
-    probe: { isAlive: () => ++liveness <= 4, argsOf: () => (++args <= 1 ? "paddock" : null) },
+    probe: {
+      isAlive: () => ++liveness <= 4,
+      argsOf: () => (++args <= 1 ? "paddock" : null),
+    },
     signal: () => {},
     log: (l) => out.push(l),
     waitMs: 2000,
   });
-  expect(code, "the pid did go away — that is an ordinary successful stop").toBe(0);
-  expect(liveness, "success was declared before the pid was observed gone").toBeGreaterThan(2);
+  expect(
+    code,
+    "the pid did go away — that is an ordinary successful stop",
+  ).toBe(0);
+  expect(
+    liveness,
+    "success was declared before the pid was observed gone",
+  ).toBeGreaterThan(2);
   expect(out.join(" ")).toContain("stopped");
-  expect(out.join(" "), "nothing was concluded from the null — there was nothing to conclude")
-    .not.toContain("nothing further to do");
+  expect(
+    out.join(" "),
+    "nothing was concluded from the null — there was nothing to conclude",
+  ).not.toContain("nothing further to do");
 });
 
 test("an indeterminate argsOf on a pid that will not die is a timeout, not a success", async () => {
@@ -254,7 +309,10 @@ test("an indeterminate argsOf on a pid that will not die is a timeout, not a suc
   let args = 0;
   const code = await runStop({
     dir: d,
-    probe: { isAlive: () => true, argsOf: () => (++args <= 1 ? "paddock" : null) },
+    probe: {
+      isAlive: () => true,
+      argsOf: () => (++args <= 1 ? "paddock" : null),
+    },
     signal: (pid, sig) => sent.push(`${sig}->${pid}`),
     log: (l) => out.push(l),
     waitMs: 300,
@@ -282,12 +340,54 @@ test("--force must not SIGKILL a pid whose identity cannot be read", async () =>
   const code = await runStop({
     dir: d,
     force: true,
-    probe: { isAlive: () => true, argsOf: () => (++args <= 1 ? "paddock" : null) },
+    probe: {
+      isAlive: () => true,
+      argsOf: () => (++args <= 1 ? "paddock" : null),
+    },
     signal: (pid, sig) => sent.push(`${sig}->${pid}`),
     log: (l) => out.push(l),
     waitMs: 300,
   });
-  expect(sent, "an unidentifiable pid must not receive SIGKILL").toEqual(["SIGTERM->4242"]);
+  expect(sent, "an unidentifiable pid must not receive SIGKILL").toEqual([
+    "SIGTERM->4242",
+  ]);
   expect(code).not.toBe(0);
-  expect(existsSync(stateFile(d)), "the only handle on the process must survive").toBe(true);
+  expect(
+    existsSync(stateFile(d)),
+    "the only handle on the process must survive",
+  ).toBe(true);
+});
+
+test("a cleanup failure does not turn a successful stop into a stack trace", async () => {
+  // The process is confirmed gone — the answer is already known and correct.
+  // If removing the state file then fails (an unwritable config dir), that
+  // must be announced, not thrown: crashing here would report a successful
+  // stop as a crash. Modelled with a real mode-500 directory, since
+  // removeState is not injected.
+  const d = await dir();
+  await writeState(d, s);
+  const out: string[] = [];
+  let liveness = 0;
+  await chmod(d, 0o500);
+  try {
+    const code = await runStop({
+      dir: d,
+      // Alive for the initial identity check, gone on the first poll after
+      // SIGTERM: the ordinary successful stop, not the stale-file path.
+      probe: { isAlive: () => ++liveness <= 1, argsOf: () => "paddock" },
+      signal: () => {},
+      log: (l) => out.push(l),
+    });
+    expect(
+      code,
+      "the stop succeeded — the cleanup is not what was asked for",
+    ).toBe(0);
+    expect(out.join(" ")).toContain("stopped");
+    expect(
+      out.join(" "),
+      "the failure must be announced, never swallowed",
+    ).toContain("could not remove");
+  } finally {
+    await chmod(d, 0o700);
+  }
 });

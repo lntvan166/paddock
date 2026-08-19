@@ -4,16 +4,29 @@ import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  capturedArgs, checkState, recordState, removeState, stateFile, writeState,
-  type PaddockState, type Probe,
+  capturedArgs,
+  checkState,
+  recordState,
+  removeState,
+  stateFile,
+  writeState,
+  type PaddockState,
+  type Probe,
 } from "@server/lifecycle/state";
 
 const dir = () => mkdtemp(join(tmpdir(), "paddock-state-"));
 const state = (over: Partial<PaddockState> = {}): PaddockState => ({
-  pid: 4242, args: "paddock", port: 8787, version: "0.4.0", startedAt: 1_700_000_000_000, ...over,
+  pid: 4242,
+  args: "paddock",
+  port: 8787,
+  version: "0.4.0",
+  startedAt: 1_700_000_000_000,
+  ...over,
 });
-const probe = (alive: boolean, args: string | null): Probe =>
-  ({ isAlive: () => alive, argsOf: () => args });
+const probe = (alive: boolean, args: string | null): Probe => ({
+  isAlive: () => alive,
+  argsOf: () => args,
+});
 
 test("no state file means not running", async () => {
   expect((await checkState(await dir(), probe(false, null))).kind).toBe("none");
@@ -38,7 +51,10 @@ test("a live PID running something else is a MISMATCH, never running", async () 
   // otherwise signal a stranger.
   const d = await dir();
   await writeState(d, state({ args: "paddock" }));
-  const got = await checkState(d, probe(true, "/usr/bin/postgres -D /var/lib/pg"));
+  const got = await checkState(
+    d,
+    probe(true, "/usr/bin/postgres -D /var/lib/pg"),
+  );
   expect(got.kind).toBe("mismatch");
   if (got.kind === "mismatch") expect(got.actual).toContain("postgres");
 });
@@ -61,9 +77,16 @@ test("a corrupt state file is treated as absent, not as a crash — but SAID, no
   const d = await dir();
   await writeFile(stateFile(d), "{ not json");
   const said: string[] = [];
-  expect((await checkState(d, probe(true, "paddock"), (l) => said.push(l))).kind).toBe("none");
-  expect(said.length, "a corrupt state file was read and nothing was said").toBeGreaterThan(0);
-  expect(said.join(" "), "the message must name the file").toContain(stateFile(d));
+  expect(
+    (await checkState(d, probe(true, "paddock"), (l) => said.push(l))).kind,
+  ).toBe("none");
+  expect(
+    said.length,
+    "a corrupt state file was read and nothing was said",
+  ).toBeGreaterThan(0);
+  expect(said.join(" "), "the message must name the file").toContain(
+    stateFile(d),
+  );
 });
 
 test("a well-formed file of the wrong shape is reported too, not silently absent", async () => {
@@ -71,7 +94,9 @@ test("a well-formed file of the wrong shape is reported too, not silently absent
   const d = await dir();
   await writeFile(stateFile(d), JSON.stringify({ pid: "not a number" }));
   const said: string[] = [];
-  expect((await checkState(d, probe(true, "paddock"), (l) => said.push(l))).kind).toBe("none");
+  expect(
+    (await checkState(d, probe(true, "paddock"), (l) => said.push(l))).kind,
+  ).toBe("none");
   expect(said.length).toBeGreaterThan(0);
 });
 
@@ -137,10 +162,14 @@ test("an instance that cannot identify itself records NOTHING, and says why", as
     { capture: () => null, log: (l) => said.push(l) },
   );
   expect(ok).toBe(false);
-  expect((await checkState(d, probe(true, "paddock"))).kind, "an unmatchable identity was written")
-    .toBe("none");
-  expect(said.join(" "), "silence would leave 'stop' mysteriously unable to find it")
-    .toContain("4242");
+  expect(
+    (await checkState(d, probe(true, "paddock"))).kind,
+    "an unmatchable identity was written",
+  ).toBe("none");
+  expect(
+    said.join(" "),
+    "silence would leave 'stop' mysteriously unable to find it",
+  ).toContain("4242");
 });
 
 test("recordState writes the captured identity verbatim", async () => {
@@ -194,6 +223,43 @@ test("a capture that throws does not take an already-bound server down", async (
     },
   );
   expect(ok, "a failed capture is a false, never a throw").toBe(false);
-  expect(existsSync(stateFile(d)), "no state file may be written from a failed capture").toBe(false);
-  expect(warned.join(" "), "the failure must be announced, not swallowed").toContain("ps");
+  expect(
+    existsSync(stateFile(d)),
+    "no state file may be written from a failed capture",
+  ).toBe(false);
+  expect(
+    warned.join(" "),
+    "the failure must be announced, not swallowed",
+  ).toContain("ps");
+});
+
+test("an argsOf that throws is 'cannot tell', not 'someone else owns this pid'", async () => {
+  // The default probe's argsOf falls back to Bun.spawnSync(["ps", ...]), which
+  // throws when `ps` is absent rather than returning a non-zero exit. Letting
+  // that escape crashes status/stop/start; reporting it as `mismatch` would be
+  // worse than crashing, because every mismatch arm DELETES the state file —
+  // so a machine without `ps` would quietly untrack a healthy instance.
+  // "Could not look" is the fact `unreadable` already names.
+  const d = await dir();
+  await writeState(d, {
+    pid: 4242,
+    args: "paddock",
+    port: 8787,
+    version: "t",
+    startedAt: 1,
+  });
+  const got = await checkState(d, {
+    isAlive: () => true,
+    argsOf: () => {
+      throw new Error("ENOENT: no such file or directory, posix_spawn 'ps'");
+    },
+  });
+  expect(
+    got.kind,
+    "an unidentifiable pid is indeterminate, never a mismatch",
+  ).toBe("unreadable");
+  expect(
+    existsSync(stateFile(d)),
+    "nothing may be deleted on a 'cannot tell'",
+  ).toBe(true);
 });
