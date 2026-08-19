@@ -344,6 +344,14 @@ async function spawnDetached(
     const p = Bun.spawn(childCommand(opts), {
       stdio: ["ignore", fh.fd, fh.fd],
       env: process.env,
+      // setsid(). Without it the child stays in the invoking shell's session
+      // and process group, and "detached" is a name rather than a property:
+      // a ctrl+c during the wait below reaches the instance the operator just
+      // asked for, and surviving the terminal closing depends on the shell's
+      // huponexit setting rather than on anything this code guarantees.
+      // `unref()` is NOT a substitute — it releases the PARENT's event loop
+      // and changes no process group at all.
+      detached: true,
     });
     p.unref?.();
     return { pid: p.pid, exited: p.exited };
