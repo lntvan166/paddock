@@ -4,7 +4,15 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY . .
-RUN bun run build:web
+# BOTH steps, in this order. `routes.ts` imports `@server/embedded`
+# unconditionally, and that module is generated — gitignored, never committed.
+# Without this line the runtime stage below copies a `src/` with no
+# `embedded.ts` in it and the container dies at startup with
+# "Cannot find module '@server/embedded'". It used to appear to work only
+# because `COPY . .` picked up a developer's local copy; .dockerignore now
+# excludes that, so this is the only thing that produces one.
+RUN bun run build:web \
+ && bun run scripts/gen-embedded.ts
 
 FROM oven/bun:1-alpine
 WORKDIR /app

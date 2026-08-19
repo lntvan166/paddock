@@ -15,7 +15,9 @@ import { UpdateBar } from "@web/components/UpdateBar";
 import { readPrefs, themeAttr } from "@web/prefs";
 
 export function App() {
-  const { agents, hostId, connected, lastMessageAt, updateAvailable, connect } = useStore();
+  const {
+    agents, hostId, connected, lastMessageAt, updateAvailable, latestKnown, connect,
+  } = useStore();
   const [now, setNow] = useState(() => Date.now());
   // Expanded by default. Collapsed, idle agents render as chips that carry a
   // name and nothing else — no task line, no elapsed time — so the section
@@ -111,7 +113,7 @@ export function App() {
       <div {...staleAttrs(stale)}>
         <InstallHint />
         <HostHeader
-          hostId={hostId} agents={agents}
+          hostId={hostId} agents={agents} latestKnown={latestKnown}
           onOpenSettings={() => { location.hash = "#/settings"; }}
         />
 

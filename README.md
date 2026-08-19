@@ -32,6 +32,27 @@ Synthetic agents, no install. Best viewed in mobile mode.
 - **Cheap to watch** — adaptive polling, and only changed lines on the wire
 - **Notify** — a Telegram message when an agent needs you, gated by which states you pick, quiet hours, and a per-agent cooldown
 
+## Install
+
+```bash
+curl -fsSL https://lntvan166.github.io/paddock/install.sh | sh
+```
+
+Installs to `~/.local/bin/paddock`. No `sudo`. The script verifies the release
+checksum before writing anything — read it first with
+`curl -fsSL https://lntvan166.github.io/paddock/install.sh | less`.
+
+Upgrade with `paddock update`. paddock never updates itself unasked.
+
+Builds are published for Linux and macOS on x86_64 and aarch64 — the same four
+platforms herdr supports.
+
+paddock checks GitHub for a newer release **at most once a day**, caches the
+answer in `~/.config/paddock/update-check.json`, and shows a dim line in the
+header when there is one. It never installs anything on its own. Set
+`PADDOCK_NO_UPDATE_CHECK=1` to switch it off entirely — no request is made and
+nothing is written. It is off automatically for a `0.0.0-dev` build.
+
 ## Quick start
 
 Try it with synthetic agents, no herdr required:

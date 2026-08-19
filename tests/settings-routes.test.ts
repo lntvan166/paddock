@@ -25,7 +25,11 @@ async function harness(sendTest?: (o: { token: string; chatId: string; text: str
   await settings.load();
   const app = createApp({
     store: new AgentStore("dev-box"), hub: new Hub({ build: () => "test" }),
-    health: () => ({ ok: true }) as never, settings,
+    health: () => ({
+      ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: true,
+      lastEventAt: null, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null,
+    }),
+    settings,
     sendTest: sendTest ?? (async () => ({ ok: true, detail: null })),
   });
   return { app, settings };

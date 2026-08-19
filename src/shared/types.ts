@@ -187,7 +187,22 @@ export type OutputResult =
   | { unchanged?: false; lines: string[]; source: string; digest: string };
 
 export type ServerMessage =
-  | { type: "snapshot"; hostId: string; agents: Agent[]; serverTime: number; build?: string | null }
+  | {
+      type: "snapshot"; hostId: string; agents: Agent[]; serverTime: number;
+      build?: string | null;
+      /**
+       * The newest paddock version `checkForUpdate` has seen, or `null` if
+       * none is known yet or the running build is already current. Carried
+       * here (and on `heartbeat`, below) rather than fetched once from
+       * `/api/health`: `App` mounts once and never unmounts for the life of
+       * the tab (same reasoning as `build`, right above), so a single fetch
+       * racing the server's own unawaited startup check would read `null`
+       * and never learn of a real update for as long as the tab stays open.
+       * The WS envelope already has working reconnect and a 20s heartbeat;
+       * riding it gives eventual consistency for free.
+       */
+      latestKnown?: string | null;
+    }
   | { type: "delta"; upserted: Agent[]; removedIds: string[]; serverTime: number }
   /**
    * "I am still here" — carries no agent data and changes nothing on screen.
@@ -205,7 +220,7 @@ export type ServerMessage =
    * is running stale JavaScript. `index.html` is `no-cache`, which fixes fresh
    * loads and does nothing for a tab left open on a phone for days.
    */
-  | { type: "heartbeat"; serverTime: number; build?: string | null };
+  | { type: "heartbeat"; serverTime: number; build?: string | null; latestKnown?: string | null };
 
 export const SECTION_ORDER = ["needs-you", "working", "idle"] as const;
 export type Section = (typeof SECTION_ORDER)[number];

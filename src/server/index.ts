@@ -19,17 +19,64 @@ import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
+import { parseArgs, USAGE } from "@server/cli";
+import { VERSION } from "@server/version";
+import { runUpdate } from "@server/update";
+import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
 
-const args = new Set(Bun.argv.slice(2));
-const DEMO = args.has("--demo");
+const { command, flags, verb } = parseArgs(Bun.argv.slice(2));
+const DEMO = flags.has("--demo");
 const PORT = Number(process.env.PADDOCK_PORT ?? 8787);
 const HOSTNAME = "127.0.0.1"; // loopback only; exposure is the tunnel's job
 
-for (const unimplemented of ["agent", "hub"]) {
-  if (args.has(unimplemented)) {
-    console.error(`paddock ${unimplemented}: not implemented — see docs/roadmap.md`);
-    process.exit(2);
-  }
+// Reserved, and routed through the parser like every other verb. This used to
+// scan raw `Bun.argv` instead — two argv mechanisms in one function, which is
+// also how `paddock --demo agent` came out as `serve` from parseArgs and as
+// `agent` from here. Exit code 2 and the roadmap pointer are unchanged.
+if (command === "agent" || command === "hub") {
+  console.error(`paddock ${command}: not implemented — see docs/roadmap.md`);
+  process.exit(2);
+}
+
+// An unrecognised verb must NOT fall through to serve. `paddock updte` used to
+// launch a dashboard, which on a branch whose whole purpose is introducing
+// verbs is the "never swallow errors" shape — the operator asked for something
+// that does not exist and got a working-looking server instead of being told.
+if (command === "unknown") {
+  console.error(`paddock: unknown command '${verb}'`);
+  console.error(USAGE);
+  process.exit(2);
+}
+
+if (flags.has("--version") || flags.has("-V")) {
+  console.log(VERSION);
+  process.exit(0);
+}
+
+// Must run before any server setup below: `paddock update` should not open a
+// herdr socket or bind a port.
+if (command === "update") {
+  process.exit(await runUpdate({
+    // MUST be process.execPath, not Bun.argv[0]. In a COMPILED binary
+    // (`bun build --compile`, which is what this ships as), Bun.argv[0] is
+    // the literal string "bun" — not a path at all — when the binary is
+    // invoked as a bare name off PATH (measured by compiling a probe and
+    // running it as a bare name: argv0 was "bun", execPath was the probe's
+    // real absolute path). dirname("bun") is ".", so using Bun.argv[0] here
+    // would write .paddock.new into the operator's CURRENT WORKING
+    // DIRECTORY and rename over ./paddock — a stray file wherever they
+    // happened to be standing, and the real install never touched.
+    // process.execPath is the compiled binary's actual absolute path in
+    // both the compiled and interpreted (`bun src/server/index.ts`) cases.
+    // In a source checkout it resolves to the operator's own bun
+    // installation — Ruling P1 (the 0.0.0-dev refusal above) is what makes
+    // that case safe, not this path choice.
+    selfPath: process.execPath,
+    platform: process.platform,
+    arch: process.arch,
+    current: VERSION,
+    checkOnly: flags.has("--check"),
+  }));
 }
 
 const socketPath =
@@ -65,7 +112,33 @@ function currentBuildId(): string | null {
   }
 }
 
-const hub = new Hub({ build: currentBuildId });
+/**
+ * Filled in asynchronously, below, and read on every heartbeat/snapshot (via
+ * the Hub, so an already-open tab learns of it too — see shared/types.ts's
+ * comment on ServerMessage) and by `health()` on every request.
+ *
+ * Fired WITHOUT awaiting — a version check must never delay the server
+ * binding its port, and this variable simply stays `null` (its honest "don't
+ * know yet" value) until the one background check resolves.
+ *
+ * `startUpdateCheck` rather than a bare `void checkForUpdate(...).then(...)`:
+ * that form had no `.catch`, and Bun terminates the process on an unhandled
+ * rejection — so a check that threw killed a server that had already bound
+ * its port and was serving. The rejection handler lives with the check
+ * itself now, where it cannot be dropped by an edit to this file.
+ */
+let latestKnown: string | null = null;
+startUpdateCheck(
+  {
+    dir: defaultConfigDir(),
+    current: VERSION,
+    now: Date.now(),
+    disabled: noUpdateCheckRequested(),
+  },
+  (v) => { latestKnown = v; },
+);
+
+const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown });
 
 const settings = new SettingsStore(defaultConfigDir());
 await settings.load();
@@ -203,6 +276,8 @@ const app = createApp({
     // A broken token fails every send silently otherwise; exposed here so it
     // is visible within seconds rather than never.
     lastNotifyError: notifier.lastError,
+    version: VERSION,
+    latestKnown,
   }),
   staticDir: process.env.PADDOCK_STATIC_DIR ?? "dist",
 });

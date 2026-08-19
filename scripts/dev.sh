@@ -40,6 +40,18 @@ cd "$(dirname "$0")/.."
 # --watch reload, so a crash was indistinguishable from a routine restart.
 LOG="dev-server.log"
 
+# The embed manifest, BEFORE the server starts. `src/server/routes.ts` imports
+# `@server/embedded` unconditionally and that module is generated, not
+# committed — so on a fresh clone the very first `make dev` used to die with
+# "Cannot find module '@server/embedded'" before printing anything useful. It
+# writes an EMPTY map when dist/ has not been built, which is exactly right
+# here: in the dev loop the UI comes from Vite, not from an embedded snapshot.
+#
+# Generated here rather than as a Makefile prerequisite so that `bash
+# scripts/dev.sh` — which is all `make dev` runs — works on its own too. One
+# mechanism, not two.
+bun run scripts/gen-embedded.ts
+
 bun run dev:web &
 web=$!
 

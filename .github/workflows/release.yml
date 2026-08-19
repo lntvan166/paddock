@@ -1,0 +1,80 @@
+name: release
+
+# Tags only. ci.yml gates pull requests and pushes to main, so a red tree
+# cannot be released around by pushing a tag.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - run: make check
+      - run: make check-clean
+      - run: make test
+
+      # A release pipeline must not depend on a test target's internals to have
+      # produced the artifacts it ships, so if make test ever stops building the UI,
+      # the release still embeds one.
+      - name: Build the UI and the embed manifest
+        run: |
+          bun run build:web
+          bun run scripts/gen-embedded.ts
+
+      # One Linux runner builds every target. Bun cross-compiles: this was
+      # verified producing genuine Mach-O arm64 and ELF aarch64 binaries from
+      # x86_64 Linux, which is why there is no macOS runner here.
+      - name: Compile
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p out
+          build() {
+            bun build --compile --target="$1" \
+              --define "process.env.PADDOCK_VERSION=\"$VERSION\"" \
+              src/server/index.ts --outfile "out/$2"
+          }
+          build bun-linux-x64    paddock-linux-x86_64
+          build bun-linux-arm64  paddock-linux-aarch64
+          build bun-darwin-x64   paddock-macos-x86_64
+          build bun-darwin-arm64 paddock-macos-aarch64
+
+      # A released binary that reports 0.0.0-dev is not a cosmetic bug: update.ts
+      # REFUSES to update a 0.0.0-dev build by design, so `paddock update` would
+      # then decline on every release — the headline feature of this release
+      # pipeline, dead, with every test still green. The `--define` above nests
+      # quotes inside a shell string, which is exactly the kind of thing that
+      # breaks silently, so the stamp is read back off the real artifact.
+      - name: Smoke — the compiled binary reports this tag's version
+        env:
+          PADDOCK_NO_UPDATE_CHECK: "1"
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          GOT="$(out/paddock-linux-x86_64 --version)"
+          echo "paddock --version -> '$GOT' (expected '$VERSION')"
+          if [ "$GOT" != "$VERSION" ]; then
+            echo "version stamp mismatch: the --define did not reach the binary" >&2
+            exit 1
+          fi
+
+      - name: Checksums
+        run: cd out && sha256sum paddock-* > SHA256SUMS && cat SHA256SUMS
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json tagName >/dev/null; then
+            gh release upload "$GITHUB_REF_NAME" out/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag out/*
+          fi

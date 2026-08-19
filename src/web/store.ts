@@ -10,6 +10,19 @@ export interface ClientState {
   build: string | null;
   /** The server is serving a different build than this tab is running. */
   updateAvailable: boolean;
+  /**
+   * The newest paddock version the server's once-a-day check has seen, or
+   * `null` if none is known yet or the running build is already current.
+   *
+   * Carried on the WS envelope (snapshot + heartbeat) rather than fetched
+   * once from `/api/health`: `App` mounts once and never unmounts for the
+   * life of the tab, so a single fetch racing the server's own unawaited
+   * startup check would read `null` and never learn of a real update for as
+   * long as the tab stayed open. Unlike `updateAvailable`, this does NOT
+   * latch — it always reflects the server's current answer, so an operator
+   * who updates sees the notice clear on the next heartbeat.
+   */
+  latestKnown: string | null;
 }
 
 /**
@@ -36,6 +49,20 @@ function trackBuild(state: ClientState, build: string | null | undefined): Parti
   return { updateAvailable: true };
 }
 
+/**
+ * Unlike `trackBuild`, this does not latch and does not ignore `null`: a
+ * `null` is a real, current answer ("nothing newer is known", or the
+ * operator has since updated), not the absence of one. Only `undefined` —
+ * the field genuinely missing from the message — leaves the prior value
+ * alone.
+ */
+function trackLatestKnown(
+  state: ClientState, latestKnown: string | null | undefined,
+): Partial<ClientState> {
+  if (latestKnown === undefined) return {};
+  return { latestKnown };
+}
+
 const STALE_AFTER_MS = 60_000;
 
 export function wsUrlFrom(loc: { protocol: string; host: string }): string {
@@ -53,6 +80,7 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
     return {
       ...state,
       ...trackBuild(state, msg.build),
+      ...trackLatestKnown(state, msg.latestKnown),
       hostId: msg.hostId,
       agents: msg.agents,
       lastMessageAt: msg.serverTime,
@@ -62,7 +90,12 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
   // entire job — and must not touch `agents`, so a quiet link keeps proving
   // itself alive without ever redrawing a row.
   if (msg.type === "heartbeat") {
-    return { ...state, ...trackBuild(state, msg.build), lastMessageAt: msg.serverTime };
+    return {
+      ...state,
+      ...trackBuild(state, msg.build),
+      ...trackLatestKnown(state, msg.latestKnown),
+      lastMessageAt: msg.serverTime,
+    };
   }
   const byId = new Map(state.agents.map((a) => [a.agentId, a]));
   for (const a of msg.upserted) byId.set(a.agentId, a);
@@ -162,8 +195,9 @@ export const useStore = create<Store>((set, get) => {
     hostId: null,
     connected: false,
     lastMessageAt: null,
-  build: null,
-  updateAvailable: false,
+    build: null,
+    updateAvailable: false,
+    latestKnown: null,
     connect,
   };
 });
