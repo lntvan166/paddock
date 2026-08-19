@@ -53,6 +53,22 @@ Installs to `~/.local/bin/paddock`, no `sudo`, checksum verified before
 anything is written · [read it first](https://lntvan166.github.io/paddock/install.sh)
 · [binaries](https://github.com/lntvan166/paddock/releases)
 
+### herdr version
+
+paddock talks to herdr over herdr's own socket protocol, and the two have to
+agree on its version. This release expects **protocol 19**, which herdr
+**0.8.0** speaks. `install.sh` checks after installing, and you can ask again
+whenever:
+
+```bash
+paddock doctor
+```
+
+If herdr is older, upgrade herdr **and restart its daemon**: the socket answers
+from the running daemon, not from the binary on disk, so upgrading alone keeps
+reporting the old protocol. paddock refuses to start on a mismatch rather than
+half-working against a protocol it does not understand.
+
 then start it where herdr is running:
 
 ```bash

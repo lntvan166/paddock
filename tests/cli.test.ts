@@ -217,6 +217,29 @@ test("'paddock --help' answers instead of starting a dashboard", () => {
   const r = runServer(["--help"], { PADDOCK_HERDR_SOCKET: "/nonexistent/herdr.sock" });
   expect(r.code, "--help must not start anything").toBe(0);
   expect(r.out).toContain("usage: paddock");
-  expect(r.out + r.err, "no herdr socket may be opened").not.toContain("herdr");
+  // Behaviour, not vocabulary. A fall-through to serve names the socket it could
+  // not reach BY PATH (herdrUnreachableMessage), so the injected path is the
+  // tell. Matching the bare word "herdr" also forbade the usage text from naming
+  // the tool paddock talks to, which `paddock doctor` has to do.
+  expect(r.out + r.err, "no herdr socket may be opened").not.toContain("/nonexistent/herdr.sock");
+  expect(r.out + r.err, "no port may be bound").not.toContain("listening");
+});
+
+test("doctor is a verb, not an unknown typo", () => {
+  expect(parseArgs(["doctor"]).command).toBe("doctor");
+});
+
+test("usage lists doctor, so a mistyped verb teaches the real vocabulary", () => {
+  expect(USAGE).toContain("paddock doctor");
+});
+
+// Same contract as update/status/stop/start: answers and exits without binding a
+// port or opening the event stream. It reports 2 here — the socket path does not
+// exist, so nothing was learned about herdr — which is exactly the code install.sh
+// treats as a friendly skip rather than a failure.
+test("'paddock doctor' answers against a missing socket without starting anything", () => {
+  const r = runServer(["doctor"], { PADDOCK_HERDR_SOCKET: "/nonexistent/herdr.sock" });
+  expect(r.code, "undetermined, not incompatible").toBe(2);
+  expect(r.out + r.err).toContain("/nonexistent/herdr.sock");
   expect(r.out + r.err, "no port may be bound").not.toContain("listening");
 });

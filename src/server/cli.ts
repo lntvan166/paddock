@@ -10,7 +10,8 @@
  * else the operator typed.
  */
 export type Command =
-  | "serve" | "update" | "start" | "stop" | "status" | "help" | "agent" | "hub" | "unknown";
+  | "serve" | "update" | "start" | "stop" | "status" | "doctor" | "help" | "agent" | "hub"
+  | "unknown";
 
 export interface ParsedArgs {
   command: Command;
@@ -28,6 +29,7 @@ export const USAGE = [
   "       paddock stop [--force]    stop the detached instance",
   "       paddock status            is it running?",
   "       paddock update [--check]  install the latest release",
+  "       paddock doctor            can this paddock talk to your herdr?",
   "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",
 ].join("\n");
@@ -77,6 +79,7 @@ function commandFor(verb: string | null): Command {
   if (verb === null) return "serve";
   if (verb === "serve" || verb === "update") return verb;
   if (verb === "start" || verb === "stop" || verb === "status") return verb;
+  if (verb === "doctor") return "doctor";
   if (verb === "help") return "help";
   if (RESERVED.has(verb)) return verb as Command;
   return "unknown";

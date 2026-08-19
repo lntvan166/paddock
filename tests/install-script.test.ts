@@ -145,7 +145,11 @@ function setupFixtures(
   return { work, assets, binDir, tmpBase, curl, log };
 }
 
-function runInstall(fx: ReturnType<typeof setupFixtures>) {
+// PADDOCK_SKIP_DOCTOR defaults ON here: the fixture "binary" is a few bytes of
+// text, so letting install.sh exec it would spray "command not found" through
+// tests that are about the download pipeline. The doctor tests below opt back in
+// with a fixture that IS a runnable script.
+function runInstall(fx: ReturnType<typeof setupFixtures>, env: Record<string, string> = {}) {
   return run([], {
     PADDOCK_UNAME_S: "Linux",
     PADDOCK_UNAME_M: "x86_64",
@@ -154,6 +158,8 @@ function runInstall(fx: ReturnType<typeof setupFixtures>) {
     STUB_ASSETS_DIR: fx.assets,
     STUB_LOG: fx.log,
     TMPDIR: fx.tmpBase,
+    PADDOCK_SKIP_DOCTOR: "1",
+    ...env,
   });
 }
 
@@ -310,4 +316,63 @@ test("every mktemp call carries an explicit template, or the installer dies on m
   for (const call of calls) {
     expect(call, `mktemp without a template: ${call.trim()}`).toMatch(/XXXXXX|-t\s/);
   }
+});
+
+// --- The herdr compatibility check ----------------------------------------
+//
+// install.sh delegates this to the binary it just installed rather than doing it
+// in shell, because a shell version would have to hardcode paddock's expected
+// protocol (duplicating the generated contract) and read JSON off a unix socket,
+// which needs socat or nc that macOS does not reliably ship. These drive it with
+// a fixture binary that IS a runnable script, so the exit-code handling is
+// exercised for real.
+const doctorStub = (body: string) => `#!/bin/sh\n${body}\n`;
+
+function installWithStubBinary(body: string) {
+  const content = doctorStub(body);
+  const fx = setupFixtures(content, `${sha256(content)}  ${ASSET}\n`);
+  try {
+    const r = runInstall(fx, { PADDOCK_SKIP_DOCTOR: "" });
+    return { r, out: new TextDecoder().decode(r.stdout) + new TextDecoder().decode(r.stderr) };
+  } finally {
+    rmSync(fx.work, { recursive: true, force: true });
+  }
+}
+
+test("an incompatible herdr is reported without failing the install", () => {
+  const { r, out } = installWithStubBinary('echo "stub: protocol mismatch" >&2; exit 1');
+  expect(r.exitCode, "the install itself succeeded").toBe(0);
+  expect(out).toContain("stub: protocol mismatch");
+  expect(out).toContain("before paddock will start");
+});
+
+// Installing paddock before herdr, or while herdr is stopped, is a legitimate
+// order — the one case this check must not turn into a scary failure.
+test("a herdr that could not be checked is not reported as a problem", () => {
+  const { r, out } = installWithStubBinary("exit 2");
+  expect(r.exitCode).toBe(0);
+  expect(out).toContain("paddock doctor");
+  expect(out).not.toContain("before paddock will start");
+});
+
+test("a compatible herdr adds no complaint", () => {
+  const { r, out } = installWithStubBinary('echo "paddock: herdr looks compatible"; exit 0');
+  expect(r.exitCode).toBe(0);
+  expect(out).toContain("herdr looks compatible");
+  expect(out).not.toContain("before paddock will start");
+});
+
+test("the check can be skipped outright", () => {
+  const { r, out } = (() => {
+    const content = "FAKE-PADDOCK-BINARY-CONTENTS\n";
+    const fx = setupFixtures(content, `${sha256(content)}  ${ASSET}\n`);
+    try {
+      const res = runInstall(fx, { PADDOCK_SKIP_DOCTOR: "1" });
+      return { r: res, out: new TextDecoder().decode(res.stdout) };
+    } finally {
+      rmSync(fx.work, { recursive: true, force: true });
+    }
+  })();
+  expect(r.exitCode).toBe(0);
+  expect(out).toContain("skipping");
 });
