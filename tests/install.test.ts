@@ -41,31 +41,55 @@ test("readInstallEnv survives a storage accessor that throws", () => {
   // synchronously in render, so a thrown SecurityError here must not
   // propagate and take the whole dashboard down.
   const g = globalThis as Record<string, unknown>;
+  const KEYS = ["window", "navigator", "document", "localStorage"] as const;
   const had = {
     window: "window" in g, navigator: "navigator" in g,
     document: "document" in g, localStorage: "localStorage" in g,
   };
   const prev = { window: g.window, navigator: g.navigator, document: g.document, localStorage: g.localStorage };
 
-  g.window = { matchMedia: () => ({ matches: false }) };
-  g.navigator = {};
-  g.document = {};
-  g.localStorage = {
-    getItem: () => {
-      throw new Error("SecurityError: storage disabled");
-    },
-    setItem: () => {
-      throw new Error("SecurityError: storage disabled");
-    },
-  };
+  /**
+   * `defineProperty`, never plain assignment.
+   *
+   * `tests/support/dom.ts` registers happy-dom for the component tests, and Bun
+   * runs every test file in ONE process — so whether these globals are writable
+   * here depends on which file ran first, which is file-order and not something
+   * this test can choose. Under happy-dom they are readonly, and `g.navigator =
+   * {}` throws `TypeError: Attempted to assign to readonly property`. It failed
+   * in CI and not locally for exactly that reason, after four new test files
+   * shifted the order.
+   *
+   * Defining the property works either way, and `configurable: true` is what
+   * lets the restore below put the original back.
+   */
+  const put = (k: string, v: unknown) =>
+    Object.defineProperty(g, k, { value: v, writable: true, configurable: true });
 
   try {
+    // INSIDE the try, because a throw while faking is exactly the case that
+    // must still restore. Setting up first left `window` faked and `navigator`
+    // not, for every DOM test that ran afterwards — one failure here produced a
+    // second, unrelated one in another file.
+    put("window", { matchMedia: () => ({ matches: false }) });
+    put("navigator", {});
+    put("document", {});
+    put("localStorage", {
+      getItem: () => {
+        throw new Error("SecurityError: storage disabled");
+      },
+      setItem: () => {
+        throw new Error("SecurityError: storage disabled");
+      },
+    });
+
     expect(() => readInstallEnv(false)).not.toThrow();
     expect(readInstallEnv(false).dismissed).toBe(false);
     expect(() => dismissInstall()).not.toThrow();
   } finally {
-    for (const key of ["window", "navigator", "document", "localStorage"] as const) {
-      if (had[key]) g[key] = prev[key];
+    // Restored the same way it was faked: assignment would hit the same
+    // readonly wall, leaving the fake installed for every later file.
+    for (const key of KEYS) {
+      if (had[key]) put(key, prev[key]);
       else delete g[key];
     }
   }
