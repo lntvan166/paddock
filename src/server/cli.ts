@@ -1,5 +1,8 @@
 /**
  * `serve`, `update`, `start`, `status` and `stop` are implemented and act.
+ * `help` is implemented and only prints — it is the one command that must
+ * answer without touching a socket or a port, since asking what the tool does
+ * must never start it.
  * `agent` and `hub` are RESERVED — the multi-host shape in
  * docs/architecture.md names them, and exiting with a pointer to the roadmap
  * is better than either doing something half-working or silently serving a
