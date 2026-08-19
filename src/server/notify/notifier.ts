@@ -3,24 +3,6 @@ import type { Agent, AgentState } from "@shared/types";
 import type { Delta } from "@server/state/store";
 import { isConfigured, type SettingsStore } from "@server/settings/store";
 
-const minutes = (hhmm: string): number => {
-  const [h, m] = hhmm.split(":").map(Number);
-  return (h ?? 0) * 60 + (m ?? 0);
-};
-
-/**
- * Quiet hours wrap midnight, and that is the ORDINARY case: 22:00-08:00 has
- * start > end. Read as `start <= t < end` the most common setting an operator
- * types silences nothing at all. Equal start and end is a zero-length window.
- */
-export function inQuietHours(d: Date, qh: { start: string; end: string } | null): boolean {
-  if (qh === null) return false;
-  const t = d.getHours() * 60 + d.getMinutes();
-  const s = minutes(qh.start), e = minutes(qh.end);
-  if (s === e) return false;
-  return s < e ? t >= s && t < e : t >= s || t < e;
-}
-
 export interface NotifierOpts {
   settings: SettingsStore;
   send: (text: string) => Promise<{ ok: boolean; detail: string | null }>;
@@ -81,11 +63,6 @@ export class Notifier {
     if (!fires) return;
 
     const now = (this.o.now ?? Date.now)();
-    if (inQuietHours(new Date(now), s.notify.quietHours)) {
-      // Dropped, never queued: a pile delivered at 08:00 describes agents
-      // unblocked five hours earlier — noise wearing the costume of signal.
-      return;
-    }
 
     const since = now - (this.#lastSentAt.get(a.agentId) ?? Number.NEGATIVE_INFINITY);
     if (since < s.notify.cooldownMs) {

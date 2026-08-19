@@ -4,12 +4,13 @@ import { join } from "node:path";
 import type { NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 
 export interface Settings {
-  version: 1;
+  version: 2;
   telegram: { token: string | null; chatId: string | null };
   notify: {
     enabled: boolean;
     triggers: NotifyTrigger[];
-    quietHours: { start: string; end: string } | null;
+    settleMs: Record<NotifyTrigger, number>;
+    mutedUntil: number | null;
     cooldownMs: number;
   };
   publicUrl: string | null;
@@ -19,11 +20,29 @@ export interface Settings {
  *  the operator wants both halves of. It guards flapping, not repetition. */
 export const DEFAULT_COOLDOWN_MS = 60_000;
 
+/**
+ * `blocked` settles fast because a blocked agent is waiting on the operator
+ * and every second of the window is a second of an agent doing nothing.
+ * `done` settles longer because it is the state that lies: a main agent that
+ * delegates goes `working → done` the moment a subagent returns, then back to
+ * `working` when it reviews the result.
+ *
+ * 10s is a STARTING value, not a measured one. It covers a main agent that
+ * resumes immediately; it does not cover one that spends 20s composing a
+ * review first. Raise `done` to 30–60s if false finishes persist, and record
+ * what worked in docs/settings.md.
+ */
+export const DEFAULT_SETTLE_MS: Record<NotifyTrigger, number> = { blocked: 5_000, done: 10_000 };
+
+export const MAX_SETTLE_MS = 600_000;
+
 const defaults = (): Settings => ({
-  version: 1,
+  version: 2,
   telegram: { token: null, chatId: null },
-  notify: { enabled: false, triggers: ["blocked"], quietHours: null,
-            cooldownMs: DEFAULT_COOLDOWN_MS },
+  notify: {
+    enabled: false, triggers: ["blocked"], settleMs: { ...DEFAULT_SETTLE_MS },
+    mutedUntil: null, cooldownMs: DEFAULT_COOLDOWN_MS,
+  },
   publicUrl: null,
 });
 
@@ -47,6 +66,61 @@ export function defaultConfigDir(): string {
  */
 export function isConfigured(v: string | null | undefined): v is string {
   return typeof v === "string" && v !== "";
+}
+
+const obj = (v: unknown): Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+const num = (v: unknown, fallback: number): number =>
+  typeof v === "number" && Number.isFinite(v) ? v : fallback;
+
+/**
+ * Every stored shape, past or present, normalised to a complete v2 `Settings`.
+ *
+ * This replaces `{ ...defaults(), ...parsed }`, which was a SHALLOW merge: a
+ * stored `notify` object replaced `defaults().notify` wholesale, so a v1 file
+ * would load with no `settleMs` — and `setTimeout(fn, undefined)` fires
+ * immediately, silently restoring the edge-firing bug. A shape whose absence
+ * degrades to the old behaviour without erroring is worse than one that
+ * throws, so every field is filled explicitly here.
+ */
+export function migrate(parsed: unknown, log: (m: string) => void = console.info): Settings {
+  const d = defaults();
+  const p = obj(parsed);
+  const t = obj(p.telegram);
+  const n = obj(p.notify);
+  const s = obj(n.settleMs);
+
+  // Named, not dropped silently: the operator configured a window and it is
+  // being taken away, so say so and say what replaced it.
+  if ("quietHours" in n && n.quietHours !== null) {
+    const q = obj(n.quietHours);
+    log(
+      `[settings] quiet hours (${String(q.start)}-${String(q.end)}) is no longer supported ` +
+        `and has been removed. Use "Mute for" in Settings instead.`,
+    );
+  }
+
+  return {
+    version: 2,
+    telegram: {
+      token: typeof t.token === "string" ? t.token : null,
+      chatId: typeof t.chatId === "string" ? t.chatId : null,
+    },
+    notify: {
+      enabled: typeof n.enabled === "boolean" ? n.enabled : d.notify.enabled,
+      triggers: Array.isArray(n.triggers)
+        ? n.triggers.filter((x): x is NotifyTrigger => x === "blocked" || x === "done")
+        : d.notify.triggers,
+      settleMs: {
+        blocked: num(s.blocked, DEFAULT_SETTLE_MS.blocked),
+        done: num(s.done, DEFAULT_SETTLE_MS.done),
+      },
+      mutedUntil: typeof n.mutedUntil === "number" && Number.isFinite(n.mutedUntil) ? n.mutedUntil : null,
+      cooldownMs: num(n.cooldownMs, d.notify.cooldownMs),
+    },
+    publicUrl: typeof p.publicUrl === "string" ? p.publicUrl : null,
+  };
 }
 
 export class SettingsStore {
@@ -82,7 +156,11 @@ export class SettingsStore {
     }
 
     try {
-      this.#s = { ...defaults(), ...(JSON.parse(raw) as Settings) };
+      const parsed = JSON.parse(raw) as unknown;
+      this.#s = migrate(parsed);
+      // Rewritten only when the stored shape was not already v2, so a normal
+      // boot does not rewrite the file (and the token in it) for nothing.
+      if (obj(parsed).version !== 2) await this.persist();
     } catch (e) {
       this.error = `settings.json is not valid JSON, using defaults and not overwriting it: ${(e as Error).message}`;
       this.#s = defaults();
@@ -99,12 +177,12 @@ export class SettingsStore {
    * and passed even when a rejected patch had in fact been applied. Those
    * "leaves stored settings unchanged" assertions are only load-bearing if
    * this returns a snapshot. `structuredClone` rather than a spread because
-   * `telegram`, `notify` and `notify.quietHours` are all nested — a shallow
+   * `telegram`, `notify` and `notify.settleMs` are all nested — a shallow
    * copy would alias exactly the fields a patch writes.
    */
   current(): Settings { return structuredClone(this.#s); }
 
-  view(): SettingsView {
+  view(now: number = Date.now()): SettingsView {
     const t = this.#s.telegram.token;
     return {
       telegram: {
@@ -112,8 +190,13 @@ export class SettingsStore {
         hint: isConfigured(t) ? t.slice(-4) : null,
         chatId: this.#s.telegram.chatId,
       },
-      notify: { ...this.#s.notify, triggers: [...this.#s.notify.triggers] },
+      notify: {
+        ...this.#s.notify,
+        triggers: [...this.#s.notify.triggers],
+        settleMs: { ...this.#s.notify.settleMs },
+      },
       publicUrl: this.#s.publicUrl,
+      serverNow: now,
       error: this.error,
     };
   }

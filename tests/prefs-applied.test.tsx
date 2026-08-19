@@ -33,8 +33,9 @@ afterEach(async () => {
 // file asserts on its content.
 const settingsView = () => ({
   telegram: { configured: false, hint: null, chatId: null },
-  notify: { enabled: false, triggers: [], quietHours: null, cooldownMs: 60_000 },
-  publicUrl: null, error: null,
+  notify: { enabled: false, triggers: [], settleMs: { blocked: 5_000, done: 10_000 },
+            mutedUntil: null, cooldownMs: 60_000 },
+  publicUrl: null, serverNow: 1_700_000_000_000, error: null,
 });
 
 const screenOf = (lines: string[]) => ({ lines, source: "visible", digest: digestOf(lines) });

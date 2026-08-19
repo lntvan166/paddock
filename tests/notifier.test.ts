@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Notifier, inQuietHours } from "@server/notify/notifier";
+import { Notifier } from "@server/notify/notifier";
 import type { Agent } from "@shared/types";
 
 const NOW = 1_700_000_000_000;
@@ -14,7 +14,8 @@ interface HarnessOpts {
   /** Merged into `notify`, so a test names only the field it cares about. */
   notify?: Partial<{
     enabled: boolean; triggers: string[];
-    quietHours: { start: string; end: string } | null; cooldownMs: number;
+    settleMs: { blocked: number; done: number };
+    mutedUntil: number | null; cooldownMs: number;
   }>;
   telegram?: Partial<{ token: string | null; chatId: string | null }>;
   publicUrl?: string | null;
@@ -31,7 +32,8 @@ function harness(o: HarnessOpts = {}) {
     current: () => ({
       telegram: { token: "1:A", chatId: "555", ...o.telegram },
       notify: {
-        enabled: true, triggers: ["blocked"], quietHours: null, cooldownMs: 60_000,
+        enabled: true, triggers: ["blocked"],
+        settleMs: { blocked: 0, done: 0 }, mutedUntil: null, cooldownMs: 60_000,
         ...o.notify,
       },
       publicUrl: o.publicUrl === undefined ? "https://paddock.example.com" : o.publicUrl,
@@ -148,21 +150,15 @@ test("an intervening same-state delta inside the cooldown window does not perman
   expect(h.sent).toHaveLength(2);
 });
 
-test("quiet hours wrap past midnight — 22:00-08:00 is the ordinary case", () => {
-  // Read naively as start <= t < end, the most common setting silences nothing.
-  const qh = { start: "22:00", end: "08:00" };
-  expect(inQuietHours(new Date("2026-08-18T23:30:00"), qh)).toBe(true);
-  expect(inQuietHours(new Date("2026-08-18T03:00:00"), qh)).toBe(true);
-  expect(inQuietHours(new Date("2026-08-18T12:00:00"), qh)).toBe(false);
-  expect(inQuietHours(new Date("2026-08-18T12:00:00"), { start: "09:00", end: "17:00" })).toBe(true);
-});
-
 test("a trailing slash on publicUrl does not produce a double slash in the link", async () => {
   const sent: string[] = [];
   const store = {
     current: () => ({
       telegram: { token: "1:A", chatId: "555" },
-      notify: { enabled: true, triggers: ["blocked"], quietHours: null, cooldownMs: 60_000 },
+      notify: {
+        enabled: true, triggers: ["blocked"],
+        settleMs: { blocked: 0, done: 0 }, mutedUntil: null, cooldownMs: 60_000,
+      },
       publicUrl: "https://paddock.example.com/",
     }),
   };
@@ -201,36 +197,6 @@ test("the message never carries the task text, which may hold pasted secrets", a
   // all" cannot pass this test.
   expect(h.sent[0]).toContain("api-refactor");
   expect(h.sent[0]).toContain("blocked");
-});
-
-test("quiet hours DROP the notification, they never defer it", async () => {
-  // A queue delivers a pile at 08:00 about agents unblocked five hours
-  // earlier — noise wearing the costume of signal. Asserted at the Notifier
-  // level, not just on the pure `inQuietHours`: the drop is only real if the
-  // transition is also CONSUMED, so that a later delta in the same state
-  // does not fire the moment the window passes.
-  const inWindow = new Date(2026, 7, 18, 23, 30).getTime();   // 23:30 local
-  const afterWindow = new Date(2026, 7, 19, 12, 0).getTime(); // 12:00 local
-  const h = harness({ notify: { quietHours: { start: "22:00", end: "08:00" } }, now: inWindow });
-
-  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
-  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
-  await Bun.sleep(1);
-  expect(h.sent).toEqual([]);
-
-  // The window has passed and the agent is still blocked. A DEFERRED
-  // notification fires here; a DROPPED one never does.
-  h.setNow(afterWindow);
-  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
-  await Bun.sleep(1);
-  expect(h.sent).toEqual([]);
-
-  // Proof the notifier is not simply mute: a genuine new transition after the
-  // window still notifies.
-  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
-  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
-  await Bun.sleep(1);
-  expect(h.sent).toHaveLength(1);
 });
 
 test("a send that REJECTS is recorded on lastError, never left unhandled", async () => {
