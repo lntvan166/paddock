@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
-import { parsePrompt, selectedLine } from "@server/herdr/prompt-parse";
+import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
   isConfigured,
@@ -470,7 +470,12 @@ export function createApp(deps: AppDeps) {
         // just moved, and the preview that tells the operator what Enter will
         // commit has to move with it. Parsing it in `web/` would put TUI
         // knowledge on the wrong side of the dependency rule.
-        return c.json({ ok: true, ...out, selected: selectedLine(out.lines.join("\n")) });
+        // `parsePrompt`, not `selectedLine`: the preview must be scoped to the
+        // menu on screen the same way `/prompt` scopes it. Deriving it from the
+        // bare marker scan here is what let a marker left on an ALREADY
+        // ANSWERED question reappear as this menu's selection on the first
+        // arrow tap — correct on load, wrong the moment the operator moved.
+        return c.json({ ok: true, ...out, selected: parsePrompt(out.lines.join("\n")).selected });
       } catch (err) {
         return c.json({ ok: false, detail: String(err), lines: [], source: "" }, 502);
       }

@@ -194,7 +194,34 @@ test("the cursor is found even when the line carries ANSI escapes", () => {
   expect(selectedLine(raw)).toBe("2. Yes, and always allow: curl *");
 });
 
-test("selectedLine agrees with parsePrompt on clean text", () => {
+test("selectedLine agrees with parsePrompt when the marker is on the live menu", () => {
+  // They agree on this input and are MEANT to diverge on others: the bare scan
+  // takes the last marker anywhere, while parsePrompt scopes to the menu that
+  // produced the options. See "a marker left on an answered question\u2026" below
+  // for the case where agreeing would be the bug.
   const raw = [" Proceed?", "   1. Yes", " \u276f 2. No"].join("\n");
   expect(selectedLine(raw)).toBe(parsePrompt(raw).selected);
+});
+
+test("a marker left on an answered question is not attributed to the live menu", () => {
+  // The shape that produced this, found on a phone: one box asking several
+  // questions in sequence. Answering the first leaves its marker on screen,
+  // and the menu now awaiting an answer carries no marker yet — so the last
+  // marker in the buffer belongs to a DIFFERENT question than the options do.
+  //
+  // Reporting it tells the operator Enter will commit something it will not,
+  // which is the one thing this field exists to prevent. Silence is correct
+  // here: the buttons above it already show what can be chosen.
+  const raw = [
+    " Which approach?",
+    " ❯ 1. Merge locally",
+    "   2. Create a pull request",
+    "",
+    " Collapse the keypad?",
+    "   1. Leave it visible",
+    "   2. Collapse it",
+  ].join("\n");
+  const p = parsePrompt(raw);
+  expect(p.options?.map((o) => o.label)).toEqual(["Leave it visible", "Collapse it"]);
+  expect(p.selected).toBeNull();
 });

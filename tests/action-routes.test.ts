@@ -16,7 +16,9 @@ function agent(over: Partial<Agent> = {}): Agent {
   };
 }
 
-function harness(a: Agent = agent()) {
+/** `screen` overrides what `readOutput` returns, for the tests that care what
+ *  the route derives FROM the screen rather than that it read one. */
+function harness(a: Agent = agent(), screen?: string[]) {
   const store = new AgentStore("dev-box");
   store.replaceAll([a], NOW);
   const calls: string[] = [];
@@ -26,7 +28,7 @@ function harness(a: Agent = agent()) {
     // here is the thing under test.
     async readOutput(_t: string, _s: Agent["state"], lines?: number) {
       calls.push(`readOutput:${lines}`);
-      return { lines: ["out"], source: "visible" as const };
+      return { lines: screen ?? ["out"], source: "visible" as const };
     },
     async readDetection() { calls.push("readDetection"); return "Proceed?\n ❯ 1. Yes\n   2. No\n"; },
     async sendOptionKey(_t: string, k: string) { calls.push(`key:${k}`); },
@@ -411,4 +413,40 @@ test("a scrollback read is never answered with a patch", async () => {
   const body = await (await post(app, "/api/agents/w1:p1/output",
     { since: first.digest, scrollback: true })).json();
   expect(body.patch).toBeUndefined();
+});
+
+test("a keystroke's preview is scoped to the live menu, not a marker left on an answered one", async () => {
+  // `/key` re-derives the preview from the screen it has just re-read, so it
+  // needs the same scoping rule `/prompt` uses. Without it the stale label
+  // comes back on the first arrow tap — which reads as a fix that did not
+  // take, because the initial render is right and only moving breaks it.
+  const screen = [
+    " Which approach?",
+    " ❯ 1. Merge locally",
+    "   2. Create a pull request",
+    "",
+    " Collapse the keypad?",
+    "   1. Leave it visible",
+    "   2. Collapse it",
+  ];
+  const { app } = harness(agent(), screen);
+  const res = await post(app, "/api/agents/w1:p1/key", { key: "down" });
+  expect(res.status).toBe(200);
+  expect((await res.json()).selected).toBeNull();
+});
+
+test("a keystroke's preview survives the colour the live screen keeps", async () => {
+  // `/prompt` reads with strip_ansi, `/key` does not — it re-reads the LIVE
+  // screen. So the shared rule has to see through escapes, or moving the
+  // cursor reports nothing at all on a coloured TUI. Built from a charcode so
+  // no escape byte sits literally in this file.
+  const esc = String.fromCharCode(27);
+  const screen = [
+    " Proceed?",
+    "   1. Yes",
+    ` ${esc}[36m❯${esc}[0m 2. No`,
+  ];
+  const { app } = harness(agent(), screen);
+  const res = await post(app, "/api/agents/w1:p1/key", { key: "down" });
+  expect((await res.json()).selected).toBe("2. No");
 });

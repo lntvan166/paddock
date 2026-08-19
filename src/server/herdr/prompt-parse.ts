@@ -16,13 +16,21 @@ const CURSOR_RE = /^\s*❯\s*(\S.*?)\s*$/;
 /**
  * The line the cursor sits on, marker stripped, or null.
  *
- * Exported so the `/key` route can re-derive it from the screen it already
- * re-reads after a keystroke. The alternative — letting the browser parse it —
- * would put TUI knowledge in `web/`, and the dependency rule keeps every
- * herdr-shaped assumption on this side of the socket.
+ * The FALLBACK, used by `parsePrompt` only when no menu could be parsed — which
+ * is the case it is right for, and the only one. No route calls it directly any
+ * more: both `/prompt` and `/key` go through `parsePrompt`, so one rule decides
+ * what the preview says on load and after every keystroke. It stays exported
+ * because it is tested directly, and because a bare marker scan is worth naming
+ * separately from the scoping built on top of it.
+ *
+ * Either way the parsing lives here rather than in `web/`: the dependency rule
+ * keeps every herdr-shaped assumption on this side of the socket.
  *
  * The LAST marker wins: a resolved earlier prompt can still carry one, and the
- * live prompt is always further down the buffer.
+ * live prompt is always further down the buffer. Note what that cannot know —
+ * whether the marker belongs to the menu currently awaiting an answer. Only
+ * `parsePrompt` has the run boundaries needed to tell, which is exactly why the
+ * scoping lives there and not here.
  */
 export function selectedLine(text: string): string | null {
   let selected: string | null = null;
@@ -81,7 +89,15 @@ export function parsePrompt(raw: string): ParsedPrompt {
   // prompt can still carry a marker, and the live one is always further down.
   let selected: string | null = null;
 
-  for (const line of raw.split("\n")) {
+  for (const rawLine of raw.split("\n")) {
+    // Stripped HERE rather than left to the callers, because both now come
+    // through this function: `/prompt` reads a detection snapshot with
+    // `strip_ansi: true`, but `/key` re-reads the LIVE screen with colour
+    // kept. Matching raw bytes made a coloured menu parse as no menu at all,
+    // so the preview vanished on the first arrow-down — the same class of
+    // failure the ANSI note above records, one call site over.
+    const line = stripAnsi(rawLine);
+
     const cur = CURSOR_RE.exec(line);
     if (cur) selected = cur[1]!;
 
@@ -128,5 +144,34 @@ export function parsePrompt(raw: string): ParsedPrompt {
     lastRun.length >= 2 && lastRun.every((o, i) => o.key === String(i + 1));
   const usable = contiguous && lastRunQuestion !== null;
 
-  return { question: lastRunQuestion, options: usable ? lastRun : null, selected, raw };
+  /**
+   * Whenever there IS a usable menu, the selection is scoped to that menu —
+   * never to the global marker scan above.
+   *
+   * The scan takes the last marker anywhere in the buffer, which is right when
+   * no list could be parsed (that is the case it exists for) and wrong the
+   * moment one could. A box asking several questions in sequence leaves the
+   * answered ones on screen with their markers, and the menu still awaiting an
+   * answer carries none yet — so the last marker in the buffer belongs to a
+   * DIFFERENT question than `options` does. The UI renders both next to each
+   * other, so the operator reads "Enter selects <an option they already
+   * answered>" above buttons from the live question. Found on a phone.
+   *
+   * That is the one failure this field exists to prevent, so silence beats a
+   * stale answer: with a menu on screen the buttons already show what can be
+   * chosen, and the selected one carries its own accent border.
+   *
+   * The `N. label` shape is rebuilt rather than reusing the matched line so
+   * the string is identical to what the scan produced for the same menu — this
+   * narrows where the value comes from, it does not restyle it.
+   */
+  const marked = lastRun.find((o) => o.selected);
+  const fromRun = marked === undefined ? null : `${marked.key}. ${marked.label}`;
+
+  return {
+    question: lastRunQuestion,
+    options: usable ? lastRun : null,
+    selected: usable ? fromRun : selected,
+    raw,
+  };
 }
