@@ -23,6 +23,7 @@ import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, USAGE } from "@server/cli";
 import { VERSION } from "@server/version";
+import { runDoctor } from "@server/doctor";
 import { runUpdate } from "@server/update";
 import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
 import {
@@ -120,6 +121,14 @@ if (command === "start") {
 
 const socketPath =
   process.env.PADDOCK_HERDR_SOCKET ?? join(homedir(), ".config", "herdr", "herdr.sock");
+
+// Must run before any server setup below, same reasoning as the four verbs
+// above: asking whether paddock can talk to herdr must not bind a port or open
+// the event stream. It sits here rather than beside them only because it needs
+// socketPath — everything between that and here builds plain objects.
+if (command === "doctor") {
+  process.exit(await runDoctor({ socketPath }));
+}
 
 const hostId = DEMO ? DEMO_HOST_ID : (process.env.PADDOCK_HOST_ID ?? "local");
 const store = new AgentStore(hostId);

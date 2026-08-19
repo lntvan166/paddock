@@ -130,4 +130,28 @@ case ":$PATH:" in
      echo "  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
 esac
 
+# Delegated to the binary that was just installed, NOT reimplemented here. A
+# shell version would have to hardcode paddock's expected protocol — duplicating
+# generated src/shared/herdr-api.d.ts, which is the drift `make types` exists to
+# prevent — and read JSON off a unix socket, which needs socat or nc that macOS
+# does not reliably ship. Half the platforms supported here are macOS while every
+# test runs on Linux, so that bug would have shipped invisibly: the same trap the
+# mktemp template above documents.
+#
+# Advisory only. Installing paddock before herdr, or while herdr is stopped, is a
+# legitimate order, so this never fails the install. It is not silenced either —
+# the exit code is inspected and every outcome says something.
+#   0 compatible    1 incompatible    2 could not tell
+if [ -n "${PADDOCK_SKIP_DOCTOR:-}" ]; then
+  echo "paddock: skipping the herdr compatibility check (PADDOCK_SKIP_DOCTOR is set)"
+else
+  doctor_rc=0
+  "$BIN" doctor || doctor_rc=$?
+  case "$doctor_rc" in
+    0) ;;
+    2) echo "paddock: start herdr, then run 'paddock doctor' to confirm compatibility" ;;
+    *) echo "paddock: the mismatch above must be resolved before paddock will start" ;;
+  esac
+fi
+
 echo "paddock: run 'paddock' to start the dashboard"
