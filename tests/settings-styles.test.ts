@@ -67,3 +67,23 @@ test("the terminal font size still falls back to the responsive clamp", () => {
   expect(declaration(".term-pane", "font-size"))
     .toBe("var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))");
 });
+
+test("the save bar clears the home indicator", () => {
+  // A fixed bar with no safe-area padding puts Save under the iOS gesture bar.
+  expect(declaration(".settings-save-bar", "padding-bottom")).toContain("env(safe-area-inset-bottom)");
+});
+
+test("reserving space for the bar does not cost the page its safe-area inset", () => {
+  // `.settings` is a later rule than `.safe-bottom` at equal specificity, so a
+  // bare padding-bottom here would override the inset for the whole page.
+  expect(declaration(".settings", "padding-bottom")).toContain("env(safe-area-inset-bottom");
+});
+
+test("the save bar's button is a full touch target", () => {
+  expect(declaration(".settings-save-bar button", "min-height")).toBe(TOUCH_TARGET);
+});
+
+test("the toast does not animate under reduced motion", () => {
+  const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+  expect(reduced).toContain(".settings-toast");
+});

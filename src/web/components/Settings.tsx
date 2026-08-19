@@ -7,6 +7,8 @@ import {
 import { DeviceSection } from "@web/components/settings/DeviceSection";
 import { TelegramSection } from "@web/components/settings/TelegramSection";
 import { NotifySection } from "@web/components/settings/NotifySection";
+import { SaveBar } from "@web/components/settings/SaveBar";
+import { Toast } from "@web/components/settings/Toast";
 
 interface SettingsProps {
   onBack: () => void;
@@ -43,6 +45,28 @@ export function Settings({ onBack }: SettingsProps) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; detail: string | null } | null>(null);
 
+  /** The server state the form was last known to match. Dirtiness is measured
+   *  against this, so it is re-captured on every successful save. */
+  const [baseline, setBaseline] = useState<SettingsView | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // Token is write-only: the field always starts empty and the server never
+  // sends one back, so there is no baseline to compare — anything typed is a
+  // change. `baseline === null` is also the form-never-loaded guard that used
+  // to be `disabled={saving || view === null}` on the Save button: while it
+  // holds, `dirty` is false, so the save bar (and its button) never renders,
+  // and a failed GET cannot PUT over whatever the operator already had
+  // configured on the server.
+  const dirty =
+    baseline !== null && (
+      token !== "" ||
+      chatId !== (baseline.telegram.chatId ?? "") ||
+      notifyEnabled !== baseline.notify.enabled ||
+      triggers.join(",") !== [...baseline.notify.triggers].join(",") ||
+      cooldownMs !== baseline.notify.cooldownMs ||
+      publicUrl !== (baseline.publicUrl ?? "")
+    );
+
   /**
    * Shared by `save()` and `sendTest()`, which — unlike the GET effect above,
    * whose own `live` flag is scoped to one effect run — are user-triggered
@@ -67,6 +91,7 @@ export function Settings({ onBack }: SettingsProps) {
         const body = (await res.json()) as SettingsView;
         if (!live) return;
         setView(body);
+        setBaseline(body);
         setChatId(body.telegram.chatId ?? "");
         setNotifyEnabled(body.notify.enabled);
         setTriggers(body.notify.triggers);
@@ -78,6 +103,14 @@ export function Settings({ onBack }: SettingsProps) {
     })();
     return () => { live = false; };
   }, []);
+
+  // Cleared on unmount, and keyed on `savedAt` so two saves in a row each get
+  // a full three seconds rather than the second inheriting the first's timer.
+  useEffect(() => {
+    if (savedAt === null) return;
+    const t = setTimeout(() => setSavedAt(null), 3_000);
+    return () => clearTimeout(t);
+  }, [savedAt]);
 
   function setPref<K extends keyof Prefs>(k: K, v: Prefs[K]) {
     writePref(k, v);
@@ -126,7 +159,20 @@ export function Settings({ onBack }: SettingsProps) {
         setSaveError(typeof body?.detail === "string" ? body.detail : `save failed: ${res.status}`);
         return;
       }
-      setView(body as SettingsView);
+      // Re-synced from the response exactly like the mount GET above, not
+      // left at whatever was typed: the server is the source of truth for
+      // what actually got persisted (it may trim or normalise), and without
+      // this the fields would drift from `baseline` on their very next
+      // render and read as dirty again even though the save just succeeded.
+      const saved = body as SettingsView;
+      setView(saved);
+      setBaseline(saved);
+      setChatId(saved.telegram.chatId ?? "");
+      setNotifyEnabled(saved.notify.enabled);
+      setTriggers(saved.notify.triggers);
+      setCooldownMs(saved.notify.cooldownMs);
+      setPublicUrl(saved.publicUrl ?? "");
+      setSavedAt(Date.now());
       // The token is write-only: once it has been sent, the field goes back
       // to empty rather than continuing to display what was just typed.
       setToken("");
@@ -144,7 +190,13 @@ export function Settings({ onBack }: SettingsProps) {
       const res = await fetch("/api/settings/telegram/test", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: "{}",
+        // The values ON SCREEN, so a pasted token can be verified before it is
+        // committed. Blank fields are omitted, and the server falls back to
+        // the stored value per field.
+        body: JSON.stringify({
+          ...(token ? { token } : {}),
+          ...(chatId ? { chatId } : {}),
+        }),
       });
       const body = (await res.json()) as { ok: boolean; detail: string | null };
       if (mountedRef.current) setTestResult(body);
@@ -172,6 +224,7 @@ export function Settings({ onBack }: SettingsProps) {
 
       {view?.error && <p className="settings-banner">{view.error}</p>}
       {loadError && <p className="settings-banner">{loadError}</p>}
+      <Toast message={savedAt === null ? null : "Settings saved"} />
 
       <DeviceSection prefs={prefs} setPref={setPref} />
 
@@ -204,20 +257,17 @@ export function Settings({ onBack }: SettingsProps) {
         />
 
         {saveError && <p className="settings-banner">{saveError}</p>}
-
-        <div className="settings-actions">
-          {/* Disabled until the GET has landed. Every field in this section
-              starts at an empty/false/60000 placeholder and is only filled in
-              by that response — so if it fails, `loadError` is shown but Save
-              would PUT `enabled: false, triggers: [], chatId: null` straight
-              over whatever the operator had configured, destroying the
-              token's companion settings to fix nothing. A form that never
-              loaded cannot be saved. */}
-          <button type="button" onClick={() => void save()} disabled={saving || view === null}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
       </section>
+
+      {/* `dirty` is false while `baseline === null`, which is what used to be
+          `disabled={saving || view === null}` on a Save button: every field
+          in this section starts at an empty/false/60000 placeholder and is
+          only filled in by the GET response, so if that GET fails, a form
+          that treated itself as editable would PUT `enabled: false,
+          triggers: [], chatId: null` straight over whatever the operator had
+          configured. A form that never loaded cannot be saved — and now
+          there is no Save button rendered at all until something is dirty. */}
+      <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} />
     </main>
   );
 }

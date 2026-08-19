@@ -93,6 +93,12 @@ test("a failed save surfaces the server's rejection reason, never a silent failu
   await settle();
   await settle();
 
+  // The save bar — and its Save button — only exists once something is
+  // dirty, so an edit is required before there is a button to click at all.
+  const chatId = host.querySelector<HTMLInputElement>('input[name="chatId"]')!;
+  typeInto(chatId, "556");
+  await settle();
+
   buttonByText(host, "Save").click();
   await settle();
   await settle();
@@ -121,12 +127,15 @@ test("a failed test message surfaces Telegram's own description, never a silent 
   expect(host.textContent).toContain("chat not found");
 });
 
-test("Save is disabled until the settings have loaded, so a failed GET cannot overwrite the server", async () => {
+test("a form that never loaded cannot be saved, so a failed GET cannot overwrite the server", async () => {
   // Every field in the "All devices" section starts at an empty/false/60000
   // placeholder and is only populated by the mount GET. If that GET fails,
-  // `loadError` is shown — but a Save that stayed enabled would PUT
-  // `enabled: false, triggers: [], chatId: null` over whatever the operator
-  // actually had configured. A form that never loaded cannot be saved.
+  // `loadError` is shown — but a form that treated itself as editable would
+  // let the operator "save" `enabled: false, triggers: [], chatId: null`
+  // straight over whatever was actually configured. `baseline` stays null
+  // when the GET fails, `dirty` stays false while `baseline === null`, and
+  // the save bar renders nothing while the form is not dirty — so there is
+  // no Save button on screen at all, not merely a disabled one.
   let puts = 0;
   globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
     if (init?.method === "PUT") { puts += 1; return new Response("{}"); }
@@ -140,10 +149,7 @@ test("Save is disabled until the settings have loaded, so a failed GET cannot ov
   // The failure IS surfaced — this is not a silent degradation.
   expect(host.textContent).toContain("network down");
 
-  const save = buttonByText(host, "Save");
-  expect(save.disabled).toBe(true);
-  save.click();
-  await settle();
+  expect(host.querySelector(".settings-save-bar")).toBeNull();
   expect(puts).toBe(0);
 });
 
