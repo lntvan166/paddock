@@ -25,6 +25,13 @@ import { parseArgs, USAGE } from "@server/cli";
 import { VERSION } from "@server/version";
 import { runUpdate } from "@server/update";
 import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
+import {
+  errorCode,
+  herdrUnreachableMessage,
+  inspectSocketPath,
+  isDiagnosableHerdrFailure,
+  portInUseMessage,
+} from "@server/startup-errors";
 
 const { command, flags, verb } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
@@ -280,7 +287,14 @@ if (DEMO) {
     await supervisor.start();
   } catch (err) {
     if (err instanceof ProtocolMismatchError) console.error(err.message);
-    else console.error("failed to start against herdr:", err);
+    else {
+      const kind = inspectSocketPath(socketPath);
+      // Only what we can diagnose. A parse bug wearing a "cannot reach herdr"
+      // message is harder to debug than the raw throw it replaced.
+      if (isDiagnosableHerdrFailure(err, kind))
+        console.error(herdrUnreachableMessage(socketPath, err, kind));
+      else console.error(err);
+    }
     process.exit(1);
   }
 }
@@ -311,32 +325,42 @@ interface WsData {
   client?: HubClient;
 }
 
-Bun.serve<WsData>({
-  port: PORT,
-  hostname: HOSTNAME,
-  fetch(req, server) {
-    if (new URL(req.url).pathname === "/ws") {
-      const upgraded = server.upgrade(req, { data: {} });
-      return upgraded ? undefined : new Response("upgrade failed", { status: 400 });
-    }
-    return app.fetch(req);
-  },
-  websocket: {
-    open(ws) {
-      const client: HubClient = { send: (d) => ws.send(d) };
-      ws.data.client = client;
-      hub.add(client);
-      hub.sendSnapshot(client, hostId, store.snapshot());
+try {
+  Bun.serve<WsData>({
+    port: PORT,
+    hostname: HOSTNAME,
+    fetch(req, server) {
+      if (new URL(req.url).pathname === "/ws") {
+        const upgraded = server.upgrade(req, { data: {} });
+        return upgraded ? undefined : new Response("upgrade failed", { status: 400 });
+      }
+      return app.fetch(req);
     },
-    close(ws) {
-      const held = ws.data.client;
-      if (held) hub.remove(held);
+    websocket: {
+      open(ws) {
+        const client: HubClient = { send: (d) => ws.send(d) };
+        ws.data.client = client;
+        hub.add(client);
+        hub.sendSnapshot(client, hostId, store.snapshot());
+      },
+      close(ws) {
+        const held = ws.data.client;
+        if (held) hub.remove(held);
+      },
+      message() {
+        // Read-only in v1: the browser sends nothing.
+      },
     },
-    message() {
-      // Read-only in v1: the browser sends nothing.
-    },
-  },
-});
+  });
+} catch (err) {
+  // EADDRINUSE only. Everything else rethrows with its stack intact — a
+  // catch here that reported every failure as a port conflict would be worse
+  // than the trace it replaced, and this project's rules forbid swallowing
+  // errors, not formatting the one condition we recognise.
+  if (errorCode(err) !== "EADDRINUSE") throw err;
+  console.error(portInUseMessage(PORT, HOSTNAME));
+  process.exit(1);
+}
 
 // A quiet system sends nothing at all, so without this the browser would
 // declare a perfectly healthy link stale after 60s of idle agents.
