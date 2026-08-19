@@ -154,6 +154,11 @@ export async function runStop(o: StopOpts): Promise<number> {
    * hazard this feature exists to prevent, just ten seconds later and with
    * a signal that cannot be blocked. `isAlive` alone (the mutated version
    * this guards against) cannot tell the two apart.
+   *
+   * Deliberately stricter than the wait loop below, which tolerates an
+   * indeterminate `argsOf`: this one gates a signal that cannot be blocked,
+   * and "cannot tell" must block it. The loop gates nothing, so it can
+   * afford to wait for a fact instead.
    */
   const stillOurs = () => probe.isAlive(pid) && probe.argsOf(pid) === args;
 
@@ -164,18 +169,26 @@ export async function runStop(o: StopOpts): Promise<number> {
       await removeState(o.dir);
       return 0;
     }
-    if (!stillOurs()) {
-      // Our SIGTERM worked; the pid was recycled onto something else while
-      // we were watching for it to die. Nothing further to signal — this is
-      // success, not a timeout.
-      const actual = probe.argsOf(pid);
-      log(
-        `paddock: pid ${pid} is no longer paddock (now: ${actual ?? "unknown"}) ` +
-          "— already gone, nothing further to do",
-      );
+    const actual = probe.argsOf(pid);
+    if (actual !== null && actual !== args) {
+      // A different string, from a pid that is still alive: the number now
+      // belongs to something else. Refuse and say so, exactly as the
+      // pre-SIGKILL check below does for the same condition — this branch
+      // used to call it a success and delete the state file, which is how a
+      // live, still-running paddock could be made permanently untrackable by
+      // a `stop` that reported "already gone, nothing further to do".
+      log(`paddock: pid ${pid} is not paddock any more — refusing to signal it`);
+      log(`  it is now: ${actual}`);
       await removeState(o.dir);
-      return 0;
+      return 1;
     }
+    // `actual === null` is NOT that case, and must not be treated as one:
+    // during an ordinary stop the process is briefly a zombie, where
+    // /proc/<pid>/cmdline reads empty and `argsOf` returns null while
+    // kill(pid, 0) still succeeds. That is "cannot tell", so conclude
+    // nothing and keep polling. The loop then ends on a fact either way —
+    // the pid going away (success, above) or the deadline expiring (still
+    // running, below).
     await Bun.sleep(100);
   }
 

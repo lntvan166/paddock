@@ -183,3 +183,83 @@ test("a pid owned by another user (EPERM) is refused by name, not an unhandled t
   expect(code).not.toBe(0);
   expect(out.join(" ").toLowerCase()).toContain("permission denied");
 });
+
+// --- The wait loop's two very different "argsOf disagrees" cases ------------
+
+test("a pid recycled DURING the wait is refused and reported, not called a success", async () => {
+  // The in-loop branch used to print "already gone, nothing further to do",
+  // delete the state file and exit 0 — for the identical condition that the
+  // pre-SIGKILL re-check treats as a refusal with a non-zero exit. So a
+  // paddock that was still very much running could be made permanently
+  // untrackable by a stop that reported success. The design's failure table
+  // has one row for this: "stop where the PID is now someone else -> Name
+  // the PID and its real command, remove the file, exit non-zero."
+  const d = await dir();
+  await writeState(d, s);
+  const sent: string[] = [];
+  const out: string[] = [];
+  let calls = 0;
+  const code = await runStop({
+    dir: d,
+    // Matches for checkState and the first poll, then the number belongs to
+    // something else. Alive throughout: this is a recycle, not an exit.
+    probe: { isAlive: () => true, argsOf: () => (++calls <= 2 ? "paddock" : "/usr/bin/postgres -D /var/lib/pg") },
+    signal: (pid, sig) => sent.push(`${sig}->${pid}`),
+    log: (l) => out.push(l),
+    waitMs: 2000,
+  });
+  expect(sent, "nothing further may be signalled once the pid is not ours").toEqual(["SIGTERM->4242"]);
+  expect(code, "a recycled pid is a refusal, not a success").not.toBe(0);
+  expect(out.join(" ")).toContain("not paddock any more");
+  expect(out.join(" ")).toContain("postgres");
+  expect(existsSync(stateFile(d)), "the file names a pid that is no longer ours").toBe(false);
+});
+
+test("an indeterminate argsOf during the wait concludes nothing and keeps polling", async () => {
+  // The zombie window, and the reason the in-loop check must NOT simply
+  // refuse whenever argsOf returns null: during an ordinary stop the process
+  // is briefly a zombie, where /proc/<pid>/cmdline reads empty — so argsOf
+  // says null while kill(pid, 0) still succeeds. Treating that as a recycle
+  // would turn every normal stop into a refusal; treating it as success (the
+  // old behaviour) declares victory over a process that has not gone
+  // anywhere. It is neither: it is "cannot tell", so conclude nothing and
+  // let the loop end on a fact — the pid going away, below.
+  const d = await dir();
+  await writeState(d, s);
+  const out: string[] = [];
+  let liveness = 0;
+  let args = 0;
+  const code = await runStop({
+    dir: d,
+    probe: { isAlive: () => ++liveness <= 4, argsOf: () => (++args <= 1 ? "paddock" : null) },
+    signal: () => {},
+    log: (l) => out.push(l),
+    waitMs: 2000,
+  });
+  expect(code, "the pid did go away — that is an ordinary successful stop").toBe(0);
+  expect(liveness, "success was declared before the pid was observed gone").toBeGreaterThan(2);
+  expect(out.join(" ")).toContain("stopped");
+  expect(out.join(" "), "nothing was concluded from the null — there was nothing to conclude")
+    .not.toContain("nothing further to do");
+});
+
+test("an indeterminate argsOf on a pid that will not die is a timeout, not a success", async () => {
+  // The other way the loop can end once null stops being a conclusion: the
+  // process is alive for the whole window and never becomes identifiable.
+  // Still not a success, and still no automatic escalation.
+  const d = await dir();
+  await writeState(d, s);
+  const sent: string[] = [];
+  const out: string[] = [];
+  let args = 0;
+  const code = await runStop({
+    dir: d,
+    probe: { isAlive: () => true, argsOf: () => (++args <= 1 ? "paddock" : null) },
+    signal: (pid, sig) => sent.push(`${sig}->${pid}`),
+    log: (l) => out.push(l),
+    waitMs: 300,
+  });
+  expect(sent).toEqual(["SIGTERM->4242"]);
+  expect(code).not.toBe(0);
+  expect(out.join(" ")).toContain("--force");
+});
