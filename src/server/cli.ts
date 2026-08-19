@@ -1,11 +1,13 @@
 /**
- * `serve` and `update` are implemented. `agent` and `hub` are RESERVED — the
- * multi-host shape in docs/architecture.md names them, and exiting with a
- * pointer to the roadmap is better than either doing something half-working or
- * silently serving a dashboard under a name that promises something else.
- * `unknown` is anything else the operator typed.
+ * `serve`, `update`, `start`, `status` and `stop` are implemented and act.
+ * `agent` and `hub` are RESERVED — the multi-host shape in
+ * docs/architecture.md names them, and exiting with a pointer to the roadmap
+ * is better than either doing something half-working or silently serving a
+ * dashboard under a name that promises something else. `unknown` is anything
+ * else the operator typed.
  */
-export type Command = "serve" | "update" | "agent" | "hub" | "unknown";
+export type Command =
+  | "serve" | "update" | "start" | "stop" | "status" | "agent" | "hub" | "unknown";
 
 export interface ParsedArgs {
   command: Command;
@@ -18,7 +20,10 @@ export interface ParsedArgs {
 const RESERVED = new Set(["agent", "hub"]);
 
 export const USAGE = [
-  "usage: paddock [--demo]        start the dashboard (the default)",
+  "usage: paddock [--demo]          start the dashboard in the foreground",
+  "       paddock start             start it detached; survives this terminal",
+  "       paddock stop [--force]    stop the detached instance",
+  "       paddock status            is it running?",
   "       paddock update [--check]  install the latest release",
   "       paddock --version | -V    print the version",
 ].join("\n");
@@ -51,6 +56,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 function commandFor(verb: string | null): Command {
   if (verb === null) return "serve";
   if (verb === "serve" || verb === "update") return verb;
+  if (verb === "start" || verb === "stop" || verb === "status") return verb;
   if (RESERVED.has(verb)) return verb as Command;
   return "unknown";
 }
