@@ -6,7 +6,7 @@ import { groupLines } from "@web/lines";
 import { mergeSnapshot } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 import { applyPatch, digestOf } from "@shared/screen";
-import { RATE_MS, readPrefs, writePref, type RatePref } from "@web/prefs";
+import { RATE_MS, readPrefs, writePref, type KeypadPref, type RatePref } from "@web/prefs";
 
 /**
  * Undefined for an unstyled span, so the common run of plain text costs no
@@ -158,12 +158,37 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [wrap, setWrap] = useState(() => readPrefs().wrap);
+  /**
+   * Which half of the pad is on screen, seeded from the stored preference.
+   *
+   * Held here as well as in storage because a blocked agent may open it (see
+   * the effect below) WITHOUT that counting as the operator's choice — writing
+   * the pref there would quietly discard a deliberate "compact" the first time
+   * an agent asked a question.
+   */
+  const [keypad, setKeypad] = useState<KeypadPref>(() => readPrefs().keypad);
   // Read once: Settings is a separate full-screen view (App.tsx unmounts this
   // component to show it), so there is no live pref change to react to while
   // a pane stays open.
   const [fontPx] = useState(() => readPrefs().fontPx);
   const [shownHistory, setShownHistory] = useState(0);
   const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
+
+  /**
+   * A blocked agent may OPEN a collapsed pad. It may never close one.
+   *
+   * The asymmetry is the whole design: revealing a key the operator is about to
+   * want costs them nothing, while removing one mid-tap is exactly the hazard
+   * that keeps the primary row present in every state. So this only ever moves
+   * toward "full", and only while the operator has left the behaviour switched
+   * on. The stored preference is deliberately not written — this is the agent's
+   * doing, not a choice, and it must not survive as one.
+   */
+  useEffect(() => {
+    if (agent.state !== "blocked") return;
+    if (!readPrefs().keypadAuto) return;
+    setKeypad("full");
+  }, [agent.state]);
   const [reply, setReply] = useState("");
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
@@ -464,6 +489,21 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
         >
           {wrap ? "Wrap" : "Exact"}
         </button>
+        {/* Beside Wrap because both are view controls, and because a collapse
+            button INSIDE the pad would spend the height it exists to reclaim. */}
+        <button
+          type="button"
+          className="term-wrap-toggle"
+          aria-pressed={keypad === "full"}
+          aria-label="More keys"
+          onClick={() => {
+            const v: KeypadPref = keypad === "full" ? "compact" : "full";
+            setKeypad(v);
+            writePref("keypad", v);
+          }}
+        >
+          {keypad === "full" ? "Keys −" : "Keys +"}
+        </button>
         <button type="button" onClick={() => void load()} disabled={busy} aria-label="Refresh">
           ↻
         </button>
@@ -625,6 +665,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
             </button>
           ))}
         </div>
+        {keypad === "full" && (
         <div className="term-keys-secondary">
           {SECONDARY_KEYS.map((k) => (
             <button
@@ -636,6 +677,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
             </button>
           ))}
         </div>
+        )}
       </div>
 
       <form

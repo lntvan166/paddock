@@ -77,6 +77,21 @@ export function DeviceSection({ prefs, setPref }: DeviceSectionProps) {
           onChange={(e) => setPref("wrap", e.target.checked)}
         />
       </label>
+
+      <label className="settings-field settings-field-row">
+        <span>Open the keypad when an agent needs you</span>
+        {/* A DEVICE preference, not a server one, and deliberately so: it is
+            about how much of this screen the pad is worth, and the same account
+            on a laptop has room the phone does not. The pad itself is collapsed
+            and expanded from the terminal view — this only governs whether a
+            blocked agent may open it for you. It can never close it. */}
+        <input
+          type="checkbox"
+          name="keypadAuto"
+          checked={prefs.keypadAuto}
+          onChange={(e) => setPref("keypadAuto", e.target.checked)}
+        />
+      </label>
     </section>
   );
 }

@@ -25,7 +25,13 @@ test("defaults are returned when nothing is stored", () => {
   // `var(--term-font-px, …)`, and AgentTerminal only writes that property
   // when a real preference exists. A numeric default meant the property was
   // always written, so the responsive clamp never applied to anybody.
-  expect(readPrefs()).toEqual({ theme: "system", rate: "live", wrap: true, fontPx: null });
+  // Asserted as a WHOLE object on purpose: a new preference has to be declared
+  // here, which is what forces someone adding one to state its default
+  // deliberately rather than inheriting whatever `readPrefs` happens to return.
+  expect(readPrefs()).toEqual({
+    theme: "system", rate: "live", wrap: true, fontPx: null,
+    keypad: "full", keypadAuto: true,
+  });
 });
 
 test("the existing wrap key is reused verbatim, so no operator's setting resets", () => {
@@ -148,4 +154,34 @@ test("writing a null fontPx REMOVES the key rather than storing the string 'null
   writePref("fontPx", null);
   expect(localStorage.getItem("paddock.term.fontpx")).toBe(null);
   expect(readPrefs().fontPx).toBe(null);
+});
+
+test("the keypad prefs default to a full pad that expands itself", () => {
+  // Visible by default, and allowed to open itself when an agent needs an
+  // answer — the two things asked for. A collapsed default would hide the
+  // committing action from an operator who never opened settings.
+  localStorage.clear();
+  const p = readPrefs();
+  expect(p.keypad).toBe("full");
+  expect(p.keypadAuto).toBe(true);
+});
+
+test("a boolean pref round-trips, and 'never stored' is not 'explicitly off'", () => {
+  // `writePref` used to serialise booleans by testing `k === "wrap"`, so a
+  // second boolean would be stored as "true" and read back as `=== "1"` false
+  // — off the moment it was turned on. Generalised to the value's type, which
+  // is what the nullable case already does.
+  localStorage.clear();
+  expect(readPrefs().keypadAuto).toBe(true);
+
+  writePref("keypadAuto", false);
+  expect(readPrefs().keypadAuto).toBe(false);
+
+  writePref("keypadAuto", true);
+  expect(readPrefs().keypadAuto).toBe(true);
+});
+
+test("an unrecognised stored keypad value falls back to full", () => {
+  localStorage.setItem("paddock.term.keypad", "sideways");
+  expect(readPrefs().keypad).toBe("full");
 });

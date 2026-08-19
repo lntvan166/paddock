@@ -8,6 +8,17 @@
 export type ThemePref = "system" | "light" | "dark";
 export type RatePref = "live" | "balanced" | "frugal";
 
+/**
+ * Whether the terminal's secondary key row is on screen.
+ *
+ * Only the SECOND row collapses. `↑ ↓ ⏎ Enter` stay put in every state,
+ * because that row is how a prompt is answered and `AgentTerminal` records why
+ * a pad that moves under a thumb is its own hazard. Esc/←/→/Tab/Space are the
+ * rarely-reached half, and on a phone they are ~3rem of a screen whose job is
+ * showing a transcript.
+ */
+export type KeypadPref = "full" | "compact";
+
 /** Named points, not a milliseconds field: a free numeric input invites a
  *  value that hammers herdr, and the real decision is whether the connection
  *  is metered rather than which precise interval is optimal. */
@@ -28,6 +39,16 @@ export interface Prefs {
    * when this is a number. Consumers: treat `null` as "write nothing".
    */
   fontPx: number | null;
+  keypad: KeypadPref;
+  /**
+   * Whether a blocked agent may open a collapsed pad by itself.
+   *
+   * Expand-only, never the reverse: opening reveals a key the operator was
+   * about to want, while closing one mid-tap is the failure the always-present
+   * rule exists to prevent. Stored so the operator can decline the behaviour
+   * entirely, which is what was asked for.
+   */
+  keypadAuto: boolean;
 }
 
 /**
@@ -50,7 +71,12 @@ export interface Prefs {
  * value on a 390px viewport, dropping visible columns from roughly 62 to 48
  * on a phone. The clamp stays in charge until someone chooses a size.
  */
-const DEFAULTS: Prefs = { theme: "system", rate: "live", wrap: true, fontPx: null };
+const DEFAULTS: Prefs = {
+  theme: "system", rate: "live", wrap: true, fontPx: null,
+  // Visible by default, for the same reason `wrap` is: a default that hides a
+  // control is indistinguishable from an operator who chose to hide it.
+  keypad: "full", keypadAuto: true,
+};
 
 /** `wrap` is kept verbatim from AgentTerminal's own `WRAP_KEY` so no
  *  operator's current setting resets. All other keys are namespaced the
@@ -60,6 +86,8 @@ const KEYS = {
   rate: "paddock.rate",
   wrap: "paddock.term.wrap",
   fontPx: "paddock.term.fontpx",
+  keypad: "paddock.term.keypad",
+  keypadAuto: "paddock.term.keypad.auto",
 } as const;
 
 function raw(k: string): string | null {
@@ -84,11 +112,17 @@ export function readPrefs(): Prefs {
   // answer, silently flipping the default for every operator who never
   // opened the setting.
   const wrapRaw = raw(KEYS.wrap);
+  const keypad = raw(KEYS.keypad);
+  // Same "never stored" care as `wrap`: `=== "1"` alone would read an operator
+  // who has never opened the setting as one who switched it off.
+  const autoRaw = raw(KEYS.keypadAuto);
   return {
     theme: theme === "light" || theme === "dark" ? theme : DEFAULTS.theme,
     rate: rate === "balanced" || rate === "frugal" ? rate : DEFAULTS.rate,
     wrap: wrapRaw === null ? DEFAULTS.wrap : wrapRaw === "1",
     fontPx: Number.isFinite(font) && font >= 10 && font <= 22 ? font : DEFAULTS.fontPx,
+    keypad: keypad === "compact" ? "compact" : DEFAULTS.keypad,
+    keypadAuto: autoRaw === null ? DEFAULTS.keypadAuto : autoRaw === "1",
   };
 }
 
@@ -100,7 +134,10 @@ export function writePref<K extends keyof Prefs>(k: K, v: Prefs[K]): void {
     // once. Only `fontPx` is nullable today; the check is on the value, not
     // the key, so a future nullable pref inherits the behaviour.
     if (v === null) { localStorage.removeItem(KEYS[k]); return; }
-    localStorage.setItem(KEYS[k], k === "wrap" ? (v ? "1" : "0") : String(v));
+    // Keyed on the value's TYPE, not on one pref's name. Written as
+    // `k === "wrap"`, a second boolean pref was stored as "true" and read back
+    // by `=== "1"` as false — off the moment it was switched on.
+    localStorage.setItem(KEYS[k], typeof v === "boolean" ? (v ? "1" : "0") : String(v));
   } catch {
     // Safari private mode: the preference simply does not persist, which is
     // preferable to an uncaught throw taking the whole settings view down.

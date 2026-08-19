@@ -4,7 +4,7 @@
 import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
-import { RATE_MS, themeAttr, writePref } from "@web/prefs";
+import { RATE_MS, readPrefs, themeAttr, writePref } from "@web/prefs";
 import { AgentTerminal, floorFor } from "@web/components/AgentTerminal";
 import { Settings } from "@web/components/Settings";
 import { digestOf } from "@shared/screen";
@@ -15,7 +15,10 @@ const realFetch = globalThis.fetch;
 // this cross-file pollution has already caused real failures here), so every
 // `paddock.*` key this file touches is removed after each test rather than
 // left to leak into whichever suite runs next.
-const PREF_KEYS = ["paddock.theme", "paddock.rate", "paddock.term.wrap", "paddock.term.fontpx"];
+const PREF_KEYS = [
+  "paddock.theme", "paddock.rate", "paddock.term.wrap", "paddock.term.fontpx",
+  "paddock.term.keypad", "paddock.term.keypad.auto",
+];
 afterEach(async () => {
   await unmount();
   globalThis.fetch = realFetch;
@@ -168,4 +171,39 @@ test("clearing the font size in Settings returns the pane to the clamp", async (
   await settle();
 
   expect(localStorage.getItem("paddock.term.fontpx")).toBe(null);
+});
+
+test("the keypad-auto setting is a device pref, written to this browser only", async () => {
+  // Device, not server: it is about how much of THIS screen the pad is worth,
+  // and the same account on a laptop has room a phone does not. A server
+  // setting would collapse it everywhere at once.
+  //
+  // The fixture is a REAL SettingsView. Written first against a fixture that
+  // did not exist, this test passed while the stub answered `undefined` — the
+  // typechecker caught it, the assertions did not.
+  const view = () => ({
+    telegram: { configured: false, hint: null, chatId: null },
+    notify: {
+      enabled: false, triggers: ["blocked"],
+      settleMs: { blocked: 5_000, done: 10_000 }, mutedUntil: null, cooldownMs: 60_000,
+    },
+    publicUrl: null, serverNow: 1_700_000_000_000, error: null,
+  });
+  const { fn, calls } = stubFetch({ "/api/settings": () => view() });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  const box = host.querySelector<HTMLInputElement>('input[name="keypadAuto"]')!;
+  expect(box.checked).toBe(true);
+  box.click();
+  await settle();
+
+  expect(localStorage.getItem("paddock.term.keypad.auto")).toBe("0");
+  expect(readPrefs().keypadAuto).toBe(false);
+  // Nothing was WRITTEN to the server. A request carrying a body is a write,
+  // and a device pref that reached the server would apply to every device the
+  // operator opens paddock on.
+  expect(calls.filter((c) => c.body !== undefined)).toEqual([]);
 });

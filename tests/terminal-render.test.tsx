@@ -9,10 +9,17 @@ import { digestOf } from "@shared/screen";
 import { agent, render, settle, stubFetch, textsOf, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
+/** Every pref this file writes. Cleared after each test for the reason
+ *  `tests/settings-view.test.tsx` records: Bun runs every test file in ONE
+ *  process, so a key left set here is read as an operator's stored choice by
+ *  `tests/prefs.test.ts` and by any later file that calls `readPrefs()`. */
+const PREF_KEYS = ["paddock.term.keypad", "paddock.term.keypad.auto"];
+
 afterEach(async () => {
   await unmount();
   // A stub left installed leaks into every test file that runs after this one.
   globalThis.fetch = realFetch;
+  for (const k of PREF_KEYS) localStorage.removeItem(k);
 });
 
 const screenOf = (lines: string[]) => ({ lines, source: "visible", digest: digestOf(lines) });
@@ -173,4 +180,54 @@ test("the Enter preview is not repeated when a button already shows the selectio
   // window object in with it — the run stops being readable and takes minutes.
   // A number says the same thing and fails in one line.
   expect(host.querySelectorAll(".term-selected").length).toBe(0);
+});
+
+test("the secondary key row collapses, and the committing keys never do", async () => {
+  // Asked for: a collapse button, with the pad visible by default. Only the
+  // second row goes — up/down/Enter are how a prompt is answered, and the pad
+  // is documented as present in every state for exactly that reason.
+  localStorage.setItem("paddock.term.keypad", "compact");
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<AgentTerminal agent={agent({ state: "working" })} onBack={() => {}} />);
+  await settle();
+
+  expect(host.querySelectorAll(".term-keys-secondary").length).toBe(0);
+  // The row that commits an answer is still there.
+  expect(textsOf(host, ".term-keys-primary .term-key")).toEqual(["↑", "↓", "⏎ Enter"]);
+});
+
+test("a blocked agent opens a collapsed pad, and cannot close an open one", async () => {
+  // Expand-only. Revealing a key the operator is about to want costs nothing;
+  // taking one away mid-tap is the hazard the always-present rule exists for.
+  localStorage.setItem("paddock.term.keypad", "compact");
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+
+  expect(host.querySelectorAll(".term-keys-secondary").length).toBe(1);
+  // And the operator's stored choice is untouched — the agent opened it, which
+  // is not the same as the operator choosing to.
+  expect(localStorage.getItem("paddock.term.keypad")).toBe("compact");
+});
+
+test("auto-expand can be declined, and then a blocked agent leaves the pad alone", async () => {
+  localStorage.setItem("paddock.term.keypad", "compact");
+  localStorage.setItem("paddock.term.keypad.auto", "0");
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+
+  expect(host.querySelectorAll(".term-keys-secondary").length).toBe(0);
 });
