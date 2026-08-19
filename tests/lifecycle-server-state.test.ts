@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stateFile } from "@server/lifecycle/state";
@@ -72,4 +72,46 @@ test("a second paddock that loses the port race does not clobber the first's sta
     a.kill("SIGTERM");
     await a.exited;
   }
+}, 60_000);
+
+test("an unwritable config dir does not kill an already-bound paddock", async () => {
+  // A dir whose PARENT is a regular file is ENOTDIR for every user, root
+  // included — the same trick tests/lifecycle-state.test.ts uses for its
+  // "unreadable" case, chosen for the same reason: chmod alone would not
+  // stop a CI container running as root.
+  const parent = await mkdtemp(join(tmpdir(), "paddock-cfg-"));
+  const blocker = join(parent, "blocker");
+  await writeFile(blocker, "not a directory");
+  const cfg = join(blocker, "child");
+
+  const port = 9010 + Math.floor(performance.now() % 40);
+  const proc = Bun.spawn(["bun", "src/server/index.ts", "--demo"], {
+    env: {
+      ...process.env,
+      PADDOCK_PORT: String(port),
+      PADDOCK_CONFIG_DIR: cfg,
+      PADDOCK_NO_UPDATE_CHECK: "1",
+    },
+    stdout: "pipe", stderr: "pipe",
+  });
+
+  let ok = false;
+  try {
+    for (let i = 0; i < 60 && !ok; i++) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+        ok = res.ok;
+      } catch { await Bun.sleep(100); }
+    }
+  } finally {
+    proc.kill("SIGTERM");
+    await proc.exited;
+  }
+
+  // The dashboard is the product; a state file it could never write must not
+  // take it down.
+  expect(ok, "an unwritable config dir killed an already-bound paddock").toBe(true);
+
+  const stderrText = await new Response(proc.stderr).text();
+  expect(stderrText).toContain("could not record state");
 }, 60_000);

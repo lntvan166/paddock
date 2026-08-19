@@ -323,13 +323,27 @@ console.info(`paddock listening on http://${HOSTNAME}:${PORT}`);
 // Written AFTER the bind, deliberately. A paddock that failed to take the port
 // must not overwrite the state of the one already holding it.
 const stateDir = defaultConfigDir();
-await writeState(stateDir, {
-  pid: process.pid,
-  args: capturedArgs(process.pid) ?? "",
-  port: PORT,
-  version: VERSION,
-  startedAt: Date.now(),
-});
+try {
+  await writeState(stateDir, {
+    pid: process.pid,
+    args: capturedArgs(process.pid) ?? "",
+    port: PORT,
+    version: VERSION,
+    startedAt: Date.now(),
+  });
+} catch (e) {
+  // The dashboard is the product; `status` and `stop` are conveniences on top
+  // of it, and an unwritable config dir must not take down an
+  // already-serving paddock over a convenience. This is not hypothetical:
+  // oven/bun:1-alpine's passwd has only uid 1000, and docker-compose.yml
+  // runs `user: "${UID}:${GID}"` from the host, so on any host whose UID
+  // isn't 1000 `homedir()` resolves to `/` and this write is EACCES — the
+  // exact shape that, unguarded, previously killed an already-bound server
+  // via startUpdateCheck (see update-check.ts's mkdir/writeFile comment).
+  console.error(
+    `paddock: could not record state (${String(e)}) — 'paddock stop' will not find this process`,
+  );
+}
 
 // Foreground runs write it too, so `status` and `stop` do not depend on how
 // paddock was started.
@@ -339,7 +353,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     if (clearing) return;
     clearing = true;
     void removeState(stateDir)
-      .catch((e) => console.info(`paddock: could not clear state file (${String(e)})`))
+      .catch((e) => console.error(`paddock: could not clear state file (${String(e)})`))
       .finally(() => process.exit(0));
   });
 }
