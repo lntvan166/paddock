@@ -65,3 +65,25 @@ test("the terminal is constrained to a column, not stretched to the viewport", (
   expect(rule).toContain("width: min(100%");
   expect(rule).toContain("margin-inline: auto");
 });
+
+test("the prompt controls give an unbreakable run somewhere to break", () => {
+  // An option label is the agent's own line, verbatim. A TUI that draws its
+  // options beside a preview panel puts that panel's box-drawing into the same
+  // line, so a label can carry `────────────` with no space in it — and a run
+  // with no break opportunity sets the grid item's min-content width, pushing
+  // `.term` wider than the phone. Reported as "the layout crashes when the
+  // options have a preview box".
+  //
+  // The pane already had this covered for every kind it renders (prose wraps,
+  // structure scrolls, rule clips). These three are the controls BELOW it,
+  // which had no such treatment.
+  const css = readFileSync("src/web/styles.css", "utf8");
+  const ruleFor = (sel: string) => {
+    const at = css.indexOf(`${sel} {`);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  for (const sel of [".term-option", ".term-selected", ".term-question"]) {
+    expect(ruleFor(sel)).toContain("overflow-wrap: anywhere");
+  }
+});

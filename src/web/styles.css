@@ -445,7 +445,12 @@ body {
   overflow-y: auto;
 }
 
-.term-question { margin: 0 0 0.15rem; font-size: 0.8rem; color: var(--fg-dim); }
+.term-question {
+  margin: 0 0 0.15rem;
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+}
 
 .term-option {
   min-height: 2.75rem;
@@ -456,6 +461,14 @@ body {
   color: var(--fg);
   font: inherit;
   font-size: 0.85rem;
+  /* An option label is copied from the agent's screen verbatim, and a TUI that
+     draws its options beside a preview panel puts that panel's box-drawing in
+     the same line — so a label can carry a run like `────────────` with no
+     space in it anywhere. Without a break opportunity that run sets the grid
+     item's min-content width, and `.term` (fixed, `width: min(100%, 42rem)`)
+     is pushed wider than the phone. The pane already solves this for text it
+     must reflow (`.term-prose`); this is the same treatment for a button. */
+  overflow-wrap: anywhere;
   text-align: left;
   white-space: normal;
   cursor: pointer;
@@ -472,6 +485,7 @@ body {
   padding: 0.4rem 0.7rem;
   font-size: 0.78rem;
   color: var(--fg);
+  overflow-wrap: anywhere;
   border-top: 1px solid var(--border);
 }
 

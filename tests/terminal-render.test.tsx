@@ -140,3 +140,37 @@ test("no option buttons are rendered when the parser refuses", async () => {
   expect(host.querySelectorAll(".term-option")).toHaveLength(0);
   expect(host.querySelector(".term-selected")?.textContent).toContain("3. Chat about this");
 });
+
+test("the Enter preview is not repeated when a button already shows the selection", async () => {
+  // Asked directly: are the option buttons and the arrow keys not duplicates?
+  // The buttons are not — they cannot be off by one the way arrowing can. What
+  // WAS duplicated is this preview restating an option the accent border
+  // already marks, costing a bordered band and a rule on a phone screen.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["Do you want to proceed?"]),
+    "/prompt": () => ({
+      question: "Do you want to proceed?",
+      options: [
+        { key: "1", label: "Yes", selected: true },
+        { key: "2", label: "No", selected: false },
+      ],
+      selected: "1. Yes",
+      raw: "",
+    }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  // The buttons are there, and the selected one is marked.
+  expect(textsOf(host, ".term-option")).toEqual(["Yes", "No"]);
+  expect(host.querySelector('.term-option[aria-pressed="true"]')?.textContent).toBe("Yes");
+  // And the preview is not also there saying it again.
+  //
+  // Counted rather than `expect(el).toBeNull()`: on failure Bun serialises the
+  // received value into the diff, and a happy-dom element drags the whole
+  // window object in with it — the run stops being readable and takes minutes.
+  // A number says the same thing and fails in one line.
+  expect(host.querySelectorAll(".term-selected").length).toBe(0);
+});

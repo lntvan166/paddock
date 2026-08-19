@@ -596,7 +596,13 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           wrap being INVISIBLE was. This is shown whenever a cursor exists, so
           it covers the prompt shapes the option parser refuses to read, which
           are exactly the ones where the keypad is the only way to answer. */}
-      {prompt?.selected && (
+      {/* Hidden when a button above already carries the accent border for the
+          same option: the two would say the same thing, and this one costs a
+          bordered band plus a rule on a phone where the transcript is already
+          fighting for height. Kept for the case it was written for — a prompt
+          the option parser refuses, where the keypad is the only way to answer
+          and nothing else shows what Enter would commit. */}
+      {prompt?.selected && !prompt.options?.some((o) => o.selected) && (
         <p className="term-selected" role="status">
           <span className="term-selected-label">⏎ Enter selects</span>
           {prompt.selected}
