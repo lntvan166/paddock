@@ -67,13 +67,14 @@ test("the usage line names every implemented verb", () => {
 
 const CONFIG = mkdtempSync(join(tmpdir(), "paddock-cli-"));
 
-function runServer(args: string[]) {
+function runServer(args: string[], extraEnv: Record<string, string> = {}) {
   const r = Bun.spawnSync(["bun", "src/server/index.ts", ...args], {
     env: {
       ...process.env,
       // No network, and never the operator's real config directory.
       PADDOCK_NO_UPDATE_CHECK: "1",
       PADDOCK_CONFIG_DIR: CONFIG,
+      ...extraEnv,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -183,3 +184,39 @@ test("--version still works with no verb, which is what the release smoke step r
 });
 
 afterAll(() => { rmSync(CONFIG, { recursive: true, force: true }); });
+
+// --- help ------------------------------------------------------------------
+
+test("help is a verb, and --help/-h ask the same question", () => {
+  expect(parseArgs(["help"]).command).toBe("help");
+  // These two were the bug: they start with "-", so `verb` was null, so
+  // commandFor(null) returned "serve" and `paddock --help` served a dashboard.
+  expect(parseArgs(["--help"]).command).toBe("help");
+  expect(parseArgs(["-h"]).command).toBe("help");
+});
+
+test("a mistyped verb is still an error, even carrying --help", () => {
+  // Same rule --version already follows: the operator asked for a command that
+  // does not exist, and answering something else pretends the typo was
+  // understood. The flag only answers where the command would have been serve.
+  expect(parseArgs(["updte", "--help"]).command).toBe("unknown");
+});
+
+test("'paddock help' prints usage and succeeds", () => {
+  const r = runServer(["help"]);
+  expect(r.code, "asking for help is not an error").toBe(0);
+  expect(r.out).toContain("usage: paddock");
+  expect(r.err, "usage is the answer, not a complaint").not.toContain("unknown command");
+});
+
+test("'paddock --help' answers instead of starting a dashboard", () => {
+  // The regression that matters. runServer points PADDOCK_HERDR_SOCKET at a
+  // path that does not exist ON PURPOSE: if this ever falls through to serve
+  // again, the process exits non-zero against the missing socket instead of
+  // binding a port and hanging this test for ever.
+  const r = runServer(["--help"], { PADDOCK_HERDR_SOCKET: "/nonexistent/herdr.sock" });
+  expect(r.code, "--help must not start anything").toBe(0);
+  expect(r.out).toContain("usage: paddock");
+  expect(r.out + r.err, "no herdr socket may be opened").not.toContain("herdr");
+  expect(r.out + r.err, "no port may be bound").not.toContain("listening");
+});

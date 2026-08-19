@@ -57,6 +57,13 @@ if (command === "unknown") {
   process.exit(2);
 }
 
+// Before anything opens a socket or binds a port — asking what the tool does
+// must never start it. See parseArgs for what `--help` used to do here.
+if (command === "help") {
+  console.log(USAGE);
+  process.exit(0);
+}
+
 if (flags.has("--version") || flags.has("-V")) {
   console.log(VERSION);
   process.exit(0);

@@ -7,7 +7,7 @@
  * else the operator typed.
  */
 export type Command =
-  | "serve" | "update" | "start" | "stop" | "status" | "agent" | "hub" | "unknown";
+  | "serve" | "update" | "start" | "stop" | "status" | "help" | "agent" | "hub" | "unknown";
 
 export interface ParsedArgs {
   command: Command;
@@ -25,6 +25,7 @@ export const USAGE = [
   "       paddock stop [--force]    stop the detached instance",
   "       paddock status            is it running?",
   "       paddock update [--check]  install the latest release",
+  "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",
 ].join("\n");
 
@@ -50,13 +51,30 @@ export const USAGE = [
 export function parseArgs(argv: string[]): ParsedArgs {
   const flags = new Set(argv.filter((a) => a.startsWith("-")));
   const verb = argv.find((a) => !a.startsWith("-")) ?? null;
-  return { command: commandFor(verb), flags, verb };
+  const command = commandFor(verb);
+
+  // `--help` and `-h` ask exactly what the `help` verb asks, and they were the
+  // sharp edge here: both start with "-", so `verb` was null, so commandFor
+  // returned "serve" and `paddock --help` opened a herdr socket and served a
+  // live dashboard while printing nothing about usage. The most standard way
+  // to ask a CLI what it does silently started a server that can send
+  // keystrokes to the operator's agents.
+  //
+  // Only where the command would otherwise be `serve`: `paddock updte --help`
+  // stays `unknown`, the same rule --version already follows. The operator
+  // asked for a command that does not exist, and answering a different
+  // question pretends the typo was understood.
+  if (command === "serve" && (flags.has("--help") || flags.has("-h"))) {
+    return { command: "help", flags, verb };
+  }
+  return { command, flags, verb };
 }
 
 function commandFor(verb: string | null): Command {
   if (verb === null) return "serve";
   if (verb === "serve" || verb === "update") return verb;
   if (verb === "start" || verb === "stop" || verb === "status") return verb;
+  if (verb === "help") return "help";
   if (RESERVED.has(verb)) return verb as Command;
   return "unknown";
 }
