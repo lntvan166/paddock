@@ -5,6 +5,9 @@ import { isConfigured, type SettingsStore } from "@server/settings/store";
 
 export type TimerHandle = ReturnType<typeof setTimeout>;
 
+/** Attempts per settled transition, including the first. */
+const MAX_ATTEMPTS = 3;
+
 const isTrigger = (s: AgentState): s is NotifyTrigger => s === "blocked" || s === "done";
 
 export interface NotifierOpts {
@@ -130,7 +133,27 @@ export class Notifier {
     // an unset environment variable IS an empty string.
     if (!isConfigured(s.telegram.token) || !isConfigured(s.telegram.chatId)) return;
 
-    this.#lastSentAt.set(a.agentId, this.#now());
+    const now = this.#now();
+    // Dropped, never queued: a pile delivered when mute lifts describes
+    // agents unblocked hours earlier. Read HERE rather than when the timer
+    // was armed, so muting during a settle window still silences.
+    if (s.notify.mutedUntil !== null && now < s.notify.mutedUntil) return;
+
+    const since = now - (this.#lastSentAt.get(a.agentId) ?? Number.NEGATIVE_INFINITY);
+    if (since < s.notify.cooldownMs) {
+      // DEFER, not drop. The cooldown bounds how often paddock may speak
+      // about one agent; dropping would lose a real finish because a blocked
+      // message went out moments earlier. `attempts` is unchanged — a
+      // deferral is not a failure, and counting it would let a busy agent
+      // burn its retries on deferrals and never send at all.
+      this.#arm(a, state, s.notify.cooldownMs - since, attempts);
+      return;
+    }
+
+    // Stamped per ATTEMPT, not per success. A broken token fails every send,
+    // and recording only successes leaves `since` permanently infinite —
+    // which is how the retry path becomes one Telegram POST per delta.
+    this.#lastSentAt.set(a.agentId, now);
 
     // Name, state, link. NOTHING ELSE — and specifically NOT `a.task`, which
     // is live agent-authored text that may carry a pasted credential.
@@ -145,10 +168,10 @@ export class Notifier {
       return;
     }
     this.lastError = r.detail ?? "send failed";
-    // The retry lands in Task 3. `attempts` is unused until then, which is
-    // fine — tsconfig sets `noUnusedLocals` but not `noUnusedParameters`. Do
-    // NOT add a `MAX_ATTEMPTS` const here for the same reason: an unexported
-    // unused const IS flagged, so Task 3 declares it where it is first read.
+    // Bounded. v2 "retried on the next delta", which for a finished agent can
+    // never happen — a quiet `done` agent produces no further deltas, so a
+    // failed finish notification was lost outright.
+    if (attempts + 1 < MAX_ATTEMPTS) this.#arm(a, state, s.notify.cooldownMs, attempts + 1);
   }
 }
 

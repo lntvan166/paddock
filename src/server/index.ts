@@ -401,6 +401,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     if (clearing) return;
     clearing = true;
+    // Pending settle timers are unref'd, so they cannot hold the process
+    // open — but a timer that fires against a torn-down store would report
+    // about an agent nobody is watching any more.
+    notifier.dispose();
     void removeState(stateDir)
       .catch((e) => console.error(`paddock: could not clear state file (${String(e)})`))
       .finally(() => process.exit(0));
