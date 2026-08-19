@@ -33,6 +33,29 @@ machine, and the identity check happens before any request reaches paddock:
 Whichever you choose, the requirement is the same: **something must
 authenticate the request before paddock sees it.**
 
+## Keeping it running
+
+A paddock your phone can reach has to outlive the terminal you started it
+from. Once a tunnel is in front of it, `paddock start` is the normal way to
+run it: it spawns a detached child, waits for the state file to appear and
+`/api/health` to answer, and reports success only once both are true.
+
+```bash
+paddock start     # detached; survives this terminal
+paddock status    # pid, port, uptime — or "not running"
+paddock stop      # SIGTERM, waits up to 10s; --force sends SIGKILL
+```
+
+The detached process's stdout and stderr go to
+`~/.config/paddock/paddock.log` (`PADDOCK_CONFIG_DIR` moves it, same as
+`settings.json`). That file is **truncated on every `paddock start`**, not
+appended — it holds one run's output, not a growing history.
+
+`paddock start`/`stop`/`status` do not give you restart-on-boot or
+restart-on-crash; nothing here loops or supervises. For that, use your
+platform's service manager (systemd, launchd, …) and point its unit at the
+same `paddock start` / `paddock stop` invocations.
+
 ## Then add it to your Home Screen
 
 <p align="center">

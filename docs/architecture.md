@@ -42,6 +42,8 @@ One process. No relay hop, no plugin, no polling loop.
 | `server/update-check.ts` | The once-a-day "is there a newer release" check, and nothing else. Caches the last check time and last seen tag in `~/.config/paddock/update-check.json` (mode `0600`, same directory and same posture as `settings.json`; `PADDOCK_CONFIG_DIR` moves both). **Off entirely with `PADDOCK_NO_UPDATE_CHECK=1`**, and off automatically for a `0.0.0-dev` build. Every failure — unreachable API, unwritable cache — is logged at INFO and returns `null`; `startUpdateCheck` owns the `.catch` so a failed check can never take the server down. |
 | `server/notify/notifier.ts` | Watches deltas for a state **transition** (not a state), and sends a Telegram message when one matches the configured triggers, subject to quiet hours and a per-agent cooldown. A leaf off the composition root — see "The dependency rule" below for why it is not folded into `hub.ts` or `state/store.ts`. `fanOut()` is the small function `index.ts` composes with `hub.queue` so a delta reaches both without either learning the other exists. |
 | `server/notify/telegram.ts` | One HTTPS POST to the Telegram Bot API, with a bounded timeout. Transport only — every policy decision (whether to send, to whom, how often) lives in `notifier.ts`, not here. |
+| `server/lifecycle/state.ts` | Owns `$PADDOCK_CONFIG_DIR/paddock.state.json` (`{ pid, args, port, version, startedAt }`, mode `0600`, written atomically: tmp file, `fsync`, `rename`) and the identity check on top of it — `checkState` reads it back into `none \| stale \| mismatch \| running \| unreadable`. `capturedArgs` is the one producer of the `args` string, at both write time and compare time, so `stop` and startup are always comparing like with like; it is **not** rebuilt from `Bun.argv`, which was measured on a compiled binary invoked as `./bin/probe start --demo` to report `["bun", "/$bunfs/root/probe", "start", "--demo"]` (with `process.execPath` giving only the resolved absolute path) against `ps -p <pid> -o args=`'s `./bin/probe start --demo` — the invocation as typed, relative path and all — which no combination of the other two can reconstruct. It tries `/proc/<pid>/cmdline` first, measured byte-identical to `ps` on Linux, and falls back to `ps` for macOS, where `/proc` does not exist; `/proc` is also what makes this work inside `oven/bun:1-alpine`, whose busybox `ps` supports neither `-p` nor a selectable `args` column. |
+| `server/lifecycle/commands.ts` | The three verbs — `runStatus`, `runStop`, `runStart` — built on `state.ts` alone. All three refuse rather than guess on `unreadable` state, and refuse to signal (`stop`) or clear-and-retry safely (`start`) on `mismatch`, the recycled-pid case. `runStop` sends `SIGTERM`, polls up to 10s, and only escalates to `SIGKILL` under `--force`, re-checking identity immediately before that unblockable signal. `runStart` spawns a detached child (stdio redirected to `paddock.log`, truncated every start) and reports success only once the state file reappears **and** `GET /api/health` answers. |
 | `server/index.ts` | Composition root. The only place that wires stream → supervisor → store → hub, the keeper to the stream's state changes, and (new in v2) the settings store and notifier into that same delta path via `fanOut`. |
 | `shared/types.ts` | The one payload contract, imported by server and UI — including `compareAgents`, the single triage comparator both sides sort with, and `carryAcknowledged`, the single rule for carrying `acknowledgedAt` across a state change. |
 | `shared/herdr-api.d.ts` | **Generated** from `herdr api schema --json`. Committed. Never hand-edited. Its interface bodies are hand-written in the generator, so `tests/herdr-schema-drift.test.ts` is what actually holds them to the live schema. |
@@ -91,6 +93,17 @@ either existing leaf:
 Composing them at `index.ts` instead keeps that a wiring decision, not a
 dependency one: either leaf can change independently, and neither has to
 import the other to be told it exists.
+
+`lifecycle/` (`state.ts` plus `commands.ts`) is not in the request path at
+all, and it is not a third leaf beside `notify/` either — it runs *around*
+the server rather than off a delta it produces. `index.ts` calls
+`writeState`/`removeState` after the port is bound and on `SIGINT`/`SIGTERM`,
+and dispatches `status`/`stop`/`start` to `runStatus`/`runStop`/`runStart`
+before any of `herdr/`, `state/store.ts` or `ws/hub.ts` is even constructed —
+`status` and `stop` need only the state file and a signal-0 probe, and
+`start`'s own process never opens a herdr socket or binds a port at all, only
+the detached child it spawns does. Nothing in `herdr/`, `state/store.ts` or
+`ws/hub.ts` imports `lifecycle/` or knows it exists.
 
 ## Actions transport
 
