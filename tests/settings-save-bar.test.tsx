@@ -205,6 +205,14 @@ test("mute never establishes a baseline the operator never confirmed", async () 
 });
 
 test("a muted dashboard says until when, computed from the server's clock", async () => {
+  // `mutedUntil` is exactly one hour past `serverNow` here, not "close to an
+  // hour" — so the remainder text is pinned to an exact "1h 0m". Only
+  // checking for the substring "Muted until" would stay green even if
+  // `muteLabel`'s `remaining`/`h`/`m` computation used `Date.now()` instead
+  // of `serverNow` for the countdown (the wall-clock half of the label
+  // legitimately uses `Date.now()`, to skew-correct for the phone's own
+  // clock — it's only the REMAINING-time half that must come from
+  // `serverNow`, and that's what this asserts).
   const muted = {
     ...view(),
     notify: { ...view().notify, mutedUntil: 1_700_000_000_000 + 3_600_000 },
@@ -216,6 +224,7 @@ test("a muted dashboard says until when, computed from the server's clock", asyn
   await settle();
   const el = host.querySelector(".settings-mute")!;
   expect(el.textContent).toContain("Muted until");
+  expect(el.textContent).toContain("in 1h 0m");
   expect(el.querySelector('button[name="unmute"]')).not.toBeNull();
 });
 
