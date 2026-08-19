@@ -1,11 +1,36 @@
 import { HERDR_PROTOCOL, type HerdrEvent } from "@shared/herdr-api";
 
+// Which side is stale decides the whole message, and getting that wrong is
+// expensive: the version this replaced told EVERY mismatch to run `make types`.
+// That is right only when herdr is NEWER. Against an OLDER herdr it regenerates
+// HERDR_PROTOCOL downwards and shrinks the generated status enums, trading a
+// loud startup failure for a silently narrowed contract and empty agent rows —
+// so scripts/gen-herdr-types.ts now refuses it and this message no longer
+// suggests it in the direction where it does damage.
+function mismatchMessage(expected: number, actual: number): string {
+  const advice =
+    actual < expected
+      ? [
+          "  your herdr is older than this paddock — upgrade herdr, then restart",
+          "  its daemon: the socket answers from the running daemon, not from the",
+          "  binary on disk, so upgrading alone still reports the old protocol",
+        ]
+      : [
+          "  your herdr is newer than this paddock — upgrade paddock; if you are",
+          "  working on paddock itself, run `make types` and re-check",
+          "  src/server/herdr/adapter.ts for fields the new protocol moved",
+        ];
+  return [
+    "paddock: herdr protocol mismatch",
+    `  paddock expects  ${expected}`,
+    `  herdr reports    ${actual}`,
+    ...advice,
+  ].join("\n");
+}
+
 export class ProtocolMismatchError extends Error {
   constructor(readonly expected: number, readonly actual: number) {
-    super(
-      `herdr protocol mismatch: paddock expects ${expected}, herdr reports ${actual}. ` +
-        `Run \`make types\` and re-check src/server/herdr/adapter.ts before continuing.`,
-    );
+    super(mismatchMessage(expected, actual));
     this.name = "ProtocolMismatchError";
   }
 }
