@@ -597,9 +597,14 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: `forMs must be a number between 0 and ${MAX_MUTE_MS}` }, 400);
       }
       const stamp = now();
-      // 0 means unmute. `notify.enabled` is the "off until further notice"
-      // control, so there is deliberately no infinite mute here.
-      await settings.patchMute(forMs === 0 ? null : stamp + forMs);
+      try {
+        // 0 means unmute. `notify.enabled` is the "off until further notice"
+        // control, so there is deliberately no infinite mute here.
+        await settings.patchMute(forMs === 0 ? null : stamp + forMs);
+      } catch (e) {
+        // Reporting a mute that did not happen is worse than reporting none.
+        return c.json({ ok: false, detail: (e as Error).message }, 500);
+      }
       return c.json(settings.view(stamp));
     });
 
