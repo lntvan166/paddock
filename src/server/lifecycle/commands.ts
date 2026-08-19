@@ -1,0 +1,536 @@
+import { mkdir, open, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  checkState,
+  removeState,
+  stateFile,
+  systemProbe,
+  type Probe,
+} from "@server/lifecycle/state";
+
+export interface StatusOpts {
+  dir: string;
+  probe?: Probe;
+  log?: (line: string) => void;
+  now?: () => number;
+}
+
+function uptime(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/** Exit code: 0 running, 1 not. That is what makes it usable from a script. */
+/**
+ * Remove the state file, reporting a failure instead of throwing it.
+ *
+ * Every call site has ALREADY determined the outcome it is about to report —
+ * the process stopped, the pid was stale, the identity did not match. A
+ * cleanup failure (an unwritable config directory) must not turn a correct
+ * answer into a stack trace: `paddock stop` printing "stopped" and then
+ * crashing is a worse report than either half alone.
+ *
+ * Announced, never swallowed. The operator is told the file survived and
+ * where it is, because the next call will read it again.
+ */
+async function clearState(
+  dir: string,
+  log: (line: string) => void,
+): Promise<void> {
+  try {
+    await removeState(dir);
+  } catch (e) {
+    log(
+      `paddock: could not remove ${stateFile(dir)} (${(e as Error).message}) ` +
+        "— remove it by hand, or the next run will read it again",
+    );
+  }
+}
+
+export async function runStatus(o: StatusOpts): Promise<number> {
+  const log = o.log ?? console.log;
+  const now = (o.now ?? Date.now)();
+  const got = await checkState(o.dir, o.probe);
+
+  switch (got.kind) {
+    case "none":
+      log("paddock — not running");
+      return 1;
+    case "unreadable":
+      // Distinct from "none" on purpose: "I could not read the state" and
+      // "nothing is running" are different facts, and reporting the first as
+      // the second is the guess this module refuses to make. The file is
+      // left in place — we could not even read it, so deleting it would
+      // destroy the one clue an operator has. Exit non-zero: this is not a
+      // confirmed "not running", it is "don't know", which must not look
+      // like success to a caller scripting on the exit code.
+      log(`paddock — could not read state (${got.error})`);
+      return 1;
+    case "stale":
+      // Say it once. A crash left this behind and silently tidying it up hides
+      // that anything happened.
+      log(
+        `paddock — not running (stale state for pid ${got.state.pid}, cleared)`,
+      );
+      await clearState(o.dir, log);
+      return 1;
+    case "mismatch":
+      log(
+        `paddock — not running (pid ${got.state.pid} is now: ${got.actual ?? "unknown"})`,
+      );
+      await clearState(o.dir, log);
+      return 1;
+    case "running":
+      log(
+        `paddock ${got.state.version} — running ` +
+          `(pid ${got.state.pid}, port ${got.state.port}, up ${uptime(now - got.state.startedAt)})`,
+      );
+      return 0;
+  }
+}
+
+export interface StopOpts {
+  dir: string;
+  force?: boolean;
+  probe?: Probe;
+  log?: (line: string) => void;
+  /** Injected so a test can assert what would have been signalled. */
+  signal?: (pid: number, sig: NodeJS.Signals) => void;
+  waitMs?: number;
+}
+
+const sendSignal = (pid: number, sig: NodeJS.Signals) => {
+  process.kill(pid, sig);
+};
+
+type SignalOutcome = "ok" | "gone" | "denied";
+
+/**
+ * Wraps the (possibly injected) signal function so a thrown `process.kill`
+ * error becomes a labelled outcome instead of an unhandled stack trace.
+ *
+ * ESRCH means the pid exited in the gap between our last liveness check and
+ * this call — already gone, not a failure. EPERM is genuinely reachable:
+ * `systemProbe.isAlive` deliberately treats EPERM as "alive" (see state.ts),
+ * and `/proc/<pid>/cmdline` is world-readable, so a paddock started under
+ * another uid can reach `running` here and then fail to be signalled. Any
+ * other error is a real failure and must not be swallowed.
+ */
+function trySignal(
+  send: (pid: number, sig: NodeJS.Signals) => void,
+  pid: number,
+  sig: NodeJS.Signals,
+): SignalOutcome {
+  try {
+    send(pid, sig);
+    return "ok";
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return "gone";
+    if (code === "EPERM") return "denied";
+    throw e;
+  }
+}
+
+export async function runStop(o: StopOpts): Promise<number> {
+  const log = o.log ?? console.log;
+  const send = o.signal ?? sendSignal;
+  const probe = o.probe ?? systemProbe;
+  const waitMs = o.waitMs ?? 10_000;
+  const got = await checkState(o.dir, probe);
+
+  switch (got.kind) {
+    case "none":
+      log("paddock — not running");
+      return 0;
+    case "unreadable":
+      // Distinct from "none" on purpose, same reasoning as runStatus: "could
+      // not read the state" and "nothing is running" are different facts.
+      // This is exactly the case where guessing is forbidden — we cannot
+      // tell whether something is running, so refuse, send no signal, and
+      // leave the file in place rather than destroy the one clue an
+      // operator has.
+      log(
+        `paddock — could not read state (${got.error}), refusing to guess — nothing signalled`,
+      );
+      return 1;
+    case "stale":
+      log(
+        `paddock — not running (stale state for pid ${got.state.pid}, cleared)`,
+      );
+      await clearState(o.dir, log);
+      return 0;
+    case "mismatch":
+      // Refuse. This is the whole reason the state file carries more than a
+      // pid: killing someone else's process is the worst outcome this
+      // feature can produce.
+      log(
+        `paddock: pid ${got.state.pid} is not paddock any more — refusing to signal it`,
+      );
+      log(`  it is now: ${got.actual ?? "unknown"}`);
+      await clearState(o.dir, log);
+      return 1;
+    case "running":
+      break;
+  }
+
+  const { pid, args } = got.state;
+
+  const term = trySignal(send, pid, "SIGTERM");
+  if (term === "gone") {
+    log(`paddock: pid ${pid} was already gone — nothing to stop`);
+    await clearState(o.dir, log);
+    return 0;
+  }
+  if (term === "denied") {
+    log(
+      `paddock: cannot signal pid ${pid} — permission denied (started by another user?)`,
+    );
+    return 1;
+  }
+
+  /**
+   * Alive AND still running the exact command line the state file recorded
+   * — checkState's own identity check, applied again after the signal. A
+   * pid that stays alive but stops matching means paddock has already
+   * exited and the kernel handed the number to an unrelated process while
+   * we were waiting: escalating to SIGKILL against that would be the exact
+   * hazard this feature exists to prevent, just ten seconds later and with
+   * a signal that cannot be blocked. `isAlive` alone (the mutated version
+   * this guards against) cannot tell the two apart.
+   *
+   * Deliberately stricter than the wait loop below, which tolerates an
+   * indeterminate `argsOf`: this one gates a signal that cannot be blocked,
+   * and "cannot tell" must block it. The loop gates nothing, so it can
+   * afford to wait for a fact instead.
+   */
+  const stillOurs = () => probe.isAlive(pid) && probe.argsOf(pid) === args;
+
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    if (!probe.isAlive(pid)) {
+      log(`paddock: stopped (pid ${pid})`);
+      await clearState(o.dir, log);
+      return 0;
+    }
+    const actual = probe.argsOf(pid);
+    if (actual !== null && actual !== args) {
+      // A different string, from a pid that is still alive: the number now
+      // belongs to something else. Refuse and say so, exactly as the
+      // pre-SIGKILL check below does for the same condition — this branch
+      // used to call it a success and delete the state file, which is how a
+      // live, still-running paddock could be made permanently untrackable by
+      // a `stop` that reported "already gone, nothing further to do".
+      log(
+        `paddock: pid ${pid} is not paddock any more — refusing to signal it`,
+      );
+      log(`  it is now: ${actual}`);
+      await clearState(o.dir, log);
+      return 1;
+    }
+    // `actual === null` is NOT that case, and must not be treated as one:
+    // during an ordinary stop the process is briefly a zombie, where
+    // /proc/<pid>/cmdline reads empty and `argsOf` returns null while
+    // kill(pid, 0) still succeeds. That is "cannot tell", so conclude
+    // nothing and keep polling. The loop then ends on a fact either way —
+    // the pid going away (success, above) or the deadline expiring (still
+    // running, below).
+    await Bun.sleep(100);
+  }
+
+  if (!o.force) {
+    // Never escalate on its own. A process refusing to leave is the
+    // operator's call, not a decision to make silently on their behalf.
+    log(`paddock: pid ${pid} did not exit after SIGTERM`);
+    log("  run 'paddock stop --force' to send SIGKILL");
+    return 1;
+  }
+
+  // One more identity check, immediately before the signal that cannot be
+  // blocked. The loop above samples every 100ms; a recycle landing in the
+  // gap between its last check and here must not reach `send`.
+  if (!stillOurs()) {
+    const actual = probe.argsOf(pid);
+    if (actual === null) {
+      // Cannot tell, which is not the same as "it is someone else". Refuse
+      // the unblockable signal, but KEEP the state file: an operator who
+      // already cannot identify the process must not also lose the record
+      // naming it. The recycled case below is different — there the pid
+      // provably is not ours, so the record is stale and worth clearing.
+      log(
+        `paddock: cannot confirm pid ${pid} is still paddock — refusing to send SIGKILL`,
+      );
+      log(
+        "  its state file is left in place; check the pid by hand, then try again",
+      );
+      return 1;
+    }
+    log(
+      `paddock: pid ${pid} is not paddock any more — refusing to send SIGKILL`,
+    );
+    log(`  it is now: ${actual}`);
+    await clearState(o.dir, log);
+    return 1;
+  }
+
+  const kill = trySignal(send, pid, "SIGKILL");
+  if (kill === "gone") {
+    log(`paddock: pid ${pid} was already gone — nothing to kill`);
+    await clearState(o.dir, log);
+    return 0;
+  }
+  if (kill === "denied") {
+    log(
+      `paddock: cannot signal pid ${pid} — permission denied (started by another user?)`,
+    );
+    return 1;
+  }
+  log(`paddock: killed (pid ${pid})`);
+  await clearState(o.dir, log);
+  return 0;
+}
+
+export interface ChildCommandOpts {
+  /**
+   * Forward `--demo` to the detached child. Narrow on purpose: this is not a
+   * general flag-forwarding mechanism, it is the one flag `serve` (what the
+   * child's bare re-invocation runs as) currently understands. Silently
+   * dropping it would detach a REAL, non-demo instance while the operator
+   * believed they asked for the demo one — the same shape as `paddock updte`
+   * once silently becoming `serve` instead of being refused (see cli.ts).
+   */
+  demo?: boolean;
+}
+
+/**
+ * How to re-invoke this exact build, detached.
+ *
+ * A compiled binary is self-contained: `process.execPath` is the whole command,
+ * and `Bun.argv[1]` is the in-binary path `/$bunfs/root/...`, which must never
+ * be passed on. Under `bun src/server/index.ts`, `execPath` is bun and the
+ * script path IS needed.
+ */
+export function childCommand(opts: ChildCommandOpts = {}): string[] {
+  const script = Bun.argv[1];
+  const compiled = script === undefined || script.startsWith("/$bunfs/");
+  const base = compiled ? [process.execPath] : [process.execPath, script];
+  return opts.demo ? [...base, "--demo"] : base;
+}
+
+export interface StartOpts {
+  dir: string;
+  probe?: Probe;
+  log?: (line: string) => void;
+  waitMs?: number;
+  /** Forwarded to the real, uninjected spawn path — see ChildCommandOpts. */
+  demo?: boolean;
+  spawn?: () => { pid: number; exited: Promise<number> };
+  healthCheck?: (port: number) => Promise<boolean>;
+  logTail?: () => Promise<string>;
+}
+
+export function logFile(dir: string): string {
+  return join(dir, "paddock.log");
+}
+
+/**
+ * Success is only reported once the new instance is actually serving: the
+ * state file has appeared AND a health request against its port answered.
+ * Reporting success from the state file alone and letting the operator
+ * discover a port conflict later is exactly the failure this command exists
+ * to prevent.
+ */
+export async function runStart(o: StartOpts): Promise<number> {
+  const log = o.log ?? console.log;
+  const waitMs = o.waitMs ?? 10_000;
+  const existing = await checkState(o.dir, o.probe);
+
+  switch (existing.kind) {
+    case "unreadable":
+      // Same reasoning as runStatus/runStop: an I/O error reading the state
+      // file is "cannot tell", not "nothing running". Guessing the latter
+      // would let this spawn a second paddock right alongside one already
+      // serving — the exact guess this module refuses to make.
+      log(
+        `paddock: could not read state (${existing.error}), refusing to guess — not starting`,
+      );
+      return 1;
+    case "running":
+      log(
+        `paddock: already running (pid ${existing.state.pid}, port ${existing.state.port})`,
+      );
+      return 1;
+    case "mismatch":
+      log(
+        `paddock: pid ${existing.state.pid} is not paddock any more — clearing stale state`,
+      );
+      await clearState(o.dir, log);
+      break;
+    case "stale":
+      // A crash left this behind. Cleared deliberately, before spawning: left
+      // in place, the poll loop below would keep reading the dead instance's
+      // own (still "running"-shaped, once it were alive again) file until the
+      // new child happened to overwrite it with its own — working by
+      // accident, not by design.
+      log(`paddock: clearing stale state for pid ${existing.state.pid}`);
+      await clearState(o.dir, log);
+      break;
+    case "none":
+      break;
+    default: {
+      // Exhaustiveness guard, not dead code kept out of habit: a sixth
+      // `StateCheck` variant added later, with no case added here, would
+      // otherwise fall through silently to spawning a second paddock — the
+      // single most consequential thing this function does — for a case
+      // nobody considered. `_exhaustive: never` turns that omission into a
+      // compile error instead of a silent wrong action; the throw is the
+      // runtime backstop for the (currently impossible) case this guard is
+      // bypassed some other way.
+      const _exhaustive: never = existing;
+      throw new Error(
+        `paddock: unhandled state check: ${JSON.stringify(_exhaustive)}`,
+      );
+    }
+  }
+
+  let child: { pid: number; exited: Promise<number> };
+  try {
+    child = o.spawn ? o.spawn() : await spawnDetached(o.dir, { demo: o.demo });
+  } catch (e) {
+    // The design's failure table: "start where the config dir is unwritable
+    // -> Refuse before spawning, exit non-zero." Unguarded this threw
+    // `EACCES ... open '.../paddock.log'` with a stack trace, which tells an
+    // operator the truth in the least usable form there is. Narrow on
+    // purpose: only the log-file preparation is turned into a refusal, so an
+    // unexpected failure inside Bun.spawn still surfaces loudly rather than
+    // being reported as a permissions problem it is not.
+    if (!(e instanceof ConfigDirUnusable)) throw e;
+    log(`paddock: cannot write ${e.file} (${e.reason}) — not starting`);
+    return 1;
+  }
+  const deadline = Date.now() + waitMs;
+  let childGone = false;
+  void child.exited.then(() => {
+    childGone = true;
+  });
+
+  const health = o.healthCheck ?? defaultHealthCheck;
+  while (Date.now() < deadline) {
+    const got = await checkState(o.dir, o.probe);
+    if (got.kind === "running" && (await health(got.state.port))) {
+      log(`paddock: started (pid ${got.state.pid}, port ${got.state.port})`);
+      return 0;
+    }
+    // An early exit is a failure now, not in ten seconds' time.
+    if (childGone) break;
+    await Bun.sleep(100);
+  }
+
+  const tail = o.logTail ? await o.logTail() : await readLogTail(o.dir);
+  if (!childGone) {
+    // The wait expired but the child is still alive. It was reported as
+    // "the detached process did not start" — a live process holding the
+    // port, described to the operator as an absence, with no pid to act on.
+    //
+    // It is NOT killed here. Every other decision in this module refuses to
+    // signal on its own, and a child that bound but answers /api/health
+    // slowly is a working paddock, not garbage to tidy away. So report what
+    // is actually true, name the pid, and hand over the command that deals
+    // with it. Still non-zero: this is not the success `start` promises.
+    log(
+      `paddock: spawned pid ${child.pid}, but it did not answer /api/health ` +
+        `within ${Math.round(waitMs / 1000)}s — it is still running`,
+    );
+    // Deliberately hedged: the child records its state only after it binds,
+    // so one that is still coming up may not be visible to `status`/`stop`
+    // yet. The pid above is the handle that always works.
+    log(
+      "  once it has recorded state, 'paddock status' shows it and 'paddock stop' stops it",
+    );
+    if (tail.trim() !== "") log(tail.trim());
+    log(`  full log: ${logFile(o.dir)}`);
+    return 1;
+  }
+
+  log("paddock: the detached process did not start");
+  if (tail.trim() !== "") log(tail.trim());
+  log(`  full log: ${logFile(o.dir)}`);
+  return 1;
+}
+
+/**
+ * The config dir could not be made to hold `paddock.log`.
+ *
+ * A distinct type, not a string match on the message, so `runStart` can turn
+ * exactly this into a one-line refusal and let anything else it did not
+ * anticipate keep its stack trace.
+ */
+class ConfigDirUnusable extends Error {
+  constructor(
+    readonly file: string,
+    readonly reason: string,
+  ) {
+    super(`${file}: ${reason}`);
+    this.name = "ConfigDirUnusable";
+  }
+}
+
+async function spawnDetached(
+  dir: string,
+  opts: ChildCommandOpts = {},
+): Promise<{ pid: number; exited: Promise<number> }> {
+  let fh: Awaited<ReturnType<typeof open>>;
+  try {
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    // Truncated, not appended: an unrotated log that only grows is a slow bug,
+    // and one run's output is the useful scope.
+    fh = await open(logFile(dir), "w", 0o600);
+  } catch (e) {
+    // Before the spawn, deliberately: a child whose stdout has nowhere to go
+    // must never be started, because its own failure would then be
+    // unreadable too.
+    throw new ConfigDirUnusable(logFile(dir), (e as Error).message);
+  }
+  try {
+    const p = Bun.spawn(childCommand(opts), {
+      stdio: ["ignore", fh.fd, fh.fd],
+      env: process.env,
+      // setsid(). Without it the child stays in the invoking shell's session
+      // and process group, and "detached" is a name rather than a property:
+      // a ctrl+c during the wait below reaches the instance the operator just
+      // asked for, and surviving the terminal closing depends on the shell's
+      // huponexit setting rather than on anything this code guarantees.
+      // `unref()` is NOT a substitute — it releases the PARENT's event loop
+      // and changes no process group at all.
+      detached: true,
+    });
+    p.unref?.();
+    return { pid: p.pid, exited: p.exited };
+  } finally {
+    // The parent has no further use for this handle — the child inherited
+    // its own copy of the fd across spawn. Holding it open here would just
+    // be a leaked descriptor for the lifetime of this (short-lived) process.
+    await fh.close();
+  }
+}
+
+async function defaultHealthCheck(port: number): Promise<boolean> {
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/api/health`);
+    return r.ok;
+  } catch {
+    // Not up yet is the ordinary case while polling, not an error to report.
+    return false;
+  }
+}
+
+async function readLogTail(dir: string): Promise<string> {
+  try {
+    const text = await readFile(logFile(dir), "utf8");
+    return text.split("\n").slice(-15).join("\n");
+  } catch {
+    return "";
+  }
+}

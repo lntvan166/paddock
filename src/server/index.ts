@@ -17,6 +17,8 @@ import { Supervisor } from "@server/supervisor";
 import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
+import { recordState, removeState } from "@server/lifecycle/state";
+import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, USAGE } from "@server/cli";
@@ -77,6 +79,29 @@ if (command === "update") {
     current: VERSION,
     checkOnly: flags.has("--check"),
   }));
+}
+
+// Must run before any server setup below, same reasoning as `update` above:
+// `status` should not open a herdr socket or bind a port just to answer a
+// question that only needs the state file and a signal-0 probe.
+if (command === "status") {
+  process.exit(await runStatus({ dir: defaultConfigDir() }));
+}
+
+// Must run before any server setup below, same reasoning as `update` and
+// `status` above: `stop` should not open a herdr socket or bind a port just
+// to signal a pid it reads from the state file.
+if (command === "stop") {
+  process.exit(await runStop({ dir: defaultConfigDir(), force: flags.has("--force") }));
+}
+
+// Must run before any server setup below, same reasoning as the three verbs
+// above: `start` itself never binds a port or opens a herdr socket — it only
+// spawns a detached child (which is this same binary, re-invoked with no
+// verb, and IS the thing that binds a port) and waits for that child's own
+// state file and health endpoint to confirm it is actually serving.
+if (command === "start") {
+  process.exit(await runStart({ dir: defaultConfigDir(), demo: DEMO }));
 }
 
 const socketPath =
@@ -318,3 +343,35 @@ Bun.serve<WsData>({
 hub.startHeartbeat();
 
 console.info(`paddock listening on http://${HOSTNAME}:${PORT}`);
+
+// Written AFTER the bind, deliberately. A paddock that failed to take the port
+// must not overwrite the state of the one already holding it.
+//
+// recordState never throws and reports its own failures: the dashboard is the
+// product, and neither an unwritable config dir nor an unreadable command line
+// may take down a paddock that has already bound its port. That is not
+// hypothetical for the config dir — oven/bun:1-alpine's passwd has only uid
+// 1000, and docker-compose.yml runs `user: "${UID}:${GID}"` from the host, so
+// on any host whose UID isn't 1000 `homedir()` resolves to `/` and the write
+// is EACCES — the exact shape that, unguarded, previously killed an
+// already-bound server via startUpdateCheck (see update-check.ts).
+const stateDir = defaultConfigDir();
+await recordState(stateDir, {
+  pid: process.pid,
+  port: PORT,
+  version: VERSION,
+  startedAt: Date.now(),
+});
+
+// Foreground runs write it too, so `status` and `stop` do not depend on how
+// paddock was started.
+let clearing = false;
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    if (clearing) return;
+    clearing = true;
+    void removeState(stateDir)
+      .catch((e) => console.error(`paddock: could not clear state file (${String(e)})`))
+      .finally(() => process.exit(0));
+  });
+}

@@ -59,8 +59,16 @@ then start it where herdr is running:
 paddock
 ```
 
-`ctrl+c` stops it. `paddock update` upgrades it; paddock never updates itself
-unasked. `paddock --demo` runs it with synthetic agents and no herdr.
+`ctrl+c` stops it. To keep it running after you close the terminal:
+
+```bash
+paddock start     # detached
+paddock status    # is it up?
+paddock stop
+```
+
+`paddock update` upgrades it; paddock never updates itself unasked. `paddock
+--demo` runs it with synthetic agents and no herdr.
 
 It checks for a newer release at most once a day, caching the answer in
 `~/.config/paddock/update-check.json` — set `PADDOCK_NO_UPDATE_CHECK=1` and it
