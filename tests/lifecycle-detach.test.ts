@@ -4,6 +4,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stateFile } from "@server/lifecycle/state";
+import { freePort } from "./support/port";
 
 /**
  * Process group and session id for a pid, from /proc — Linux only.
@@ -57,7 +58,7 @@ test("a detached child genuinely outlives the parent that started it", async () 
   // (8787) and the common 3000/5173/8000/8080/9090-style dev-server ports,
   // while still ephemeral-but-unassigned rather than a registered service
   // port.
-  const port = 41_000 + Math.floor(performance.now() % 40);
+  const port = freePort();
   const parent = Bun.spawn(["bun", "src/server/index.ts", "start", "--demo"], {
     env: {
       ...process.env,

@@ -3,10 +3,11 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stateFile } from "@server/lifecycle/state";
+import { freePort } from "./support/port";
 
 test("a running paddock writes its state after binding, and clears it on exit", async () => {
   const cfg = await mkdtemp(join(tmpdir(), "paddock-cfg-"));
-  const port = 8930 + Math.floor(performance.now() % 40);
+  const port = freePort();
   const proc = Bun.spawn(["bun", "src/server/index.ts", "--demo"], {
     env: {
       ...process.env,
@@ -43,7 +44,7 @@ test("a running paddock writes its state after binding, and clears it on exit", 
 
 test("a second paddock that loses the port race does not clobber the first's state", async () => {
   const cfg = await mkdtemp(join(tmpdir(), "paddock-cfg-"));
-  const port = 8970 + Math.floor(performance.now() % 40);
+  const port = freePort();
   const env = {
     ...process.env,
     PADDOCK_PORT: String(port),
@@ -84,7 +85,7 @@ test("an unwritable config dir does not kill an already-bound paddock", async ()
   await writeFile(blocker, "not a directory");
   const cfg = join(blocker, "child");
 
-  const port = 9010 + Math.floor(performance.now() % 40);
+  const port = freePort();
   const proc = Bun.spawn(["bun", "src/server/index.ts", "--demo"], {
     env: {
       ...process.env,

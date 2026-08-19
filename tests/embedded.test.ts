@@ -2,23 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { freePort } from "./support/port";
 
-/**
- * A port nothing else is listening on, asked for from the kernel rather than
- * guessed. The previous `8900 + performance.now() % 90` collided with whatever
- * happened to be running, and two runs of the suite close together could pick
- * the same number.
- */
-function freePort(): number {
-  const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("") });
-  const port = probe.port;
-  probe.stop(true);
-  // `port` is optional on the type because a Server can be bound to a unix
-  // socket instead; this one asked for TCP, so a missing port is a broken
-  // assumption and not something to paper over with a fallback number.
-  if (port === undefined) throw new Error("probe server bound no TCP port");
-  return port;
-}
 
 /**
  * The defect this guards, measured before the fix: a compiled binary run from
