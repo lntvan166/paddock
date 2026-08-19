@@ -3,6 +3,7 @@ import type { ActionResult, Agent, NavKey, OutputResult, ParsedPrompt } from "@s
 import { answerWithKey, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
+import { StateDot } from "@web/components/AgentRow";
 import { mergeSnapshot } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 import { applyPatch, digestOf } from "@shared/screen";
@@ -471,12 +472,21 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   return (
     <section className="term" aria-label={`${agent.name} terminal`}>
       <header className="term-header">
+        {/* Glyph only. `aria-label` already carried the meaning for assistive
+            tech, so the word was spending ~55px of a 390px header on something
+            only sighted users read — and they read the ‹ just as well. */}
         <button type="button" className="term-back" onClick={onBack} aria-label="Back to agents">
-          ‹ Agents
+          ‹
         </button>
         <div className="term-title">
           <strong>{agent.name}</strong>
-          <span className="term-state" data-state={agent.state}>{agent.state}</span>
+          {/* The same `StateDot` the list renders, not a second convention:
+              blocked amber, done green, working blue, idle grey, defined once
+              in AgentRow. The word cost more width than the agent's own name
+              had left. It stays for assistive tech, which cannot read a
+              colour — the dot itself is aria-hidden. */}
+          <StateDot state={agent.state} />
+          <span className="sr-only">{agent.state}</span>
           {/* Shown rather than hidden: a pane that has stopped updating must
               not look current. */}
           {stalled && <span className="term-stalled" role="status">not updating</span>}
@@ -490,10 +500,16 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           {wrap ? "Wrap" : "Exact"}
         </button>
         {/* Beside Wrap because both are view controls, and because a collapse
-            button INSIDE the pad would spend the height it exists to reclaim. */}
+            button INSIDE the pad would spend the height it exists to reclaim.
+            Its OWN class: sharing `.term-wrap-toggle` made a selector written
+            for the wrap control match this one too, by DOM order rather than
+            by intent. Text rather than a keyboard glyph because this file
+            already records that a symbol renders as tofu in several mobile
+            system fonts — the pressed state is carried by `aria-pressed`,
+            which the stylesheet dims. */}
         <button
           type="button"
-          className="term-wrap-toggle"
+          className="term-keys-toggle"
           aria-pressed={keypad === "full"}
           aria-label="More keys"
           onClick={() => {
@@ -502,7 +518,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
             writePref("keypad", v);
           }}
         >
-          {keypad === "full" ? "Keys −" : "Keys +"}
+          Keys
         </button>
         <button type="button" onClick={() => void load()} disabled={busy} aria-label="Refresh">
           ↻

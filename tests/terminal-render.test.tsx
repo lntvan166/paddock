@@ -231,3 +231,31 @@ test("auto-expand can be declined, and then a blocked agent leaves the pad alone
 
   expect(host.querySelectorAll(".term-keys-secondary").length).toBe(0);
 });
+
+test("the header spends its width on the agent's name, not on labels", async () => {
+  // Reported from a phone: the title bar had grown enough buttons that the
+  // agent's own name — the reason the screen exists — was squeezed out. So the
+  // two labels that carried nothing a glyph could not are gone: the back
+  // button's word, and the state spelled out beside a dot that already says it.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(
+    <AgentTerminal agent={agent({ name: "schema-migration", state: "working" })} onBack={() => {}} />,
+  );
+  await settle();
+
+  // The name is present and is the only prose in the title block.
+  expect(host.querySelector(".term-title strong")?.textContent).toBe("schema-migration");
+  // The state is a dot, and the word survives only for assistive tech.
+  expect(host.querySelector(".term-title .sr-only")?.textContent).toBe("working");
+  expect(host.querySelector(".term-header")?.textContent).not.toContain("Agents");
+
+  // Wrap and Keys are separate controls. Sharing a class made a selector
+  // written for one silently match the other, by DOM order rather than intent.
+  expect(host.querySelectorAll(".term-wrap-toggle").length).toBe(1);
+  expect(host.querySelectorAll(".term-keys-toggle").length).toBe(1);
+  expect(host.querySelector(".term-keys-toggle")?.getAttribute("aria-label")).toBe("More keys");
+});

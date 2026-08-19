@@ -402,14 +402,16 @@ body {
 }
 
 /* A mode indicator, not an icon — the label says which mode is ACTIVE. */
-.term-wrap-toggle {
+.term-wrap-toggle,
+.term-keys-toggle {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   padding: 0 0.5rem;
   border-radius: 0.4rem;
 }
-.term-wrap-toggle[aria-pressed="false"] { color: var(--fg-dim); }
+.term-wrap-toggle[aria-pressed="false"],
+.term-keys-toggle[aria-pressed="false"] { color: var(--fg-dim); }
 
 /* Reveals reconstructed scrollback. Sits above the pane rather than inside it
    so that revealing more cannot be mistaken for output the agent produced. */
