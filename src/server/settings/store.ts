@@ -101,6 +101,22 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
     );
   }
 
+  const isNotifyTrigger = (x: unknown): x is NotifyTrigger => x === "blocked" || x === "done";
+  const triggers = Array.isArray(n.triggers) ? n.triggers.filter(isNotifyTrigger) : d.notify.triggers;
+  // Named, not dropped silently, same as the quiet-hours discard above: a
+  // corrupted or stale trigger name (a typo, or a value from a future
+  // version) must not vanish with no trace — "never swallow an error" holds
+  // here even though the safe recovery (drop the bad entry) is correct.
+  if (Array.isArray(n.triggers)) {
+    const dropped = n.triggers.filter((x) => !isNotifyTrigger(x));
+    if (dropped.length > 0) {
+      log(
+        `[settings] notify.triggers entries ${dropped.map((x) => JSON.stringify(x)).join(", ")} ` +
+          `are not valid triggers and have been dropped.`,
+      );
+    }
+  }
+
   return {
     version: 2,
     telegram: {
@@ -109,9 +125,7 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
     },
     notify: {
       enabled: typeof n.enabled === "boolean" ? n.enabled : d.notify.enabled,
-      triggers: Array.isArray(n.triggers)
-        ? n.triggers.filter((x): x is NotifyTrigger => x === "blocked" || x === "done")
-        : d.notify.triggers,
+      triggers,
       settleMs: {
         blocked: num(s.blocked, DEFAULT_SETTLE_MS.blocked),
         done: num(s.done, DEFAULT_SETTLE_MS.done),

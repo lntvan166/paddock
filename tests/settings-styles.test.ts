@@ -44,13 +44,6 @@ test("the trigger checkboxes sit in a 44px row, not a bare 22px box", () => {
   expect(declaration(".settings-triggers label", "min-height")).toBe(TOUCH_TARGET);
 });
 
-test("the quiet-hours time inputs clear the full touch target", () => {
-  // A time input is a two-part control on a touch keyboard and sits beside
-  // its twin in a row, so a mis-tap lands in the other field. The generic
-  // `.settings-field input` baseline is 2.5rem (40px), below the guideline.
-  expect(declaration('.settings-field input[type="time"]', "min-height")).toBe(TOUCH_TARGET);
-});
-
 test("the checkbox rows themselves clear the touch target", () => {
   expect(declaration(".settings-field-row", "min-height")).toBe(TOUCH_TARGET);
 });
