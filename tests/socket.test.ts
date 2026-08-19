@@ -417,8 +417,14 @@ test("the mismatch message tells an operator with an older herdr to upgrade herd
   expect(msg).toContain("19");
   expect(msg).toContain("16");
   expect(msg).toContain("older");
-  expect(msg).toContain("restart");
+  expect(msg).toContain("daemon");
   expect(msg).not.toContain("make types");
+  // Naming the commands is the point. "restart its daemon" was true and still
+  // left the operator guessing: there is no standalone handoff command, and
+  // which one applies depends on whether the BINARY is already current.
+  expect(msg).toContain("herdr status server");
+  expect(msg).toContain("herdr update --handoff");
+  expect(msg).toContain("herdr server stop");
 });
 
 test("the mismatch message tells a contributor with a newer herdr to regenerate the types", () => {
@@ -426,4 +432,5 @@ test("the mismatch message tells a contributor with a newer herdr to regenerate 
   expect(msg).toContain("newer");
   expect(msg).toContain("make types");
   expect(msg).toContain("adapter.ts");
+  expect(msg).toContain("paddock update");
 });

@@ -11,12 +11,15 @@ function mismatchMessage(expected: number, actual: number): string {
   const advice =
     actual < expected
       ? [
-          "  your herdr is older than this paddock — upgrade herdr, then restart",
-          "  its daemon: the socket answers from the running daemon, not from the",
-          "  binary on disk, so upgrading alone still reports the old protocol",
+          "  your herdr is older than this paddock. The socket answers from the",
+          "  RUNNING daemon, not the binary on disk, so upgrading herdr is not",
+          "  enough on its own — the daemon has to be replaced too:",
+          "    herdr status server     what the running daemon actually speaks",
+          "    herdr update --handoff  when herdr itself is out of date",
+          "    herdr server stop       when it is current and only the daemon is stale",
         ]
       : [
-          "  your herdr is newer than this paddock — upgrade paddock; if you are",
+          "  your herdr is newer than this paddock — `paddock update`. If you are",
           "  working on paddock itself, run `make types` and re-check",
           "  src/server/herdr/adapter.ts for fields the new protocol moved",
         ];
