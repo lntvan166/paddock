@@ -199,3 +199,32 @@ test("a removed agent forgets that it was notified, so a returning id can notify
   await h.advance(0);
   expect(h.sent).toEqual(["api-refactor is done", "api-refactor is done"]);
 });
+
+import { composeMessage } from "@server/notify/notifier";
+
+test("an https public URL becomes a button, and the text carries no link", async () => {
+  const m = composeMessage(agent(), "done", "https://paddock.example.com");
+  expect(m.text).toBe("api-refactor is done");
+  expect(m.replyMarkup).toEqual({
+    inline_keyboard: [[{ text: "Open in paddock", url: "https://paddock.example.com/#/agent/w1%3Ap1" }]],
+  });
+});
+
+test("a trailing slash does not produce a doubled path", async () => {
+  const m = composeMessage(agent(), "done", "https://paddock.example.com/");
+  expect(m.replyMarkup!.inline_keyboard[0]![0]!.url).toBe("https://paddock.example.com/#/agent/w1%3Ap1");
+});
+
+test("a non-https URL falls back to a text link, because Telegram refuses the button", async () => {
+  // Telegram answers Button_url_invalid for a non-https inline URL, and a
+  // rejected message is worse than a plain link: the operator gets nothing.
+  const m = composeMessage(agent(), "done", "http://dev-box:8787");
+  expect(m.replyMarkup).toBeUndefined();
+  expect(m.text).toBe("api-refactor is done\nhttp://dev-box:8787/#/agent/w1%3Ap1");
+});
+
+test("with no public URL the message is text only, and never carries the task", async () => {
+  const m = composeMessage(agent({ task: "pasted-secret-in-title" }), "done", null);
+  expect(m.text).toBe("api-refactor is done");
+  expect(JSON.stringify(m)).not.toContain("pasted-secret");
+});

@@ -1,5 +1,5 @@
 import { agentHash } from "@shared/route";
-import type { Agent, AgentState, NotifyTrigger } from "@shared/types";
+import type { Agent, AgentState, InlineKeyboard, NotifyTrigger } from "@shared/types";
 import type { Delta } from "@server/state/store";
 import { isConfigured, type SettingsStore } from "@server/settings/store";
 
@@ -12,12 +12,41 @@ const isTrigger = (s: AgentState): s is NotifyTrigger => s === "blocked" || s ==
 
 export interface NotifierOpts {
   settings: SettingsStore;
-  send: (text: string) => Promise<{ ok: boolean; detail: string | null }>;
+  send: (text: string, replyMarkup?: InlineKeyboard) => Promise<{ ok: boolean; detail: string | null }>;
   now?: () => number;
   /** Injected so tests drive 5-10 SECOND windows without waiting them out.
    *  The default unrefs, so a pending settle cannot hold the process open. */
   setTimer?: (fn: () => void, ms: number) => TimerHandle;
   clearTimer?: (h: TimerHandle) => void;
+}
+
+/**
+ * The message for one settled transition: name, state, and a way in.
+ *
+ * NOTHING ELSE, and specifically not `a.task` — that is
+ * `terminal_title_stripped`, live agent-authored text that may carry a pasted
+ * credential. Telegram bot messages are not end-to-end encrypted and Telegram
+ * can read them; the design accepts that cost and names content minimalism as
+ * the ONLY mitigation for choosing Telegram over Web Push. Adding a field here
+ * spends it.
+ *
+ * The link is an inline button when it can be. Telegram answers
+ * `Button_url_invalid` for a non-https button URL, so anything else falls back
+ * to a text link — a rejected message would leave the operator with nothing,
+ * which is strictly worse than a plain URL.
+ */
+export function composeMessage(
+  a: Agent,
+  state: AgentState,
+  publicUrl: string | null,
+): { text: string; replyMarkup?: InlineKeyboard } {
+  const text = `${a.name} is ${state}`;
+  if (publicUrl === null || publicUrl === "") return { text };
+  // A free-text field collects a trailing slash, and `${url}/${hash}` would
+  // then produce "https://host//#/agent/...".
+  const url = `${publicUrl.replace(/\/+$/, "")}/${agentHash(a.agentId)}`;
+  if (!/^https:\/\//i.test(url)) return { text: `${text}\n${url}` };
+  return { text, replyMarkup: { inline_keyboard: [[{ text: "Open in paddock", url }]] } };
 }
 
 export class Notifier {
@@ -155,13 +184,8 @@ export class Notifier {
     // which is how the retry path becomes one Telegram POST per delta.
     this.#lastSentAt.set(a.agentId, now);
 
-    // Name, state, link. NOTHING ELSE — and specifically NOT `a.task`, which
-    // is live agent-authored text that may carry a pasted credential.
-    // Telegram bot messages are not end-to-end encrypted; content minimalism
-    // is the ONLY mitigation the design claims for choosing Telegram over Web
-    // Push, and adding a field here spends it.
-    const link = s.publicUrl ? `\n${s.publicUrl.replace(/\/+$/, "")}/${agentHash(a.agentId)}` : "";
-    const r = await this.o.send(`${a.name} is ${state}${link}`);
+    const m = composeMessage(a, state, s.publicUrl);
+    const r = await this.o.send(m.text, m.replyMarkup);
     if (r.ok) {
       this.#lastNotified.set(a.agentId, state);
       this.lastError = null;

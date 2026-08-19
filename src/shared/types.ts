@@ -35,6 +35,12 @@ export interface SettingsPatch {
   publicUrl?: string | null;
 }
 
+/** A Telegram inline keyboard. Declared in the shared contract because the
+ *  notifier composes it and the transport serialises it. */
+export interface InlineKeyboard {
+  inline_keyboard: { text: string; url: string }[][];
+}
+
 export type AgentState = "blocked" | "done" | "working" | "idle";
 
 export interface Agent {

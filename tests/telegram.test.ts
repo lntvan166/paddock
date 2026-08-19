@@ -42,3 +42,22 @@ test("a hung request aborts rather than leaking a pending fetch per delta", asyn
   expect(r.ok).toBe(false);
   expect(r.detail).toBeTruthy();
 });
+
+test("reply_markup is sent when given, and omitted when not", async () => {
+  const bodies: unknown[] = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+
+  await sendTelegram({ token: "1:A", chatId: "555", text: "hi", fetchImpl });
+  await sendTelegram({
+    token: "1:A", chatId: "555", text: "hi", fetchImpl,
+    replyMarkup: { inline_keyboard: [[{ text: "Open in paddock", url: "https://paddock.example.com/#/agent/w1%3Ap1" }]] },
+  });
+
+  expect("reply_markup" in (bodies[0] as object)).toBe(false);
+  expect((bodies[1] as { reply_markup: unknown }).reply_markup).toEqual({
+    inline_keyboard: [[{ text: "Open in paddock", url: "https://paddock.example.com/#/agent/w1%3Ap1" }]],
+  });
+});

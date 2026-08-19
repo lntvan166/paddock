@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Notifier } from "@server/notify/notifier";
-import type { Agent } from "@shared/types";
+import type { Agent, InlineKeyboard } from "@shared/types";
 
 const NOW = 1_700_000_000_000;
 const agent = (over: Partial<Agent> = {}): Agent => ({
@@ -27,6 +27,7 @@ interface HarnessOpts {
 
 function harness(o: HarnessOpts = {}) {
   const sent: string[] = [];
+  const sentMarkup: (InlineKeyboard | undefined)[] = [];
   let result = { ok: true, detail: null as string | null };
   const store = {
     current: () => ({
@@ -42,14 +43,15 @@ function harness(o: HarnessOpts = {}) {
   let now = o.now ?? NOW;
   const n = new Notifier({
     settings: store as never,
-    send: async (text: string) => {
+    send: async (text: string, replyMarkup?: InlineKeyboard) => {
       if (o.throwOnSend !== undefined) throw new Error(o.throwOnSend);
       sent.push(text);
+      sentMarkup.push(replyMarkup);
       return result;
     },
     now: () => now,
   });
-  return { n, sent, setNow: (t: number) => { now = t; },
+  return { n, sent, sentMarkup, setNow: (t: number) => { now = t; },
            fail: (d: string) => { result = { ok: false, detail: d }; } };
 }
 
@@ -63,6 +65,8 @@ test("first sight after boot does not notify", async () => {
 });
 
 test("a transition into a watched state notifies, with name, state and deep link", async () => {
+  // The deep link is an inline button (Task 10), not text — an https
+  // publicUrl means the text carries name and state only.
   const h = harness();
   h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
   h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
@@ -70,7 +74,9 @@ test("a transition into a watched state notifies, with name, state and deep link
   expect(h.sent).toHaveLength(1);
   expect(h.sent[0]).toContain("api-refactor");
   expect(h.sent[0]).toContain("blocked");
-  expect(h.sent[0]).toContain("https://paddock.example.com/#/agent/w1%3Ap1");
+  expect(h.sentMarkup[0]).toEqual({
+    inline_keyboard: [[{ text: "Open in paddock", url: "https://paddock.example.com/#/agent/w1%3Ap1" }]],
+  });
 });
 
 test("staying in the same state does not notify again", async () => {
@@ -108,6 +114,7 @@ test("a sustained failure does not send once per delta — cooldown arms on the 
 
 test("a trailing slash on publicUrl does not produce a double slash in the link", async () => {
   const sent: string[] = [];
+  let markup: InlineKeyboard | undefined;
   const store = {
     current: () => ({
       telegram: { token: "1:A", chatId: "555" },
@@ -120,15 +127,18 @@ test("a trailing slash on publicUrl does not produce a double slash in the link"
   };
   const n = new Notifier({
     settings: store as never,
-    send: async (text: string) => { sent.push(text); return { ok: true, detail: null }; },
+    send: async (text: string, replyMarkup?: InlineKeyboard) => {
+      sent.push(text); markup = replyMarkup; return { ok: true, detail: null };
+    },
     now: () => NOW,
   });
   n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
   n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
   await Bun.sleep(1);
   expect(sent).toHaveLength(1);
-  expect(sent[0]).toContain("https://paddock.example.com/#/agent/w1%3Ap1");
-  expect(sent[0]).not.toContain("//#/agent");
+  const url = markup?.inline_keyboard[0]?.[0]?.url;
+  expect(url).toBe("https://paddock.example.com/#/agent/w1%3Ap1");
+  expect(url).not.toContain("//#/agent");
 });
 
 /**

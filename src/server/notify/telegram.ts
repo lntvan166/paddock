@@ -1,7 +1,11 @@
+import type { InlineKeyboard } from "@shared/types";
+
 export interface TelegramResult { ok: boolean; detail: string | null }
 
 export interface SendOpts {
   token: string; chatId: string; text: string;
+  /** Omitted from the body entirely when absent — Telegram rejects a null. */
+  replyMarkup?: InlineKeyboard;
   fetchImpl?: typeof fetch; timeoutMs?: number;
 }
 
@@ -21,7 +25,11 @@ export async function sendTelegram(o: SendOpts): Promise<TelegramResult> {
     const res = await f(`https://api.telegram.org/bot${o.token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: o.chatId, text: o.text }),
+      body: JSON.stringify({
+        chat_id: o.chatId,
+        text: o.text,
+        ...(o.replyMarkup ? { reply_markup: o.replyMarkup } : {}),
+      }),
       signal: ac.signal,
     });
     const body = (await res.json()) as { ok?: boolean; description?: string };

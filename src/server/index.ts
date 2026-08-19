@@ -197,7 +197,7 @@ if (settings.error) console.error(`[settings] ${settings.error}`);
 
 const notifier = new Notifier({
   settings,
-  send: async (text) => {
+  send: async (text, replyMarkup) => {
     const s = settings.current();
     // The same `isConfigured` the store's view() and the routes use — one
     // definition, four call sites. Falsiness here and `!== null` in the
@@ -205,7 +205,7 @@ const notifier = new Notifier({
     if (!isConfigured(s.telegram.token) || !isConfigured(s.telegram.chatId)) {
       return { ok: false, detail: "not configured" };
     }
-    return sendTelegram({ token: s.telegram.token, chatId: s.telegram.chatId, text });
+    return sendTelegram({ token: s.telegram.token, chatId: s.telegram.chatId, text, replyMarkup });
   },
 });
 
