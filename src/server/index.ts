@@ -31,6 +31,7 @@ import {
   errorCode,
   herdrUnreachableMessage,
   inspectSocketPath,
+  isDiagnosableHerdrFailure,
   portInUseMessage,
 } from "@server/startup-errors";
 
@@ -275,10 +276,14 @@ if (DEMO) {
     await supervisor.start();
   } catch (err) {
     if (err instanceof ProtocolMismatchError) console.error(err.message);
-    else
-      console.error(
-        herdrUnreachableMessage(socketPath, err, inspectSocketPath(socketPath)),
-      );
+    else {
+      const kind = inspectSocketPath(socketPath);
+      // Only what we can diagnose. A parse bug wearing a "cannot reach herdr"
+      // message is harder to debug than the raw throw it replaced.
+      if (isDiagnosableHerdrFailure(err, kind))
+        console.error(herdrUnreachableMessage(socketPath, err, kind));
+      else console.error(err);
+    }
     process.exit(1);
   }
 }

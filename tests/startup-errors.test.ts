@@ -1,11 +1,13 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   herdrUnreachableMessage,
   inspectSocketPath,
+  isDiagnosableHerdrFailure,
   portInUseMessage,
+  type SocketPathKind,
 } from "@server/startup-errors";
 
 // The two ways a first run fails, and what the operator is told about them.
@@ -20,6 +22,10 @@ import {
 // failure and the terminal.
 
 const CONFIG = mkdtempSync(join(tmpdir(), "paddock-startup-"));
+
+afterAll(() => {
+  rmSync(CONFIG, { recursive: true, force: true });
+});
 
 function runServer(args: string[], env: Record<string, string> = {}) {
   const r = Bun.spawnSync(["bun", "src/server/index.ts", ...args], {
@@ -155,4 +161,31 @@ test("the port message never guesses what holds the port", () => {
   expect(m).toContain("PADDOCK_PORT=8788");
   // It is usually another paddock and it is just as legitimately not one.
   expect(m.toLowerCase()).not.toContain("another paddock");
+});
+
+test("a failure paddock cannot diagnose keeps its own message, not a herdr one", () => {
+  // The catch must not relabel every failure as unreachable-herdr. A parse bug,
+  // or one of herdr/socket.ts's own errors (which already read as sentences
+  // naming herdr and the failed method), must survive intact — a bug wearing a
+  // "no herdr socket" message sends the reader to check herdr instead.
+  const live: SocketPathKind = "socket";
+  expect(
+    isDiagnosableHerdrFailure(new TypeError("x.map is not a function"), live),
+  ).toBe(false);
+  expect(
+    isDiagnosableHerdrFailure(
+      new Error("herdr agent.list timed out after 10000ms"),
+      live,
+    ),
+  ).toBe(false);
+
+  // Still diagnosable: an errno on a live socket, and any filesystem verdict.
+  const econnrefused = Object.assign(new Error("refused"), {
+    code: "ECONNREFUSED",
+  });
+  expect(isDiagnosableHerdrFailure(econnrefused, live)).toBe(true);
+  expect(isDiagnosableHerdrFailure(new TypeError("bug"), "missing")).toBe(true);
+  expect(isDiagnosableHerdrFailure(new TypeError("bug"), "not-a-socket")).toBe(
+    true,
+  );
 });

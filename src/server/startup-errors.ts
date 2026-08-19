@@ -56,6 +56,28 @@ export function inspectSocketPath(
   }
 }
 
+/**
+ * Is this failure one we can actually diagnose?
+ *
+ * Only two things qualify: a filesystem fact about the socket path, and an
+ * errno-shaped I/O failure. Everything else — a parse bug, or one of
+ * herdr/socket.ts's own errors, which already read as sentences that name
+ * herdr and the method that failed — is printed as it is, with its stack.
+ *
+ * Replacing a bug's stack trace with "no herdr socket at ..." would send the
+ * reader off to check whether herdr is running when the fault is in paddock.
+ * Same reasoning as catching EADDRINUSE and rethrowing every other bind
+ * failure: format what is recognised, never everything.
+ */
+export function isDiagnosableHerdrFailure(
+  err: unknown,
+  kind: SocketPathKind,
+): boolean {
+  return (
+    kind === "missing" || kind === "not-a-socket" || errorCode(err) !== null
+  );
+}
+
 export function herdrUnreachableMessage(
   socketPath: string,
   err: unknown,
@@ -74,8 +96,8 @@ export function herdrUnreachableMessage(
       "  ~/.config/herdr/herdr.sock",
     ],
     socket: [
-      `paddock: the herdr socket at ${socketPath} did not accept a connection${detail}`,
-      "  the socket is there but nothing is answering — is herdr still running?",
+      `paddock: no usable answer from the herdr socket at ${socketPath}${detail}`,
+      "  the socket is there but nothing is serving it — is herdr still running?",
     ],
     unreadable: [
       `paddock: cannot reach herdr at ${socketPath}${detail}`,
