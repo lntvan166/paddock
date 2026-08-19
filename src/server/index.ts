@@ -40,6 +40,21 @@ if (command === "agent" || command === "hub") {
   process.exit(2);
 }
 
+// TEMPORARY, for this branch only: `start` and `stop` are recognised Command
+// values (see cli.ts) so their parsing can be tested ahead of their dispatch,
+// but neither has a real implementation yet — that lands in the next two
+// commits. Without this gate they fell through every `if` below, all the way
+// to Bun.serve: `paddock stop`, typed to STOP a detached instance, instead
+// started a second live dashboard right next to it. That is not "not yet
+// done", it is the opposite of the verb, so refuse loudly rather than guess.
+// Each of the next two commits deletes this branch and replaces it with a
+// real `runStop`/`runStart` dispatch, in the same spot, the same way
+// `update` and `status` are wired in below.
+if (command === "start" || command === "stop") {
+  console.error(`paddock ${command}: not implemented yet on this branch`);
+  process.exit(2);
+}
+
 // An unrecognised verb must NOT fall through to serve. `paddock updte` used to
 // launch a dashboard, which on a branch whose whole purpose is introducing
 // verbs is the "never swallow errors" shape — the operator asked for something

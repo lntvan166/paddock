@@ -111,6 +111,46 @@ test("the reserved verbs still exit 2 and still point at the roadmap", () => {
   }
 });
 
+test("start and stop refuse rather than fall through to a live dashboard", () => {
+  // `start` and `stop` are recognised Command values (cli.test.ts's "the
+  // three verbs parse" in lifecycle-status.test.ts), but index.ts does not
+  // dispatch either to real behaviour yet — that lands in the next two
+  // commits. Before the gate this test guards existed, both fell through
+  // every `if` in index.ts all the way to Bun.serve: `paddock stop`, typed
+  // to STOP a detached instance, instead started a SECOND live one right
+  // next to it — the literal opposite of the verb, and worse than doing
+  // nothing.
+  //
+  // A bogus, guaranteed-nonexistent herdr socket path plus no `--demo` means
+  // a regression back to the fall-through would try the real herdr-connect
+  // path and fail fast (ENOENT), not hang — but `timeout` is a safety net
+  // regardless: a real serving instance keeps the event loop alive forever,
+  // and an un-timed spawnSync would hang this test suite rather than fail
+  // it.
+  for (const verb of ["start", "stop"]) {
+    const r = Bun.spawnSync(["bun", "src/server/index.ts", verb], {
+      env: {
+        ...process.env,
+        PADDOCK_NO_UPDATE_CHECK: "1",
+        PADDOCK_CONFIG_DIR: CONFIG,
+        PADDOCK_HERDR_SOCKET: join(CONFIG, "no-such-herdr.sock"),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 5000,
+      killSignal: "SIGKILL",
+    });
+    const out = new TextDecoder().decode(r.stdout);
+    const err = new TextDecoder().decode(r.stderr);
+    expect(r.exitedDueToTimeout, `paddock ${verb} never exited on its own — it is serving`)
+      .not.toBe(true);
+    expect(r.exitCode, `paddock ${verb}`).not.toBe(0);
+    expect(out, `paddock ${verb} printed the listening line — it bound a port`)
+      .not.toContain("paddock listening");
+    expect(err).toContain("not implemented");
+  }
+});
+
 test("--version still works with no verb, which is what the release smoke step runs", () => {
   const r = runServer(["--version"]);
   expect(r.code).toBe(0);

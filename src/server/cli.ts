@@ -1,9 +1,13 @@
 /**
- * `serve`, `update`, `start`, `stop` and `status` are implemented. `agent` and
- * `hub` are RESERVED — the multi-host shape in docs/architecture.md names
- * them, and exiting with a pointer to the roadmap is better than either doing
- * something half-working or silently serving a dashboard under a name that
- * promises something else. `unknown` is anything else the operator typed.
+ * `serve`, `update` and `status` are implemented and act. `start` and `stop`
+ * are recognised here — this file's job is only to parse them and route them
+ * away from `serve` — but index.ts does not yet dispatch either to real
+ * behaviour; until it does, invoking them exits non-zero rather than
+ * guessing. `agent` and `hub` are RESERVED — the multi-host shape in
+ * docs/architecture.md names them, and exiting with a pointer to the roadmap
+ * is better than either doing something half-working or silently serving a
+ * dashboard under a name that promises something else. `unknown` is anything
+ * else the operator typed.
  */
 export type Command =
   | "serve" | "update" | "start" | "stop" | "status" | "agent" | "hub" | "unknown";
