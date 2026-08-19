@@ -33,6 +33,40 @@ async function mounted() {
   return { host, stub };
 }
 
+/**
+ * A stub that behaves like the real server: a PUT persists into the stored
+ * view and the response echoes the MERGED result back, rather than a static
+ * fixture that ignores what was sent. `stubFetch` cannot do this — its routes
+ * take no arguments — and a static echo is exactly what let a real bug slip
+ * past once already: `Settings.tsx`'s `save()` re-syncs every field from the
+ * PUT response, not just `baseline`, because the server is the source of
+ * truth for what actually got persisted and may not return exactly what was
+ * sent. A stub that always answers with the same fixture can't exercise that
+ * at all. `chatId` is trimmed here on the way in to stand in for that kind of
+ * server-side normalisation (see the test below for why `chatId`, not
+ * `publicUrl`, is what actually exercises it).
+ */
+function fakeServerFetch() {
+  let stored = view();
+  return (async (url: string | URL | Request, init?: RequestInit) => {
+    const u = String(url);
+    if (u.includes("/api/settings") && !u.includes("/telegram") && init?.method === "PUT") {
+      const patch = init.body ? JSON.parse(String(init.body)) : {};
+      const chatIdIn = patch.telegram?.chatId as string | null | undefined;
+      stored = {
+        ...stored,
+        telegram: {
+          ...stored.telegram,
+          chatId: typeof chatIdIn === "string" ? chatIdIn.trim() : (chatIdIn ?? stored.telegram.chatId),
+        },
+        notify: { ...stored.notify, ...(patch.notify ?? {}) },
+        publicUrl: "publicUrl" in patch ? patch.publicUrl : stored.publicUrl,
+      };
+    }
+    return new Response(JSON.stringify(stored), { headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+}
+
 test("the save bar is absent until something is dirty", async () => {
   // It costs no screen space while the operator is only reading.
   const { host } = await mounted();
@@ -67,8 +101,7 @@ test("typing a token counts as dirty even though the field starts empty", async 
 });
 
 test("a successful save clears the bar and announces itself in a live region", async () => {
-  const stub = stubFetch({ "/api/settings": () => view() });
-  globalThis.fetch = stub.fn as unknown as typeof fetch;
+  globalThis.fetch = fakeServerFetch();
   const host = await render(<Settings onBack={() => {}} />);
   await settle();
   await settle();
@@ -82,6 +115,43 @@ test("a successful save clears the bar and announces itself in a live region", a
   expect(toast).not.toBeNull();
   expect(toast!.getAttribute("role")).toBe("status");
   expect(toast!.textContent).toContain("saved");
+  expect(host.querySelector(".settings-save-bar")).toBeNull();
+});
+
+test("a save whose persisted value differs from what was typed still clears the bar", async () => {
+  // The motivating case is `save()`'s `publicUrl: publicUrl.trim() || null` —
+  // if the PUT response were re-synced only into `baseline` and not into the
+  // visible fields, `dirty` would keep comparing an untrimmed field against a
+  // trimmed baseline forever, and the bar would sit there after a perfectly
+  // successful save.
+  //
+  // That EXACT scenario cannot be driven through this test, though: `publicUrl`
+  // is rendered as `<input type="url">`, and the HTML value-sanitization
+  // algorithm for that input type strips leading/trailing whitespace at the
+  // DOM level, before React's `onChange` ever sees it — confirmed empirically
+  // against happy-dom, which implements the same algorithm real browsers do.
+  // A padded string typed into that field never reaches component state at
+  // all, so a whitespace test against `publicUrl` specifically would pass
+  // whether or not the re-sync exists — decorative coverage.
+  //
+  // `chatId` is a plain `type="text"` input with no such sanitization, so it
+  // is used here as a reachable stand-in for the same mechanism: `save()`
+  // does not trim `chatId`, but `fakeServerFetch` above does (representing
+  // the general case the resync defends — ANY field the server normalises on
+  // the way in, not only the one line that happens to trim client-side).
+  // Removing the field re-sync in `save()` (keeping only `setBaseline`) turns
+  // this red.
+  globalThis.fetch = fakeServerFetch();
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+  const chatId = host.querySelector<HTMLInputElement>('input[name="chatId"]')!;
+  typeInto(chatId, "  999  ");
+  await settle();
+  expect(host.querySelector(".settings-save-bar")).not.toBeNull();
+  host.querySelector<HTMLButtonElement>(".settings-save-bar button")!.click();
+  await settle();
+  await settle();
   expect(host.querySelector(".settings-save-bar")).toBeNull();
 });
 
