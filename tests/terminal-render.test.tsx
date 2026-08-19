@@ -249,13 +249,86 @@ test("the header spends its width on the agent's name, not on labels", async () 
 
   // The name is present and is the only prose in the title block.
   expect(host.querySelector(".term-title strong")?.textContent).toBe("schema-migration");
-  // The state is a dot, and the word survives only for assistive tech.
+  // The state is a dot, and for a working agent the word is only for
+  // assistive tech.
   expect(host.querySelector(".term-title .sr-only")?.textContent).toBe("working");
+  expect(host.querySelectorAll(".term-title .term-state").length).toBe(0);
   expect(host.querySelector(".term-header")?.textContent).not.toContain("Agents");
 
   // Wrap and Keys are separate controls. Sharing a class made a selector
   // written for one silently match the other, by DOM order rather than intent.
   expect(host.querySelectorAll(".term-wrap-toggle").length).toBe(1);
   expect(host.querySelectorAll(".term-keys-toggle").length).toBe(1);
-  expect(host.querySelector(".term-keys-toggle")?.getAttribute("aria-label")).toBe("More keys");
+  // No aria-label: the visible text IS the accessible name, and `aria-pressed`
+  // carries the state. An aria-label that does not contain the visible label is
+  // a WCAG 2.5.3 hazard for voice control, and it bought nothing here.
+  expect(host.querySelector(".term-keys-toggle")?.textContent?.trim()).toBe("Keys");
+  expect(host.querySelector(".term-keys-toggle")?.hasAttribute("aria-label")).toBe(false);
+});
+
+test("after an arrow tap the border moves and the preview reappears", async () => {
+  // THE regression this file failed to catch, shipped in v0.6.0. The dedupe
+  // guard tested `options.some(o => o.selected)`, and `options` is fetched once
+  // per blocked agent while `press()` patches only `selected` — so the frozen
+  // flag kept the preview hidden for the whole prompt, while the accent border
+  // stayed on the option the cursor had left. One wrong signal and no right
+  // ones, in the mechanism that exists to stop the operator arrowing one step
+  // too far into a persistent grant.
+  //
+  // `prompt.selected` is now the single fresh source for both.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["menu"]),
+    "/prompt": () => ({
+      question: "Do you want to proceed?",
+      options: [
+        { key: "1", label: "Yes", selected: true },
+        { key: "2", label: "No", selected: false },
+      ],
+      selected: "1. Yes",
+      raw: "",
+    }),
+    // The live screen after ↓: the cursor is on option 2. `options` is NOT
+    // re-fetched, exactly as in production.
+    "/key": () => ({ ok: true, ...screenOf(["menu"]), selected: "2. No" }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  // On load the border marks Yes, and the preview is correctly suppressed as a
+  // duplicate of it.
+  const pressed = () =>
+    [...host.querySelectorAll(".term-option")].map((b) => b.getAttribute("aria-pressed"));
+  expect(pressed()).toEqual(["true", "false"]);
+  expect(host.querySelectorAll(".term-selected").length).toBe(0);
+
+  const down = [...host.querySelectorAll(".term-key")].find((b) => b.textContent?.trim() === "↓");
+  (down as HTMLButtonElement).click();
+  await settle();
+  await settle();
+
+  // The border followed the cursor...
+  expect(pressed()).toEqual(["false", "true"]);
+  // ...and because it did, the preview stays a duplicate rather than becoming
+  // the only correct signal. Either behaviour is safe; a stale border with no
+  // preview is not.
+  expect(host.querySelector(".term-option[aria-pressed='true']")?.textContent).toBe("No");
+});
+
+test("a blocked agent keeps its state word visible, not only its colour", async () => {
+  // The palette pairs red with green, which is the classic indistinguishable
+  // pair, and this header has no visible section heading to fall back on the way
+  // the list does. So the one state where a missed distinction has a consequence
+  // says so in words; the other three spend the width on the agent's name.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+
+  expect(host.querySelector(".term-title .term-state")?.textContent).toBe("blocked");
 });

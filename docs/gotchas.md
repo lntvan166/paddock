@@ -13,6 +13,10 @@ one, recorded here so they are not reintroduced.
 | Works on one hostname, not another | Hostname allowlist in the client | Derive the WebSocket URL from `location`, unconditionally |
 | Route order load-bearing | Hand-rolled request dispatch | Hono's explicit routing |
 | A repeated alert never fires again | Dedup key too coarse; a failed send consumes the attempt | Dedup on the state transition; a failed delivery does not consume it |
+| A second boolean preference reads back as `false` the moment it is set | `writePref` serialised booleans by testing the pref's NAME (`k === "wrap"`), so any other boolean stored as `"true"` and was read by `=== "1"` | Keyed on the VALUE's type, matching what the nullable branch already did |
+| A test passes locally and fails in CI with "Attempted to assign to readonly property" | Bun runs every test file in ONE process, and `tests/support/dom.ts` makes globals readonly — so whether `globalThis.window = …` works depends on which file ran first. Adding test files changes that order | Fake a global with `Object.defineProperty`, restore its real descriptor, and put the setup INSIDE the `try` so a partial fake still unwinds |
+| One test fails and takes an unrelated test in another file with it | Globals faked before the `try`, so a throw skipped the restore and the next DOM file rendered against a two-property `window` | Setup inside the `try`; the restore is what must be unconditional |
+| `make test` fails about one run in twenty, looking like a timer flake | A test picked its port by arithmetic on `performance.now()` within a range that contains a real listener — paddock's own default port, on the machine of anyone running paddock | `tests/support/port.ts` asks the OS for a free port; a range that "looks unused" is a guess about someone else's machine |
 
 ## herdr protocol specifics
 

@@ -469,6 +469,29 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const lineSpans = parseAnsi([...revealed, ...output]);
   const blocks = groupLines(lineSpans.map((spans) => spans.map((sp) => sp.text).join("")));
 
+  /**
+   * Whether the cursor is on this option, judged by `prompt.selected` and NOT
+   * by the option's own `selected` flag.
+   *
+   * `options` is fetched once per blocked agent (the `/prompt` effect keys on
+   * `agentId` and `state`), while `press()` patches only `selected` from the
+   * screen `/key` just re-read. So the per-option flag is frozen at whatever
+   * was true when the pane opened; `selected` is the only field that follows
+   * the cursor.
+   *
+   * Reading the frozen flag shipped a real regression: after any arrow tap the
+   * accent border stayed on the option the cursor had left, and the dedupe
+   * guard below — testing that same flag — kept the preview hidden. One wrong
+   * signal and no right ones, in the mechanism whose whole purpose is stopping
+   * the operator arrowing one step too far into a persistent grant.
+   *
+   * `parsePrompt` builds `selected` as `${key}. ${label}` deliberately so it is
+   * comparable here; see its own note on why that string is rebuilt rather than
+   * reused from the matched line.
+   */
+  const isSelected = (o: { key: string; label: string }) =>
+    `${o.key}. ${o.label}` === prompt?.selected;
+
   return (
     <section className="term" aria-label={`${agent.name} terminal`}>
       <header className="term-header">
@@ -486,7 +509,18 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               had left. It stays for assistive tech, which cannot read a
               colour — the dot itself is aria-hidden. */}
           <StateDot state={agent.state} />
-          <span className="sr-only">{agent.state}</span>
+          {/* Blocked keeps its WORD, visibly. Everywhere else the dot is enough
+              and the word is only for assistive tech.
+
+              Colour alone is not a channel a sighted colour-blind operator can
+              read, and the palette pairs red with green. `AgentRow` and
+              `AgentCard` get away with a bare dot because they sit under
+              `Section`'s visible "Needs you" heading; this header has no such
+              context. So the one state where a missed distinction has a
+              consequence pays for the width, and the other three do not. */}
+          {agent.state === "blocked"
+            ? <span className="term-state">blocked</span>
+            : <span className="sr-only">{agent.state}</span>}
           {/* Shown rather than hidden: a pane that has stopped updating must
               not look current. */}
           {stalled && <span className="term-stalled" role="status">not updating</span>}
@@ -511,7 +545,6 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           type="button"
           className="term-keys-toggle"
           aria-pressed={keypad === "full"}
-          aria-label="More keys"
           onClick={() => {
             const v: KeypadPref = keypad === "full" ? "compact" : "full";
             setKeypad(v);
@@ -630,7 +663,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               type="button"
               className="term-option"
               disabled={busy}
-              aria-pressed={o.selected}
+              aria-pressed={isSelected(o)}
               onClick={() => {
                 setBusy(true);
                 void answerWithKey(agent.agentId, o.key)
@@ -658,7 +691,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           fighting for height. Kept for the case it was written for — a prompt
           the option parser refuses, where the keypad is the only way to answer
           and nothing else shows what Enter would commit. */}
-      {prompt?.selected && !prompt.options?.some((o) => o.selected) && (
+      {prompt?.selected && !prompt.options?.some(isSelected) && (
         <p className="term-selected" role="status">
           <span className="term-selected-label">⏎ Enter selects</span>
           {prompt.selected}

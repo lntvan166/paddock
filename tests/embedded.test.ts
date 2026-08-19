@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freePort } from "./support/port";
 
-
 /**
  * The defect this guards, measured before the fix: a compiled binary run from
  * a directory with no `dist/` answered /api/health but returned 404 for `/`.

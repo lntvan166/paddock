@@ -232,7 +232,11 @@ body {
 
 .term-back { font-weight: 600; }
 
-.term-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.5rem; }
+/* `center`, not `baseline`: the state is a DOT now, and an empty flex item has
+   no text baseline — its bottom margin edge would be aligned to the agent
+   name's baseline, sitting the dot low. Nothing here depends on baseline
+   alignment; the name is ellipsised and the stalled marker carries its own. */
+.term-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.5rem; }
 .term-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .term-state { font-size: 0.7rem; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.04em; }
 

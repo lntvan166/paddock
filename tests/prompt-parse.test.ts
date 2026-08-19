@@ -192,6 +192,16 @@ test("the cursor is found even when the line carries ANSI escapes", () => {
     "\x1b[2m   3. No\x1b[0m",
   ].join("\n");
   expect(selectedLine(raw)).toBe("2. Yes, and always allow: curl *");
+
+  // And the MENU parses from the same coloured buffer. This is the half the
+  // route test could not pin: under the old cursor-only stripping, OPTION_RE
+  // never matched a coloured line, `options` was null, and the bare scan
+  // returned the same string — so the assertion above passed either way.
+  const p = parsePrompt(raw);
+  expect(p.question).toBe("Do you want to proceed?");
+  expect(p.options?.map((o) => o.label)).toEqual([
+    "Yes", "Yes, and always allow: curl *", "No",
+  ]);
 });
 
 test("selectedLine agrees with parsePrompt when the marker is on the live menu", () => {
@@ -224,4 +234,25 @@ test("a marker left on an answered question is not attributed to the live menu",
   const p = parsePrompt(raw);
   expect(p.options?.map((o) => o.label)).toEqual(["Leave it visible", "Collapse it"]);
   expect(p.selected).toBeNull();
+});
+
+test("a cursor on a free-text row below a menu is still reported", () => {
+  // The scoping fix went one step too far. Suppressing the bare scan whenever a
+  // menu parses also suppressed a marker that is NOT another question's answer:
+  // some prompts park the cursor on an input row under the options, and Enter
+  // then submits text rather than an option. CURSOR_RE was widened for exactly
+  // this ("reporting that verbatim beats reporting nothing").
+  //
+  // The distinction that keeps both fixes: an OPTION-SHAPED marker outside the
+  // live run can only belong to a question already answered, while a
+  // non-option-shaped one can only be the live input row.
+  const raw = [
+    " Do you want to proceed?",
+    "   1. Yes",
+    "   2. No",
+    " ❯ Type something",
+  ].join("\n");
+  const p = parsePrompt(raw);
+  expect(p.options?.map((o) => o.label)).toEqual(["Yes", "No"]);
+  expect(p.selected).toBe("Type something");
 });

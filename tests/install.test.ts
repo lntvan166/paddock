@@ -42,11 +42,19 @@ test("readInstallEnv survives a storage accessor that throws", () => {
   // propagate and take the whole dashboard down.
   const g = globalThis as Record<string, unknown>;
   const KEYS = ["window", "navigator", "document", "localStorage"] as const;
-  const had = {
-    window: "window" in g, navigator: "navigator" in g,
-    document: "document" in g, localStorage: "localStorage" in g,
-  };
-  const prev = { window: g.window, navigator: g.navigator, document: g.document, localStorage: g.localStorage };
+  /**
+   * The real descriptors, so the restore puts back what was there — not a
+   * writable copy of its value.
+   *
+   * Restoring with `{writable: true, configurable: true}` would leave these
+   * globals writable for every file that runs after this one, so whether a
+   * later `globalThis.window = …` succeeds would depend on whether this test
+   * ran first. That is the same file-order dependency this test was fixed to
+   * remove, pointing the other way. One structure rather than parallel
+   * `had`/`prev` literals, which could disagree the day a fifth global is
+   * added.
+   */
+  const before = new Map(KEYS.map((k) => [k, Object.getOwnPropertyDescriptor(g, k)]));
 
   /**
    * `defineProperty`, never plain assignment.
@@ -86,10 +94,12 @@ test("readInstallEnv survives a storage accessor that throws", () => {
     expect(readInstallEnv(false).dismissed).toBe(false);
     expect(() => dismissInstall()).not.toThrow();
   } finally {
-    // Restored the same way it was faked: assignment would hit the same
-    // readonly wall, leaving the fake installed for every later file.
+    // Restored by DESCRIPTOR, not by value: assignment would hit the same
+    // readonly wall, and a writable copy would hand every later file a
+    // different environment than it would have had.
     for (const key of KEYS) {
-      if (had[key]) put(key, prev[key]);
+      const desc = before.get(key);
+      if (desc) Object.defineProperty(g, key, desc);
       else delete g[key];
     }
   }

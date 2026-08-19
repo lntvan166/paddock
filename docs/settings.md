@@ -5,7 +5,13 @@ because the settings behind them live in two different places.
 
 ## This device
 
-Theme, refresh rate, terminal font size, line wrap.
+Theme, refresh rate, terminal font size, line wrap, and the terminal keypad —
+whether its second row is collapsed, and whether a blocked agent may open it
+for you.
+
+The keypad pair is deliberately per-device rather than a server setting: it is
+about how much of *this* screen a row of keys is worth, and the same account on
+a laptop has room a phone does not.
 
 Stored in this browser's `localStorage` and nowhere else: open paddock on a
 second device and it starts from defaults, not a synced copy.

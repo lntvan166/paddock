@@ -9,7 +9,10 @@ import { RATE_MS, readPrefs, writePref } from "@web/prefs";
  * this module touches is removed after each test — not per-test
  * `removeItem` calls a later test could forget to add.
  */
-const ALL_KEYS = ["paddock.theme", "paddock.rate", "paddock.term.wrap", "paddock.term.fontpx"];
+const ALL_KEYS = [
+  "paddock.theme", "paddock.rate", "paddock.term.wrap", "paddock.term.fontpx",
+  "paddock.term.keypad", "paddock.term.keypad.auto",
+];
 afterEach(() => {
   for (const k of ALL_KEYS) localStorage.removeItem(k);
 });
@@ -160,7 +163,6 @@ test("the keypad prefs default to a full pad that expands itself", () => {
   // Visible by default, and allowed to open itself when an agent needs an
   // answer — the two things asked for. A collapsed default would hide the
   // committing action from an operator who never opened settings.
-  localStorage.clear();
   const p = readPrefs();
   expect(p.keypad).toBe("full");
   expect(p.keypadAuto).toBe(true);
@@ -171,7 +173,6 @@ test("a boolean pref round-trips, and 'never stored' is not 'explicitly off'", (
   // second boolean would be stored as "true" and read back as `=== "1"` false
   // — off the moment it was turned on. Generalised to the value's type, which
   // is what the nullable case already does.
-  localStorage.clear();
   expect(readPrefs().keypadAuto).toBe(true);
 
   writePref("keypadAuto", false);

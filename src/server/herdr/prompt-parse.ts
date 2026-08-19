@@ -10,6 +10,13 @@ const QUESTION_RE = /^\s*(\S.*\?)\s*$/;
  * Deliberately looser than OPTION_RE: some prompts park the cursor on a
  * free-text row ("Type something"), and reporting that verbatim beats
  * reporting nothing. The operator sees what Enter will do either way.
+ *
+ * Which of these survives is decided later, in `parsePrompt`, and only when a
+ * menu also parsed: an option-shaped match outside the live run is another
+ * question's answer and is dropped, while a non-option-shaped one is the live
+ * input row and is kept. So this stays as loose as it looks — the narrowing
+ * happens where the run boundaries are known, which is the only place that can
+ * tell the two apart.
  */
 const CURSOR_RE = /^\s*❯\s*(\S.*?)\s*$/;
 
@@ -166,7 +173,18 @@ export function parsePrompt(raw: string): ParsedPrompt {
    * narrows where the value comes from, it does not restyle it.
    */
   const marked = lastRun.find((o) => o.selected);
-  const fromRun = marked === undefined ? null : `${marked.key}. ${marked.label}`;
+  const fromRun =
+    marked !== undefined
+      ? `${marked.key}. ${marked.label}`
+      // Not every surviving marker is another question's answer. An
+      // OPTION-SHAPED one outside the live run can only be a menu already
+      // answered — drop it. A marker that is NOT option-shaped can only be the
+      // live input row ("❯ Type something"), where Enter submits text rather
+      // than an option, and dropping that loses the one thing the operator
+      // needed to know. `CURSOR_RE` was widened for precisely that case.
+      : selected !== null && OPTION_RE.test(selected)
+        ? null
+        : selected;
 
   return {
     question: lastRunQuestion,
