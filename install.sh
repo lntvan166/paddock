@@ -60,7 +60,11 @@ BASE="https://github.com/$REPO/releases/latest/download"
 # SHA256SUMS stays in $TMP: it is read, never installed, so where it lands does
 # not matter.
 mkdir -p "$BIN_DIR"
-TMP="$(mktemp -d)"
+# The template is NOT optional. GNU coreutils treats it as optional, so a bare
+# `mktemp -d` works on Linux and fails on macOS, where BSD mktemp requires
+# either a template or `-t`. Half the platforms this script supports are macOS,
+# and every test here runs on Linux, so the bug would have shipped invisibly.
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/paddock.XXXXXX")"
 NEW="$BIN_DIR/.paddock.new.$$"
 trap 'rm -rf "$TMP"; rm -f "$NEW"' EXIT
 

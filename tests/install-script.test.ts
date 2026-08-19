@@ -298,3 +298,16 @@ test("the binary is downloaded into the destination directory, so the final move
     rmSync(fx.work, { recursive: true, force: true });
   }
 });
+
+test("every mktemp call carries an explicit template, or the installer dies on macOS", () => {
+  // GNU coreutils makes the template optional; BSD mktemp does not. A bare
+  // `mktemp -d` therefore works on every machine this suite runs on and fails
+  // immediately on macOS — half the platforms the script claims to support.
+  // Caught in review by someone reading for portability, not by any test here,
+  // which is exactly why this assertion exists.
+  const calls = [...sh.matchAll(/^[^#\n]*\bmktemp\b[^\n]*/gm)].map((m) => m[0]);
+  expect(calls.length, "no mktemp call found — did the script change?").toBeGreaterThan(0);
+  for (const call of calls) {
+    expect(call, `mktemp without a template: ${call.trim()}`).toMatch(/XXXXXX|-t\s/);
+  }
+});
