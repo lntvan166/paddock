@@ -137,19 +137,27 @@ function runVerb(verb: string, extraArgs: string[] = []) {
   };
 }
 
-test("start refuses rather than fall through to a live dashboard", () => {
-  // `start` is a recognised Command value (see lifecycle-status.test.ts's
-  // "the three verbs parse"), but index.ts does not dispatch it to real
-  // behaviour yet — that lands in Task 5. Before the gate this test guards
+test("start's own parsing process never binds a port, whatever the detached child does", () => {
+  // `start` is now dispatched to real behaviour (runStart, tested in
+  // lifecycle-start.test.ts): it spawns a detached child — this same binary,
+  // re-invoked with no verb — and waits for THAT child's state file and
+  // health endpoint before reporting success. So this no longer exits 0 vs
+  // non-zero on a fixed rule; the durable property this test guards is
+  // narrower and still holds regardless: the process handling `start`'s own
+  // parsing and dispatch must never itself bind a port. Before Task 5's gate
   // existed, it fell through every `if` in index.ts all the way to
   // Bun.serve: `paddock start` silently became a foreground `serve` rather
   // than the detach-and-return the verb promises.
+  //
+  // The bogus herdr socket above means the spawned child fails fast
+  // (ENOENT, not a hang), so this is also, incidentally, the case where the
+  // child never binds a port either — but that is not what is asserted here.
   const r = runVerb("start");
   expect(r.timedOut, "paddock start never exited on its own — it is serving").not.toBe(true);
-  expect(r.code, "paddock start").not.toBe(0);
   expect(r.out, "paddock start printed the listening line — it bound a port")
     .not.toContain("paddock listening");
-  expect(r.err).toContain("not implemented");
+  expect(r.out, "start should report why the detached process did not come up")
+    .toContain("did not start");
 });
 
 test("stop never binds a port or opens a herdr socket, whether or not anything is running", () => {

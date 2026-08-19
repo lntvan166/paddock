@@ -18,7 +18,7 @@ import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { capturedArgs, removeState, writeState } from "@server/lifecycle/state";
-import { runStatus, runStop } from "@server/lifecycle/commands";
+import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, USAGE } from "@server/cli";
@@ -37,20 +37,6 @@ const HOSTNAME = "127.0.0.1"; // loopback only; exposure is the tunnel's job
 // `agent` from here. Exit code 2 and the roadmap pointer are unchanged.
 if (command === "agent" || command === "hub") {
   console.error(`paddock ${command}: not implemented — see docs/roadmap.md`);
-  process.exit(2);
-}
-
-// TEMPORARY, for this branch only: `start` is a recognised Command value (see
-// cli.ts) so its parsing can be tested ahead of its dispatch, but it has no
-// real implementation yet — that lands in Task 5. Without this gate it fell
-// through every `if` below, all the way to Bun.serve: `paddock start`
-// silently became a foreground `serve`, not the detach-and-return the verb
-// promises. That is not "not yet done", it is a different command, so refuse
-// loudly rather than guess. Task 5 deletes this branch and replaces it with a
-// real `runStart` dispatch, in the same spot, the same way `update`, `status`
-// and `stop` are wired in below.
-if (command === "start") {
-  console.error(`paddock ${command}: not implemented yet on this branch`);
   process.exit(2);
 }
 
@@ -107,6 +93,15 @@ if (command === "status") {
 // to signal a pid it reads from the state file.
 if (command === "stop") {
   process.exit(await runStop({ dir: defaultConfigDir(), force: flags.has("--force") }));
+}
+
+// Must run before any server setup below, same reasoning as the three verbs
+// above: `start` itself never binds a port or opens a herdr socket — it only
+// spawns a detached child (which is this same binary, re-invoked with no
+// verb, and IS the thing that binds a port) and waits for that child's own
+// state file and health endpoint to confirm it is actually serving.
+if (command === "start") {
+  process.exit(await runStart({ dir: defaultConfigDir() }));
 }
 
 const socketPath =
