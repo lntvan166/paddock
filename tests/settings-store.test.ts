@@ -178,6 +178,16 @@ test("a discarded quiet-hours window is named, never dropped silently", async ()
   expect(logged.join(" ")).toContain("Mute");
 });
 
+test("a corrupted trigger name is named, never dropped silently", async () => {
+  // Same standing rule as the quiet-hours discard above ("never swallow an
+  // error"): dropping a value that is not a real NotifyTrigger is the right
+  // recovery, but doing it with no trace is not.
+  const logged: string[] = [];
+  const s = migrate({ version: 1, notify: { triggers: ["blocked", "not-a-trigger"] } }, (m) => logged.push(m));
+  expect(s.notify.triggers).toEqual(["blocked"]);
+  expect(logged.join(" ")).toContain("not-a-trigger");
+});
+
 test("a v2 file is not rewritten on load", async () => {
   // Persisting on every load would rewrite settings.json — and the token
   // inside it — on every boot, for no reason.

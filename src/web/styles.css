@@ -586,13 +586,6 @@ body {
   font: inherit;
 }
 
-/* Time inputs get the full 44px rather than the 40px baseline: a quiet-hours
-   field is a two-part control (hour, then minute) on a touch keyboard, and it
-   sits beside its twin in a row, so a mis-tap lands in the other field. */
-.settings-field input[type="time"] {
-  min-height: 2.75rem;
-}
-
 /* The one-line explanations under a field. Not a colour defined only inside
    a media query — `--fg-dim` is a token on bare :root. */
 .settings-hint-inline {
