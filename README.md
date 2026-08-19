@@ -17,9 +17,12 @@ To reach it from your phone, put a [Cloudflare Tunnel with Zero Trust Access](#i
 Synthetic agents, no install. Best viewed in mobile mode.
 
 <p align="center">
-  <img src="docs/images/01-agents.png" alt="The agent list, grouped by what needs attention" width="46%">
-  <img src="docs/images/02-blocked.png" alt="A blocked agent showing its real options and what Enter will commit" width="46%">
+  <img src="docs/images/01-agents.png" alt="The agent list, grouped by what needs attention" width="31%">
+  <img src="docs/images/02-blocked.png" alt="A blocked agent showing its real options and what Enter will commit" width="31%">
+  <img src="docs/images/05-home-screen.jpg" alt="paddock on an iPhone Home Screen, in a folder named herdr" width="31%">
 </p>
+
+<p align="center"><sub>The list ordered by what needs you · a blocked agent's real options · and on the Home Screen, where <strong>Add to Home Screen</strong> makes it an app.</sub></p>
 
 ---
 
@@ -102,11 +105,7 @@ Whichever you choose, the requirement is the same: **something must authenticate
 
 ### Then add it to your Home Screen
 
-<p align="center">
-  <img src="docs/images/05-home-screen.jpg" alt="paddock on an iPhone Home Screen, in a folder named herdr" width="45%">
-</p>
-
-Once it is reachable, **Share → Add to Home Screen** turns paddock into an app: its own icon, no browser chrome, and it opens where you left off. The manifest and icons that make that work already ship.
+Once it is reachable, **Share → Add to Home Screen** turns paddock into an app — its own icon, no browser chrome, and it opens where you left off ([pictured above](#-try-the-live-demo)). The manifest and icons that make that work already ship.
 
 On iOS this is also the only way to get Web Push, if it ever lands — Safari delivers notifications to an installed PWA and never to a page in a tab.
 
