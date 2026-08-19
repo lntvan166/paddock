@@ -623,9 +623,6 @@ Replace everything in `src/server/notify/notifier.ts` from `export interface Not
 ```ts
 export type TimerHandle = ReturnType<typeof setTimeout>;
 
-/** Attempts per settled transition, including the first. */
-const MAX_ATTEMPTS = 3;
-
 const isTrigger = (s: AgentState): s is NotifyTrigger => s === "blocked" || s === "done";
 
 export interface NotifierOpts {
@@ -758,8 +755,10 @@ export class Notifier {
       return;
     }
     this.lastError = r.detail ?? "send failed";
-    void attempts; // retry lands in Task 3
-    void MAX_ATTEMPTS;
+    // The retry lands in Task 3. `attempts` is unused until then, which is
+    // fine — tsconfig sets `noUnusedLocals` but not `noUnusedParameters`. Do
+    // NOT add a `MAX_ATTEMPTS` const here for the same reason: an unexported
+    // unused const IS flagged, so Task 3 declares it where it is first read.
   }
 }
 ```
@@ -998,7 +997,12 @@ In `src/server/notify/notifier.ts`, replace the block from `if (!isConfigured(..
     if (attempts + 1 < MAX_ATTEMPTS) this.#arm(a, state, s.notify.cooldownMs, attempts + 1);
 ```
 
-Delete the two `void` placeholder lines from Task 2.
+Add the constant that Task 2 deliberately left out, above the class:
+
+```ts
+/** Attempts per settled transition, including the first. */
+const MAX_ATTEMPTS = 3;
+```
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -1276,7 +1280,7 @@ Replace `src/server/routes.ts:565-578` with:
 
 ```ts
     app.post("/api/settings/telegram/test", async (c) => {
-      const parsed = await readJsonObject(c);
+      const parsed = await strictJsonBody(c);
       if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
       const body = parsed.body;
 
@@ -1315,7 +1319,7 @@ Replace `src/server/routes.ts:565-578` with:
     });
 ```
 
-`readJsonObject` is the existing helper at `routes.ts:170`; reuse it rather than calling `c.req.json()` directly, so a non-object body is refused with the same message as every other route.
+`strictJsonBody` is the existing helper at `routes.ts:161`; reuse it rather than calling `c.req.json()` directly, so a malformed or non-object body is refused with the same message as every other route.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -1437,7 +1441,7 @@ Beside the other settings routes:
      * endpoint makes that structural instead of a rule to remember.
      */
     app.post("/api/settings/mute", async (c) => {
-      const parsed = await readJsonObject(c);
+      const parsed = await strictJsonBody(c);
       if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
       const forMs = parsed.body.forMs;
       if (typeof forMs !== "number" || !Number.isFinite(forMs) || forMs < 0 || forMs > MAX_MUTE_MS) {
@@ -1734,6 +1738,12 @@ test("the save bar clears the home indicator", () => {
   expect(declaration(".settings-save-bar", "padding-bottom")).toContain("env(safe-area-inset-bottom)");
 });
 
+test("reserving space for the bar does not cost the page its safe-area inset", () => {
+  // `.settings` is a later rule than `.safe-bottom` at equal specificity, so a
+  // bare padding-bottom here would override the inset for the whole page.
+  expect(declaration(".settings", "padding-bottom")).toContain("env(safe-area-inset-bottom");
+});
+
 test("the save bar's button is a full touch target", () => {
   expect(declaration(".settings-save-bar button", "min-height")).toBe(TOUCH_TARGET);
 });
@@ -1900,8 +1910,14 @@ In `src/web/styles.css`, after the existing `.settings-*` rules:
 .settings-save-bar button { min-height: 2.75rem; padding-inline: 1.25rem; }
 
 /* Reserved unconditionally, so the bar appearing never covers the last field
-   and nothing on the page jumps when it does. */
-.settings { padding-bottom: 5.5rem; }
+   and nothing on the page jumps when it does.
+   `calc(... + env(...))`, not a bare 5.5rem: `<main>` already carries
+   `.safe-bottom` (styles.css:84), which sets `padding-bottom:
+   env(safe-area-inset-bottom)`. `.settings` is the LATER rule at equal
+   specificity, so a bare value here would win and silently drop the home-
+   indicator inset from the whole page. Merge this into the existing
+   `.settings` rule at styles.css:533 rather than adding a second one. */
+.settings { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)); }
 
 .settings-toast {
   position: sticky;
