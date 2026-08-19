@@ -205,8 +205,18 @@ export async function runStop(o: StopOpts): Promise<number> {
   // gap between its last check and here must not reach `send`.
   if (!stillOurs()) {
     const actual = probe.argsOf(pid);
+    if (actual === null) {
+      // Cannot tell, which is not the same as "it is someone else". Refuse
+      // the unblockable signal, but KEEP the state file: an operator who
+      // already cannot identify the process must not also lose the record
+      // naming it. The recycled case below is different — there the pid
+      // provably is not ours, so the record is stale and worth clearing.
+      log(`paddock: cannot confirm pid ${pid} is still paddock — refusing to send SIGKILL`);
+      log("  its state file is left in place; check the pid by hand, then try again");
+      return 1;
+    }
     log(`paddock: pid ${pid} is not paddock any more — refusing to send SIGKILL`);
-    log(`  it is now: ${actual ?? "unknown"}`);
+    log(`  it is now: ${actual}`);
     await removeState(o.dir);
     return 1;
   }
@@ -367,7 +377,10 @@ export async function runStart(o: StartOpts): Promise<number> {
       `paddock: spawned pid ${child.pid}, but it did not answer /api/health ` +
         `within ${Math.round(waitMs / 1000)}s — it is still running`,
     );
-    log("  it may still be coming up: 'paddock status' will say, 'paddock stop' stops it");
+    // Deliberately hedged: the child records its state only after it binds,
+    // so one that is still coming up may not be visible to `status`/`stop`
+    // yet. The pid above is the handle that always works.
+    log("  once it has recorded state, 'paddock status' shows it and 'paddock stop' stops it");
     if (tail.trim() !== "") log(tail.trim());
     log(`  full log: ${logFile(o.dir)}`);
     return 1;

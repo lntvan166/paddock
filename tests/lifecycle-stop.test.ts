@@ -263,3 +263,31 @@ test("an indeterminate argsOf on a pid that will not die is a timeout, not a suc
   expect(code).not.toBe(0);
   expect(out.join(" ")).toContain("--force");
 });
+
+test("--force must not SIGKILL a pid whose identity cannot be read", async () => {
+  // The wait loop tolerates an indeterminate `argsOf` — a zombie mid-exit
+  // reads empty — but the pre-SIGKILL check must not, because it gates a
+  // signal that cannot be blocked and "cannot tell" has to block it. That
+  // asymmetry was documented and implemented but pinned by nothing: relaxing
+  // `stillOurs` to `isAlive(pid) && (a === null || a === args)` passed every
+  // other test in this file. It fails this one.
+  //
+  // The state file is kept, unlike the recycled case. An operator who cannot
+  // identify the process must not ALSO lose the record naming it.
+  const d = await dir();
+  await writeState(d, s);
+  const sent: string[] = [];
+  const out: string[] = [];
+  let args = 0;
+  const code = await runStop({
+    dir: d,
+    force: true,
+    probe: { isAlive: () => true, argsOf: () => (++args <= 1 ? "paddock" : null) },
+    signal: (pid, sig) => sent.push(`${sig}->${pid}`),
+    log: (l) => out.push(l),
+    waitMs: 300,
+  });
+  expect(sent, "an unidentifiable pid must not receive SIGKILL").toEqual(["SIGTERM->4242"]);
+  expect(code).not.toBe(0);
+  expect(existsSync(stateFile(d)), "the only handle on the process must survive").toBe(true);
+});

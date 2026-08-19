@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -171,4 +172,28 @@ test("a config dir it cannot write is reported and NOT fatal — the server keep
   );
   expect(ok).toBe(false);
   expect(said.join(" ")).toContain("could not record state");
+});
+
+test("a capture that throws does not take an already-bound server down", async () => {
+  // capturedArgs falls back to Bun.spawnSync(["ps", ...]), which throws when
+  // `ps` is missing rather than returning a non-zero exit. recordState runs
+  // at top level immediately after the bind, so a throw escaping it would
+  // kill a paddock that is already serving. It must be reported and swallowed
+  // into `false`, the same as every other identity failure.
+  const d = await dir();
+  const warned: string[] = [];
+  const ok = await recordState(
+    d,
+    { pid: 4242, port: 8787, version: "0.0.0-test", startedAt: 1787000000000 },
+    {
+      capture: () => {
+        throw new Error("ENOENT: no such file or directory, posix_spawn 'ps'");
+      },
+      log: () => {},
+      warn: (l) => warned.push(l),
+    },
+  );
+  expect(ok, "a failed capture is a false, never a throw").toBe(false);
+  expect(existsSync(stateFile(d)), "no state file may be written from a failed capture").toBe(false);
+  expect(warned.join(" "), "the failure must be announced, not swallowed").toContain("ps");
 });

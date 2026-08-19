@@ -120,7 +120,22 @@ export async function recordState(
   const log = deps.log ?? console.info;
   const warn = deps.warn ?? console.error;
 
-  const args = capture(s.pid);
+  // Inside the guard, not outside it: `capturedArgs` falls back to
+  // Bun.spawnSync(["ps", ...]), which THROWS if `ps` is absent rather than
+  // returning a non-zero exit. This function is called at top level right
+  // after the bind, so an escaping throw would kill an already-serving
+  // paddock — the exact failure 0f61f9a fixed for the config directory, and
+  // the one the contract above promises cannot happen here.
+  let args: string | null;
+  try {
+    args = capture(s.pid);
+  } catch (e) {
+    warn(
+      `paddock: could not read pid ${s.pid}'s own command line (${String(e)}) — ` +
+        "not recording state, so 'paddock status' and 'paddock stop' will not find this instance",
+    );
+    return false;
+  }
   if (args === null) {
     log(
       `paddock: could not read pid ${s.pid}'s own command line — not recording state, ` +
