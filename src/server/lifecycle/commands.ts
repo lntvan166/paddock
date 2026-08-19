@@ -308,7 +308,21 @@ export async function runStart(o: StartOpts): Promise<number> {
     }
   }
 
-  const child = o.spawn ? o.spawn() : await spawnDetached(o.dir, { demo: o.demo });
+  let child: { pid: number; exited: Promise<number> };
+  try {
+    child = o.spawn ? o.spawn() : await spawnDetached(o.dir, { demo: o.demo });
+  } catch (e) {
+    // The design's failure table: "start where the config dir is unwritable
+    // -> Refuse before spawning, exit non-zero." Unguarded this threw
+    // `EACCES ... open '.../paddock.log'` with a stack trace, which tells an
+    // operator the truth in the least usable form there is. Narrow on
+    // purpose: only the log-file preparation is turned into a refusal, so an
+    // unexpected failure inside Bun.spawn still surfaces loudly rather than
+    // being reported as a permissions problem it is not.
+    if (!(e instanceof ConfigDirUnusable)) throw e;
+    log(`paddock: cannot write ${e.file} (${e.reason}) — not starting`);
+    return 1;
+  }
   const deadline = Date.now() + waitMs;
   let childGone = false;
   void child.exited.then(() => { childGone = true; });
@@ -326,20 +340,62 @@ export async function runStart(o: StartOpts): Promise<number> {
   }
 
   const tail = o.logTail ? await o.logTail() : await readLogTail(o.dir);
+  if (!childGone) {
+    // The wait expired but the child is still alive. It was reported as
+    // "the detached process did not start" — a live process holding the
+    // port, described to the operator as an absence, with no pid to act on.
+    //
+    // It is NOT killed here. Every other decision in this module refuses to
+    // signal on its own, and a child that bound but answers /api/health
+    // slowly is a working paddock, not garbage to tidy away. So report what
+    // is actually true, name the pid, and hand over the command that deals
+    // with it. Still non-zero: this is not the success `start` promises.
+    log(
+      `paddock: spawned pid ${child.pid}, but it did not answer /api/health ` +
+        `within ${Math.round(waitMs / 1000)}s — it is still running`,
+    );
+    log("  it may still be coming up: 'paddock status' will say, 'paddock stop' stops it");
+    if (tail.trim() !== "") log(tail.trim());
+    log(`  full log: ${logFile(o.dir)}`);
+    return 1;
+  }
+
   log("paddock: the detached process did not start");
   if (tail.trim() !== "") log(tail.trim());
   log(`  full log: ${logFile(o.dir)}`);
   return 1;
 }
 
+/**
+ * The config dir could not be made to hold `paddock.log`.
+ *
+ * A distinct type, not a string match on the message, so `runStart` can turn
+ * exactly this into a one-line refusal and let anything else it did not
+ * anticipate keep its stack trace.
+ */
+class ConfigDirUnusable extends Error {
+  constructor(readonly file: string, readonly reason: string) {
+    super(`${file}: ${reason}`);
+    this.name = "ConfigDirUnusable";
+  }
+}
+
 async function spawnDetached(
   dir: string,
   opts: ChildCommandOpts = {},
 ): Promise<{ pid: number; exited: Promise<number> }> {
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  // Truncated, not appended: an unrotated log that only grows is a slow bug,
-  // and one run's output is the useful scope.
-  const fh = await open(logFile(dir), "w", 0o600);
+  let fh: Awaited<ReturnType<typeof open>>;
+  try {
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    // Truncated, not appended: an unrotated log that only grows is a slow bug,
+    // and one run's output is the useful scope.
+    fh = await open(logFile(dir), "w", 0o600);
+  } catch (e) {
+    // Before the spawn, deliberately: a child whose stdout has nowhere to go
+    // must never be started, because its own failure would then be
+    // unreadable too.
+    throw new ConfigDirUnusable(logFile(dir), (e as Error).message);
+  }
   try {
     const p = Bun.spawn(childCommand(opts), {
       stdio: ["ignore", fh.fd, fh.fd],

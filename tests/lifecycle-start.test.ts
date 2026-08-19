@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { childCommand, runStart } from "@server/lifecycle/commands";
@@ -65,21 +65,34 @@ test("a detached child that binds is reported as started", async () => {
   expect(JSON.parse(await readFile(stateFile(d), "utf8")).pid).toBe(777);
 });
 
-test("a child that exits before binding fails loudly and surfaces the log", async () => {
+test("a child that exits before binding fails loudly, surfaces the log, and does NOT wait out the timeout", async () => {
+  // The design requires the early exit to be "an immediate failure rather
+  // than waiting out the timeout", and until now nothing asserted the second
+  // half: with `waitMs` at 3s this passed whether or not `if (childGone)
+  // break` existed, because waiting the full 3s reaches the same message and
+  // the same exit code. The generous `waitMs` below is the whole point —
+  // 30s is far longer than any child needs to fail, so a run that takes
+  // anywhere near it is a run that watched the child die and kept polling
+  // anyway. Deleting the break makes this red on the elapsed assertion, not
+  // on a harness timeout.
   const d = await dir();
   const out: string[] = [];
+  const started = Date.now();
   const code = await runStart({
     dir: d,
     probe: { isAlive: () => false, argsOf: () => null },
     log: (l) => out.push(l),
-    waitMs: 3000,
+    waitMs: 30_000,
     logTail: async () => "Error: port 8787 already in use",
     spawn: () => ({ pid: 778, exited: Promise.resolve(1) }),
     healthCheck: async () => false,
   });
+  const elapsed = Date.now() - started;
   expect(code).not.toBe(0);
   expect(out.join(" ")).toContain("already in use");
-}, 15_000);
+  expect(elapsed, `start waited ${elapsed}ms for a child that had already exited`)
+    .toBeLessThan(5_000);
+}, 60_000);
 
 // --- Cases that post-date the original brief -------------------------------
 
@@ -150,4 +163,61 @@ test("a mismatched state file (pid recycled) is cleared before spawning, not lef
   });
   expect(code, "no child ever wrote state, so this must time out, not succeed").not.toBe(0);
   await expect(readFile(stateFile(d), "utf8")).rejects.toThrow();
+});
+
+test("a child still running at the timeout is reported as running, by pid — not as 'did not start'", async () => {
+  // Ruling on the review's finding: do NOT kill it. Everything else here
+  // refuses to signal on its own, and a child that bound but answers
+  // /api/health slowly is a working paddock, not garbage to clean up. What
+  // was wrong was the report, not the restraint — it said "the detached
+  // process did not start" and exited, leaving a live process holding the
+  // port and an operator with no pid and no next step.
+  const d = await dir();
+  const out: string[] = [];
+  const code = await runStart({
+    dir: d,
+    probe: { isAlive: () => true, argsOf: () => "paddock" },
+    log: (l) => out.push(l),
+    waitMs: 300,
+    logTail: async () => "",
+    // Never exits, so this is the timeout arm and not the early-exit one.
+    spawn: () => ({ pid: 4242, exited: new Promise(() => {}) }),
+    healthCheck: async () => false,
+  });
+  const said = out.join(" ");
+  expect(code).not.toBe(0);
+  expect(said, "the operator cannot act without the pid").toContain("4242");
+  expect(said).toContain("/api/health");
+  expect(said, "must point at the command that deals with it").toContain("paddock stop");
+  expect(said, "it WAS started — saying otherwise is the bug being fixed here")
+    .not.toContain("did not start");
+});
+
+test("start refuses before spawning when the config dir cannot hold the log", async () => {
+  // The design's failure table: "start where the config dir is unwritable ->
+  // Refuse before spawning, exit non-zero." It used to throw EACCES with a
+  // stack trace out of spawnDetached instead. (The ENOTDIR variant already
+  // refused, because checkState reports `unreadable` first and start stops
+  // there; this is the EACCES-on-an-existing-directory case that got past it.)
+  const d = await dir();
+  let why: string;
+  if (process.getuid?.() === 0) {
+    // chmod means nothing to root, and CI is entitled to run as root. A
+    // directory sitting where the log file goes is EISDIR for everyone, and
+    // reaches the identical mkdir/open failure path.
+    await mkdir(join(d, "paddock.log"));
+    why = "a directory where paddock.log goes";
+  } else {
+    await chmod(d, 0o500);
+    why = "an existing config dir with no write permission";
+  }
+  const out: string[] = [];
+  // No injected `spawn`: the real path is the one that used to throw, and a
+  // stub would test nothing. It is safe because the refusal happens before
+  // any spawn — if that regresses, this test starts a real detached paddock
+  // and the missing refusal message fails it either way.
+  const code = await runStart({ dir: d, log: (l) => out.push(l), waitMs: 300 });
+  expect(code, why).not.toBe(0);
+  expect(out.join(" "), "the refusal must name the directory").toContain(d);
+  expect(out.join(" ").toLowerCase()).toContain("not start");
 });
