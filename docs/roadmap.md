@@ -228,3 +228,57 @@ surprise.
   (retry) from "herdr answered with an incompatible protocol" (fatal, as
   today); found while working on this branch and deliberately left unfixed
   rather than folded into an unrelated change.
+
+- **The state file's `port` and `startedAt` are not shape-checked.**
+  `checkState` validates `pid` as a number and `args` as a string and stops
+  there, so a file whose `port` is a string, or whose `startedAt` is missing,
+  passes the guard and reaches `runStatus` — which prints `port undefined` and
+  `up NaNm` rather than refusing. Deliberately not urgent: every decision that
+  can signal a process rests on `pid` and `args`, and those two ARE validated,
+  so the worst outcome here is a nonsense line of output, not a stranger's
+  process being killed. Closing it means deciding what a partially-valid state
+  file *is* — a `mismatch`, an `unreadable`, or a sixth variant — which is a
+  policy question the fix wave that found it deliberately did not answer in
+  passing.
+
+- **Nothing asserts `writeState`'s `chmod(tmp, 0o600)`.** The mode test reads
+  the mode of the finished file, which `open(tmp, "w", 0o600)` already
+  provides whenever it creates the file — so deleting the explicit `chmod`
+  leaves the suite green. The `chmod` is not redundant: `open`'s mode
+  argument applies **only on creation**, measured — a pre-existing path
+  reopened with `"w"` keeps its old mode (0666 stays 0666). So the line
+  defends the case where a `paddock.state.json.tmp` was left behind with
+  looser permissions by an earlier crash, and a test for it has to pre-create
+  that tmp path rather than call `writeState` on a clean directory.
+
+- **Two foreground paddocks sharing one config dir clobber each other's
+  state.** `PADDOCK_PORT` makes two simultaneous instances possible and
+  `PADDOCK_CONFIG_DIR` is what keeps them apart, but nothing enforces that the
+  operator actually varied the second one: the state file is written
+  unconditionally after a successful bind, so instance B on a different port
+  overwrites A's file, and A becomes untrackable — `stop` will only ever find
+  B. The design calls per-instance isolation "free", which it is, and this is
+  the footnote: free, and unenforced. Closing it means deciding what B should
+  do when it binds a port and finds a *live, matching* state file for a
+  different pid — refuse to start, or record both — and neither is obviously
+  right for a tool whose whole posture is refusing to guess.
+
+- **`removeState` failures escape the lifecycle commands unguarded.**
+  `index.ts`'s exit handler wraps its `removeState` in a `.catch`, but every
+  `await removeState(o.dir)` in `commands.ts` is bare. `rm(..., { force: true })`
+  swallows ENOENT and nothing else, so a config dir that has become
+  unwritable turns a `stop` that genuinely worked — SIGTERM sent, process
+  gone — into an unhandled rejection and a stack trace, after the useful work
+  is already done. The failure is worth reporting; what it must not do is
+  replace the outcome the operator asked about.
+
+- **`tests/cli.test.ts` can leave a detached paddock behind.** Its
+  `runVerb("start")` case spawns a real `paddock start`, and `spawnSync`'s
+  timeout kills only that parent — the detached child is in its own session
+  now, so it would survive a process-group kill too. Today nothing is left
+  behind, but only because the bogus `PADDOCK_HERDR_SOCKET` those tests use
+  makes the child fail fast; the test asserts nothing about the child and
+  cleans nothing up, so a change that let it live would start leaving a stray
+  paddock behind after every `make test`. Closing it means reading the state
+  file the child writes and killing that pid in a `finally`, the way
+  `tests/lifecycle-detach.test.ts` does.
