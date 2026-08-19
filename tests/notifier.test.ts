@@ -82,21 +82,6 @@ test("staying in the same state does not notify again", async () => {
   expect(h.sent).toHaveLength(1);
 });
 
-test("a failed send does NOT consume the transition, so the next delta retries", async () => {
-  const h = harness();
-  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
-  h.fail("Bad Request: chat not found");
-  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
-  await Bun.sleep(1);
-  expect(h.sent).toHaveLength(1);
-  expect(h.n.lastError).toContain("chat not found");
-
-  h.setNow(NOW + 120_000);   // past the cooldown
-  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
-  await Bun.sleep(1);
-  expect(h.sent).toHaveLength(2);
-});
-
 test("a sustained failure does not send once per delta — cooldown arms on the attempt, not the success", async () => {
   // A broken token fails every send. Without the cooldown arming on the
   // ATTEMPT (not just success), the reverted `lastSeen` would keep
@@ -119,35 +104,6 @@ test("a sustained failure does not send once per delta — cooldown arms on the 
   await Bun.sleep(1);
 
   expect(h.sent).toHaveLength(1);
-});
-
-test("an intervening same-state delta inside the cooldown window does not permanently swallow the retry", async () => {
-  // The cooldown must bound retry FREQUENCY, not consume the transition. A
-  // failed send followed by a same-state delta still inside the cooldown
-  // window (the ordinary case — a blocked agent's task line keeps updating)
-  // must still leave a retry available once the cooldown has actually
-  // elapsed. Without this test, a fix that reverts `lastSeen` only on the
-  // failed-send path but not on the cooldown-suppressed path would pass the
-  // "does NOT consume the transition" test above (which has no intervening
-  // delta) while still permanently losing the retry in the real timeline.
-  const h = harness();
-  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
-  h.fail("Bad Request: chat not found");
-  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
-  await Bun.sleep(1);
-  expect(h.sent).toHaveLength(1);
-
-  // Intervening delta: same state, new task text, still inside the 60s
-  // cooldown window (now has not been advanced).
-  h.n.observe({ upserted: [agent({ state: "blocked", task: "still blocked" })], removedIds: [] });
-  await Bun.sleep(1);
-  expect(h.sent).toHaveLength(1);   // still suppressed by the cooldown
-
-  // Now past the cooldown: the retry must still fire.
-  h.setNow(NOW + 120_000);
-  h.n.observe({ upserted: [agent({ state: "blocked", task: "still blocked" })], removedIds: [] });
-  await Bun.sleep(1);
-  expect(h.sent).toHaveLength(2);
 });
 
 test("a trailing slash on publicUrl does not produce a double slash in the link", async () => {

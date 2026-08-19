@@ -1,121 +1,146 @@
 import { agentHash } from "@shared/route";
-import type { Agent, AgentState } from "@shared/types";
+import type { Agent, AgentState, NotifyTrigger } from "@shared/types";
 import type { Delta } from "@server/state/store";
 import { isConfigured, type SettingsStore } from "@server/settings/store";
+
+export type TimerHandle = ReturnType<typeof setTimeout>;
+
+const isTrigger = (s: AgentState): s is NotifyTrigger => s === "blocked" || s === "done";
 
 export interface NotifierOpts {
   settings: SettingsStore;
   send: (text: string) => Promise<{ ok: boolean; detail: string | null }>;
   now?: () => number;
+  /** Injected so tests drive 5-10 SECOND windows without waiting them out.
+   *  The default unrefs, so a pending settle cannot hold the process open. */
+  setTimer?: (fn: () => void, ms: number) => TimerHandle;
+  clearTimer?: (h: TimerHandle) => void;
 }
 
 export class Notifier {
-  /** Delta carries only the NEW agent, so a transition cannot be derived
-   *  without remembering what we last saw. This map is also the dedup. */
+  /** What we last SAW. Always the truth, never reverted. */
   #lastSeen = new Map<string, AgentState>();
+  /** What we last SENT A MESSAGE ABOUT. Splitting this from `#lastSeen` is
+   *  what removes v2's optimistic-write-and-revert dance: one map was doing
+   *  both jobs, and every subtlety in the old comments came from that. */
+  #lastNotified = new Map<string, AgentState>();
+  /** Last send ATTEMPT (not success) per agent, for the cooldown. */
   #lastSentAt = new Map<string, number>();
+  /** In-flight settle windows. At most one per agent. */
+  #pending = new Map<string, { state: NotifyTrigger; timer: TimerHandle; attempts: number }>();
   lastError: string | null = null;
 
   constructor(private o: NotifierOpts) {}
 
-  /**
-   * Returns void and never awaits. `observe` is a synchronous fan-out feeding
-   * the WebSocket broadcast; awaiting Telegram would put a third party's
-   * latency in front of every browser update.
-   */
-  observe(d: Delta): void {
-    for (const a of d.upserted) {
-      // `#one` is deliberately never awaited (see above), so nothing else is
-      // left to observe a rejection — and Bun TERMINATES the process on an
-      // unhandled rejection. A `fetch` that throws rather than resolving
-      // would take the whole dashboard down over a notification. Recorded on
-      // `lastError`, which `/api/health` exposes, rather than swallowed: the
-      // design says `observe` "catches its own failures", and the project's
-      // standing rule says a caught error is surfaced, never discarded.
-      void this.#one(a).catch((e: unknown) => {
-        this.lastError = e instanceof Error ? e.message : String(e);
-      });
-    }
-    for (const id of d.removedIds) { this.#lastSeen.delete(id); this.#lastSentAt.delete(id); }
+  #now(): number { return (this.o.now ?? Date.now)(); }
+
+  #setTimer(fn: () => void, ms: number): TimerHandle {
+    if (this.o.setTimer) return this.o.setTimer(fn, ms);
+    const t = setTimeout(fn, ms);
+    // A settle window must never be the reason the process stays alive.
+    t.unref?.();
+    return t;
   }
 
-  async #one(a: Agent): Promise<void> {
-    const prev = this.#lastSeen.get(a.agentId);
-    if (prev === undefined) { this.#lastSeen.set(a.agentId, a.state); return; }  // first sight
-    if (prev === a.state) return;
+  #clearTimer(h: TimerHandle): void {
+    if (this.o.clearTimer) this.o.clearTimer(h);
+    else clearTimeout(h);
+  }
 
-    // Recorded synchronously, before any `await`: `observe` is fire-and-forget
-    // (never awaited by its caller), so a second delta for the same agent can
-    // arrive and run its own synchronous prefix before this call's `send`
-    // settles. Leaving the transition unrecorded until after the send would
-    // let that second delta re-read the stale `prev` and re-fire for a state
-    // that was already handled. Only a failed send (below) reverts this.
+  /**
+   * Synchronous, and now genuinely so: the send happens later, on a timer, so
+   * nothing here awaits a third party's latency in front of the WebSocket
+   * broadcast this fans out alongside.
+   */
+  observe(d: Delta): void {
+    for (const a of d.upserted) this.#see(a);
+    for (const id of d.removedIds) this.#forget(id);
+  }
+
+  /** Clears every pending timer. Called from the server's shutdown path. */
+  dispose(): void {
+    for (const p of this.#pending.values()) this.#clearTimer(p.timer);
+    this.#pending.clear();
+  }
+
+  #cancel(agentId: string): void {
+    const p = this.#pending.get(agentId);
+    if (p === undefined) return;
+    this.#clearTimer(p.timer);
+    this.#pending.delete(agentId);
+  }
+
+  #forget(agentId: string): void {
+    this.#cancel(agentId);
+    this.#lastSeen.delete(agentId);
+    // Deleted too, or a returning pane id inherits a suppression it never
+    // earned and its first real notification is silently dropped.
+    this.#lastNotified.delete(agentId);
+    this.#lastSentAt.delete(agentId);
+  }
+
+  #see(a: Agent): void {
+    const prev = this.#lastSeen.get(a.agentId);
     this.#lastSeen.set(a.agentId, a.state);
+    // First sight: paddock cannot tell "just blocked" from "blocked an hour
+    // ago", so a restart announces nothing.
+    if (prev === undefined || prev === a.state) return;
+
+    // The state moved, so whatever the pending timer was going to claim is
+    // void. THIS is the cancel that fixes the subagent handoff; the check at
+    // fire time is a guard against a race, not the mechanism.
+    this.#cancel(a.agentId);
+    if (!isTrigger(a.state)) return;
 
     const s = this.o.settings.current();
-    const fires = s.notify.enabled
-      && s.notify.triggers.includes(a.state as never)
-      // `isConfigured`, not `!== null`: the two are NOT the same for an empty
-      // string, and the store's `view()` and the routes both answer with this
-      // predicate. Disagreeing here is what made the notifier fire against a
-      // credential the rest of the process considered absent.
-      && isConfigured(s.telegram.token) && isConfigured(s.telegram.chatId);
-    if (!fires) return;
+    if (!s.notify.triggers.includes(a.state)) return;
+    this.#arm(a, a.state, s.notify.settleMs[a.state], 0);
+  }
 
-    const now = (this.o.now ?? Date.now)();
+  #arm(a: Agent, state: NotifyTrigger, ms: number, attempts: number): void {
+    const timer = this.#setTimer(() => {
+      this.#pending.delete(a.agentId);
+      // Nothing else is left to observe a rejection here, and Bun TERMINATES
+      // the process on an unhandled one — a `fetch` that throws rather than
+      // resolving would take the whole dashboard down over a notification.
+      // Recorded on `lastError`, which /api/health exposes, never swallowed.
+      void this.#fire(a, state, attempts).catch((e: unknown) => {
+        this.lastError = e instanceof Error ? e.message : String(e);
+      });
+    }, ms);
+    this.#pending.set(a.agentId, { state, timer, attempts });
+  }
 
-    const since = now - (this.#lastSentAt.get(a.agentId) ?? Number.NEGATIVE_INFINITY);
-    if (since < s.notify.cooldownMs) {
-      // Revert the optimistic `lastSeen` write above, same as the failed-send
-      // path below: the cooldown bounds retry FREQUENCY, it does not consume
-      // the transition. Without this, an intervening same-state delta inside
-      // the cooldown window (a blocked agent's task line updating) would
-      // write `lastSeen` forward and never be undone, and every later delta —
-      // including ones long past the cooldown — would then read
-      // `prev === a.state` and never re-detect the transition again. One
-      // failed attempt per episode, and no periodic retry ever, which is the
-      // opposite of what the cooldown is for.
-      if (this.#lastSeen.get(a.agentId) === a.state) this.#lastSeen.set(a.agentId, prev);
-      return;
-    }
+  async #fire(a: Agent, state: NotifyTrigger, attempts: number): Promise<void> {
+    if (this.#lastSeen.get(a.agentId) !== state) return;
+    if (this.#lastNotified.get(a.agentId) === state) return;
 
-    // Recorded synchronously too, alongside `lastSeen` above, and NOT reverted
-    // on failure below. A broken token fails every send, but `lastSeen` still
-    // reverts so the transition keeps re-detecting — if the attempt itself
-    // were not also recorded here, every one of those re-detections would see
-    // `lastSentAt` still unset (since = Infinity) and fire immediately, i.e.
-    // one Telegram POST per delta forever for a blocked agent whose task line
-    // keeps changing. Recording the attempt (not just successes) is what
-    // makes the cooldown bound the retry rate instead of the retry being lost
-    // (reverted `lastSeen`) while its own rate limit is (bugged) unarmed.
-    this.#lastSentAt.set(a.agentId, now);
+    const s = this.o.settings.current();
+    if (!s.notify.enabled) return;
+    if (!s.notify.triggers.includes(state)) return;
+    // `isConfigured`, not `!== null`: the two differ for an empty string, and
+    // an unset environment variable IS an empty string.
+    if (!isConfigured(s.telegram.token) || !isConfigured(s.telegram.chatId)) return;
 
-    // Trailing slash stripped: a free-text publicUrl field will collect one,
-    // and `${url}/${hash}` with url already ending in "/" would produce
-    // "https://host//#/agent/...".
+    this.#lastSentAt.set(a.agentId, this.#now());
+
+    // Name, state, link. NOTHING ELSE — and specifically NOT `a.task`, which
+    // is live agent-authored text that may carry a pasted credential.
+    // Telegram bot messages are not end-to-end encrypted; content minimalism
+    // is the ONLY mitigation the design claims for choosing Telegram over Web
+    // Push, and adding a field here spends it.
     const link = s.publicUrl ? `\n${s.publicUrl.replace(/\/+$/, "")}/${agentHash(a.agentId)}` : "";
-    // Name, state, link. NOTHING ELSE — and specifically NOT `a.task`.
-    //
-    // `task` is `terminal_title_stripped` (shared/types.ts): live,
-    // agent-authored text that carries whatever the agent last echoed,
-    // including a pasted credential. Telegram bot messages are not
-    // end-to-end encrypted and Telegram can read them; the design accepts
-    // that cost and names content minimalism as the ONLY mitigation for
-    // choosing Telegram over Web Push. Adding a field here — task, terminal
-    // output, cwd, anything agent-authored — spends that mitigation.
-    // `tests/notifier.test.ts` asserts the task text is absent.
-    const r = await this.o.send(`${a.name} is ${a.state}${link}`);
+    const r = await this.o.send(`${a.name} is ${state}${link}`);
     if (r.ok) {
+      this.#lastNotified.set(a.agentId, state);
       this.lastError = null;
       return;
     }
-    // Revert the optimistic `lastSeen` write above so the next delta
-    // re-detects this transition and retries. Guarded on nothing else having
-    // moved `lastSeen` in the meantime: only undo it if it still holds the
-    // value we wrote. `lastSentAt` is deliberately NOT reverted — the retry is
-    // bounded by the cooldown, not unbounded.
-    if (this.#lastSeen.get(a.agentId) === a.state) this.#lastSeen.set(a.agentId, prev);
     this.lastError = r.detail ?? "send failed";
+    // The retry lands in Task 3. `attempts` is unused until then, which is
+    // fine — tsconfig sets `noUnusedLocals` but not `noUnusedParameters`. Do
+    // NOT add a `MAX_ATTEMPTS` const here for the same reason: an unexported
+    // unused const IS flagged, so Task 3 declares it where it is first read.
   }
 }
 
