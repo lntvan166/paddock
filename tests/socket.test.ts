@@ -406,3 +406,24 @@ test("a FIRST open() that fails does not claim a stream was lost", async () => {
 
   expect(changes).toEqual([]);
 });
+
+// The message is the whole feature here: it is the only thing an operator sees
+// before the process exits, and the version it replaced told EVERY mismatch to
+// run `make types` — advice that is right in exactly one of the two directions
+// and destructive in the other, because regenerating against an older herdr
+// lowers the committed contract.
+test("the mismatch message tells an operator with an older herdr to upgrade herdr", () => {
+  const msg = new ProtocolMismatchError(19, 16).message;
+  expect(msg).toContain("19");
+  expect(msg).toContain("16");
+  expect(msg).toContain("older");
+  expect(msg).toContain("restart");
+  expect(msg).not.toContain("make types");
+});
+
+test("the mismatch message tells a contributor with a newer herdr to regenerate the types", () => {
+  const msg = new ProtocolMismatchError(19, 20).message;
+  expect(msg).toContain("newer");
+  expect(msg).toContain("make types");
+  expect(msg).toContain("adapter.ts");
+});
