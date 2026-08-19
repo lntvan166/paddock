@@ -65,10 +65,39 @@ export interface StopOpts {
 
 const sendSignal = (pid: number, sig: NodeJS.Signals) => { process.kill(pid, sig); };
 
+type SignalOutcome = "ok" | "gone" | "denied";
+
+/**
+ * Wraps the (possibly injected) signal function so a thrown `process.kill`
+ * error becomes a labelled outcome instead of an unhandled stack trace.
+ *
+ * ESRCH means the pid exited in the gap between our last liveness check and
+ * this call — already gone, not a failure. EPERM is genuinely reachable:
+ * `systemProbe.isAlive` deliberately treats EPERM as "alive" (see state.ts),
+ * and `/proc/<pid>/cmdline` is world-readable, so a paddock started under
+ * another uid can reach `running` here and then fail to be signalled. Any
+ * other error is a real failure and must not be swallowed.
+ */
+function trySignal(
+  send: (pid: number, sig: NodeJS.Signals) => void,
+  pid: number,
+  sig: NodeJS.Signals,
+): SignalOutcome {
+  try {
+    send(pid, sig);
+    return "ok";
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return "gone";
+    if (code === "EPERM") return "denied";
+    throw e;
+  }
+}
+
 export async function runStop(o: StopOpts): Promise<number> {
   const log = o.log ?? console.log;
   const send = o.signal ?? sendSignal;
-  const probe = o.probe;
+  const probe = o.probe ?? systemProbe;
   const waitMs = o.waitMs ?? 10_000;
   const got = await checkState(o.dir, probe);
 
@@ -101,13 +130,47 @@ export async function runStop(o: StopOpts): Promise<number> {
       break;
   }
 
-  const { pid } = got.state;
-  send(pid, "SIGTERM");
+  const { pid, args } = got.state;
+
+  const term = trySignal(send, pid, "SIGTERM");
+  if (term === "gone") {
+    log(`paddock: pid ${pid} was already gone — nothing to stop`);
+    await removeState(o.dir);
+    return 0;
+  }
+  if (term === "denied") {
+    log(`paddock: cannot signal pid ${pid} — permission denied (started by another user?)`);
+    return 1;
+  }
+
+  /**
+   * Alive AND still running the exact command line the state file recorded
+   * — checkState's own identity check, applied again after the signal. A
+   * pid that stays alive but stops matching means paddock has already
+   * exited and the kernel handed the number to an unrelated process while
+   * we were waiting: escalating to SIGKILL against that would be the exact
+   * hazard this feature exists to prevent, just ten seconds later and with
+   * a signal that cannot be blocked. `isAlive` alone (the mutated version
+   * this guards against) cannot tell the two apart.
+   */
+  const stillOurs = () => probe.isAlive(pid) && probe.argsOf(pid) === args;
+
   const deadline = Date.now() + waitMs;
-  const alive = () => (probe ?? systemProbe).isAlive(pid);
   while (Date.now() < deadline) {
-    if (!alive()) {
+    if (!probe.isAlive(pid)) {
       log(`paddock: stopped (pid ${pid})`);
+      await removeState(o.dir);
+      return 0;
+    }
+    if (!stillOurs()) {
+      // Our SIGTERM worked; the pid was recycled onto something else while
+      // we were watching for it to die. Nothing further to signal — this is
+      // success, not a timeout.
+      const actual = probe.argsOf(pid);
+      log(
+        `paddock: pid ${pid} is no longer paddock (now: ${actual ?? "unknown"}) ` +
+          "— already gone, nothing further to do",
+      );
       await removeState(o.dir);
       return 0;
     }
@@ -121,7 +184,28 @@ export async function runStop(o: StopOpts): Promise<number> {
     log("  run 'paddock stop --force' to send SIGKILL");
     return 1;
   }
-  send(pid, "SIGKILL");
+
+  // One more identity check, immediately before the signal that cannot be
+  // blocked. The loop above samples every 100ms; a recycle landing in the
+  // gap between its last check and here must not reach `send`.
+  if (!stillOurs()) {
+    const actual = probe.argsOf(pid);
+    log(`paddock: pid ${pid} is not paddock any more — refusing to send SIGKILL`);
+    log(`  it is now: ${actual ?? "unknown"}`);
+    await removeState(o.dir);
+    return 1;
+  }
+
+  const kill = trySignal(send, pid, "SIGKILL");
+  if (kill === "gone") {
+    log(`paddock: pid ${pid} was already gone — nothing to kill`);
+    await removeState(o.dir);
+    return 0;
+  }
+  if (kill === "denied") {
+    log(`paddock: cannot signal pid ${pid} — permission denied (started by another user?)`);
+    return 1;
+  }
   log(`paddock: killed (pid ${pid})`);
   await removeState(o.dir);
   return 0;

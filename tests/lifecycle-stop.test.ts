@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -103,4 +104,82 @@ test("an unreadable state file is refused, not guessed at — and left in place"
   expect(sent, "an unreadable state file must never be signalled against").toEqual([]);
   expect(code).not.toBe(0);
   expect(out.join(" ").toLowerCase()).toContain("could not read");
+  // The third part of the requirement: don't delete it either. It is the one
+  // clue an operator has, and adding a stray `removeState` to the
+  // `unreadable` branch would leave the first two assertions above green.
+  expect(existsSync(stateFile(d)), "the unreadable state file must be left in place").toBe(true);
+});
+
+test("a pid recycled right as the wait expires is treated as gone, not escalated", async () => {
+  // The gap this closes: `isAlive` alone cannot tell "still exiting" from
+  // "already gone and the number reused". The wait loop polls every 100ms,
+  // so a recycle landing in the window AFTER its last poll but BEFORE the
+  // pre-SIGKILL re-check is invisible to the loop itself — which is exactly
+  // why a second, immediate check is required right before SIGKILL, not just
+  // inside the loop. Modelled by time rather than a call count: `argsOf`
+  // matches for the whole `waitMs` window (so every in-loop poll sees a
+  // match and the loop runs to its natural timeout), then flips the instant
+  // `waitMs` has elapsed — landing on the pre-SIGKILL re-check, not on any
+  // poll before it.
+  const d = await dir();
+  await writeState(d, s);
+  const sent: string[] = [];
+  const out: string[] = [];
+  const waitMs = 300;
+  const start = Date.now();
+  const code = await runStop({
+    dir: d,
+    force: true,
+    probe: {
+      isAlive: () => true,
+      argsOf: () => (Date.now() - start < waitMs ? "paddock" : "/usr/bin/postgres -D /var/lib/pg"),
+    },
+    signal: (pid, sig) => sent.push(`${sig}->${pid}`),
+    log: (l) => out.push(l),
+    waitMs,
+  });
+  expect(sent, "no SIGKILL may reach a pid that is no longer paddock").toEqual(["SIGTERM->4242"]);
+  expect(code).not.toBe(0);
+});
+
+function errnoError(code: string): NodeJS.ErrnoException {
+  const e = new Error(code) as NodeJS.ErrnoException;
+  e.code = code;
+  return e;
+}
+
+test("a pid that already exited between the check and the signal (ESRCH) is reported as gone", async () => {
+  // process.kill can throw ESRCH if the process exits in the gap between our
+  // liveness probe and the signal call. That is an ordinary race, not a bug
+  // to crash on — it must be reported as "already gone", the same as a clean
+  // stop, not let an unhandled exception escape runStop.
+  const d = await dir();
+  await writeState(d, s);
+  const out: string[] = [];
+  const code = await runStop({
+    dir: d,
+    probe: { isAlive: () => true, argsOf: () => "paddock" },
+    signal: () => { throw errnoError("ESRCH"); },
+    log: (l) => out.push(l),
+  });
+  expect(code).toBe(0);
+  expect(out.join(" ").toLowerCase()).toContain("already gone");
+});
+
+test("a pid owned by another user (EPERM) is refused by name, not an unhandled throw", async () => {
+  // systemProbe.isAlive deliberately treats EPERM as "alive" (see state.ts),
+  // and /proc/<pid>/cmdline is world-readable, so a paddock started under a
+  // different uid can reach the `running` case here and then fail to be
+  // signalled. The operator must see a clear reason, not a raw stack trace.
+  const d = await dir();
+  await writeState(d, s);
+  const out: string[] = [];
+  const code = await runStop({
+    dir: d,
+    probe: { isAlive: () => true, argsOf: () => "paddock" },
+    signal: () => { throw errnoError("EPERM"); },
+    log: (l) => out.push(l),
+  });
+  expect(code).not.toBe(0);
+  expect(out.join(" ").toLowerCase()).toContain("permission denied");
 });

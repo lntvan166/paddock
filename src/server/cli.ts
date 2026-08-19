@@ -1,9 +1,9 @@
 /**
- * `serve`, `update` and `status` are implemented and act. `start` and `stop`
- * are recognised here — this file's job is only to parse them and route them
- * away from `serve` — but index.ts does not yet dispatch either to real
- * behaviour; until it does, invoking them exits non-zero rather than
- * guessing. `agent` and `hub` are RESERVED — the multi-host shape in
+ * `serve`, `update`, `status` and `stop` are implemented and act. `start` is
+ * recognised here too — this file's job is only to parse it and route it
+ * away from `serve` — but index.ts does not yet dispatch it to real
+ * behaviour; until it does, invoking it exits non-zero rather than guessing.
+ * `agent` and `hub` are RESERVED — the multi-host shape in
  * docs/architecture.md names them, and exiting with a pointer to the roadmap
  * is better than either doing something half-working or silently serving a
  * dashboard under a name that promises something else. `unknown` is anything
