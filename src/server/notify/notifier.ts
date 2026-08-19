@@ -90,6 +90,14 @@ export class Notifier {
     // void. THIS is the cancel that fixes the subagent handoff; the check at
     // fire time is a guard against a race, not the mechanism.
     this.#cancel(a.agentId);
+    // `#lastNotified` exists to stop a re-announcement WITHIN one held
+    // episode (the `prev === a.state` return above already handles that
+    // case without reaching here). A genuine transition ends the episode the
+    // old value described, so it must not outlive it: leaving it set would
+    // have the NEXT episode's timer fire, find `#lastNotified` still equal to
+    // the state it is about to announce, and drop the send — silently, with
+    // no error and nothing on `/api/health`, for the rest of the pane's life.
+    this.#lastNotified.delete(a.agentId);
     if (!isTrigger(a.state)) return;
 
     const s = this.o.settings.current();

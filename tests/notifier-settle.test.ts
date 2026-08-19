@@ -71,26 +71,59 @@ test("a subagent handoff sends nothing at all", async () => {
   // instant the subagent returns, then back to working when it reviews the
   // result. Firing on the edge makes that message true when sent and stale
   // when read, which is worse than silence: it teaches the operator to
-  // ignore the channel.
+  // ignore the channel. Held over a long window: this is also the only test
+  // that exercises `#fire`'s own `lastSeen`-mismatch guard in isolation, since
+  // there is only one arm in play — a "simplification" that removed that
+  // guard would break nothing else.
   const h = harness();
   h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
   h.n.observe({ upserted: [agent({ state: "done" })], removedIds: [] });
   await h.advance(3_000);
   h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
+  await h.advance(60_000);
+  expect(h.sent).toEqual([]);
+});
+
+test("a rapid second handoff does not let an orphaned timer fire early", async () => {
   // A second delegation, back to back with the first, before the first
   // (uncancelled) timer would have fired. This is what actually exercises
-  // the cancel: the fire-time `lastSeen` guard alone (`#fire`'s first check)
-  // already protects a SINGLE aborted handoff, because by the time the
-  // orphaned timer fires the agent is back to "working" and the guard bails.
-  // It does NOT protect this case, where the agent is "done" again when the
-  // first, orphaned timer comes due — that timer would delete the SECOND
-  // (still-live) pending entry out of `#pending` and fire early, sending a
-  // message about a state that has only held for 7s of its 10s window.
+  // the cancel: the plain single-handoff test above already passes even with
+  // `#cancel` removed, because the fire-time `lastSeen` guard alone protects
+  // it — by the time the orphaned timer fires the agent is back to "working"
+  // and the guard bails on its own. It does NOT protect THIS case, where the
+  // agent is "done" again when the first, orphaned timer comes due — that
+  // timer would delete the SECOND (still-live) pending entry out of
+  // `#pending` and fire early, sending a message about a state that has only
+  // held for 7s of its 10s window.
+  const h = harness();
+  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
+  h.n.observe({ upserted: [agent({ state: "done" })], removedIds: [] });
+  await h.advance(3_000);
+  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
   h.n.observe({ upserted: [agent({ state: "done" })], removedIds: [] });
   await h.advance(7_000); // t=10_000 from the first arm: the orphaned timer's due time
   expect(h.sent).toEqual([]);
   await h.advance(3_000); // t=13_000: the second arm's own due time
   expect(h.sent).toEqual(["api-refactor is done"]);
+});
+
+test("a second episode of the same trigger notifies again, with no removal in sight", async () => {
+  // #lastNotified exists to stop a re-announcement WITHIN one held episode —
+  // it must NOT survive into the next one. This is deliberately NOT the
+  // `removedIds` recovery test below: that one already passed even when
+  // `#lastNotified` was cleared only in `#forget`, which is exactly why the
+  // bug (a genuine leave-and-return silently going unannounced forever)
+  // shipped uncaught the first time.
+  const h = harness();
+  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
+  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
+  await h.advance(5_000);
+  expect(h.sent).toEqual(["api-refactor is blocked"]);
+
+  h.n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
+  h.n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
+  await h.advance(5_000);
+  expect(h.sent).toEqual(["api-refactor is blocked", "api-refactor is blocked"]);
 });
 
 test("a state held for the whole window fires exactly once", async () => {
