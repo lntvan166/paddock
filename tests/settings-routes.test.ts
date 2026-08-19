@@ -12,8 +12,11 @@ import { Hub } from "@server/ws/hub";
  * only injection point is `AppDeps.sendTest`, so no test here may reach
  * api.telegram.org — slow, flaky, and impossible offline or in CI.
  */
-async function harness(sendTest?: (o: { token: string; chatId: string; text: string }) =>
-  Promise<{ ok: boolean; detail: string | null }>) {
+async function harness(
+  sendTest?: (o: { token: string; chatId: string; text: string }) =>
+    Promise<{ ok: boolean; detail: string | null }>,
+  now?: () => number,
+) {
   // `{}` explicitly, never the real `process.env` default. `.env.example`
   // tells operators to export `PADDOCK_TELEGRAM_TOKEN` and
   // `PADDOCK_TELEGRAM_CHAT_ID`, and `SettingsStore.load()` seeds a fresh
@@ -31,6 +34,7 @@ async function harness(sendTest?: (o: { token: string; chatId: string; text: str
     }),
     settings,
     sendTest: sendTest ?? (async () => ({ ok: true, detail: null })),
+    now,
   });
   return { app, settings };
 }
@@ -296,4 +300,61 @@ test("a successful test does not save the credentials", async () => {
   });
   expect(settings.current().telegram.token).toBe("1:A");
   expect(settings.current().telegram.chatId).toBe("555");
+});
+
+const MAX_MUTE_MS = 7 * 24 * 60 * 60 * 1000;
+
+test("mute stamps an instant from the server's clock, not the client's", async () => {
+  // The client sends a DURATION. A phone with a skewed clock must not be able
+  // to set an absolute instant — and the operator's phone and the dev-box need
+  // not share a timezone or a correct clock.
+  const { app, settings } = await harness(undefined, () => 1_700_000_000_000);
+  const res = await app.request("/api/settings/mute", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ forMs: 4 * 60 * 60 * 1000 }),
+  });
+  expect(res.status).toBe(200);
+  expect(settings.current().notify.mutedUntil).toBe(1_700_000_000_000 + 4 * 60 * 60 * 1000);
+  const body = await res.json();
+  expect(body.notify.mutedUntil).toBe(1_700_000_000_000 + 4 * 60 * 60 * 1000);
+  // The view carries the server's clock so the UI can render a countdown.
+  expect(body.serverNow).toBe(1_700_000_000_000);
+});
+
+test("forMs 0 unmutes", async () => {
+  const { app, settings } = await harness(undefined, () => 1_700_000_000_000);
+  await app.request("/api/settings/mute", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ forMs: 60_000 }),
+  });
+  const res = await app.request("/api/settings/mute", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ forMs: 0 }),
+  });
+  expect(res.status).toBe(200);
+  expect(settings.current().notify.mutedUntil).toBeNull();
+});
+
+test("a negative or over-long duration is refused", async () => {
+  const { app } = await harness();
+  for (const forMs of [-1, MAX_MUTE_MS + 1, Number.NaN, "4h"]) {
+    const res = await app.request("/api/settings/mute", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ forMs }),
+    });
+    expect(res.status).toBe(400);
+  }
+});
+
+test("mute is not reachable through the settings patch", async () => {
+  // Mute must apply immediately while every other field waits for Save.
+  // Making that a separate endpoint is what makes it structural.
+  const { app, settings } = await harness();
+  const res = await app.request("/api/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ notify: { mutedUntil: 9_999_999_999_999 } }),
+  });
+  expect(res.status).toBe(200);            // unknown keys are ignored, not rejected
+  expect(settings.current().notify.mutedUntil).toBeNull();
 });
