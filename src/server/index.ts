@@ -17,7 +17,7 @@ import { Supervisor } from "@server/supervisor";
 import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
-import { capturedArgs, removeState, writeState } from "@server/lifecycle/state";
+import { recordState, removeState } from "@server/lifecycle/state";
 import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
@@ -346,28 +346,22 @@ console.info(`paddock listening on http://${HOSTNAME}:${PORT}`);
 
 // Written AFTER the bind, deliberately. A paddock that failed to take the port
 // must not overwrite the state of the one already holding it.
+//
+// recordState never throws and reports its own failures: the dashboard is the
+// product, and neither an unwritable config dir nor an unreadable command line
+// may take down a paddock that has already bound its port. That is not
+// hypothetical for the config dir — oven/bun:1-alpine's passwd has only uid
+// 1000, and docker-compose.yml runs `user: "${UID}:${GID}"` from the host, so
+// on any host whose UID isn't 1000 `homedir()` resolves to `/` and the write
+// is EACCES — the exact shape that, unguarded, previously killed an
+// already-bound server via startUpdateCheck (see update-check.ts).
 const stateDir = defaultConfigDir();
-try {
-  await writeState(stateDir, {
-    pid: process.pid,
-    args: capturedArgs(process.pid) ?? "",
-    port: PORT,
-    version: VERSION,
-    startedAt: Date.now(),
-  });
-} catch (e) {
-  // The dashboard is the product; `status` and `stop` are conveniences on top
-  // of it, and an unwritable config dir must not take down an
-  // already-serving paddock over a convenience. This is not hypothetical:
-  // oven/bun:1-alpine's passwd has only uid 1000, and docker-compose.yml
-  // runs `user: "${UID}:${GID}"` from the host, so on any host whose UID
-  // isn't 1000 `homedir()` resolves to `/` and this write is EACCES — the
-  // exact shape that, unguarded, previously killed an already-bound server
-  // via startUpdateCheck (see update-check.ts's mkdir/writeFile comment).
-  console.error(
-    `paddock: could not record state (${String(e)}) — 'paddock stop' will not find this process`,
-  );
-}
+await recordState(stateDir, {
+  pid: process.pid,
+  port: PORT,
+  version: VERSION,
+  startedAt: Date.now(),
+});
 
 // Foreground runs write it too, so `status` and `stop` do not depend on how
 // paddock was started.

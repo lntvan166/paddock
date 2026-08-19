@@ -88,11 +88,67 @@ export async function writeState(dir: string, s: PaddockState): Promise<void> {
   await rename(tmp, file);
 }
 
+export interface RecordStateDeps {
+  /** Injected so a test can drive the "cannot identify myself" path. */
+  capture?: (pid: number) => string | null;
+  log?: (line: string) => void;
+  warn?: (line: string) => void;
+}
+
+/**
+ * Record a serving instance's own state file, or explain why it was not.
+ *
+ * Never throws, on purpose. The dashboard is the product; `status` and `stop`
+ * are conveniences on top of it, and neither an unwritable config dir nor an
+ * unreadable command line may take down a paddock that has already bound its
+ * port.
+ *
+ * It refuses to write an identity it could not capture, rather than
+ * substituting a placeholder. `capturedArgs` maps empty to null on both its
+ * branches and so never returns `""`; a recorded `""` was therefore an
+ * identity guaranteed to mismatch for ever, and `status` and `stop` would both
+ * go on to declare a healthy instance "not paddock any more" and delete its
+ * state file. Not being tracked is a smaller failure than being mis-tracked,
+ * and unlike the latter it is announced.
+ */
+export async function recordState(
+  dir: string,
+  s: Omit<PaddockState, "args">,
+  deps: RecordStateDeps = {},
+): Promise<boolean> {
+  const capture = deps.capture ?? capturedArgs;
+  const log = deps.log ?? console.info;
+  const warn = deps.warn ?? console.error;
+
+  const args = capture(s.pid);
+  if (args === null) {
+    log(
+      `paddock: could not read pid ${s.pid}'s own command line — not recording state, ` +
+        "so 'paddock status' and 'paddock stop' will not find this instance",
+    );
+    return false;
+  }
+
+  try {
+    await writeState(dir, { ...s, args });
+    return true;
+  } catch (e) {
+    warn(
+      `paddock: could not record state (${String(e)}) — 'paddock stop' will not find this process`,
+    );
+    return false;
+  }
+}
+
 export async function removeState(dir: string): Promise<void> {
   await rm(stateFile(dir), { force: true });
 }
 
-export async function checkState(dir: string, probe: Probe = systemProbe): Promise<StateCheck> {
+export async function checkState(
+  dir: string,
+  probe: Probe = systemProbe,
+  log: (line: string) => void = console.error,
+): Promise<StateCheck> {
   let raw: string;
   try {
     raw = await readFile(stateFile(dir), "utf8");
@@ -109,9 +165,16 @@ export async function checkState(dir: string, probe: Probe = systemProbe): Promi
   try {
     s = JSON.parse(raw) as PaddockState;
     if (typeof s.pid !== "number" || typeof s.args !== "string") throw new Error("shape");
-  } catch {
-    // Unreadable state is indistinguishable from no state, and treating it as
-    // "running" would let a garbled file block every start.
+  } catch (e) {
+    // "none" is the right answer — treating garbage as "running" would let one
+    // garbled file block every start — but it must not be a silent one. This
+    // answer makes `start` spawn a second instance beside a live one and
+    // `status` report "not running" while paddock is serving, so an operator
+    // who is not told has no way to connect either symptom to its cause.
+    log(
+      `paddock: ignoring unusable state file ${stateFile(dir)} (${(e as Error).message}) ` +
+        "— treating it as 'not running'",
+    );
     return { kind: "none" };
   }
 

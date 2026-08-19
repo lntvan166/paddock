@@ -3,7 +3,7 @@ import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  capturedArgs, checkState, removeState, stateFile, writeState,
+  capturedArgs, checkState, recordState, removeState, stateFile, writeState,
   type PaddockState, type Probe,
 } from "@server/lifecycle/state";
 
@@ -50,10 +50,28 @@ test("alive and matching is running", async () => {
   if (got.kind === "running") expect(got.state.port).toBe(8787);
 });
 
-test("a corrupt state file is treated as absent, not as a crash", async () => {
+test("a corrupt state file is treated as absent, not as a crash — but SAID, not swallowed", async () => {
+  // "none" is the right answer and stays: treating garbage as "running" would
+  // let one bad file block every start. The silence was the bug. A corrupt or
+  // wrong-shaped file means `start` will spawn a second instance beside a live
+  // one and `status` will report "not running" while paddock is serving, and
+  // an empty catch block is exactly the shape CLAUDE.md forbids: the operator
+  // gets a wrong answer with no way to find out why.
   const d = await dir();
   await writeFile(stateFile(d), "{ not json");
-  expect((await checkState(d, probe(true, "paddock"))).kind).toBe("none");
+  const said: string[] = [];
+  expect((await checkState(d, probe(true, "paddock"), (l) => said.push(l))).kind).toBe("none");
+  expect(said.length, "a corrupt state file was read and nothing was said").toBeGreaterThan(0);
+  expect(said.join(" "), "the message must name the file").toContain(stateFile(d));
+});
+
+test("a well-formed file of the wrong shape is reported too, not silently absent", async () => {
+  // The other half of the same catch: valid JSON that is not a PaddockState.
+  const d = await dir();
+  await writeFile(stateFile(d), JSON.stringify({ pid: "not a number" }));
+  const said: string[] = [];
+  expect((await checkState(d, probe(true, "paddock"), (l) => said.push(l))).kind).toBe("none");
+  expect(said.length).toBeGreaterThan(0);
 });
 
 test("an I/O error reading the state file is reported, not swallowed as absent", async () => {
@@ -98,4 +116,59 @@ test("capturedArgs reads a real process — this one — and agrees with ps", ()
   }
 
   expect(capturedArgs(0x7fffffff)).toBeNull();
+});
+
+// --- recordState: what a serving paddock writes about itself ---------------
+
+test("an instance that cannot identify itself records NOTHING, and says why", async () => {
+  // The bug this replaces: `args: capturedArgs(process.pid) ?? ""`.
+  // capturedArgs maps empty to null on BOTH its branches, so it never returns
+  // "" — meaning a recorded "" was an identity guaranteed to mismatch for
+  // ever. The consequence was the opposite of what the fallback intended:
+  // `status` and `stop` would both declare a perfectly healthy instance "pid
+  // N is not paddock any more" and delete its state file. An untrackable
+  // instance is more honest than a permanently mis-tracked one.
+  const d = await dir();
+  const said: string[] = [];
+  const ok = await recordState(
+    d,
+    { pid: 4242, port: 8787, version: "0.4.0", startedAt: 1_700_000_000_000 },
+    { capture: () => null, log: (l) => said.push(l) },
+  );
+  expect(ok).toBe(false);
+  expect((await checkState(d, probe(true, "paddock"))).kind, "an unmatchable identity was written")
+    .toBe("none");
+  expect(said.join(" "), "silence would leave 'stop' mysteriously unable to find it")
+    .toContain("4242");
+});
+
+test("recordState writes the captured identity verbatim", async () => {
+  const d = await dir();
+  const ok = await recordState(
+    d,
+    { pid: 4242, port: 8787, version: "0.4.0", startedAt: 1_700_000_000_000 },
+    { capture: () => "./bin/paddock --demo" },
+  );
+  expect(ok).toBe(true);
+  const got = await checkState(d, probe(true, "./bin/paddock --demo"));
+  expect(got.kind).toBe("running");
+});
+
+test("a config dir it cannot write is reported and NOT fatal — the server keeps serving", async () => {
+  // Same posture as the commit that made an unwritable config dir non-fatal to
+  // an already-bound paddock: the dashboard is the product, and `status` and
+  // `stop` are conveniences on top of it. recordState must therefore report
+  // and return, never throw. ENOTDIR (a parent that is a regular file) is the
+  // portable way to force this — root ignores chmod.
+  const parent = await dir();
+  const blocker = join(parent, "blocker");
+  await writeFile(blocker, "not a directory");
+  const said: string[] = [];
+  const ok = await recordState(
+    join(blocker, "child"),
+    { pid: 4242, port: 8787, version: "0.4.0", startedAt: 1_700_000_000_000 },
+    { capture: () => "paddock", warn: (l) => said.push(l) },
+  );
+  expect(ok).toBe(false);
+  expect(said.join(" ")).toContain("could not record state");
 });
