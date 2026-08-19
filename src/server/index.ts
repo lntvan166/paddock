@@ -16,13 +16,23 @@ import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
 import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
-import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
+import {
+  SettingsStore,
+  defaultConfigDir,
+  isConfigured,
+} from "@server/settings/store";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, USAGE } from "@server/cli";
 import { VERSION } from "@server/version";
 import { runUpdate } from "@server/update";
 import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
+import {
+  errorCode,
+  herdrUnreachableMessage,
+  inspectSocketPath,
+  portInUseMessage,
+} from "@server/startup-errors";
 
 const { command, flags, verb } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
@@ -56,31 +66,34 @@ if (flags.has("--version") || flags.has("-V")) {
 // Must run before any server setup below: `paddock update` should not open a
 // herdr socket or bind a port.
 if (command === "update") {
-  process.exit(await runUpdate({
-    // MUST be process.execPath, not Bun.argv[0]. In a COMPILED binary
-    // (`bun build --compile`, which is what this ships as), Bun.argv[0] is
-    // the literal string "bun" — not a path at all — when the binary is
-    // invoked as a bare name off PATH (measured by compiling a probe and
-    // running it as a bare name: argv0 was "bun", execPath was the probe's
-    // real absolute path). dirname("bun") is ".", so using Bun.argv[0] here
-    // would write .paddock.new into the operator's CURRENT WORKING
-    // DIRECTORY and rename over ./paddock — a stray file wherever they
-    // happened to be standing, and the real install never touched.
-    // process.execPath is the compiled binary's actual absolute path in
-    // both the compiled and interpreted (`bun src/server/index.ts`) cases.
-    // In a source checkout it resolves to the operator's own bun
-    // installation — Ruling P1 (the 0.0.0-dev refusal above) is what makes
-    // that case safe, not this path choice.
-    selfPath: process.execPath,
-    platform: process.platform,
-    arch: process.arch,
-    current: VERSION,
-    checkOnly: flags.has("--check"),
-  }));
+  process.exit(
+    await runUpdate({
+      // MUST be process.execPath, not Bun.argv[0]. In a COMPILED binary
+      // (`bun build --compile`, which is what this ships as), Bun.argv[0] is
+      // the literal string "bun" — not a path at all — when the binary is
+      // invoked as a bare name off PATH (measured by compiling a probe and
+      // running it as a bare name: argv0 was "bun", execPath was the probe's
+      // real absolute path). dirname("bun") is ".", so using Bun.argv[0] here
+      // would write .paddock.new into the operator's CURRENT WORKING
+      // DIRECTORY and rename over ./paddock — a stray file wherever they
+      // happened to be standing, and the real install never touched.
+      // process.execPath is the compiled binary's actual absolute path in
+      // both the compiled and interpreted (`bun src/server/index.ts`) cases.
+      // In a source checkout it resolves to the operator's own bun
+      // installation — Ruling P1 (the 0.0.0-dev refusal above) is what makes
+      // that case safe, not this path choice.
+      selfPath: process.execPath,
+      platform: process.platform,
+      arch: process.arch,
+      current: VERSION,
+      checkOnly: flags.has("--check"),
+    }),
+  );
 }
 
 const socketPath =
-  process.env.PADDOCK_HERDR_SOCKET ?? join(homedir(), ".config", "herdr", "herdr.sock");
+  process.env.PADDOCK_HERDR_SOCKET ??
+  join(homedir(), ".config", "herdr", "herdr.sock");
 
 const hostId = DEMO ? DEMO_HOST_ID : (process.env.PADDOCK_HOST_ID ?? "local");
 const store = new AgentStore(hostId);
@@ -135,7 +148,9 @@ startUpdateCheck(
     now: Date.now(),
     disabled: noUpdateCheckRequested(),
   },
-  (v) => { latestKnown = v; },
+  (v) => {
+    latestKnown = v;
+  },
 );
 
 const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown });
@@ -157,7 +172,11 @@ const notifier = new Notifier({
     if (!isConfigured(s.telegram.token) || !isConfigured(s.telegram.chatId)) {
       return { ok: false, detail: "not configured" };
     }
-    return sendTelegram({ token: s.telegram.token, chatId: s.telegram.chatId, text });
+    return sendTelegram({
+      token: s.telegram.token,
+      chatId: s.telegram.chatId,
+      text,
+    });
   },
 });
 
@@ -211,7 +230,8 @@ if (DEMO) {
   stream = herdrStream;
   actions = createActions(socketPath);
   const client = {
-    request: <T,>(method: string, params?: object) => request<T>(socketPath, method, params),
+    request: <T>(method: string, params?: object) =>
+      request<T>(socketPath, method, params),
     openStream: (subs: Subscription[]) => herdrStream.open(subs),
   };
   supervisor = new Supervisor({
@@ -255,7 +275,10 @@ if (DEMO) {
     await supervisor.start();
   } catch (err) {
     if (err instanceof ProtocolMismatchError) console.error(err.message);
-    else console.error("failed to start against herdr:", err);
+    else
+      console.error(
+        herdrUnreachableMessage(socketPath, err, inspectSocketPath(socketPath)),
+      );
     process.exit(1);
   }
 }
@@ -286,32 +309,44 @@ interface WsData {
   client?: HubClient;
 }
 
-Bun.serve<WsData>({
-  port: PORT,
-  hostname: HOSTNAME,
-  fetch(req, server) {
-    if (new URL(req.url).pathname === "/ws") {
-      const upgraded = server.upgrade(req, { data: {} });
-      return upgraded ? undefined : new Response("upgrade failed", { status: 400 });
-    }
-    return app.fetch(req);
-  },
-  websocket: {
-    open(ws) {
-      const client: HubClient = { send: (d) => ws.send(d) };
-      ws.data.client = client;
-      hub.add(client);
-      hub.sendSnapshot(client, hostId, store.snapshot());
+try {
+  Bun.serve<WsData>({
+    port: PORT,
+    hostname: HOSTNAME,
+    fetch(req, server) {
+      if (new URL(req.url).pathname === "/ws") {
+        const upgraded = server.upgrade(req, { data: {} });
+        return upgraded
+          ? undefined
+          : new Response("upgrade failed", { status: 400 });
+      }
+      return app.fetch(req);
     },
-    close(ws) {
-      const held = ws.data.client;
-      if (held) hub.remove(held);
+    websocket: {
+      open(ws) {
+        const client: HubClient = { send: (d) => ws.send(d) };
+        ws.data.client = client;
+        hub.add(client);
+        hub.sendSnapshot(client, hostId, store.snapshot());
+      },
+      close(ws) {
+        const held = ws.data.client;
+        if (held) hub.remove(held);
+      },
+      message() {
+        // Read-only in v1: the browser sends nothing.
+      },
     },
-    message() {
-      // Read-only in v1: the browser sends nothing.
-    },
-  },
-});
+  });
+} catch (err) {
+  // EADDRINUSE only. Everything else rethrows with its stack intact — a
+  // catch here that reported every failure as a port conflict would be worse
+  // than the trace it replaced, and this project's rules forbid swallowing
+  // errors, not formatting the one condition we recognise.
+  if (errorCode(err) !== "EADDRINUSE") throw err;
+  console.error(portInUseMessage(PORT, HOSTNAME));
+  process.exit(1);
+}
 
 // A quiet system sends nothing at all, so without this the browser would
 // declare a perfectly healthy link stale after 60s of idle agents.
