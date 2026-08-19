@@ -358,3 +358,30 @@ test("mute is not reachable through the settings patch", async () => {
   expect(res.status).toBe(200);            // unknown keys are ignored, not rejected
   expect(settings.current().notify.mutedUntil).toBeNull();
 });
+
+test("a failed mute returns 500 with the reason, never a silent success", async () => {
+  // Mirrors "a failed patch returns 500..." above: `patchMute` writes the same
+  // settings.json as `patch()` and can fail the same way (unwritable config
+  // dir, full disk), so the mute route must not leave that failure to Hono's
+  // default handler, which answers 500 with no JSON `detail` at all — and
+  // Task 9's mute UI reads `body.detail` for its error message. The failure
+  // is injected by replacing `settings.patchMute` with one that throws — NOT
+  // by breaking anything on disk — for the same reason as the PUT test: what
+  // is under test is the ROUTE's handling of a rejected write, and this is
+  // the cheapest rejection that reaches it. Restored at the end so no other
+  // test in this file inherits the stub.
+  const { app, settings } = await harness();
+  const original = settings.patchMute.bind(settings);
+  settings.patchMute = async () => {
+    throw new Error("disk full");
+  };
+  const res = await app.request("/api/settings/mute", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ forMs: 60_000 }),
+  });
+  expect(res.status).toBe(500);
+  const body = await res.json();
+  expect(body.ok).toBe(false);
+  expect(body.detail).toContain("disk full");
+  settings.patchMute = original;
+});
