@@ -17,6 +17,7 @@ import { Supervisor } from "@server/supervisor";
 import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
+import { capturedArgs, removeState, writeState } from "@server/lifecycle/state";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, USAGE } from "@server/cli";
@@ -318,3 +319,27 @@ Bun.serve<WsData>({
 hub.startHeartbeat();
 
 console.info(`paddock listening on http://${HOSTNAME}:${PORT}`);
+
+// Written AFTER the bind, deliberately. A paddock that failed to take the port
+// must not overwrite the state of the one already holding it.
+const stateDir = defaultConfigDir();
+await writeState(stateDir, {
+  pid: process.pid,
+  args: capturedArgs(process.pid) ?? "",
+  port: PORT,
+  version: VERSION,
+  startedAt: Date.now(),
+});
+
+// Foreground runs write it too, so `status` and `stop` do not depend on how
+// paddock was started.
+let clearing = false;
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    if (clearing) return;
+    clearing = true;
+    void removeState(stateDir)
+      .catch((e) => console.info(`paddock: could not clear state file (${String(e)})`))
+      .finally(() => process.exit(0));
+  });
+}
