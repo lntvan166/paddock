@@ -83,9 +83,15 @@ test("the save bar's button is a full touch target", () => {
   expect(declaration(".settings-save-bar button", "min-height")).toBe(TOUCH_TARGET);
 });
 
-test("the toast does not animate under reduced motion", () => {
-  const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
-  expect(reduced).toContain(".settings-toast");
+test("the empty toast region takes up no space", () => {
+  // The live region is mounted before it has anything to say (see Toast.tsx),
+  // so `.settings-toast` is in the DOM on a page with no message on it. Without
+  // this rule that is a visible empty box with a green border under the header.
+  // `display: none` is deliberately NOT the fix — it would take the region back
+  // out of the accessibility tree, which is the whole reason it is pre-mounted.
+  expect(declaration(".settings-toast:empty", "padding")).toBe("0");
+  expect(declaration(".settings-toast:empty", "border")).toBe("0");
+  expect(ruleBody(".settings-toast:empty")).not.toContain("display");
 });
 
 test("the mute buttons are full touch targets", () => {

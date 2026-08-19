@@ -71,7 +71,15 @@ export function Settings({ onBack }: SettingsProps) {
       notifyEnabled !== baseline.notify.enabled ||
       triggers.join(",") !== [...baseline.notify.triggers].join(",") ||
       cooldownMs !== baseline.notify.cooldownMs ||
-      publicUrl !== (baseline.publicUrl ?? "") ||
+      // Trimmed on BOTH sides, mirroring the transformation `save()` applies to
+      // this field. If the two disagree about normalisation they disagree by
+      // construction: a value that `save()` would send as trimmed, compared
+      // untrimmed against the trimmed baseline the server echoed back, leaves
+      // "Settings saved" and "Unsaved changes" on screen at the same time. And
+      // trimming only the left side swaps that for a form that arrives dirty
+      // whenever the STORED value has stray whitespace (a hand-edited
+      // settings.json, a `curl` PUT), which nothing in the UI can clear.
+      publicUrl.trim() !== (baseline.publicUrl ?? "").trim() ||
       settleMs.blocked !== baseline.notify.settleMs.blocked ||
       settleMs.done !== baseline.notify.settleMs.done
     );

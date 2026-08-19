@@ -754,9 +754,14 @@ body {
   background: var(--surface);
   border: 1px solid var(--ok);
   color: var(--ok);
-  transition: opacity 150ms ease-in;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .settings-toast { transition: none; }
+/* The live region stays in the DOM while it has nothing to say, so a screen
+   reader is not asked to announce a region that appeared in the same instant
+   as its text. Collapsed to zero height rather than `display: none`, which
+   would remove it from the accessibility tree and defeat that. */
+.settings-toast:empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
 }

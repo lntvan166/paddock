@@ -99,6 +99,11 @@ test("a successful save clears the bar and announces itself in a live region", a
   const host = await render(<Settings onBack={() => {}} />);
   await settle();
   await settle();
+  // The region is mounted before there is anything to say: a role="status"
+  // element inserted together with its text is announced unreliably.
+  const before = host.querySelector(".settings-toast");
+  expect(before).not.toBeNull();
+  expect(before!.textContent).toBe("");
   const chatId = host.querySelector<HTMLInputElement>('input[name="chatId"]')!;
   typeInto(chatId, "999");
   await settle();
@@ -133,7 +138,9 @@ test("a failed save keeps the bar and uses the persistent banner, not the toast"
   host.querySelector<HTMLButtonElement>(".settings-save-bar button")!.click();
   await settle();
   await settle();
-  expect(host.querySelector(".settings-toast")).toBeNull();
+  // The region is present (it always is) and SILENT — a failure must never
+  // reach the three-second toast.
+  expect(host.querySelector(".settings-toast")!.textContent).toBe("");
   expect(host.querySelector(".settings-banner")!.textContent).toContain("chat id must be numeric");
   expect(host.querySelector(".settings-save-bar")).not.toBeNull();
 });
@@ -262,4 +269,43 @@ test("a settle window is edited in seconds and saved in milliseconds", async () 
   const put = puts[puts.length - 1]!;
   expect((put.body as { notify: { settleMs: unknown } }).notify.settleMs)
     .toEqual({ blocked: 5_000, done: 30_000 });
+});
+
+test("a mute remainder of 59 minutes and change renders 59m, never 60m", async () => {
+  // `Math.round` on the minute remainder turns 3h 59m 40s into "3h 60m" — a
+  // label that reads like a bug, on any page load that lands in the last thirty
+  // seconds of an hour. The fixture is exactly that instant.
+  const muted = {
+    ...view(),
+    notify: {
+      ...view().notify,
+      mutedUntil: 1_700_000_000_000 + 3 * 3_600_000 + 59 * 60_000 + 40_000,
+    },
+  };
+  const stub = stubFetch({ "/api/settings": () => muted });
+  globalThis.fetch = stub.fn as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+  const text = host.querySelector(".settings-mute")!.textContent!;
+  expect(text).toContain("in 3h 59m");
+  expect(text).not.toContain("60m");
+});
+
+test("a stored publicUrl with stray whitespace does not arrive already dirty", async () => {
+  // `save()` sends `publicUrl.trim()`, so `dirty` has to compare on the same
+  // normalisation or the two halves of one field disagree by construction.
+  // Trimming only the field and not the baseline moves the disagreement rather
+  // than removing it: a settings.json edited by hand (or written by a `curl`
+  // PUT) can hold a trailing space, and the form would then open with "Unsaved
+  // changes" showing before the operator has touched anything — with no edit
+  // that clears it.
+  const stub = stubFetch({
+    "/api/settings": () => ({ ...view(), publicUrl: "https://paddock.example.com " }),
+  });
+  globalThis.fetch = stub.fn as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  await settle();
+  expect(host.querySelector(".settings-save-bar")).toBeNull();
 });

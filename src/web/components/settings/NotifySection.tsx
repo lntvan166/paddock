@@ -25,7 +25,12 @@ function muteLabel(mutedUntil: number, serverNow: number): string {
   const at = new Date(mutedUntil + skew);
   const remaining = Math.max(0, mutedUntil - serverNow);
   const h = Math.floor(remaining / HOUR_MS);
-  const m = Math.round((remaining % HOUR_MS) / 60_000);
+  // FLOORED, not rounded. Rounding the remainder renders 3h 59m 40s as
+  // "3h 60m" — a label that reads like a bug on any page load that lands in
+  // the last 30 seconds of an hour. Flooring can only ever understate the
+  // remaining time by under a minute, which for "muted until" is the harmless
+  // direction.
+  const m = Math.floor((remaining % HOUR_MS) / 60_000);
   const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
   return `Muted until ${clock} (in ${h}h ${m}m)`;
 }
@@ -151,8 +156,9 @@ export function NotifySection({
 
       <label className="settings-field">
         <span>Cooldown (ms)</span>
-        {/* `min` matches the server's own floor (routes.ts MIN_COOLDOWN_MS):
-            0 disarms the per-agent rate limit and reintroduces the
+        {/* `min` matches the server's own floor (`MIN_COOLDOWN_MS`, exported
+            by the settings store and enforced by both the PUT route and
+            `migrate()`): 0 disarms the per-agent rate limit and reintroduces the
             send-per-delta hot loop against a failing Telegram. The server
             rejects it either way — this just says so before the round
             trip. */}
