@@ -1,10 +1,28 @@
 import type { Agent } from "@shared/types";
 import { formatElapsed } from "@web/components/elapsed";
 
+/**
+ * The one definition of what a state looks like, read by the list, the card and
+ * the terminal header.
+ *
+ * Traffic-light semantics, matching herdr so an operator moving between the two
+ * does not relearn a palette: red has stopped and needs a person, amber is in
+ * motion, green is finished, grey is nothing to say.
+ *
+ * `working` was `--accent` — the token every link and button uses for "you can
+ * tap this" — so a state was painted in the interaction colour and competed
+ * with the affordances around it. And `blocked` borrowed amber, which left the
+ * only state that actually needs a human sharing a colour with the one that
+ * needs nothing.
+ *
+ * Colour is never the only channel: `StateDot` is `aria-hidden` and the state
+ * is carried as text beside it, because red-and-green is the classic
+ * indistinguishable pair and this palette now uses both.
+ */
 const DOT: Record<Agent["state"], string> = {
-  blocked: "var(--warn)",
+  blocked: "var(--danger)",
   done: "var(--ok)",
-  working: "var(--accent)",
+  working: "var(--warn)",
   idle: "var(--fg-dim)",
 };
 

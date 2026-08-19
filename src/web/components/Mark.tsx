@@ -16,10 +16,17 @@
  *  - **`currentColor` for the figure**, rather than herdr's charcoal, so the
  *    mark follows the theme. On the dark ground it renders near-white and on
  *    light it renders near-black, with no second asset and no media query.
- *  - **`--warn` for the lit segment**, which is the same amber the UI already
- *    uses for a blocked agent. In `logo.svg` that bar is coral, chosen to sit
- *    beside herdr's palette; here it can mean exactly what the colour already
- *    means everywhere else in the app.
+ *  - **`--warn` for the lit segment**, the same amber the UI uses for an agent
+ *    that is WORKING. In `logo.svg` that bar is coral, chosen to sit beside
+ *    herdr's palette; here it means what the colour means everywhere else in
+ *    the app.
+ *
+ *    It used to mean "blocked", and this comment said so. When the state
+ *    palette moved to traffic-light semantics — red stopped, amber in motion —
+ *    the mark deliberately stayed amber rather than following blocked to red: a
+ *    lit segment reads as an agent that is alive and doing something, and a red
+ *    logo would claim the app itself needs attention. Repainting a logo to
+ *    track a state is the wrong direction of dependency.
  *
  * `logo.svg`'s own comment anticipates this swap and names these tokens,
  * having judged family resemblance with herdr worth more than matching the

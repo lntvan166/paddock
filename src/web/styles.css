@@ -11,6 +11,13 @@
   --accent: #4a55c7;
   --warn: #9a6600;
   --ok: #1a7f37;
+  /* Red is the loudest colour in the app and is spent on ONE thing: an agent
+     that has stopped and needs a person. `--warn` (amber) means "in motion or
+     degraded", which is what a working agent is. Before this existed, blocked
+     borrowed amber and `working` borrowed `--accent` — the same token every
+     link and button uses for "you can tap this", so a state competed with the
+     interaction colour. */
+  --danger: #cf222e;
 
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
@@ -35,6 +42,7 @@
     --accent: #5e6ad2;
     --warn: #e0a838;
     --ok: #3fb950;
+    --danger: #f85149;
   }
 }
 
@@ -48,6 +56,7 @@
   --accent: #5e6ad2;
   --warn: #e0a838;
   --ok: #3fb950;
+  --danger: #f85149;
 }
 
 /* System fonts only. A webfont would be the single largest payload on a slow

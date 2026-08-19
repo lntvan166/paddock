@@ -24,7 +24,8 @@ export function AgentCard({
    * renders standalone (e.g. in a future context with no sheet to open). */
   onSelect?: () => void;
 }) {
-  const accent = agent.state === "blocked" ? "var(--warn)" : "var(--ok)";
+  // Same palette as `StateDot`: red for the one state that needs a person.
+  const accent = agent.state === "blocked" ? "var(--danger)" : "var(--ok)";
   const [busy, setBusy] = useState(false);
   // acknowledge() never throws — a failed dismissal (e.g. a 409 because the
   // agent stopped being done in the meantime) must stay visible on the card,
@@ -95,7 +96,7 @@ export function AgentCard({
             Dismiss
           </button>
           {result && !result.ok && (
-            <p className="mt-1 text-[10px]" style={{ color: "var(--warn)" }} role="alert">
+            <p className="mt-1 text-[10px]" style={{ color: "var(--danger)" }} role="alert">
               {result.detail ?? "Could not dismiss."}
             </p>
           )}
