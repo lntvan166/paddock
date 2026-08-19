@@ -79,6 +79,16 @@ Put an authenticating tunnel in front of it — the tunnel terminates at your ma
 
 Whichever you choose, the requirement is the same: **something must authenticate the request before paddock sees it.**
 
+### Then add it to your Home Screen
+
+<p align="center">
+  <img src="docs/images/05-home-screen.jpg" alt="paddock on an iPhone Home Screen, in a folder named herdr" width="45%">
+</p>
+
+Once it is reachable, **Share → Add to Home Screen** turns paddock into an app: its own icon, no browser chrome, and it opens where you left off. The manifest and icons that make that work already ship.
+
+On iOS this is also the only way to get Web Push, if it ever lands — Safari delivers notifications to an installed PWA and never to a page in a tab.
+
 ### herdr on another machine
 
 Also possible, and it needs no code change: forward the remote socket to a local path.

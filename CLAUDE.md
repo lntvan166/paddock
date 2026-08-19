@@ -28,6 +28,15 @@ single most important rule in this file.
 - **Config ships as `.env.example` only.** Never commit `.env`.
 - **Screenshots and README images come from `paddock serve --demo`**, never a live
   session.
+  - **One narrow exception: a device frame showing no session content.** The
+    Home Screen shot in `README.md` cannot come from the demo, because the thing
+    it demonstrates is iOS turning the PWA into an installed app, which only
+    exists on a real device. Such an image is allowed only when it contains **no
+    dashboard content at all** — no agent names, no terminal output, no
+    hostname, no URL bar — and is cropped to the subject. The original of that
+    one included a dock with unread badges and a wallpaper; both were cropped
+    away before it was committed. If you find yourself arguing that some session
+    content is "fine", the exception does not apply.
 
 ### Enforcement
 
