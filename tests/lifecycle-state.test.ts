@@ -56,6 +56,25 @@ test("a corrupt state file is treated as absent, not as a crash", async () => {
   expect((await checkState(d, probe(true, "paddock"))).kind).toBe("none");
 });
 
+test("an I/O error reading the state file is reported, not swallowed as absent", async () => {
+  // A permissions or other I/O failure must never look like "nothing ever ran
+  // here" — that would let `start` believe the coast is clear and spawn a
+  // second instance while one is already serving. chmod alone would not stop
+  // root (CI containers commonly run as root), so make the directory itself
+  // impossible to use rather than merely unreadable: point it at a path whose
+  // PARENT is a regular file. That is ENOTDIR for every user, root included,
+  // and it is a non-ENOENT I/O error, exercising the same branch a real
+  // permissions failure would.
+  const parent = await dir();
+  const blocker = join(parent, "blocker");
+  await writeFile(blocker, "not a directory");
+  const bogusDir = join(blocker, "child");
+
+  const got = await checkState(bogusDir, probe(true, "paddock"));
+  expect(got.kind).toBe("unreadable");
+  if (got.kind === "unreadable") expect(got.error.length).toBeGreaterThan(0);
+});
+
 test("removeState is idempotent", async () => {
   const d = await dir();
   await removeState(d);

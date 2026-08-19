@@ -18,6 +18,7 @@ export interface Probe {
 
 export type StateCheck =
   | { kind: "none" }
+  | { kind: "unreadable"; error: string }
   | { kind: "stale"; state: PaddockState }
   | { kind: "mismatch"; state: PaddockState; actual: string | null }
   | { kind: "running"; state: PaddockState };
@@ -95,9 +96,13 @@ export async function checkState(dir: string, probe: Probe = systemProbe): Promi
   let raw: string;
   try {
     raw = await readFile(stateFile(dir), "utf8");
-  } catch {
-    // Absent is the ordinary case, not an error.
-    return { kind: "none" };
+  } catch (e) {
+    // ENOENT — no file — is the ordinary case, not an error. Anything else
+    // (EACCES, ENOTDIR, ...) is a real I/O failure and must NOT collapse into
+    // "none": that would tell `start` the coast is clear and let it spawn a
+    // second instance right alongside one that is already serving.
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { kind: "none" };
+    return { kind: "unreadable", error: (e as Error).message };
   }
 
   let s: PaddockState;
