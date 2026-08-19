@@ -1,8 +1,14 @@
 // Generates src/shared/herdr-api.d.ts from the installed herdr's own schema.
 // Run via `make types`. Never hand-edit the output.
-export {}; // Makes this a module so top-level await is allowed under tsc.
+import { ALLOW_DOWNGRADE_ENV, downgradeRefusal, parseCommittedProtocol } from "./protocol-guard";
 
-const proc = Bun.spawn(["herdr", "api", "schema", "--json"], { stdout: "pipe", stderr: "pipe" });
+// Both overridable so the downgrade guard can be tested without a second herdr
+// install, the same way install.sh takes PADDOCK_CURL and PADDOCK_UNAME_S.
+// Defaults are the real binary and the real committed path.
+const HERDR_BIN = process.env.HERDR_BIN ?? "herdr";
+const OUT = process.env.HERDR_TYPES_OUT ?? "src/shared/herdr-api.d.ts";
+
+const proc = Bun.spawn([HERDR_BIN, "api", "schema", "--json"], { stdout: "pipe", stderr: "pipe" });
 const raw = await new Response(proc.stdout).text();
 if ((await proc.exited) !== 0) {
   throw new Error(`herdr api schema failed: ${await new Response(proc.stderr).text()}`);
@@ -10,6 +16,18 @@ if ((await proc.exited) !== 0) {
 const schema = JSON.parse(raw);
 
 const protocol: number = schema.protocol;
+
+// BEFORE reading the enums below, let alone writing them: on a downgrade those
+// would be the older, smaller sets, and writing them is the whole harm. Exits
+// rather than throwing so the operator gets the message and not a stack trace.
+const existing = Bun.file(OUT);
+const committed = (await existing.exists()) ? parseCommittedProtocol(await existing.text()) : null;
+const refusal = downgradeRefusal(protocol, committed, Boolean(process.env[ALLOW_DOWNGRADE_ENV]));
+if (refusal) {
+  console.error(refusal);
+  process.exit(1);
+}
+
 const states: string[] =
   schema.schemas.subscription_event.$defs.AgentStatus.enum;
 const readSources: string[] =
@@ -96,5 +114,5 @@ export type HerdrResponse =
 export interface HerdrEvent { event: string; data: Record<string, unknown> }
 `;
 
-await Bun.write("src/shared/herdr-api.d.ts", out);
-console.log(`wrote src/shared/herdr-api.d.ts (protocol ${protocol}, ${states.length} states)`);
+await Bun.write(OUT, out);
+console.log(`wrote ${OUT} (protocol ${protocol}, ${states.length} states)`);
