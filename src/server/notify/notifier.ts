@@ -179,6 +179,14 @@ export class Notifier {
     // `#pending.set` over a live entry loses the handle: the old timer stays
     // armed but is no longer reachable by `#cancel` or `dispose()`, so the
     // shutdown path cannot clear it and "at most one per agent" stops holding.
+    //
+    // DECLARED UNREACHABLE, today: no `#arm` call can currently replace a live
+    // entry — `#see` has just cancelled, the cooldown deferral runs inside a
+    // callback that already removed its own entry, and the retry is gated on
+    // its episode still being current, which no pending entry can be. It stays
+    // because it makes the invariant local and checkable here instead of a
+    // property to re-derive across three call sites, and because relaxing that
+    // retry gate would make it load-bearing again with nothing to say so.
     this.#cancel(a.agentId);
     // Assigned after `#setTimer` returns; the callback cannot run before then.
     let handle: TimerHandle | undefined;
