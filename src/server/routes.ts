@@ -194,6 +194,10 @@ function isNullableString(v: unknown): v is string | null {
  */
 const MIN_COOLDOWN_MS = 1000;
 
+/** A week. Long enough for a holiday, short enough that a fat-fingered mute
+ *  cannot silence paddock for a year. */
+const MAX_MUTE_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * Validates a raw PUT body into a `SettingsPatch`, or a 400 reason.
  *
@@ -301,10 +305,14 @@ export interface AppDeps {
   /** Settings store. Omit in tests that only exercise the agent API. */
   settings?: SettingsStore;
   /**
-   * Clock for `/ack`'s `acknowledgedAt` stamp. Same injectable-clock pattern
-   * as `Hub`, `Supervisor`, and `DemoSource` elsewhere in this codebase —
-   * defaults to `Date.now` in production, overridden in tests so an
-   * assertion can compare against a fixed fixture timestamp.
+   * Clock for `/ack`'s `acknowledgedAt` stamp, every `settings.view()` call
+   * (its `serverNow`), and the mute route's stamped `mutedUntil`. One clock
+   * for all of them, or `serverNow` disagrees between GET, PUT and mute
+   * responses and the UI's countdown drifts for no visible reason. Same
+   * injectable-clock pattern as `Hub`, `Supervisor`, and `DemoSource`
+   * elsewhere in this codebase — defaults to `Date.now` in production,
+   * overridden in tests so an assertion can compare against a fixed fixture
+   * timestamp.
    */
   now?: () => number;
   /** Telegram sender. Injected in tests so the suite never makes a real
@@ -541,7 +549,7 @@ export function createApp(deps: AppDeps) {
     // holds the raw token and must never reach c.json(...), on any path —
     // only settings.view() is a valid response body, here or in any other
     // handler in this block.
-    app.get("/api/settings", (c) => c.json(settings.view()));
+    app.get("/api/settings", (c) => c.json(settings.view(now())));
 
     /**
      * PUT, never GET: a payload in a query string lands in edge access logs.
@@ -571,7 +579,28 @@ export function createApp(deps: AppDeps) {
         // Reporting a save that did not happen is worse than reporting none.
         return c.json({ ok: false, detail: (e as Error).message }, 500);
       }
-      return c.json(settings.view());
+      return c.json(settings.view(now()));
+    });
+
+    /**
+     * Mute is its own route, not a `notify` patch field, for two reasons.
+     * The server stamps the instant from a client-supplied DURATION, so a
+     * phone with a skewed clock cannot set a wrong one. And mute must apply
+     * immediately while every other field waits for Save — a separate
+     * endpoint makes that structural instead of a rule to remember.
+     */
+    app.post("/api/settings/mute", async (c) => {
+      const parsed = await strictJsonBody(c);
+      if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
+      const forMs = parsed.body.forMs;
+      if (typeof forMs !== "number" || !Number.isFinite(forMs) || forMs < 0 || forMs > MAX_MUTE_MS) {
+        return c.json({ ok: false, detail: `forMs must be a number between 0 and ${MAX_MUTE_MS}` }, 400);
+      }
+      const stamp = now();
+      // 0 means unmute. `notify.enabled` is the "off until further notice"
+      // control, so there is deliberately no infinite mute here.
+      await settings.patchMute(forMs === 0 ? null : stamp + forMs);
+      return c.json(settings.view(stamp));
     });
 
     app.post("/api/settings/telegram/test", async (c) => {

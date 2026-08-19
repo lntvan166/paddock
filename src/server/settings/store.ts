@@ -252,6 +252,26 @@ export class SettingsStore {
     await this.persist();
   }
 
+  /** The only writer of `mutedUntil`. Narrow on purpose: it is the one
+   *  notify field that is not part of the Save-button form, and routing it
+   *  through `patch()` would put it back in the patch contract. */
+  async patchMute(mutedUntil: number | null): Promise<void> {
+    this.#s.notify = { ...this.#s.notify, mutedUntil };
+    // Same rule as `patch()`: an explicit write clears a load fault, on the
+    // theory that the operator has chosen to replace whatever was
+    // unparseable. Tapping "Mute" is a narrower gesture than opening the
+    // settings form and pressing Save, so this is a deliberate ruling, not a
+    // copy-paste — the settings screen renders `error` as a banner above
+    // every section, including wherever the mute control sits, so the
+    // operator has already seen the fault before this fires. Two writers of
+    // the same file disagreeing about `error` semantics (one clears it, one
+    // leaves a stale fault behind a now-valid write) is a worse hazard than
+    // the rare case this discards: a broken settings.json that may still
+    // contain a token.
+    this.error = null;
+    await this.persist();
+  }
+
   /**
    * Atomic: a crash midway through a direct overwrite truncates the file, and
    * the value lost is the token — the one field the UI cannot regenerate.
