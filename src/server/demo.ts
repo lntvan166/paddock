@@ -28,6 +28,7 @@ export function demoAgents(now: number): Agent[] {
     stateSince: now - s.ageMs,
     updatedAt: now,
     acknowledgedAt: null,
+    hasJournal: false,
   }));
 }
 

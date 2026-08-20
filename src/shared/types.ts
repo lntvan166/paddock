@@ -74,6 +74,20 @@ export interface Agent {
    * herdr's `done` stays true, paddock just stops surfacing it.
    */
   acknowledgedAt: number | null;
+  /**
+   * Whether paddock can read this agent's own session log, which decides
+   * WHICH history source the terminal view uses (see
+   * `docs/design/2026-08-20-journal-history-design.md`).
+   *
+   * A boolean and nothing more, deliberately. The session id it is derived
+   * from is a filesystem key that stays on the server: the UI's only question
+   * is "fetch, or use my local reconstruction?".
+   *
+   * Required, not optional — an optional field lets a future edit drop it
+   * silently, and the terminal would fall back to reconstruction for every
+   * agent with nothing to notice.
+   */
+  hasJournal: boolean;
 }
 
 /**

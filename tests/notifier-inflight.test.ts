@@ -8,7 +8,7 @@ const agent = (over: Partial<Agent> = {}): Agent => ({
   hostId: "dev-box", agentId: "w1:p1", name: "schema-migration",
   task: "Backfilling the index", state: "working", workspaceId: "w1",
   workspaceLabel: null, cwd: "/srv/project", stateSince: NOW,
-  updatedAt: NOW, acknowledgedAt: null, ...over,
+  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
 });
 
 /**

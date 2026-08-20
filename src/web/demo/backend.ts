@@ -43,6 +43,7 @@ const agents: Agent[] = SEED.map((s) => ({
   stateSince: Date.now() - s.ageMs,
   updatedAt: Date.now(),
   acknowledgedAt: null,
+  hasJournal: false,
 }));
 
 /** Cursor position on the blocked agent's menu, moved by the arrow keys. */

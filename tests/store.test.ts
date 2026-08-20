@@ -17,6 +17,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     stateSince: NOW,
     updatedAt: NOW,
     acknowledgedAt: null,
+    hasJournal: false,
     ...over,
   };
 }
