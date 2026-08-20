@@ -31,7 +31,13 @@ export async function preflight(opts: {
     return {
       ok: false,
       message: [
-        `paddock: a detached paddock is already running (pid ${state.state.pid})`,
+        // "another", not "a detached": this is `checkState`, and `index.ts`
+        // records state for FOREGROUND runs too, so the instance found here is
+        // just as likely to be a `paddock` in the next terminal. Told
+        // "detached", that operator concludes the message is about something
+        // else and goes looking for a process they never started — while the
+        // remedy printed below works for their foreground one as it stands.
+        `paddock: another paddock is already running (pid ${state.state.pid})`,
         "",
         "  paddock tunnel serves the dashboard itself, so running it alongside",
         "  that instance would open a SECOND connection to herdr — and a second",

@@ -1,5 +1,6 @@
 import type { AgentStore } from "@server/state/store";
-import type { Hub, HubClient } from "@server/ws/hub";
+import type { Hub } from "@server/ws/hub";
+import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import {
   startTunnel as realStartTunnel,
   terminate,
@@ -38,27 +39,29 @@ export interface TunnelDeps {
    * `runTunnel` deliberately installs NO handler of its own — see the long
    * comment on the registration below. The caller (`src/server/index.ts`)
    * stores what it is given and awaits it from the handler it already has.
+   *
+   * The teardown resolves to whether it actually shut everything down, and the
+   * caller turns a `false` into a non-zero exit status. See `teardown`.
    */
-  registerShutdown?: (fn: () => Promise<void>) => void;
+  registerShutdown?: (fn: () => Promise<boolean>) => void;
   now?: () => number;
-}
-
-interface WsData {
-  client?: HubClient;
 }
 
 /**
  * The second listener: the same app, plus the gate.
  *
- * The gate is applied HERE and not only as Hono middleware because this
- * function upgrades `/ws` itself, before `app.fetch` is ever called — exactly
- * as `index.ts` does for the plain listener. A middleware-only gate would leave
- * the WebSocket, and therefore every agent's live output, ungated.
+ * The gate is applied HERE, at the socket, and NOT as Hono middleware, because
+ * this function upgrades `/ws` before `app.fetch` is ever called — exactly as
+ * `index.ts` does for the plain listener. A middleware could never see that
+ * upgrade, so it would leave the WebSocket, and therefore every agent's live
+ * output, ungated. This is the ONE enforcement point; there is deliberately no
+ * second copy of the decision anywhere.
  *
- * The refusal is rendered by `gateResponse`, never rebuilt here. That function
- * exists precisely so this listener and `gateMiddleware` cannot come to
- * disagree about what a refusal looks like — a transcribed copy of its
- * headers/page/401 block is exactly how they would.
+ * `decide` returning a `Decision` rather than a `Response` is what lets that
+ * single rule serve both shapes of request: the upgrade above, and the ordinary
+ * request handed to `gateResponse` below. The refusal is rendered THERE and
+ * never rebuilt here — a transcribed copy of its headers/page/401 block is how
+ * two renderings of one refusal would come to disagree.
  */
 export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
   const server = Bun.serve<WsData>({
@@ -68,27 +71,14 @@ export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
       const d = decide(req, (t) => deps.pairing.has(t));
       if (d.kind !== "pass") return gateResponse(d, req);
 
-      if (new URL(req.url).pathname === "/ws") {
-        const upgraded = srv.upgrade(req, { data: {} });
-        return upgraded ? undefined : new Response("upgrade failed", { status: 400 });
-      }
+      // Past the gate, this listener serves EXACTLY what the plain one serves,
+      // from one definition — see `ws/serve.ts`. `null` means the request is
+      // not the socket route and belongs to the app.
+      const ws = tryUpgradeWs(req, srv);
+      if (ws !== null) return ws;
       return deps.app.fetch(req);
     },
-    websocket: {
-      open(ws) {
-        const client: HubClient = { send: (d) => ws.send(d) };
-        ws.data.client = client;
-        deps.hub.add(client);
-        deps.hub.sendSnapshot(client, deps.hostId, deps.store.snapshot());
-      },
-      close(ws) {
-        const held = ws.data.client;
-        if (held) deps.hub.remove(held);
-      },
-      message() {
-        // Read-only, as on the plain listener.
-      },
-    },
+    websocket: hubWebSocket({ hub: deps.hub, hostId: deps.hostId, store: deps.store }),
   });
   // Bun types `port` as optional — a unix-socket server has none. This one is
   // a TCP listener on loopback, so it always has one, and a missing port means
@@ -125,8 +115,10 @@ export function gatedPortInUseMessage(port: number, hostname = "127.0.0.1"): str
  * Own the child, draw the block, and shut both down together.
  *
  * Returns the process exit code: 0 for a shutdown the operator asked for
- * (`--for` elapsing), non-zero for a `cloudflared` failure. A child that dies
- * on its own is never left as a dashboard serving a URL that no longer
+ * (`--for` elapsing) that actually completed, non-zero for a `cloudflared`
+ * failure OR for a teardown that could not kill the child — see `teardown`, and
+ * `index.ts`'s signal handler for the same rule on the `Ctrl-C` path. A child
+ * that dies on its own is never left as a dashboard serving a URL that no longer
  * resolves. A `Ctrl-C` shutdown does not come back through this promise at all:
  * the signal handler in `index.ts` awaits the teardown registered below and
  * then exits the process, so this promise is simply abandoned.
@@ -179,12 +171,16 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
    * this whole shutdown path exists to prevent, arriving by another route.
    *
    * So it is reported — loudly, with the command to check by hand, because
-   * this project never swallows an error — and then stepped past.
+   * this project never swallows an error — and then stepped past. Reported AND
+   * remembered: `childKillFailed` is what stops the exit status from calling
+   * this a success. See `teardown`.
    */
+  let childKillFailed = false;
   const stopChild = async (kill: () => Promise<void>): Promise<void> => {
     try {
       await kill();
     } catch (e) {
+      childKillFailed = true;
       console.error(
         `paddock: could not stop cloudflared (${String(e)}) — the tunnel may still be up. ` +
           "Check by hand: pgrep -af 'cloudflared tunnel'",
@@ -192,8 +188,26 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
     }
   };
 
-  const teardown = async (): Promise<void> => {
-    if (stopping) return;
+  /**
+   * Shut everything this run owns down, and report whether it WORKED.
+   *
+   * `true` means the child is gone (or there never was one). `false` means
+   * `kill()` was refused and a `cloudflared` may still be holding a public URL
+   * with no paddock behind it — the single failure this whole feature exists to
+   * prevent. That outcome must NOT reach a caller as a success: an exit code is
+   * read by wrapper scripts, by systemd, and by `&&` in a shell, and telling
+   * any of them "clean shutdown" while a public URL is still live is exactly
+   * the error this project's no-swallowing rule forbids.
+   *
+   * It is still only REPORTED, never thrown, and the rest of the teardown still
+   * runs: the listener closes and the state file is cleared either way. Report
+   * and continue, then exit non-zero.
+   */
+  const teardown = async (): Promise<boolean> => {
+    // An already-torn-down run answers with the outcome it had, not with a
+    // fresh `true` — a Ctrl-C arriving after a failed `--for` teardown must
+    // not launder that failure into a clean exit.
+    if (stopping) return !childKillFailed;
     stopping = true;
     if (timer !== null) clearInterval(timer);
     // THREE startup states, and the child must die in the two where one
@@ -219,6 +233,7 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
     // Only claimed when there was something to close. "tunnel closed" after
     // "no tunnel was running" is a log that contradicts itself two lines apart.
     if (up !== null || spawned !== null) console.info("\npaddock: tunnel closed");
+    return !childKillFailed;
   };
 
   /**
@@ -325,11 +340,15 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
 
   if (outcome.kind === "child") {
     console.error(`paddock: cloudflared exited ${outcome.code} — the URL is gone`);
+    // The result is not consulted here only because every exit from this branch
+    // is already non-zero: a tunnel that vanished is a failure, and a kill that
+    // then failed cannot make it more so.
     await teardown();
     // A child that exits 0 unasked is still a tunnel that vanished.
     return outcome.code === 0 ? 1 : outcome.code;
   }
   console.info(`paddock: --for ${human(deps.deadlineMs ?? 0)} elapsed`);
-  await teardown();
-  return 0;
+  // The ONE path where the operator asked for this shutdown — so it is also the
+  // one path where a failed kill is the difference between exit 0 and exit 1.
+  return (await teardown()) ? 0 : 1;
 }

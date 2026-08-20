@@ -76,7 +76,7 @@ One process, two listeners, one child:
 
 ```
   127.0.0.1:8787   the dashboard, exactly as `paddock` serves it today
-  127.0.0.1:8788   the same Hono app + pairing middleware   <- cloudflared
+  127.0.0.1:8788   the same Hono app, behind the pairing gate <- cloudflared
   cloudflared      child process, --url http://127.0.0.1:8788
 ```
 
@@ -152,14 +152,20 @@ one outcome the flag exists to prevent. When set, the display gains a
 both listeners and prints `tunnel closed`.
 
 Exit codes: `0` for any shutdown the operator asked for (`Ctrl-C`, or `--for`
-elapsing), `1` for a preflight refusal or a `cloudflared` failure.
+elapsing), `1` for a preflight refusal or a `cloudflared` failure — **and `1`
+for an asked-for shutdown in which `cloudflared` could not be killed.** That
+last case is reported on stderr and does not abort the rest of the teardown
+(the listeners still close, the state file is still cleared), but it must not
+exit 0: an unkillable child is a public URL still resolving with no paddock
+behind it, which is the one outcome this command exists to prevent, and a
+wrapper script, a systemd unit or a shell `&&` has only the status to read.
 
 ---
 
 ## The pairing gate
 
 The gated listener wraps **the same Hono app**, so no route exists twice. One
-middleware, mounted only on that listener:
+gate, on that listener's own socket and nowhere else:
 
 ```
   no session cookie?
@@ -174,13 +180,22 @@ stylesheet, no icon. That is what lets every real asset stay behind the gate
 rather than carving out an unauthenticated static path that then has to be
 audited.
 
-**The gate cannot be only a Hono middleware.** `index.ts` intercepts
-`/ws` in `Bun.serve`'s `fetch` and calls `server.upgrade` *before* `app.fetch`
-is reached, so a middleware mounted on the app never sees the upgrade at all.
-The decision is therefore a pure function — `decide(req, has)` — called from two
-places: the Hono middleware for ordinary requests, and the gated listener's own
-`fetch` before it upgrades anything. One rule, two call sites, no possibility of
-them disagreeing about what a valid session is.
+**The gate is not a Hono middleware at all.** Both listeners intercept `/ws` in
+`Bun.serve`'s `fetch` and call `server.upgrade` *before* `app.fetch` is reached,
+so a middleware mounted on the app would never see the upgrade — and the
+WebSocket carries every agent's live output. Enforcement therefore lives in the
+gated listener's own `fetch`, ahead of both the upgrade and `app.fetch`: **one
+call site, not two.**
+
+What makes that single point serve both shapes of request is that the decision
+is a pure function returning a `Decision` rather than a `Response`. `decide(req,
+has)` answers the upgrade with the decision alone, and `gateResponse(d, req)`
+turns the same decision into the page or the `401` for an ordinary request.
+
+A second copy of the decision — a middleware alongside this — is a hazard, not
+belt-and-braces: it would run the same rule twice on the same request and could
+only ever differ from the first copy by accident. An earlier revision of this
+design called for one, and the shipped code deliberately does not have one.
 
 `hub.ts` still learns nothing about pairing: the refusal happens before the hub
 is reached, so the WebSocket is gated without a line changing in the transport
@@ -299,8 +314,17 @@ Settings -> Tunnel
   enter this at the same URL on the new device
 ```
 
-The section is present only while a tunnel is running. On `8787` the route is
-open like every other route — that listener is trusted by locality.
+The section is present only while a tunnel is running.
+
+**As shipped, the route does not exist on `8787` at all** — stricter than this
+design first described, and deliberately so. `index.ts` builds the plain
+listener's app WITHOUT the `pairing` dependency, and `routes.ts` registers
+`POST /pair` and `POST /api/pair/invite` only when that dependency is present,
+so both answer `404` on the desk port and `/api/settings` reports `tunnel:
+null` there. A paddock with no tunnel must not offer to mint a pairing code for
+a gate it does not enforce, and the desk listener must not show an "add a
+device" control it cannot honour. `tests/tunnel-routes.test.ts` asserts exactly
+that ("without a pairing instance neither route exists and tunnel is null").
 
 **Non-goal: per-device revocation.** Losing a device is answered by restarting
 the tunnel, which drops every session *and* changes the URL. A partial revoke
@@ -392,25 +416,52 @@ gated invite route), `Settings.tsx` plus a new `settings/TunnelSection.tsx`,
 
 ## Tests
 
+These are the file names as they SHIPPED. The list this design first carried
+named `tunnel-pairing.test.ts`, `tunnel-code.test.ts` and
+`tunnel-invite.test.ts`, none of which exist — a test list naming files nobody
+can open is how a future session concludes the coverage is missing.
+
 - `cli.test.ts` — the verb, `--for` parsing and its rejections, `USAGE`
-- `tunnel-pairing.test.ts` — no cookie serves the page for navigations and
-  `401`s `/api/*`, assets and the upgrade; a wrong code; five wrong guesses burn
-  the code; success sets `HttpOnly; Secure; SameSite=Lax; Max-Age`; the cookie
-  then works
-- `tunnel-code.test.ts` — alphabet excludes `I L O U`, length, format
-- `tunnel-preflight.test.ts` — detached-instance refusal via an injected probe,
-  the per-platform install guide, herdr unreachable
+- `tunnel-gate.test.ts` — the `decide` rule itself: no cookie serves the page
+  for navigations and `401`s `/api/*`, assets and the upgrade; an upgrade is
+  denied even when it asks for html; an unissued cookie is treated as no
+  cookie and cleared; and `gateResponse`'s own bytes — the 401 body, the page,
+  `no-store`, and `x-forwarded-proto` reaching only the cosmetic warning
+- `tunnel-routes.test.ts` — `POST /pair` over the real app: the right code sets
+  `HttpOnly; Secure; SameSite=Lax; Max-Age`, a wrong code counts down, five
+  wrong guesses burn it, both mutating routes require
+  `content-type: application/json`, the invite route mints and reports an
+  expiry, and with no `pairing` dependency NEITHER route exists
+- `tunnel-pairing-codes.test.ts` — alphabet excludes `I L O U`, length, format,
+  the TTL and re-mint, the attempt budget, and that a token is a session
+- `tunnel-preflight.test.ts` — the already-running refusal via an injected
+  probe, the per-platform install guide, and that an unreadable state file is
+  reported rather than swallowed
 - `tunnel-cloudflared.test.ts` — URL extraction from captured sample output,
-  **and the no-URL case failing loudly**; child exit produces a non-zero exit
-- `tunnel-gate-scope.test.ts` — a request to the plain `8787` listener needs no
-  cookie. The regression guard that matters most: the gate leaking onto the desk
-  port is the bug that would make every dev loop mysterious
+  **and the no-URL case failing loudly**; the child is killed rather than left
+  holding a URL, `SIGTERM` escalates to `SIGKILL`, `onSpawn` hands the child
+  over before any URL
+- `tunnel-run.test.ts` — the gated listener over a real socket (an unpaired
+  request, an unpaired upgrade, a paired session, the pairing form), that
+  `runTunnel` installs NO signal handler of its own, that a failed `kill()` is
+  reported and does not abort the rest of the teardown **and ends the run
+  non-zero**, and that a taken port is a refusal rather than an escaping throw
+- `tunnel-gate-scope.test.ts` — the gate is on the tunnel's listener and
+  NOWHERE else: `createApp` with no `pairing` answers `/api/agents` 200 with no
+  cookie and no `set-cookie`, and `404`s both pairing routes, while `serveGated`
+  answers the same request `401` and opens for a paired session. The regression
+  guard that matters most: the gate leaking onto the desk port is the bug that
+  would make every dev loop mysterious
 - `tunnel-public-url.test.ts` — the notifier composes links with the tunnel URL,
-  and `settings.json` on disk is byte-identical afterwards
-- `tunnel-invite.test.ts` — the invite route needs a session on the gated
-  listener and is open on the plain one
-- `tunnel-hints.test.ts` — hint present when `publicUrl` is null, absent when set
-- colour — `NO_COLOR` and a non-TTY stdout emit no escape bytes
+  and `settings.json` on disk is unchanged afterwards
+- `tunnel-hints.test.ts` — hint present when `publicUrl` is null, absent when
+  set, and a SAVED quick-tunnel URL does not count as configured
+- `tunnel-section.test.tsx` — the paired count, the code only after it is asked
+  for, and a failed invite clearing a stale code
+- `tunnel-display.test.ts` — the block's contents and its clocks, and colour:
+  `NO_COLOR` and a non-TTY stdout emit no escape bytes
+- `quick-tunnel.test.ts` — `isQuickTunnelUrl` matches on the host, and a
+  lookalike suffix is somebody else's domain
 
 **Fixture rule.** Quick-tunnel hostnames from the internet may be live. Every
 doc, test and screenshot uses an invented one (`quiet-harbor-8f31`), per

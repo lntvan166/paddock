@@ -1,4 +1,3 @@
-import type { MiddlewareHandler } from "hono";
 import { COOKIE_NAME, SESSION_MAX_AGE_S } from "@server/tunnel/pairing";
 
 export type Decision =
@@ -40,11 +39,16 @@ export function clearCookie(): string {
 }
 
 /**
- * The ONE rule, called from two places: `gateMiddleware` for ordinary
- * requests, and the gated listener's own `fetch` before it upgrades a
- * WebSocket — because `index.ts` intercepts `/ws` and calls `server.upgrade`
- * BEFORE `app.fetch` is reached, so a middleware alone would leave the socket
- * ungated. Two call sites, one function, no way for them to disagree.
+ * The ONE rule, with ONE call site: the gated listener's own `fetch`
+ * (`serveGated` in `tunnel/run.ts`), which consults it before it upgrades a
+ * WebSocket and before it hands anything to `app.fetch`.
+ *
+ * Deliberately not Hono middleware. `serveGated` intercepts `/ws` and calls
+ * `srv.upgrade` BEFORE the app is reached, so middleware could not see the
+ * upgrade at all and would leave the socket — every agent's live output —
+ * ungated. Enforcing at the socket covers both shapes of request from one
+ * decision, and a second copy of that decision could only ever disagree with
+ * this one by accident. Do not add one.
  */
 export function decide(req: Request, has: (t: string) => boolean): Decision {
   const url = new URL(req.url);
@@ -149,15 +153,15 @@ export function pairingPage(opts: { insecure: boolean }): string {
 }
 
 /**
- * The byte-identical refusal response for a non-`pass` decision, factored out
- * so it exists in exactly one place. `gateMiddleware` below calls this from a
- * Hono `Context`, and the gated listener's own `Bun.serve` `fetch` handler
- * (which sees a WebSocket upgrade before `app.fetch` is ever reached, and so
- * cannot go through Hono middleware at all) calls it from a bare `Request`.
- * Transcribing this block at both call sites is exactly how they would end up
- * disagreeing — the entire reason `decide` returns a `Decision` instead of a
- * `Response` is so there is one place, not two, that turns a refusal into
- * bytes on the wire.
+ * The refusal response for a non-`pass` decision, split out from `decide` so
+ * that deciding and rendering are separable.
+ *
+ * That split is what lets ONE rule serve both shapes of request the gated
+ * listener sees. A WebSocket upgrade is refused with the decision alone and
+ * never reaches Hono at all; an ordinary request is refused with these bytes.
+ * Had `decide` returned a `Response`, the upgrade path would have had to
+ * transcribe its own — and a transcribed copy of this headers/page/401 block
+ * is exactly how two renderings of one refusal come to disagree.
  *
  * Takes the full `Request`, not just its URL, because telling the pairing
  * page's plaintext warning apart from a real tunnel visit needs a header, not
@@ -211,12 +215,4 @@ function clientIsSecure(req: Request): boolean {
     return (forwarded.split(",")[0] ?? "").trim().toLowerCase() === "https";
   }
   return new URL(req.url).protocol === "https:";
-}
-
-export function gateMiddleware(pairing: { has(t: string): boolean }): MiddlewareHandler {
-  return async (c, next) => {
-    const d = decide(c.req.raw, (t) => pairing.has(t));
-    if (d.kind === "pass") return next();
-    return gateResponse(d, c.req.raw);
-  };
 }

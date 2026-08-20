@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
-import { Hono } from "hono";
 import { COOKIE_NAME, SESSION_MAX_AGE_S } from "@server/tunnel/pairing";
 import {
-  clearCookie, decide, gateMiddleware, gateResponse, pairingPage, setCookie, tokenFromCookie,
+  clearCookie, decide, gateResponse, pairingPage, setCookie, tokenFromCookie,
 } from "@server/tunnel/gate";
 
 const GOOD = "known-token";
@@ -124,40 +123,50 @@ test("gateResponse reads a list-valued x-forwarded-proto as its first entry", as
   expect(page).not.toContain("only works over");
 });
 
-test("the middleware gates a real app and lets a paired session through", async () => {
-  const app = new Hono();
-  app.use("*", gateMiddleware({ has }));
-  app.get("/api/agents", (c) => c.json({ agents: [] }));
-  app.get("/", (c) => c.html("<h1>dashboard</h1>"));
+/*
+ * The three tests below asserted these properties through `gateMiddleware`,
+ * which had no production call site and has been deleted — the gate lives on
+ * the socket (`serveGated`), which cannot go through Hono middleware because it
+ * answers a WebSocket upgrade before the app is reached. They now assert
+ * `gateResponse` itself, which is the function that socket actually calls, and
+ * `tests/tunnel-gate-scope.test.ts` plus `tests/tunnel-run.test.ts` cover the
+ * wiring end to end over a real listener.
+ */
 
-  const anon = await app.request("/api/agents");
-  expect(anon.status).toBe(401);
+test("a deny is a 401 of json; a page is a 200 carrying the form", async () => {
+  const denied = gateResponse({ kind: "deny", stale: false }, req("/api/agents"));
+  expect(denied.status).toBe(401);
+  expect(denied.headers.get("content-type")).toContain("application/json");
+  expect(await denied.json()).toEqual({ ok: false, detail: "not paired" });
 
-  const page = await app.request("/", { headers: html });
+  const page = gateResponse({ kind: "page", stale: false }, req("/", { headers: html }));
   expect(page.status).toBe(200);
+  expect(page.headers.get("content-type")).toContain("text/html");
   expect(await page.text()).toContain("<form");
-
-  const paired = await app.request("/", {
-    headers: { ...html, cookie: `${COOKIE_NAME}=${GOOD}` },
-  });
-  expect(await paired.text()).toContain("dashboard");
 });
 
-test("the middleware clears a stale cookie on its way past", async () => {
-  const app = new Hono();
-  app.use("*", gateMiddleware({ has }));
-  app.get("/", (c) => c.html("<h1>dashboard</h1>"));
-  const res = await app.request("/", {
-    headers: { ...html, cookie: `${COOKIE_NAME}=forged` },
-  });
-  expect(res.status).toBe(200);
-  expect(res.headers.get("set-cookie")).toContain("Max-Age=0");
+test("a stale cookie is cleared by every refusal, and only by those", () => {
+  // Both refusal shapes, because a device stranded behind its own dead cookie
+  // is stranded whichever one it happens to ask for.
+  expect(gateResponse({ kind: "page", stale: true }, req("/", { headers: html }))
+    .headers.get("set-cookie")).toContain("Max-Age=0");
+  expect(gateResponse({ kind: "deny", stale: true }, req("/api/agents"))
+    .headers.get("set-cookie")).toContain("Max-Age=0");
+  // No cookie was presented, so there is nothing to clear — and clearing one
+  // here would log out a device that is merely unpaired on this request.
+  expect(gateResponse({ kind: "page", stale: false }, req("/", { headers: html }))
+    .headers.get("set-cookie")).toBeNull();
 });
 
-test("the pairing page is never cached", async () => {
-  const app = new Hono();
-  app.use("*", gateMiddleware({ has }));
-  app.get("/", (c) => c.html("<h1>dashboard</h1>"));
-  const res = await app.request("/", { headers: html });
-  expect(res.headers.get("cache-control")).toContain("no-store");
+test("no refusal is ever cached", () => {
+  // A cached pairing page is a device shown a form for a code that has since
+  // rotated; a cached 401 outlives the session that would have fixed it.
+  expect(gateResponse({ kind: "page", stale: false }, req("/", { headers: html }))
+    .headers.get("cache-control")).toContain("no-store");
+  expect(gateResponse({ kind: "deny", stale: false }, req("/api/agents"))
+    .headers.get("cache-control")).toContain("no-store");
+});
+
+test("a pass decision is a programming error, not a quiet 401", () => {
+  expect(() => gateResponse({ kind: "pass" }, req("/"))).toThrow(/no refusal/);
 });

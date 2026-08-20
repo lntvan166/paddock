@@ -186,7 +186,7 @@ test("runTunnel installs NO signal handler of its own", async () => {
   // A container, not a bare `let`: TypeScript narrows a `let` assigned only
   // inside a callback to `null` at every later read, which makes the call
   // below a type error rather than the thing under test.
-  const reg: { teardown: (() => Promise<void>) | null } = { teardown: null };
+  const reg: { teardown: (() => Promise<boolean>) | null } = { teardown: null };
   const c = capture();
   try {
     const run = runTunnel({
@@ -214,8 +214,9 @@ test("a stop() that fails is reported, and the rest of the teardown still runs",
   // orphaned-cloudflared failure by another route. Report, step past, finish.
   const urls: (string | null)[] = [];
   let gatedPort = 0;
-  const reg: { teardown: (() => Promise<void>) | null } = { teardown: null };
+  const reg: { teardown: (() => Promise<boolean>) | null } = { teardown: null };
   const c = capture();
+  let cleanly: boolean | undefined;
   try {
     const run = runTunnel({
       ...base(),
@@ -228,14 +229,62 @@ test("a stop() that fails is reported, and the rest of the teardown still runs",
       registerShutdown: (fn) => { reg.teardown = fn; },
     });
     await Bun.sleep(10);
-    await reg.teardown!(); // must resolve, not reject
+    cleanly = await reg.teardown!(); // must resolve, not reject
     void run;
   } finally { c.restore(); }
 
   expect(c.text()).toContain("kill: no such process");
+  // Reported AND carried out: `index.ts`'s signal handler turns this `false`
+  // into a non-zero exit. A cloudflared that could not be killed is a public
+  // URL still live with no paddock behind it, and telling a wrapper script or
+  // a systemd unit that THAT was a clean shutdown is the failure this whole
+  // path exists to prevent.
+  expect(cleanly).toBe(false);
   // Everything after the failed stop still happened.
   expect(urls.at(-1)).toBeNull();
   await expect(fetch(`http://127.0.0.1:${gatedPort}/api/agents`)).rejects.toThrow();
+  // A second teardown must not launder the failure into a clean answer.
+  expect(await reg.teardown!()).toBe(false);
+});
+
+test("--for elapsing on a child that cannot be killed ends the run non-zero", async () => {
+  // The exit status is part of the error surface. `--for` is the one path that
+  // ends at 0 when all is well, so it is the one path where a kill that failed
+  // is the difference between "the tunnel is closed" and "the URL may still be
+  // up" — and a script reading `$?` has nothing else to go on.
+  const c = capture();
+  let code: number;
+  try {
+    code = await runTunnel({
+      ...base(),
+      port: 0,
+      deadlineMs: 5,
+      startTunnel: fakeTunnel({
+        stop: async () => { throw new Error("kill: operation not permitted"); },
+      }),
+    });
+  } finally { c.restore(); }
+
+  expect(code).toBe(1);
+  expect(c.text()).toContain("the tunnel may still be up");
+  // Still reported as the elapsed deadline it was, not as a crash.
+  expect(c.text()).toContain("elapsed");
+});
+
+test("a teardown that stopped everything reports so, and --for stays 0", async () => {
+  const reg: { teardown: (() => Promise<boolean>) | null } = { teardown: null };
+  const c = capture();
+  try {
+    const run = runTunnel({
+      ...base(),
+      port: 0,
+      startTunnel: fakeTunnel({}),
+      registerShutdown: (fn) => { reg.teardown = fn; },
+    });
+    await Bun.sleep(10);
+    expect(await reg.teardown!()).toBe(true);
+    void run;
+  } finally { c.restore(); }
 });
 
 test("a teardown during startup kills the child cloudflared already spawned", async () => {
@@ -248,7 +297,7 @@ test("a teardown during startup kills the child cloudflared already spawned", as
   const killed: (number | string | undefined)[] = [];
   const urls: (string | null)[] = [];
   let resolveExit: (n: number) => void = () => {};
-  const reg: { teardown: (() => Promise<void>) | null } = { teardown: null };
+  const reg: { teardown: (() => Promise<boolean>) | null } = { teardown: null };
   const c = capture();
   try {
     const run = runTunnel({

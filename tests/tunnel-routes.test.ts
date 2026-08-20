@@ -111,6 +111,22 @@ test("the invite route mints a fresh code and reports its expiry", async () => {
   expect(body.expiresAt).toBe(pairing.current().expiresAt);
 });
 
+test("the invite route requires application/json too — it mints a credential", async () => {
+  // The CSRF floor of decision 12 applies to EVERY mutating POST, and most
+  // sharply to the one that hands out a pairing code. A code must not be
+  // mintable by a request that never proved it meant to send JSON.
+  const { app, pairing } = await harness();
+  const before = pairing.current().code;
+  const res = await app.request("/api/pair/invite", {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: "{}",
+  });
+  expect(res.status).toBe(400);
+  // Refused BEFORE the mint: a rejected request must not have rotated the code.
+  expect(pairing.current().code).toBe(before);
+});
+
 test("the settings view carries the tunnel and its paired count", async () => {
   const { app, pairing } = await harness();
   pairing.attempt(pairing.current().code);

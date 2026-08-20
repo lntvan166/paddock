@@ -440,8 +440,20 @@ export function createApp(deps: AppDeps) {
      * assumption that the operator is at their desk is the weaker one. It sits
      * under `/api/`, so the gate covers it like every other API route — a
      * trusted device in the operator's hand vouching for the next one.
+     *
+     * `strictJsonBody` for decision 12's reason, even though the body is
+     * empty. The check is a FLOOR under every mutating POST in this file
+     * precisely so that no single route has to be argued about on its own
+     * merits — and this is the route that MINTS A CREDENTIAL. Today
+     * `SameSite=Lax` keeps the session cookie off a cross-site POST, so a
+     * drive-by form is refused by the gate before Hono sees it; that makes
+     * `SameSite` the only control here, on the one route where it should be
+     * the second. The UI already sends `content-type: application/json` with
+     * a `{}` body.
      */
-    app.post("/api/pair/invite", (c) => {
+    app.post("/api/pair/invite", async (c) => {
+      const parsed = await strictJsonBody(c);
+      if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
       const { code, expiresAt } = pairing.reissue();
       return c.json({ code: formatCode(code), expiresAt });
     });

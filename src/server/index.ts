@@ -14,7 +14,8 @@ import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
-import { Hub, type HubClient } from "@server/ws/hub";
+import { Hub } from "@server/ws/hub";
+import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { recordState, removeState } from "@server/lifecycle/state";
@@ -401,36 +402,20 @@ const appDeps = {
 
 const app = createApp(appDeps);
 
-interface WsData {
-  client?: HubClient;
-}
-
 try {
   Bun.serve<WsData>({
     port: PORT,
     hostname: HOSTNAME,
     fetch(req, server) {
-      if (new URL(req.url).pathname === "/ws") {
-        const upgraded = server.upgrade(req, { data: {} });
-        return upgraded ? undefined : new Response("upgrade failed", { status: 400 });
-      }
+      // The `/ws` interception, the `upgrade failed` 400 and the three hub
+      // handlers below are shared with the tunnel's gated listener rather than
+      // written out here — `ws/serve.ts` says why. `null` means this request
+      // is not the socket route, so it belongs to the app.
+      const ws = tryUpgradeWs(req, server);
+      if (ws !== null) return ws;
       return app.fetch(req);
     },
-    websocket: {
-      open(ws) {
-        const client: HubClient = { send: (d) => ws.send(d) };
-        ws.data.client = client;
-        hub.add(client);
-        hub.sendSnapshot(client, hostId, store.snapshot());
-      },
-      close(ws) {
-        const held = ws.data.client;
-        if (held) hub.remove(held);
-      },
-      message() {
-        // Read-only in v1: the browser sends nothing.
-      },
-    },
+    websocket: hubWebSocket({ hub, hostId, store }),
   });
 } catch (err) {
   // EADDRINUSE only. Everything else rethrows with its stack intact — a
@@ -485,8 +470,11 @@ await recordState(stateDir, {
  * for the tunnel means an ORPHANED cloudflared — a public URL still resolving
  * with no paddock behind it, from a terminal that has already returned to a
  * prompt. See the matching comment in `tunnel/run.ts`.
+ *
+ * It resolves to whether the teardown actually worked, and `false` becomes a
+ * non-zero exit status below.
  */
-let onShutdown: (() => Promise<void>) | null = null;
+let onShutdown: (() => Promise<boolean>) | null = null;
 
 // Foreground runs write it too, so `status` and `stop` do not depend on how
 // paddock was started.
@@ -500,21 +488,38 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // about an agent nobody is watching any more.
     notifier.dispose();
     void (async () => {
+      /**
+       * 0 ONLY for a shutdown that actually finished.
+       *
+       * A `cloudflared` that could not be killed is a public URL still
+       * resolving with nothing behind it — the one failure `paddock tunnel`
+       * exists to prevent — and it is invisible from a terminal that has
+       * returned to a prompt. Exiting 0 there would report that as success to
+       * everything that reads an exit status: a wrapper script, a systemd
+       * unit, `&&` in a shell. The teardown reports the failure on stderr and
+       * keeps going, and the status is how the failure leaves this process.
+       */
+      let code = 0;
       try {
         // AWAITED, and before the exit below: the point of routing the
         // tunnel's teardown through here is that the child is dead before
         // this process is.
-        await onShutdown?.();
+        const cleanly = await onShutdown?.();
+        // `undefined` means no teardown was registered — a plain `paddock`,
+        // with nothing that could have failed to stop.
+        if (cleanly === false) code = 1;
       } catch (e) {
         // Reported, then stepped past. A teardown that failed must not stop
         // the state file from being cleared, or `status` reports a running
-        // paddock for ever.
+        // paddock for ever. Non-zero for the same reason as above: a teardown
+        // that threw did not finish, and must not look like one that did.
         console.error(`paddock: shutdown step failed (${String(e)})`);
+        code = 1;
       }
       await removeState(stateDir).catch((e) =>
         console.error(`paddock: could not clear state file (${String(e)})`),
       );
-      process.exit(0);
+      process.exit(code);
     })();
   });
 }
