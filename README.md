@@ -56,19 +56,23 @@ anything is written · [read it first](https://lntvan166.github.io/paddock/insta
 
 ### herdr version
 
-paddock talks to herdr over herdr's own socket protocol, and the two have to
-agree on its version. This release expects **protocol 19**, which herdr
-**0.8.0** speaks. `install.sh` checks after installing, and you can ask again
-whenever:
+paddock talks to herdr over herdr's own socket protocol. This release is built
+against **protocol 20**, which herdr **0.8.2** speaks. `install.sh` checks after
+installing, and you can ask again whenever:
 
 ```bash
 paddock doctor
 ```
 
-If herdr is older, upgrade herdr **and restart its daemon**: the socket answers
-from the running daemon, not from the binary on disk, so upgrading alone keeps
-reporting the old protocol. paddock refuses to start on a mismatch rather than
-half-working against a protocol it does not understand.
+The check is **directional**. A herdr *newer* than this paddock is accepted and
+runs — paddock verifies the fields it actually reads rather than demanding an
+exact version number, so a herdr release that adds things breaks nothing. A
+herdr *older* than protocol 20 is refused, because paddock would be reading
+fields that herdr does not send yet.
+
+So if herdr is older, upgrade herdr **and restart its daemon**: the socket
+answers from the running daemon, not from the binary on disk, so upgrading alone
+keeps reporting the old protocol.
 
 then start it where herdr is running:
 
@@ -83,6 +87,17 @@ paddock start     # detached
 paddock status    # is it up?
 paddock stop
 ```
+
+To reach it from your phone without configuring anything first:
+
+```bash
+paddock tunnel
+```
+
+That publishes a temporary public URL gated by a one-time pairing code, and
+prints both. It is a try-it path, not a deployment — see
+[from your phone](#from-your-phone) for what it does and does not protect, and
+for the durable setup.
 
 `paddock update` upgrades it; paddock never updates itself unasked. `paddock
 --demo` runs it with synthetic agents and no herdr.
@@ -103,10 +118,11 @@ paddock stays on `127.0.0.1`. Put an authenticating tunnel in front — a
 out, so no inbound port is opened and the identity check happens before any
 request reaches paddock.
 
-To try it from a phone without setting any of that up, `paddock tunnel`
-publishes a temporary Cloudflare quick tunnel gated by a one-time pairing code.
-It is a try-it path, not a deployment: a quick tunnel cannot have Cloudflare
-Access in front of it, so the code is the only gate there is.
+`paddock tunnel`, from the install steps above, is the shortcut: a temporary
+Cloudflare quick tunnel gated by a one-time pairing code. It is a try-it path,
+not a deployment — a quick tunnel cannot have Cloudflare Access in front of it,
+so that code is the only gate there is, and the URL is public until you close
+it. `--for 2h` bounds how long it lives.
 
 Then **Share → Add to Home Screen**, and it is an app: its own icon, no browser
 chrome, and it opens where you left off.
