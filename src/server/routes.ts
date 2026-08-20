@@ -13,6 +13,8 @@ import {
 } from "@server/settings/store";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
+import { formatCode } from "@server/tunnel/pairing";
+import { setCookie } from "@server/tunnel/gate";
 import { EMBEDDED } from "@server/embedded";
 import { isNavKey, type NotifyTrigger, type SettingsPatch } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
@@ -331,6 +333,26 @@ export interface AppDeps {
   /** Telegram sender. Injected in tests so the suite never makes a real
    *  network request; defaults to the real transport in production. */
   sendTest?: (o: { token: string; chatId: string; text: string }) => Promise<{ ok: boolean; detail: string | null }>;
+  /**
+   * Present only in `paddock tunnel`. Its presence is what registers `/pair`
+   * and the invite route — the same pattern `actions` uses: a paddock with no
+   * tunnel 404s them honestly rather than offering a pairing flow that could
+   * not gate anything.
+   *
+   * Structurally typed rather than importing `Pairing`, so `routes.ts` does not
+   * depend on the tunnel module for a type it only reads.
+   */
+  pairing?: {
+    attempt(input: string):
+      | { kind: "paired"; token: string }
+      | { kind: "wrong"; remaining: number }
+      | { kind: "burned" };
+    reissue(): { code: string; expiresAt: number };
+    current(): { code: string; expiresAt: number };
+    readonly pairedCount: number;
+  };
+  /** The live tunnel URL, for the settings view. */
+  tunnelUrl?: () => string | null;
 }
 
 export function createApp(deps: AppDeps) {
@@ -374,6 +396,56 @@ export function createApp(deps: AppDeps) {
     deps.hub.queue(delta); // reaches every other open browser
     return c.json({ ok: true });
   });
+
+  const pairing = deps.pairing;
+  if (pairing) {
+    /**
+     * The ONE route reachable without a session — `gate.decide` passes it
+     * explicitly, because there is otherwise no way to acquire one.
+     *
+     * `strictJsonBody` for decision 12's reason, and more sharply than
+     * anywhere else in this file: this route is reachable from the public
+     * internet by design, so the preflight it restores is the only thing
+     * standing between a drive-by page and an attempt at the code.
+     */
+    app.post("/pair", async (c) => {
+      const parsed = await strictJsonBody(c);
+      if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
+      const code = parsed.body.code;
+      // A malformed body is NOT a guess and must not spend the budget —
+      // otherwise anyone can burn codes without ever sending one.
+      if (typeof code !== "string") {
+        return c.json({ ok: false, detail: "code must be a string" }, 400);
+      }
+
+      const r = pairing.attempt(code);
+      if (r.kind === "paired") {
+        c.header("set-cookie", setCookie(r.token));
+        return c.json({ ok: true });
+      }
+      if (r.kind === "burned") {
+        return c.json(
+          { ok: false, detail: "too many attempts — a new code is on the terminal" },
+          429,
+        );
+      }
+      return c.json(
+        { ok: false, detail: `that code is not right — ${r.remaining} attempts left` },
+        400,
+      );
+    });
+
+    /**
+     * Mints a fresh code from an ALREADY PAIRED device: after several days the
+     * assumption that the operator is at their desk is the weaker one. It sits
+     * under `/api/`, so the gate covers it like every other API route — a
+     * trusted device in the operator's hand vouching for the next one.
+     */
+    app.post("/api/pair/invite", (c) => {
+      const { code, expiresAt } = pairing.reissue();
+      return c.json({ code: formatCode(code), expiresAt });
+    });
+  }
 
   if (deps.actions) {
     const actions = deps.actions;
@@ -567,7 +639,13 @@ export function createApp(deps: AppDeps) {
     // holds the raw token and must never reach c.json(...), on any path —
     // only settings.view() is a valid response body, here or in any other
     // handler in this block.
-    app.get("/api/settings", (c) => c.json(settings.view(now())));
+    app.get("/api/settings", (c) => {
+      const url = deps.tunnelUrl?.() ?? null;
+      return c.json({
+        ...settings.view(now()),
+        tunnel: url !== null && pairing ? { url, pairedDevices: pairing.pairedCount } : null,
+      });
+    });
 
     /**
      * PUT, never GET: a payload in a query string lands in edge access logs.
