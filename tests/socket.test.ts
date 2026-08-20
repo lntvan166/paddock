@@ -35,7 +35,7 @@ afterEach(() => { stop?.(); stop = null; });
  */
 async function fakeHerdr(
   protocol = 19,
-  opts: { dropSubscribeAck?: boolean; mute?: boolean } = {},
+  opts: { dropSubscribeAck?: boolean; mute?: boolean; omitProtocol?: boolean } = {},
 ) {
   const dir = await mkdtemp(join(tmpdir(), "paddock-sock-"));
   const path = join(dir, "h.sock");
@@ -72,7 +72,16 @@ async function fakeHerdr(
 
           const reply =
             req.method === "ping"
-              ? { id: req.id, result: { type: "pong", version: "0.8.0", protocol } }
+              ? {
+                  id: req.id,
+                  // `omitProtocol` sends a pong with NO protocol field at all.
+                  // Passing `undefined` as the argument cannot express this —
+                  // the default parameter would silently substitute 19 and the
+                  // test would pass by throwing for the wrong reason.
+                  result: opts.omitProtocol
+                    ? { type: "pong", version: "0.8.0" }
+                    : { type: "pong", version: "0.8.0", protocol },
+                }
               : req.method === "boom"
                 ? { id: req.id, error: { code: "invalid_request", message: "no such thing" } }
                 : { id: req.id, result: { type: "agent_list", agents: [] } };
@@ -460,4 +469,19 @@ test("the mismatch message tells a contributor with a newer herdr to regenerate 
   expect(msg).toContain("make types");
   expect(msg).toContain("adapter.ts");
   expect(msg).toContain("paddock update");
+});
+
+// A hole the `!==` → ordered-comparison change opened, found in review.
+// `undefined < N` and `undefined > N` are BOTH false, so an absent or
+// non-numeric protocol fell through to "match" and paddock started as if it had
+// verified something. The old `!==` threw with "herdr reports undefined", which
+// was loud and correct.
+test("a ping with no protocol is a mismatch, not a match", async () => {
+  const { path } = await fakeHerdr(HERDR_PROTOCOL, { omitProtocol: true });
+  await expect(checkProtocol(path)).rejects.toBeInstanceOf(ProtocolMismatchError);
+});
+
+test("a non-numeric protocol is a mismatch, not a match", async () => {
+  const { path } = await fakeHerdr("20" as unknown as number);
+  await expect(checkProtocol(path)).rejects.toBeInstanceOf(ProtocolMismatchError);
 });

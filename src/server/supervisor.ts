@@ -200,7 +200,15 @@ export class Supervisor {
    * errors" that still leaves the error findable.
    */
   private noteShape(next: ShapeVerdict): void {
-    const key = (v: ShapeVerdict) => `${v.kind}:${v.kind === "broken" ? v.missing.join(",") : ""}`;
+    // `unknown` means zero rows were inspected — "we learned nothing", which
+    // must not erase what we did learn. Without this, a real break was silently
+    // cleared the moment the operator closed their panes: `health.schemaWarning`
+    // returned to null and the log announced every field present, while the
+    // contract was still broken. Only positive evidence of health clears a break.
+    if (next.kind === "unknown" && this.shapeVerdict.kind !== "unknown") return;
+
+    const key = (v: ShapeVerdict) =>
+      v.kind === "broken" ? `broken:${v.missing.join(",")}|${v.unknownStatuses.join(",")}` : v.kind;
     const changed = key(next) !== key(this.shapeVerdict);
     this.shapeVerdict = next;
     if (changed) this.opts.onShapeChange?.(next);

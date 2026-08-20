@@ -97,3 +97,18 @@ test("an exact match reports neither newer nor older", () => {
   expect(r.code).toBe(0);
   expect(r.text).not.toMatch(/newer|older/i);
 });
+
+// The same hole as `checkProtocol`, and here it lies to install.sh: with two
+// ordered comparisons, a non-numeric protocol satisfies neither, so doctor fell
+// through to "looks compatible" with code 0 while printing
+// "herdr reports undefined". install.sh treats 0 as all-good and prints
+// nothing. The old `!==` scored it 1.
+test("a non-numeric protocol is incompatible, not compatible", () => {
+  const r = doctorReport(20, { kind: "answered", protocol: undefined as unknown as number });
+  expect(r.code).toBe(1);
+  expect(r.text).not.toContain("looks compatible");
+});
+
+test("a string protocol is incompatible too", () => {
+  expect(doctorReport(20, { kind: "answered", protocol: "20" as unknown as number }).code).toBe(1);
+});

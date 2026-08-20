@@ -197,6 +197,19 @@ export type ProtocolCheck =
  */
 export async function checkProtocol(path: string): Promise<ProtocolCheck> {
   const pong = await request<{ protocol: number }>(path, "ping", {});
+
+  // Guarded BEFORE the comparisons, because two ordered comparisons have a hole
+  // that `!==` did not: `undefined < N` and `undefined > N` are both false, so
+  // an absent or non-numeric protocol fell straight through to "match" and
+  // paddock started as if it had verified something. `request` does no
+  // validation — it resolves `frame.result` as-is — so a renamed field, a
+  // different daemon answering on this socket path, or any unexpected result
+  // shape lands here. Reported as a mismatch against NaN so the message still
+  // shows what herdr actually said.
+  if (typeof pong.protocol !== "number" || !Number.isFinite(pong.protocol)) {
+    throw new ProtocolMismatchError(HERDR_PROTOCOL, pong.protocol as unknown as number);
+  }
+
   if (pong.protocol < HERDR_PROTOCOL) {
     throw new ProtocolMismatchError(HERDR_PROTOCOL, pong.protocol);
   }

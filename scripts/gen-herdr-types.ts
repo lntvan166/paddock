@@ -42,6 +42,19 @@ export const HERDR_PROTOCOL = ${protocol} as const;
 
 export type HerdrAgentStatus = ${states.map((s) => `"${s}"`).join(" | ")};
 
+/**
+ * The same set at RUNTIME, because a type cannot be checked at runtime and
+ * \`src/server/herdr/shape.ts\` has to.
+ *
+ * paddock accepts a herdr newer than the one it was built against, so an ADDED
+ * status is a real possibility — and \`adapter.ts:toState\` drops any row whose
+ * status it does not render, which would make those agents vanish silently.
+ * Emitted here rather than hand-written beside the check, so \`make types\` keeps
+ * the two in step: a transcribed copy is exactly the silent drift decision 2
+ * exists to prevent.
+ */
+export const HERDR_AGENT_STATUSES = [${states.map((s) => `"${s}"`).join(", ")}] as const;
+
 export type HerdrReadSource = ${readSources.map((s) => `"${s}"`).join(" | ")};
 
 export type HerdrReadFormat = ${readFormats.map((s) => `"${s}"`).join(" | ")};

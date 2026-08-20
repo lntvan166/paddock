@@ -1,4 +1,4 @@
-import { HERDR_PROTOCOL } from "@shared/herdr-api";
+import { HERDR_AGENT_STATUSES, HERDR_PROTOCOL } from "@shared/herdr-api";
 
 /**
  * The fields paddock reads whose absence is UNAMBIGUOUS evidence that herdr's
@@ -24,7 +24,15 @@ export type ShapeVerdict =
   /** Nothing to inspect — no panes open. Not a verdict about the contract. */
   | { kind: "unknown" }
   | { kind: "ok" }
-  | { kind: "broken"; missing: string[] };
+  /**
+   * `missing` — required fields absent from EVERY row.
+   * `unknownStatuses` — `agent_status` values outside the generated enum.
+   *
+   * Both are reported together because both are the same failure: herdr's
+   * contract moved in a way paddock cannot render. Either alone is enough to be
+   * broken, so both arrays are always present and either may be empty.
+   */
+  | { kind: "broken"; missing: string[]; unknownStatuses: string[] };
 
 /**
  * Verify herdr's real `agent.list` response against what paddock reads.
@@ -45,38 +53,72 @@ export type ShapeVerdict =
 export function checkAgentShape(agents: readonly unknown[]): ShapeVerdict {
   if (agents.length === 0) return { kind: "unknown" };
 
-  const missing = new Set<string>();
+  // Counted, not flagged. A field absent from ONE row is per-row variation —
+  // `toAgent` already drops rows it cannot map, so `agent.list` demonstrably
+  // carries entries paddock ignores, and `index.ts` exits 1 on `broken`. Only
+  // absence from EVERY row distinguishes "herdr removed this" from "this pane
+  // is different", and only that is worth taking the dashboard down for.
+  const present = new Map<string, number>(REQUIRED_AGENT_FIELDS.map((f) => [f, 0]));
+  const unknownStatuses = new Set<string>();
+  let inspected = 0;
+
   for (const agent of agents) {
-    if (typeof agent !== "object" || agent === null) {
-      // Not an object at all: nothing paddock reads can be there. Reported as
-      // every field missing rather than skipped, because skipping it would let
-      // a wholesale response-shape change read as "ok".
-      for (const field of REQUIRED_AGENT_FIELDS) missing.add(field);
-      continue;
-    }
+    // Skipped, not counted as every field missing. One malformed entry in a
+    // large response is not evidence about the contract, and treating it as
+    // such made a single bad row a hard startup refusal.
+    if (typeof agent !== "object" || agent === null) continue;
+    inspected += 1;
+
     const record = agent as Record<string, unknown>;
     for (const field of REQUIRED_AGENT_FIELDS) {
-      // `null` counts as missing: it renders every agent in one wrong state
-      // just as surely as an absent key, and it is the shape a renamed field
-      // leaves behind.
-      if (record[field] === undefined || record[field] === null) missing.add(field);
+      // `null` is not presence: it renders every agent in one wrong state just
+      // as surely as an absent key, and it is the shape a renamed field leaves.
+      if (record[field] !== undefined && record[field] !== null) {
+        present.set(field, present.get(field)! + 1);
+      }
+    }
+
+    // The VALUE, not just the key. `checkProtocol` accepts any newer herdr, and
+    // a status outside the generated enum makes `toState` return null, which
+    // makes `toAgent` drop the row — every agent in a newly added state would
+    // vanish from the dashboard with nothing logged. The generated union is the
+    // contract, so a value outside it is unambiguous evidence it widened.
+    const status = record.agent_status;
+    if (typeof status === "string" && !(HERDR_AGENT_STATUSES as readonly string[]).includes(status)) {
+      unknownStatuses.add(status);
     }
   }
 
-  if (missing.size === 0) return { kind: "ok" };
-  return { kind: "broken", missing: [...missing].sort() };
+  // Every row was unusable. That is not "the contract is fine", and it is not
+  // evidence about any single field either.
+  if (inspected === 0) return { kind: "broken", missing: [...REQUIRED_AGENT_FIELDS], unknownStatuses: [] };
+
+  const missing = REQUIRED_AGENT_FIELDS.filter((f) => present.get(f) === 0);
+  if (missing.length === 0 && unknownStatuses.size === 0) return { kind: "ok" };
+  return { kind: "broken", missing: [...missing].sort(), unknownStatuses: [...unknownStatuses].sort() };
 }
 
 /**
  * The same finding as one line, for `/api/health`.
  *
  * Separate from `shapeMessage` because the audiences differ: that one is a
- * console block with a remedy, this one lands in JSON a phone renders in a
- * banner, where embedded newlines become a run-on blob.
+ * console block with a remedy, this one lands in a JSON field, where embedded
+ * newlines become a run-on blob.
+ *
+ * Honest about its reach: nothing under `src/web/` reads it, and the UI never
+ * fetches `/api/health` — so this is the operator's diagnostic surface (curl, a
+ * monitor), exactly like `lastNotifyError` beside it, not something the phone
+ * renders. Surfacing it in the dashboard would mean carrying it on the hub's
+ * hello payload, which is its own change.
  */
 export function shapeSummary(verdict: ShapeVerdict): string | null {
   if (verdict.kind !== "broken") return null;
-  return `herdr's agent.list is missing ${verdict.missing.join(", ")} — paddock reads ${verdict.missing.length === 1 ? "it" : "them"}`;
+  const parts: string[] = [];
+  if (verdict.missing.length > 0) parts.push(`missing ${verdict.missing.join(", ")}`);
+  if (verdict.unknownStatuses.length > 0) {
+    parts.push(`unknown agent_status ${verdict.unknownStatuses.join(", ")}`);
+  }
+  return `herdr's agent.list does not match what paddock reads: ${parts.join("; ")}`;
 }
 
 /**
@@ -87,9 +129,18 @@ export function shapeSummary(verdict: ShapeVerdict): string | null {
  */
 export function shapeMessage(verdict: ShapeVerdict, herdrProtocol: number): string | null {
   if (verdict.kind !== "broken") return null;
+  const lines = [
+    "paddock: herdr's agent.list does not match what paddock reads",
+  ];
+  if (verdict.missing.length > 0) lines.push(`  missing fields    ${verdict.missing.join(", ")}`);
+  if (verdict.unknownStatuses.length > 0) {
+    lines.push(
+      `  unknown statuses  ${verdict.unknownStatuses.join(", ")}`,
+      "                    (agents in these states are dropped, not rendered)",
+    );
+  }
   return [
-    "paddock: herdr's agent.list is missing fields paddock reads",
-    `  missing           ${verdict.missing.join(", ")}`,
+    ...lines,
     `  herdr protocol    ${herdrProtocol}`,
     `  paddock built for ${HERDR_PROTOCOL}`,
     "",

@@ -372,7 +372,7 @@ test("reconcile reports a missing required field, naming it", async () => {
     client: fakeClient([broken]), store: new AgentStore("dev-box"), onDelta: () => {}, now: () => NOW,
   });
   await sup.start();
-  expect(sup.shape).toEqual({ kind: "broken", missing: ["agent_status"] });
+  expect(sup.shape).toEqual({ kind: "broken", missing: ["agent_status"], unknownStatuses: [] });
 });
 
 test("no panes open reports unknown, not broken", async () => {
@@ -425,6 +425,46 @@ test("onShapeChange fires again when the verdict actually changes", async () => 
 
   expect(seen).toEqual([
     { kind: "ok" },
-    { kind: "broken", missing: ["workspace_id"] },
+    { kind: "broken", missing: ["workspace_id"], unknownStatuses: [] },
   ]);
+});
+
+test("an unknown verdict never overwrites what was already observed", async () => {
+  // Found in review. A break was recorded, then the operator closed every pane
+  // → zero rows → `unknown` → `health.schemaWarning` silently returned to null
+  // and the log announced every field present, while the break was unresolved.
+  //
+  // Zero rows is "we learned nothing", and learning nothing must not erase what
+  // we did learn. Only positive evidence of health clears a break.
+  const broken = rawAgent();
+  delete (broken as Record<string, unknown>).workspace_id;
+
+  let agents: unknown[] = [broken];
+  const client = {
+    async request<T>(method: string): Promise<T> {
+      if (method === "agent.list") return { agents } as T;
+      return { workspaces: [] } as T;
+    },
+    async openStream() {},
+  };
+
+  const seen: unknown[] = [];
+  const sup = new Supervisor({
+    client, store: new AgentStore("dev-box"), onDelta: () => {},
+    now: () => NOW, onShapeChange: (v) => seen.push(v),
+  });
+  await sup.start();
+  expect(sup.shape.kind).toBe("broken");
+
+  agents = [];
+  await sup.reconcile();
+  expect(sup.shape).toEqual({ kind: "broken", missing: ["workspace_id"], unknownStatuses: [] });
+  // And nothing was announced, because nothing changed.
+  expect(seen).toHaveLength(1);
+
+  // Positive evidence of health DOES clear it.
+  agents = [rawAgent()];
+  await sup.reconcile();
+  expect(sup.shape).toEqual({ kind: "ok" });
+  expect(seen).toHaveLength(2);
 });

@@ -31,6 +31,15 @@ export function doctorReport(expected: number, probe: DoctorProbe): DoctorReport
   // (0.8.0 → 0.8.2 bumped 19 → 20 and changed nothing paddock reads) is not a
   // broken install. If these two ever disagree about a direction, this file is
   // the one that lies to install.sh.
+  // Guarded before the comparison, and the stakes here are higher than in
+  // `checkProtocol`: `install.sh` reads this code, so a non-numeric protocol
+  // falling through to 0 would print nothing at all while the text said
+  // "herdr reports undefined" — the code and the text disagreeing, which is
+  // exactly what this file must never do.
+  if (typeof probe.protocol !== "number" || !Number.isFinite(probe.protocol)) {
+    return { code: 1, text: new ProtocolMismatchError(expected, probe.protocol).message };
+  }
+
   if (probe.protocol < expected) {
     // Deliberately the server's own message rather than a second wording of it.
     // Two texts for one condition drift, and this is the text an operator will

@@ -290,9 +290,17 @@ if (DEMO) {
     // on CHANGE (see Supervisor.noteShape), which is what keeps a 30s
     // reconcile from burying the one line that mattered.
     onShapeChange: (verdict) => {
-      const message = shapeMessage(verdict, herdrProtocol ?? 0);
-      if (message !== null) console.error(message);
-      else console.info("herdr: agent.list carries every field paddock reads");
+      // Three explicit branches. `shapeMessage` returns null for BOTH `ok` and
+      // `unknown`, so a two-branch version announced "every field present" when
+      // nothing had been inspected at all — a reassurance about data that was
+      // never read.
+      if (verdict.kind === "broken") {
+        console.error(shapeMessage(verdict, herdrProtocol ?? 0));
+      } else if (verdict.kind === "ok") {
+        console.info("herdr: agent.list carries every field paddock reads");
+      } else {
+        console.info("herdr: no panes to inspect — the agent.list contract is unverified");
+      }
     },
   });
 
@@ -312,7 +320,21 @@ if (DEMO) {
   // refresh's post-await `openPaneKey` write. The losing side is the stale
   // claim, not the invalidation — worst case one extra reopen.
   keeper = new StreamKeeper({
-    refresh: () => {
+    refresh: async () => {
+      // Re-ping, so `health.herdrProtocol` is the daemon actually answering
+      // rather than the one that answered at boot. A herdr upgraded underneath
+      // a running paddock is the ordinary case — the protocol is read only when
+      // the daemon is first reached — and without this the reported number went
+      // stale in exactly the scenario the field exists for, including printing
+      // a boot-time protocol next to a genuinely missing field.
+      //
+      // A ProtocolMismatchError here is fatal by the keeper's own rule: an
+      // OLDER daemon cannot be retried into compatibility. Deliberately NOT
+      // logged on the newer path — recovery can run repeatedly, and the drift
+      // was already announced once at startup.
+      const recheck = await checkProtocol(socketPath);
+      herdrProtocol = recheck.kind === "newer" ? recheck.herdr : HERDR_PROTOCOL;
+
       supervisor!.invalidateSubscription();
       return supervisor!.refresh();
     },
@@ -340,7 +362,13 @@ if (DEMO) {
     // worse than not starting, because the operator would act on it.
     const shape = supervisor.shape;
     if (shape.kind === "broken") {
-      console.error("paddock: refusing to start — herdr's agent.list is missing fields paddock reads");
+      // Worded for BOTH causes. A verdict can be broken because a required
+      // field is gone OR because agent_status carries a value outside the
+      // generated enum, and "missing fields" would misdescribe the second —
+      // sending the operator to look for an absent key that is right there.
+      console.error(
+        "paddock: refusing to start — herdr's agent.list does not match what paddock reads",
+      );
       process.exit(1);
     }
   } catch (err) {

@@ -167,7 +167,10 @@ session does not silently re-litigate them.
     gate now matches it. An older herdr throws, since it genuinely lacks what
     this paddock reads. A newer one is accepted and reported once at INFO, and
     `/api/health` carries the observed `herdrProtocol` so the drift is visible
-    from a phone rather than only in a log.
+    to a `curl` or a monitor rather than only in a log. Not to the dashboard:
+    nothing under `src/web/` reads `/api/health`, so this is the same
+    operator-diagnostic surface `lastNotifyError` already uses. Surfacing it in
+    the UI would mean putting it on the hub's hello payload.
 
     What replaces the version comparison is `src/server/herdr/shape.ts`, which
     checks the fields paddock actually reads against the live `agent.list`
