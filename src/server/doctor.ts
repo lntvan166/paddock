@@ -6,6 +6,7 @@ import {
 import { findCloudflared } from "@server/tunnel/cloudflared";
 import { ProtocolMismatchError, request } from "@server/herdr/socket";
 import { HERDR_PROTOCOL } from "@shared/herdr-api";
+import { say } from "@server/term";
 
 /** What was learned about herdr, or that nothing was. */
 export type DoctorProbe =
@@ -67,7 +68,7 @@ export function doctorReport(
   // silently, since 0 is the only code it treats as success.
   lines.push(
     extra.cloudflared === null
-      ? "  cloudflared      not installed (only paddock tunnel needs it)"
+      ? "  cloudflared      not installed (only `paddock tunnel` needs it)"
       : `  cloudflared      ${extra.cloudflared}`,
   );
 
@@ -105,7 +106,7 @@ export async function runDoctor(opts: {
   const expected = opts.expected ?? HERDR_PROTOCOL;
   const ping =
     opts.ping ?? ((path) => request<{ protocol: number; version?: string }>(path, "ping", {}));
-  const print = opts.print ?? ((line) => console.log(line));
+  const print = opts.print ?? say;
 
   let probe: DoctorProbe;
   try {

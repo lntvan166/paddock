@@ -232,3 +232,30 @@ session does not silently re-litigate them.
     or every row under the same label, is worse than not starting — the operator
     would act on it. Do not restore `!==` here without deleting the shape check
     too: that would bring the brittleness back with none of the protection.
+
+15. **An unnamed agent is labelled from `basename(cwd)`, with mandatory
+    disambiguation.** herdr does not require an agent name, and the fallback was
+    `pane_id` — so an operator who never named anything got a dashboard of
+    `w3:p1`, which identifies the pane perfectly and says nothing about the
+    work. Measured on a second machine, where nothing had been named: every row
+    was coordinates.
+
+    This reverses the letter of a rule this project had from the start, so read
+    what the rule was actually protecting. The failure was **two rows rendering
+    identically**, because agents commonly share a working directory; `cwd` was
+    banned because on its own it cannot promise otherwise. `toAgents` in
+    `adapter.ts` supplies that promise — a label climbs to `project p1`, and
+    then to `project w1:p1`, the moment the rung below is ambiguous — so the
+    guarantee holds and the ban is no longer what enforces it. The ban stays in
+    force for anything that drops the suffixing.
+
+    An operator-set name is never rewritten, but it does occupy its label: a
+    fallback that would duplicate one moves aside. Distinguishability is a
+    property of the screen, not of which field the string came from.
+
+    Labels are recomputed every reconcile, so a suffix appears when an agent
+    joins and goes when it leaves. A label that mutates was the accepted cost,
+    and the alternative was worse: `AgentChip` renders the name ALONE, so the
+    idle section — usually most of the list — would be five identical chips,
+    five controls with no way to know which one you are about to tap. A stable
+    label nobody can read is not stability worth having.

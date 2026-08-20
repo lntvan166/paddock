@@ -2,6 +2,7 @@ import { checkState, type StateCheck } from "@server/lifecycle/state";
 import { isConfigured } from "@server/settings/store";
 import { findCloudflared, installHint } from "@server/tunnel/cloudflared";
 import { isQuickTunnelUrl } from "@shared/quick-tunnel";
+import { warn } from "@server/term";
 
 export type Preflight = { ok: true; bin: string } | { ok: false; message: string };
 
@@ -24,7 +25,7 @@ export async function preflight(opts: {
 }): Promise<Preflight> {
   const platform = opts.platform ?? process.platform;
   const check = opts.check ?? ((d: string) => checkState(d));
-  const log = opts.log ?? ((l: string) => console.error(l));
+  const log = opts.log ?? warn;
 
   const state = await check(opts.dir);
   if (state.kind === "running") {
@@ -39,11 +40,11 @@ export async function preflight(opts: {
         // remedy printed below works for their foreground one as it stands.
         `paddock: another paddock is already running (pid ${state.state.pid})`,
         "",
-        "  paddock tunnel serves the dashboard itself, so running it alongside",
+        "  `paddock tunnel` serves the dashboard itself, so running it alongside",
         "  that instance would open a SECOND connection to herdr — and a second",
         "  notifier. Every blocked agent would notify you twice.",
         "",
-        "    paddock stop && paddock tunnel",
+        "    `paddock stop && paddock tunnel`",
       ].join("\n"),
     };
   }
@@ -60,11 +61,11 @@ export async function preflight(opts: {
       message: [
         "paddock: cloudflared is not installed",
         "",
-        "  paddock tunnel needs Cloudflare's tunnel client to publish a URL.",
+        "  `paddock tunnel` needs Cloudflare's tunnel client to publish a URL.",
         "",
         installHint(platform),
         "",
-        "  then run paddock tunnel again.",
+        "  then run `paddock tunnel` again.",
       ].join("\n"),
     };
   }
@@ -91,6 +92,6 @@ export async function preflight(opts: {
 export function tunnelHint(publicUrl: string | null, detached: boolean): string | null {
   if (isConfigured(publicUrl) && !isQuickTunnelUrl(publicUrl)) return null;
   return detached
-    ? "  for phone access, stop it and run paddock tunnel"
-    : "  to reach this from your phone: paddock tunnel";
+    ? "  for phone access, stop it and run `paddock tunnel`"
+    : "  to reach this from your phone: `paddock tunnel`";
 }

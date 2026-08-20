@@ -1,6 +1,7 @@
 import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { warn as termWarn } from "@server/term";
 
 export interface PaddockState {
   pid: number;
@@ -118,7 +119,7 @@ export async function recordState(
 ): Promise<boolean> {
   const capture = deps.capture ?? capturedArgs;
   const log = deps.log ?? console.info;
-  const warn = deps.warn ?? console.error;
+  const warn = deps.warn ?? termWarn;
 
   // Inside the guard, not outside it: `capturedArgs` falls back to
   // Bun.spawnSync(["ps", ...]), which THROWS if `ps` is absent rather than
@@ -132,14 +133,14 @@ export async function recordState(
   } catch (e) {
     warn(
       `paddock: could not read pid ${s.pid}'s own command line (${String(e)}) — ` +
-        "not recording state, so 'paddock status' and 'paddock stop' will not find this instance",
+        "not recording state, so `paddock status` and `paddock stop` will not find this instance",
     );
     return false;
   }
   if (args === null) {
     log(
       `paddock: could not read pid ${s.pid}'s own command line — not recording state, ` +
-        "so 'paddock status' and 'paddock stop' will not find this instance",
+        "so `paddock status` and `paddock stop` will not find this instance",
     );
     return false;
   }
@@ -162,7 +163,7 @@ export async function removeState(dir: string): Promise<void> {
 export async function checkState(
   dir: string,
   probe: Probe = systemProbe,
-  log: (line: string) => void = console.error,
+  log: (line: string) => void = termWarn,
 ): Promise<StateCheck> {
   let raw: string;
   try {

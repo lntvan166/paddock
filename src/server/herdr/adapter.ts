@@ -28,8 +28,11 @@ export function workspaceLabels(rows: HerdrWorkspaceRaw[]): Map<string, string> 
 /**
  * Normalize one `agent.list` row. Returns null for anything that is not an agent.
  *
- * `name` is the label. NEVER basename(cwd): agents commonly share a working
- * directory, which is exactly how every row ends up looking identical.
+ * `name` is the label, and this per-row mapper falls back to `pane_id` because
+ * it CANNOT see the other rows: whether a friendlier label would be unique is
+ * not a fact about one row. `toAgents` is the layer that decides that, and it
+ * is what the application calls. Use this directly only when one row is
+ * genuinely all you have.
  */
 export function toAgent(rawAgent: HerdrAgentRaw, ctx: AdaptContext): Agent | null {
   if (!rawAgent.agent) return null;
@@ -76,4 +79,104 @@ export function applyStatusEvent(prev: Agent, data: HerdrStatusChanged, now: num
     updatedAt: now,
     acknowledgedAt: carryAcknowledged(prev, state),
   };
+}
+
+/**
+ * The label an operator actually reads, decided across the WHOLE list.
+ *
+ * `w3:p1` is correct and useless: it identifies the pane and tells you nothing
+ * about what the agent is doing. herdr does not require a name, and an operator
+ * who never sets one got a dashboard of coordinates.
+ *
+ * So an unnamed agent is labelled from `basename(cwd)` — WITH mandatory
+ * disambiguation. Read `docs/gotchas.md` before touching this: the rule there
+ * is not "cwd is forbidden", it is "two rows must never render identically",
+ * and cwd was forbidden because on its own it cannot promise that. The promise
+ * is what this function adds, so the rule is satisfied rather than waived. If
+ * you remove the suffixing, restore the ban.
+ *
+ * Three rungs, and a label only climbs one when the rung below is ambiguous:
+ *
+ *   project            one unnamed agent in /srv/project
+ *   project p1         a second one joins it
+ *   project w1:p1      "w1:p1" and "w2:p1" both reduce to "p1"
+ *
+ * A name the operator set is never rewritten — but it does occupy its label,
+ * so a fallback that would duplicate it moves aside instead. What matters is
+ * what is distinguishable on screen, not which field the string came from.
+ *
+ * Recomputed on every reconcile rather than remembered, so a suffix appears
+ * when an agent joins and goes away when it leaves. That is the accepted cost
+ * of a familiar label: `AgentChip` renders the name ALONE, so an idle section
+ * of five identical chips is not a cosmetic complaint, it is five controls
+ * with no way to tell which one you are about to tap.
+ */
+export function toAgents(rows: HerdrAgentRaw[], ctx: AdaptContext): Agent[] {
+  const mapped: { agent: Agent; raw: HerdrAgentRaw }[] = [];
+  for (const raw of rows) {
+    const agent = toAgent(raw, ctx);
+    if (agent !== null) mapped.push({ agent, raw });
+  }
+
+  // Labels that are already spoken for. Only operator-set names go in here:
+  // a fallback must never reserve a label against another fallback, or the
+  // first row processed would win by accident of ordering.
+  const taken = new Set<string>();
+  for (const { raw } of mapped) {
+    const given = raw.name?.trim();
+    if (given) taken.add(given);
+  }
+
+  const fallbacks = mapped.filter(({ raw }) => !raw.name?.trim());
+  const byBase = new Map<string, typeof fallbacks>();
+  for (const entry of fallbacks) {
+    const base = baseName(entry.agent.cwd);
+    if (base === null) continue; // keeps toAgent's pane_id
+    const group = byBase.get(base);
+    if (group) group.push(entry);
+    else byBase.set(base, [entry]);
+  }
+
+  for (const [base, group] of byBase) {
+    if (group.length === 1 && !taken.has(base)) {
+      group[0]!.agent.name = base;
+      continue;
+    }
+    // Ambiguous: every member of the group is suffixed, including the first.
+    // Suffixing only the later ones would make a label depend on arrival
+    // order, so the same two agents would read differently after a restart.
+    const short = new Map<string, number>();
+    for (const { raw } of group) {
+      const s = paneSuffix(raw.pane_id);
+      short.set(s, (short.get(s) ?? 0) + 1);
+    }
+    for (const entry of group) {
+      const s = paneSuffix(entry.raw.pane_id);
+      // The short suffix is dropped for the WHOLE row, not just the colliding
+      // pair, only when it is itself ambiguous — `p1` in two workspaces says
+      // as little as no suffix at all.
+      entry.agent.name = `${base} ${short.get(s)! > 1 ? entry.raw.pane_id : s}`;
+    }
+  }
+
+  return mapped.map(({ agent }) => agent);
+}
+
+/**
+ * The last path segment of a cwd, or null when there is not one.
+ *
+ * Null is the answer for `""`, `"/"` and `"///"` — a root or an absent cwd has
+ * no name to borrow, and `""` as a label is worse than the pane id it would
+ * replace.
+ */
+function baseName(cwd: string): string | null {
+  const trimmed = cwd.replace(/\/+$/, "");
+  if (trimmed === "") return null;
+  const seg = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  return seg === "" ? null : seg;
+}
+
+/** `w3:p1` → `p1`. Unchanged when there is no workspace prefix to drop. */
+function paneSuffix(paneId: string): string {
+  return paneId.slice(paneId.lastIndexOf(":") + 1);
 }

@@ -108,9 +108,12 @@ function fakeTunnel(o: {
   exited?: Promise<number>;
   stop?: () => Promise<void>;
   onPort?: (p: number) => void;
+  /** Hands back cloudflared's own log sink, so a test can emit lines on it. */
+  onSink?: (emit: (line: string) => void) => void;
 }): TunnelDeps["startTunnel"] {
   return async (opts) => {
     o.onPort?.(opts.port);
+    if (opts.onLog) o.onSink?.(opts.onLog);
     const t: Tunnel = {
       url: PUBLIC_URL,
       exited: o.exited ?? new Promise<number>(() => {}),
@@ -369,4 +372,134 @@ test("the in-use message names the tunnel port and the variable that moves it", 
   expect(m).toContain("PADDOCK_TUNNEL_PORT=8789");
   // Pure: asserting the wording must not need a bound port.
   expect(m).toContain("127.0.0.1:8788");
+});
+
+// --- cloudflared output vs. the repainted display ---------------------------
+//
+// Both write to stdout. `draw()` homes the cursor and clears to end of screen
+// once a second, so a cloudflared line printed in between flashed and was
+// erased. Suppressing it outright is not an option — its stderr is the only
+// place a tunnel failure explains itself — so it is buffered and printed where
+// it answers a question.
+
+/** Collects `process.stdout.write` so a tty test cannot wipe the runner's output. */
+function captureStdout() {
+  const writes: string[] = [];
+  const real = process.stdout.write.bind(process.stdout);
+  // Narrow stub: these tests only ever write strings through it.
+  process.stdout.write = ((chunk: string) => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  return { writes, text: () => writes.join(""), restore: () => { process.stdout.write = real; } };
+}
+
+test("a piped run keeps every cloudflared line — nothing overwrites them there", async () => {
+  const c = capture();
+  // An object, not a `let`: assigned inside a callback, which control-flow
+  // analysis cannot see, so a nullable local narrows to `never` at the call.
+  const sink: { emit: ((l: string) => void) | null } = { emit: null };
+  try {
+    await runTunnel({
+      ...base(), // isTty: false
+      port: 0,
+      startTunnel: fakeTunnel({
+        onSink: (e) => {
+          sink.emit = e;
+          e("INF Registered tunnel connection");
+        },
+        exited: Bun.sleep(15).then(() => 0),
+      }),
+    });
+  } finally { c.restore(); }
+  expect(sink.emit, "startTunnel must be handed a log sink").not.toBeNull();
+  expect(c.text()).toContain("[cloudflared] INF Registered tunnel connection");
+});
+
+test("on a tty the lines are held back, then printed when the child dies", async () => {
+  const out = captureStdout();
+  const c = capture();
+  let code: number;
+  try {
+    let release: (n: number) => void = () => {};
+    const exited = new Promise<number>((r) => { release = r; });
+    const run = runTunnel({
+      ...base(),
+      isTty: true,
+      port: 0,
+      startTunnel: fakeTunnel({
+        onSink: (emit) => {
+          // Emitted after the display has taken the screen.
+          void Bun.sleep(5).then(() => {
+            emit("INF Initiating graceful shutdown due to signal interrupt");
+            release(1);
+          });
+        },
+        exited,
+      }),
+    });
+    code = await run;
+  } finally { c.restore(); out.restore(); }
+
+  expect(code).toBe(1);
+  // The diagnosis rides along with the exit code, which alone explains nothing.
+  expect(c.text()).toContain("cloudflared exited 1");
+  expect(c.text()).toContain("graceful shutdown due to signal interrupt");
+  // And it did NOT go to the screen the display owns.
+  expect(out.text()).not.toContain("graceful shutdown");
+});
+
+test("the held lines are capped, keeping the tail — the last lines say why", async () => {
+  const out = captureStdout();
+  const c = capture();
+  try {
+    let release: (n: number) => void = () => {};
+    const exited = new Promise<number>((r) => { release = r; });
+    await runTunnel({
+      ...base(),
+      isTty: true,
+      port: 0,
+      startTunnel: fakeTunnel({
+        onSink: (emit) => {
+          void Bun.sleep(5).then(() => {
+            for (let i = 0; i < 60; i++) emit(`line ${i}`);
+            release(1);
+          });
+        },
+        exited,
+      }),
+    });
+  } finally { c.restore(); out.restore(); }
+
+  const text = c.text();
+  expect(text).toContain("the last 50 line(s) from cloudflared");
+  expect(text).toContain("line 59");
+  // The oldest fell off. `line 9` would also match `line 9x`, so anchor it.
+  expect(text).not.toContain("[cloudflared] line 0");
+});
+
+// `^C` reaches cloudflared straight from the tty, so its shutdown line is
+// already written by the time paddock's teardown runs. The block on screen
+// still reads `tunnel up`, and leaving it there makes the display assert the
+// one thing that has just stopped being true.
+test("teardown clears the block instead of leaving it claiming the tunnel is up", async () => {
+  const out = captureStdout();
+  const c = capture();
+  const reg: { teardown: (() => Promise<boolean>) | null } = { teardown: null };
+  try {
+    void runTunnel({
+      ...base(),
+      isTty: true,
+      port: 0,
+      startTunnel: fakeTunnel({}),
+      registerShutdown: (fn) => { reg.teardown = fn; },
+    });
+    await Bun.sleep(10);
+    expect(out.text()).toContain("tunnel up");
+
+    const marker = out.writes.length;
+    await reg.teardown!();
+    // Home, then clear to end of screen — after the last frame, not part of it.
+    expect(out.writes.slice(marker).join("")).toContain("\x1b[H\x1b[J");
+  } finally { c.restore(); out.restore(); }
 });

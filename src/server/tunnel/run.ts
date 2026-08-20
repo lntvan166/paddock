@@ -11,6 +11,17 @@ import { decide, gateResponse } from "@server/tunnel/gate";
 import { errorCode } from "@server/startup-errors";
 import type { Pairing } from "@server/tunnel/pairing";
 import { human, render, useColour } from "@server/tunnel/display";
+import { warn } from "@server/term";
+
+/**
+ * How many cloudflared lines are kept while the display owns the screen.
+ *
+ * Enough to carry a failure's context — cloudflared reports a refused
+ * connection or a rejected tunnel over several lines — and small enough that a
+ * long-running tunnel's buffer is not a leak. The tail is what matters: the
+ * lines just before it broke are the ones that say why.
+ */
+const CLOUDFLARED_TAIL = 50;
 
 export interface TunnelDeps {
   app: { fetch(req: Request): Response | Promise<Response> };
@@ -106,7 +117,7 @@ export function gatedPortInUseMessage(port: number, hostname = "127.0.0.1"): str
   return [
     `paddock: the tunnel's port ${port} is already in use`,
     `  something is already listening on ${hostname}:${port}`,
-    "  paddock tunnel needs a SECOND loopback port, besides the dashboard's own.",
+    "  `paddock tunnel` needs a SECOND loopback port, besides the dashboard's own.",
     `  stop whatever holds it, or move it: PADDOCK_TUNNEL_PORT=${port + 1} paddock tunnel`,
   ].join("\n");
 }
@@ -161,6 +172,51 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   let stopping = false;
 
   /**
+   * cloudflared's own output, and why it stops reaching the screen.
+   *
+   * `startTunnel` logs every line it reads for the life of the child, and the
+   * display redraws with `\x1b[H\x1b[J` once a second. Both write to stdout, so
+   * a cloudflared line appeared wherever the cursor happened to be and was
+   * erased by the next repaint: a flash, then nothing. Measured with the line
+   * that matters most — `Initiating graceful shutdown due to signal interrupt`
+   * — which flashed and vanished under a block still reading `tunnel up`.
+   *
+   * Not silenced. This project does not swallow errors, and cloudflared's
+   * stderr is the ONLY place a tunnel failure explains itself. So the lines are
+   * kept and printed on every path that fails, where `paddock: cloudflared
+   * exited N — the URL is gone` used to be the whole explanation.
+   *
+   * Only while the display owns the screen, and only on a tty. A piped or
+   * detached run has no repaint to collide with and a log file wants every
+   * line, so there it stays pass-through.
+   */
+  const recent: string[] = [];
+  let displayOwnsScreen = false;
+  const onLog = (line: string) => {
+    if (!displayOwnsScreen) {
+      // Before the URL exists there is no display yet, and a thirty-second wait
+      // in silence is exactly when the operator needs to see progress.
+      console.info(`[cloudflared] ${line}`);
+      return;
+    }
+    recent.push(line);
+    if (recent.length > CLOUDFLARED_TAIL) recent.shift();
+  };
+
+  /**
+   * Hand back what cloudflared said, on the paths where it is the answer.
+   *
+   * Drains the buffer, so two failures in one run cannot print the same lines
+   * twice and imply twice as much evidence as there is.
+   */
+  const dumpCloudflared = () => {
+    if (recent.length === 0) return;
+    warn(`paddock: the last ${recent.length} line(s) from cloudflared:`);
+    for (const line of recent) warn(`  [cloudflared] ${line}`);
+    recent.length = 0;
+  };
+
+  /**
    * Stopping the child MUST NOT be able to abort the rest of the teardown.
    *
    * Bun terminates the process on an unhandled rejection, so a `stop()` that
@@ -181,9 +237,10 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
       await kill();
     } catch (e) {
       childKillFailed = true;
-      console.error(
+      dumpCloudflared();
+      warn(
         `paddock: could not stop cloudflared (${String(e)}) — the tunnel may still be up. ` +
-          "Check by hand: pgrep -af 'cloudflared tunnel'",
+          "Check by hand: `pgrep -af 'cloudflared tunnel'`",
       );
     }
   };
@@ -210,6 +267,15 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
     if (stopping) return !childKillFailed;
     stopping = true;
     if (timer !== null) clearInterval(timer);
+    // The last frame drawn says `tunnel up`. Leaving it there while the child is
+    // being killed makes the screen assert the one thing that has just stopped
+    // being true — and `^C` reaches cloudflared straight from the tty, so its
+    // own `graceful shutdown` line has usually already been written and erased
+    // by a repaint. Clear the block; what follows is the closing report.
+    if (displayOwnsScreen) {
+      process.stdout.write("\x1b[H\x1b[J");
+      displayOwnsScreen = false;
+    }
     // THREE startup states, and the child must die in the two where one
     // exists. `tunnel` is set only once cloudflared has published a URL;
     // `child` is set from the moment it was spawned; both are null before
@@ -263,6 +329,9 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
       // handed the teardown out, so from here on a signal has something to
       // kill even though this await may not return for another thirty seconds.
       onSpawn: (c) => { child = c; },
+      // Routed rather than defaulted: the default prints straight to stdout for
+      // the life of the child, which is the collision described above.
+      onLog,
     });
   } catch (e) {
     // `startTunnel` kills whatever it spawned on every path that rejects, so
@@ -324,6 +393,10 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   };
 
   draw();
+  // From here the screen is a repainted block, not a log. Only on a tty: a
+  // piped run keeps every cloudflared line, because nothing overwrites them
+  // there and the log is the only record that will exist.
+  displayOwnsScreen = tty;
   timer = setInterval(draw, 1000);
 
   const deadlineHit =
@@ -339,7 +412,10 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   ]);
 
   if (outcome.kind === "child") {
-    console.error(`paddock: cloudflared exited ${outcome.code} — the URL is gone`);
+    warn(`paddock: cloudflared exited ${outcome.code} — the URL is gone`);
+    // The lines above are the diagnosis. Without them this message names the
+    // exit code and nothing that would explain it.
+    dumpCloudflared();
     // The result is not consulted here only because every exit from this branch
     // is already non-zero: a tunnel that vanished is a failure, and a kill that
     // then failed cannot make it more so.

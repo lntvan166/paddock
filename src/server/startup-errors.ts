@@ -26,7 +26,7 @@ export function portInUseMessage(port: number, hostname: string): string {
   return [
     `paddock: port ${port} is already in use`,
     `  something is already listening on ${hostname}:${port}`,
-    `  stop whatever holds it, or choose another port: PADDOCK_PORT=${port + 1} paddock`,
+    `  stop whatever holds it, or choose another port: \`PADDOCK_PORT=${port + 1} paddock\``,
   ].join("\n");
 }
 
@@ -93,7 +93,7 @@ export function herdrUnreachableMessage(
     "not-a-socket": [
       `paddock: ${socketPath} exists, but it is not a socket`,
       "  that is almost certainly the wrong path — herdr's socket is usually at",
-      "  ~/.config/herdr/herdr.sock",
+      "  `~/.config/herdr/herdr.sock`",
     ],
     socket: [
       `paddock: no usable answer from the herdr socket at ${socketPath}${detail}`,
@@ -107,7 +107,7 @@ export function herdrUnreachableMessage(
 
   return [
     ...head,
-    `  a herdr somewhere else: PADDOCK_HERDR_SOCKET=/path/to/herdr.sock`,
-    "  no herdr at all: 'paddock --demo' runs with synthetic agents",
+    `  a herdr somewhere else: \`PADDOCK_HERDR_SOCKET=/path/to/herdr.sock\``,
+    "  no herdr at all: `paddock --demo` runs with synthetic agents",
   ].join("\n");
 }

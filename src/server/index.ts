@@ -32,6 +32,8 @@ import { VERSION } from "@server/version";
 import { runDoctor } from "@server/doctor";
 import { runUpdate } from "@server/update";
 import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
+import { say, warn } from "@server/term";
+import { BootLog } from "@server/boot-log";
 import {
   errorCode,
   herdrUnreachableMessage,
@@ -50,7 +52,7 @@ const HOSTNAME = "127.0.0.1"; // loopback only; exposure is the tunnel's job
 // also how `paddock --demo agent` came out as `serve` from parseArgs and as
 // `agent` from here. Exit code 2 and the roadmap pointer are unchanged.
 if (command === "agent" || command === "hub") {
-  console.error(`paddock ${command}: not implemented — see docs/roadmap.md`);
+  warn(`paddock ${command}: not implemented — see docs/roadmap.md`);
   process.exit(2);
 }
 
@@ -59,15 +61,15 @@ if (command === "agent" || command === "hub") {
 // verbs is the "never swallow errors" shape — the operator asked for something
 // that does not exist and got a working-looking server instead of being told.
 if (command === "unknown") {
-  console.error(`paddock: unknown command '${verb}'`);
-  console.error(USAGE);
+  warn(`paddock: unknown command '${verb}'`);
+  warn(USAGE);
   process.exit(2);
 }
 
 // Before anything opens a socket or binds a port — asking what the tool does
 // must never start it. See parseArgs for what `--help` used to do here.
 if (command === "help") {
-  console.log(USAGE);
+  say(USAGE);
   process.exit(0);
 }
 
@@ -152,19 +154,19 @@ if (command === "tunnel") {
   // silently, on the one flag whose entire job is bounding how long a public
   // URL lives. `flags` is what tells the two apart.
   if (flags.has("--for") && raw === undefined) {
-    console.error("paddock: --for needs a duration (try 45s, 90m, 2h)");
+    warn("paddock: --for needs a duration (try `45s`, `90m`, `2h`)");
     process.exit(1);
   }
   const parsed = raw === undefined ? null : parseDuration(raw);
   if (raw !== undefined && parsed === null) {
-    console.error(`paddock: --for ${raw} is not a duration (try 45s, 90m, 2h)`);
+    warn(`paddock: --for ${raw} is not a duration (try \`45s\`, \`90m\`, \`2h\`)`);
     process.exit(1);
   }
   tunnelDeadlineMs = parsed;
 
   const pre = await preflight({ dir: defaultConfigDir() });
   if (!pre.ok) {
-    console.error(pre.message);
+    warn(pre.message);
     process.exit(1);
   }
   tunnelBin = pre.bin;
@@ -227,6 +229,19 @@ function currentBuildId(): string | null {
  * itself now, where it cannot be dropped by an edit to this file.
  */
 let latestKnown: string | null = null;
+
+/**
+ * Collects the herdr boot diagnostics so the URL is not the fourth thing
+ * printed. See boot-log.ts for why the URL cannot simply move up instead.
+ */
+const bootLog = new BootLog();
+
+/**
+ * Set once the banner has printed WITHOUT an update result in hand, so a result
+ * arriving later still reaches the terminal. Null means "already announced, or
+ * too early to" — the banner reads it, the update callback clears it.
+ */
+let announceLater: ((latest: string) => void) | null = null;
 startUpdateCheck(
   {
     dir: defaultConfigDir(),
@@ -234,7 +249,17 @@ startUpdateCheck(
     now: Date.now(),
     disabled: noUpdateCheckRequested(),
   },
-  (v) => { latestKnown = v; },
+  (v) => {
+    latestKnown = v;
+    // The check may resolve either side of the bind. Whichever way the race
+    // goes, the operator is told exactly once: the banner announces a result
+    // that is already in, and this announces one that arrives after it.
+    if (v !== null && announceLater !== null) {
+      const announce = announceLater;
+      announceLater = null;
+      announce(v);
+    }
+  },
 );
 
 const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown });
@@ -318,7 +343,8 @@ if (DEMO) {
     path: socketPath,
     onEvent: (e) => supervisor?.handleEvent(e),
     onStateChange: (up) => {
-      console.info(`herdr event stream ${up ? "connected" : "disconnected"}`);
+      if (bootLog.inBoot) bootLog.noteStream(up);
+      else console.info(`herdr event stream ${up ? "connected" : "disconnected"}`);
       // A drop we did not ask for: start recovering. HerdrStream calls this
       // with `false` only when there is genuinely no stream left and nobody
       // asked for that — a real drop, or a reopen that tore down a live
@@ -349,13 +375,29 @@ if (DEMO) {
     // herdr is answering, so the keeper has nothing to recover. Announced only
     // on CHANGE (see Supervisor.noteShape), which is what keeps a 30s
     // reconcile from burying the one line that mattered.
+    onSubscribed: (panes) => {
+      if (bootLog.inBoot) bootLog.notePanes(panes);
+      else console.info("herdr: subscribed", { panes });
+    },
     onShapeChange: (verdict) => {
       // Three explicit branches. `shapeMessage` returns null for BOTH `ok` and
       // `unknown`, so a two-branch version announced "every field present" when
       // nothing had been inspected at all — a reassurance about data that was
       // never read.
+      // A broken shape is announced in FULL even during boot: it is the one
+      // verdict that must never be compressed into a status line.
+      if (bootLog.inBoot && verdict.kind !== "broken") {
+        bootLog.noteShape(verdict.kind);
+        return;
+      }
       if (verdict.kind === "broken") {
-        console.error(shapeMessage(verdict, herdrProtocol ?? 0));
+        // `shapeMessage` is typed `string | null` because it returns null for
+        // `ok` and `unknown`. This branch is `broken`, so a null here would be
+        // a bug in shape.ts — reported, never quietly passed over.
+        warn(
+          shapeMessage(verdict, herdrProtocol ?? 0) ??
+            "paddock: herdr's agent.list does not match what paddock reads, and shapeMessage gave no detail",
+        );
       } else if (verdict.kind === "ok") {
         console.info("herdr: agent.list carries every field paddock reads");
       } else {
@@ -432,13 +474,13 @@ if (DEMO) {
       process.exit(1);
     }
   } catch (err) {
-    if (err instanceof ProtocolMismatchError) console.error(err.message);
+    if (err instanceof ProtocolMismatchError) warn(err.message);
     else {
       const kind = inspectSocketPath(socketPath);
       // Only what we can diagnose. A parse bug wearing a "cannot reach herdr"
       // message is harder to debug than the raw throw it replaced.
       if (isDiagnosableHerdrFailure(err, kind))
-        console.error(herdrUnreachableMessage(socketPath, err, kind));
+        warn(herdrUnreachableMessage(socketPath, err, kind));
       else console.error(err);
     }
     process.exit(1);
@@ -497,7 +539,7 @@ try {
   // than the trace it replaced, and this project's rules forbid swallowing
   // errors, not formatting the one condition we recognise.
   if (errorCode(err) !== "EADDRINUSE") throw err;
-  console.error(portInUseMessage(PORT, HOSTNAME));
+  warn(portInUseMessage(PORT, HOSTNAME));
   process.exit(1);
 }
 
@@ -505,13 +547,58 @@ try {
 // declare a perfectly healthy link stale after 60s of idle agents.
 hub.startHeartbeat();
 
-console.info(`paddock listening on http://${HOSTNAME}:${PORT}`);
+// Boot is over. The single collected diagnostic line first, then the banner —
+// so the URL sits under a blank line with nothing competing for the eye. Every
+// call site above logs individually from here on.
+const bootSummary = bootLog.summary();
+if (bootSummary !== null) console.info(bootSummary);
+bootLog.end();
+
+say("");
+say(`  paddock  \`http://${HOSTNAME}:${PORT}\``);
 
 // Nothing to nudge an operator who is already running `paddock tunnel` toward.
 if (command !== "tunnel") {
   const hint = tunnelHint(settings.current().publicUrl, false);
-  if (hint !== null) console.info(hint);
+  if (hint !== null) say(hint);
 }
+
+// What paddock is actually watching, under the labels the dashboard will show.
+// This is where the cwd fallback earns its place: an operator who never named
+// an agent can see at a glance whether `project p1` is the row they expected,
+// instead of finding out by opening the dashboard.
+const watching = store.snapshot();
+if (watching.length > 0) {
+  const names = watching.map((a) => a.name);
+  // Truncated rather than wrapped: this is orientation, not the agent list.
+  // The dashboard is the place that shows all of them.
+  const shown = names.slice(0, 6).join(", ");
+  const rest = names.length > 6 ? `, +${names.length - 6} more` : "";
+  say(`  watching ${names.length === 1 ? "1 agent" : `${names.length} agents`}: ${shown}${rest}`);
+}
+say("");
+
+/**
+ * A new release, told to the operator where they are certain to look.
+ *
+ * The dashboard has carried this since the update check existed — `latestKnown`
+ * rides the heartbeat to `HostHeader`, which renders it deliberately dim,
+ * because an available update is not an alarm. What none of that reaches is the
+ * TERMINAL: `paddock` was started there, and nothing printed there ever
+ * mentioned a new version, so the only way to find out was to already be
+ * looking at the dashboard for another reason.
+ *
+ * Announced when the answer ARRIVES, not at banner time. The check is async and
+ * caches for a day, so the cached case usually resolves before the bind and the
+ * uncached case lands seconds after it — printing only at banner time would
+ * have silently dropped whichever half of that race lost.
+ */
+function announceUpdate(latest: string): void {
+  say(`  paddock ${latest} is available — run \`paddock update\``);
+  say("");
+}
+if (latestKnown !== null) announceUpdate(latestKnown);
+else announceLater = announceUpdate;
 
 // Written AFTER the bind, deliberately. A paddock that failed to take the port
 // must not overwrite the state of the one already holding it.

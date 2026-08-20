@@ -1,5 +1,6 @@
 import { chmod, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { say } from "@server/term";
 
 const REPO = "lntvan166/paddock";
 
@@ -72,7 +73,7 @@ export interface UpdateOpts {
 
 /** Returns a process exit code. Never throws for an expected failure. */
 export async function runUpdate(o: UpdateOpts): Promise<number> {
-  const log = o.log ?? console.log;
+  const log = o.log ?? say;
 
   // Ruling: refuse a dev build before resolving or writing any path.
   //
@@ -120,7 +121,7 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
     return 0;
   }
   log(`paddock: ${o.current} -> ${latest}`);
-  if (o.checkOnly) { log("paddock: run 'paddock update' to install it"); return 0; }
+  if (o.checkOnly) { log("paddock: run `paddock update` to install it"); return 0; }
 
   const base = `https://github.com/${REPO}/releases/download/v${latest}`;
   let bytes: Uint8Array;

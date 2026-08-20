@@ -9,6 +9,7 @@ import {
 } from "@server/lifecycle/state";
 import { SettingsStore } from "@server/settings/store";
 import { tunnelHint } from "@server/tunnel/preflight";
+import { say } from "@server/term";
 
 export interface StatusOpts {
   dir: string;
@@ -52,7 +53,7 @@ async function clearState(
 }
 
 export async function runStatus(o: StatusOpts): Promise<number> {
-  const log = o.log ?? console.log;
+  const log = o.log ?? say;
   const now = (o.now ?? Date.now)();
   const got = await checkState(o.dir, o.probe);
 
@@ -137,7 +138,7 @@ function trySignal(
 }
 
 export async function runStop(o: StopOpts): Promise<number> {
-  const log = o.log ?? console.log;
+  const log = o.log ?? say;
   const send = o.signal ?? sendSignal;
   const probe = o.probe ?? systemProbe;
   const waitMs = o.waitMs ?? 10_000;
@@ -246,7 +247,7 @@ export async function runStop(o: StopOpts): Promise<number> {
     // Never escalate on its own. A process refusing to leave is the
     // operator's call, not a decision to make silently on their behalf.
     log(`paddock: pid ${pid} did not exit after SIGTERM`);
-    log("  run 'paddock stop --force' to send SIGKILL");
+    log("  run `paddock stop --force` to send SIGKILL");
     return 1;
   }
 
@@ -345,7 +346,7 @@ export function logFile(dir: string): string {
  * to prevent.
  */
 export async function runStart(o: StartOpts): Promise<number> {
-  const log = o.log ?? console.log;
+  const log = o.log ?? say;
   const waitMs = o.waitMs ?? 10_000;
   const existing = await checkState(o.dir, o.probe);
 
@@ -459,7 +460,7 @@ export async function runStart(o: StartOpts): Promise<number> {
     // so one that is still coming up may not be visible to `status`/`stop`
     // yet. The pid above is the handle that always works.
     log(
-      "  once it has recorded state, 'paddock status' shows it and 'paddock stop' stops it",
+      "  once it has recorded state, `paddock status` shows it and `paddock stop` stops it",
     );
     if (tail.trim() !== "") log(tail.trim());
     log(`  full log: ${logFile(o.dir)}`);
