@@ -48,6 +48,29 @@ test("one unparseable line is skipped without losing the file", () => {
   expect(entries.at(-1)!.text).toBe("❯ 1. Yes");
 });
 
+test("a null element in a content array does not throw, and the record's good part survives", () => {
+  // Any content element can be anything valid JSON allows — this is a
+  // private, unversioned format. A `null` element must cost nothing: not the
+  // record it sits in, and not the file around it.
+  const survivor = entries.find((e) => e.text === "survives next to a null part");
+  expect(survivor).toBeDefined();
+  expect(survivor!.role).toBe("assistant");
+  // The record after this one (across the earlier broken line too) is still there.
+  expect(entries.at(-1)!.text).toBe("❯ 1. Yes");
+});
+
+test("a record with no message at all produces no entry and does not throw", () => {
+  expect(entries.some((e) => e.at === "2026-08-20T13:05:50Z")).toBe(false);
+});
+
+test("a user record whose content is a number produces no entry and does not throw", () => {
+  expect(entries.some((e) => e.at === "2026-08-20T13:05:55Z")).toBe(false);
+});
+
+test("the full fixture yields exactly the expected turns, nothing lost or fabricated", () => {
+  expect(entries).toHaveLength(5);
+});
+
 test("the adapter records the harness version its shape was verified against", () => {
   expect(claudeAdapter.verifiedAgainst).not.toBe("unverified");
 });

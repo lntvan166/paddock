@@ -5,4 +5,7 @@
 {"type":"assistant","timestamp":"2026-08-20T13:05:10Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"subagent chatter"}]}}
 {"type":"mode","timestamp":"2026-08-20T13:05:20Z","mode":"default"}
 not valid json at all
+{"type":"assistant","timestamp":"2026-08-20T13:05:40Z","message":{"role":"assistant","content":[null,{"type":"text","text":"survives next to a null part"}]}}
+{"type":"assistant","timestamp":"2026-08-20T13:05:50Z"}
+{"type":"user","timestamp":"2026-08-20T13:05:55Z","message":{"role":"user","content":42}}
 {"type":"assistant","timestamp":"2026-08-20T13:06:00Z","message":{"role":"assistant","content":[{"type":"text","text":"❯ 1. Yes"}]}}

@@ -38,8 +38,15 @@ export const claudeAdapter: JournalAdapter = {
       let projects: string[];
       try {
         projects = await readdir(root);
-      } catch {
-        continue; // a root that does not exist is not an error, it is a miss
+      } catch (err) {
+        // ENOENT is an ordinary miss: this root simply has no journal here.
+        // Anything else (e.g. EACCES) is a host-side fault — the same
+        // distinction containedRealpath makes for its root argument — so it
+        // must be loud even though the caller still only ever sees `null`.
+        if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+          console.error(`journal: root did not read, check CLAUDE_CONFIG_DIR: ${root}`, err);
+        }
+        continue;
       }
       for (const project of projects) {
         const found = await containedRealpath(root, join(root, project, `${value}.jsonl`));
@@ -61,8 +68,17 @@ export const claudeAdapter: JournalAdapter = {
         // genuinely corrupt line costs itself and nothing else.
         continue;
       }
-      const entry = toEntry(rec);
-      if (entry !== null) out.push(entry);
+      // toEntry is called INSIDE this try, not after it: JSON.parse succeeding
+      // is no guarantee the record's shape is one toEntry can safely walk (a
+      // content element can be `null`, a string, a number — anything valid
+      // JSON allows). This is a private, unversioned format, so a shape
+      // nobody has seen yet must cost only this record, never the file.
+      try {
+        const entry = toEntry(rec);
+        if (entry !== null) out.push(entry);
+      } catch {
+        continue;
+      }
     }
     return out;
   },
@@ -88,6 +104,11 @@ function toEntry(rec: Record<string, unknown>): JournalEntry | null {
   const texts: string[] = [];
   const tools: string[] = [];
   for (const part of content) {
+    // A content element is allowed to be anything valid JSON permits — this
+    // is a private, unversioned format. `null`, a bare string, a number: none
+    // of those are an object, so skip them here rather than relying solely on
+    // the outer try/catch to survive a shape like `[null, {"type":"text",…}]`.
+    if (typeof part !== "object" || part === null) continue;
     const p = part as Record<string, unknown>;
     if (p.type === "text" && typeof p.text === "string") texts.push(p.text);
     else if (p.type === "tool_use" && typeof p.name === "string") {
