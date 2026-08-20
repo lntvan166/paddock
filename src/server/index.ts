@@ -143,6 +143,15 @@ let tunnelBin: string | undefined;
 let tunnelDeadlineMs: number | null = null;
 if (command === "tunnel") {
   const raw = values.get("--for");
+  // `--for` with nothing after it. The parser leaves a trailing value flag
+  // unconsumed, so `values` has no entry and `raw` is indistinguishable from
+  // "the flag was never given" — which would make the typo mean NO DEADLINE,
+  // silently, on the one flag whose entire job is bounding how long a public
+  // URL lives. `flags` is what tells the two apart.
+  if (flags.has("--for") && raw === undefined) {
+    console.error("paddock: --for needs a duration (try 45s, 90m, 2h)");
+    process.exit(1);
+  }
   const parsed = raw === undefined ? null : parseDuration(raw);
   if (raw !== undefined && parsed === null) {
     console.error(`paddock: --for ${raw} is not a duration (try 45s, 90m, 2h)`);
@@ -526,18 +535,32 @@ if (command === "tunnel") {
   // Rebuilt WITH `pairing`, because the pairing routes must exist on the app
   // the gated listener serves — and must not exist on the plain one.
   const gatedApp = createApp({ ...appDeps, pairing, tunnelUrl: () => tunnelUrl });
-  const code = await runTunnel({
-    app: gatedApp,
-    hub,
-    hostId,
-    store,
-    pairing,
-    port: Number(process.env.PADDOCK_TUNNEL_PORT ?? 8788),
-    bin: tunnelBin,
-    deadlineMs: tunnelDeadlineMs,
-    setPublicUrl: (u) => { tunnelUrl = u; },
-    registerShutdown: (fn) => { onShutdown = fn; },
-  });
+  let code: number;
+  try {
+    code = await runTunnel({
+      app: gatedApp,
+      hub,
+      hostId,
+      store,
+      pairing,
+      port: Number(process.env.PADDOCK_TUNNEL_PORT ?? 8788),
+      bin: tunnelBin,
+      deadlineMs: tunnelDeadlineMs,
+      setPublicUrl: (u) => { tunnelUrl = u; },
+      registerShutdown: (fn) => { onShutdown = fn; },
+    });
+  } catch (err) {
+    // `runTunnel` turns the failures it recognises into exit codes, so this is
+    // the unrecognised remainder. The state file is cleared BEFORE the rethrow
+    // regardless: a throw out of a top-level await ends the process without
+    // running either `removeState` below, and the residue is a state file
+    // describing a process that has gone — which `paddock status` then reports
+    // as running. The error itself is rethrown untouched, stack and all.
+    await removeState(stateDir).catch((e) =>
+      console.error(`paddock: could not clear state file (${String(e)})`),
+    );
+    throw err;
+  }
   // Reached only when the run ended on its own — `--for` elapsed, or
   // cloudflared died. A Ctrl-C exits from the handler above instead. The state
   // file is cleared here too, or an instance that closed its own tunnel would

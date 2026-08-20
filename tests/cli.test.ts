@@ -112,6 +112,17 @@ test("USAGE documents the verb", () => {
   expect(USAGE).toContain("paddock tunnel");
 });
 
+test("a trailing --for with no value is refused, not read as 'no deadline'", () => {
+  // The parser cannot consume a value that is not there, so `values` has no
+  // entry and the flag is indistinguishable from absent — which would make
+  // this typo mean NO DEADLINE on the one flag whose entire job is bounding
+  // how long a public URL lives. `flags` is what tells the two apart, and
+  // index.ts is where the distinction is drawn.
+  const p = parseArgs(["tunnel", "--for"]);
+  expect(p.flags.has("--for")).toBe(true);
+  expect(p.values.has("--for")).toBe(false);
+});
+
 // --- What the process actually does with those commands --------------------
 //
 // parseArgs is a pure function; these run the real entry point. All of them
@@ -297,4 +308,30 @@ test("'paddock doctor' answers against a missing socket without starting anythin
   expect(r.code, "undetermined, not incompatible").toBe(2);
   expect(r.out + r.err).toContain("/nonexistent/herdr.sock");
   expect(r.out + r.err, "no port may be bound").not.toContain("listening");
+});
+
+// --- `tunnel`'s own refusals, run through the real entry point --------------
+//
+// Both exit before preflight, so nothing binds a port, nothing opens a herdr
+// socket, and no cloudflared is ever spawned. `runVerb`'s bogus socket path
+// and 5s timeout are the safety net if that ever stops being true.
+
+test("a malformed --for duration refuses, naming what was given", () => {
+  const r = runVerb("tunnel", ["--for", "2h30m"]);
+  expect(r.timedOut).not.toBe(true);
+  expect(r.code).toBe(1);
+  expect(r.err).toContain("--for 2h30m is not a duration");
+  expect(r.err).toContain("45s");
+  expect(r.out).not.toContain("paddock listening");
+});
+
+test("a bare --for refuses too, instead of silently publishing an unbounded URL", () => {
+  const r = runVerb("tunnel", ["--for"]);
+  expect(r.timedOut).not.toBe(true);
+  expect(r.code).toBe(1);
+  expect(r.err).toContain("--for needs a duration");
+  expect(r.err).toContain("45s");
+  // The refusal must come BEFORE anything is published or bound.
+  expect(r.out).not.toContain("paddock listening");
+  expect(r.err).not.toContain("trycloudflare");
 });

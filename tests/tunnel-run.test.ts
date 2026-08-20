@@ -3,7 +3,9 @@ import { Hono } from "hono";
 import { AgentStore } from "@server/state/store";
 import type { Child, Tunnel } from "@server/tunnel/cloudflared";
 import { COOKIE_NAME, Pairing } from "@server/tunnel/pairing";
-import { runTunnel, serveGated, type TunnelDeps } from "@server/tunnel/run";
+import {
+  gatedPortInUseMessage, runTunnel, serveGated, type TunnelDeps,
+} from "@server/tunnel/run";
 import { Hub } from "@server/ws/hub";
 
 const PUBLIC_URL = "https://quiet-harbor-8f31.trycloudflare.com";
@@ -19,6 +21,12 @@ function base(): Omit<TunnelDeps, "port"> {
     hostId: "dev-box",
     store: new AgentStore("dev-box"),
     pairing: new Pairing({ now: () => 0 }),
+    // NEVER the real environment or the real terminal. Under a pty, a tty
+    // draw writes `ESC[H ESC[J` — home, then clear to end of screen — which
+    // wipes the test runner's own output and with it any failure printed
+    // above this point.
+    env: {},
+    isTty: false,
   };
 }
 
@@ -270,4 +278,46 @@ test("a teardown during startup kills the child cloudflared already spawned", as
   // Said out loud, so a log does not read as a clean close of a live tunnel.
   expect(c.text()).toContain("before it published a URL");
   expect(urls).toEqual([null]);
+});
+
+test("a gated port that is already taken is a refusal, not an escaping throw", async () => {
+  // The throw used to escape runTunnel and end the process from inside a
+  // top-level await in index.ts, skipping BOTH removeState calls — so a stale
+  // paddock.state.json survived and the next `paddock status` reported a
+  // process that was gone. A refusal has to come back as an exit code so the
+  // caller's ordinary exit path runs.
+  const squatter = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("mine") });
+  const taken = squatter.port!;
+  let started = 0;
+  const c = capture();
+  let code: number;
+  try {
+    code = await runTunnel({
+      ...base(),
+      port: taken,
+      startTunnel: async () => {
+        started += 1;
+        throw new Error("no child may be spawned for a listener that never bound");
+      },
+    });
+  } finally {
+    c.restore();
+    squatter.stop(true);
+  }
+
+  expect(code).toBe(1);
+  // No child was spawned for a listener that never came up.
+  expect(started).toBe(0);
+  expect(c.text()).toContain(`port ${taken} is already in use`);
+  // The variable that would actually help, not the dashboard's own.
+  expect(c.text()).toContain("PADDOCK_TUNNEL_PORT");
+  expect(c.text()).not.toContain("PADDOCK_PORT=");
+});
+
+test("the in-use message names the tunnel port and the variable that moves it", () => {
+  const m = gatedPortInUseMessage(8788);
+  expect(m).toContain("8788");
+  expect(m).toContain("PADDOCK_TUNNEL_PORT=8789");
+  // Pure: asserting the wording must not need a bound port.
+  expect(m).toContain("127.0.0.1:8788");
 });

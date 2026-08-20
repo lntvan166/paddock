@@ -7,6 +7,7 @@ import {
   type Tunnel,
 } from "@server/tunnel/cloudflared";
 import { decide, gateResponse } from "@server/tunnel/gate";
+import { errorCode } from "@server/startup-errors";
 import type { Pairing } from "@server/tunnel/pairing";
 import { human, render, useColour } from "@server/tunnel/display";
 
@@ -22,6 +23,15 @@ export interface TunnelDeps {
   deadlineMs?: number | null;
   startTunnel?: typeof realStartTunnel;
   setPublicUrl?: (url: string | null) => void;
+  /**
+   * The environment and the terminal, injected for the same reason every clock
+   * in this codebase is. Read from the real ones in production; a test that
+   * read `process.stdout.isTTY` instead would, under a pty, emit
+   * cursor-home-and-clear-screen writes that ERASE the test runner's own
+   * output — hiding a failure printed above it.
+   */
+  env?: Record<string, string | undefined>;
+  isTty?: boolean;
   /**
    * How this run's teardown reaches the ONE process-wide signal handler.
    *
@@ -93,6 +103,25 @@ export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
 }
 
 /**
+ * The tunnel port's own "already in use". Not `portInUseMessage`: that one
+ * tells the operator to move `PADDOCK_PORT`, which is the DASHBOARD's port and
+ * not the one that failed here. A message naming the wrong variable sends them
+ * to change a setting that was never the problem.
+ *
+ * Pure, like the builders in `startup-errors.ts`, and for the same reason: the
+ * wording is the part worth asserting, and asserting it must not need a bound
+ * port.
+ */
+export function gatedPortInUseMessage(port: number, hostname = "127.0.0.1"): string {
+  return [
+    `paddock: the tunnel's port ${port} is already in use`,
+    `  something is already listening on ${hostname}:${port}`,
+    "  paddock tunnel needs a SECOND loopback port, besides the dashboard's own.",
+    `  stop whatever holds it, or move it: PADDOCK_TUNNEL_PORT=${port + 1} paddock tunnel`,
+  ].join("\n");
+}
+
+/**
  * Own the child, draw the block, and shut both down together.
  *
  * Returns the process exit code: 0 for a shutdown the operator asked for
@@ -105,7 +134,27 @@ export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
 export async function runTunnel(deps: TunnelDeps): Promise<number> {
   const now = deps.now ?? Date.now;
   const start = deps.startTunnel ?? realStartTunnel;
-  const gated = serveGated(deps);
+
+  /**
+   * RETURNED, never thrown. An escaping throw here killed the process from
+   * inside a top-level `await` in index.ts, which skipped BOTH `removeState`
+   * calls — so a `paddock.state.json` describing a process that no longer
+   * exists survived, and the next `paddock status` reported a running paddock.
+   * A refusal is an exit code, and the caller's ordinary exit path clears the
+   * state file on the way out.
+   *
+   * EADDRINUSE only, exactly as index.ts does for the dashboard's own port.
+   * Everything else rethrows with its stack intact: a catch that reported every
+   * failure as a port conflict would be worse than the trace it replaced.
+   */
+  let gated: { port: number; stop(): void };
+  try {
+    gated = serveGated(deps);
+  } catch (err) {
+    if (errorCode(err) !== "EADDRINUSE") throw err;
+    console.error(gatedPortInUseMessage(deps.port));
+    return 1;
+  }
 
   let tunnel: Tunnel | null = null;
   /**
@@ -216,8 +265,8 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   deps.setPublicUrl?.(live.url);
   const startedAt = now();
   const deadline = deps.deadlineMs != null ? startedAt + deps.deadlineMs : null;
-  const tty = Boolean(process.stdout.isTTY);
-  const colour = useColour(process.env, tty);
+  const tty = deps.isTty ?? Boolean(process.stdout.isTTY);
+  const colour = useColour(deps.env ?? process.env, tty);
 
   let lastCode: string | null = null;
   let lastPaired: number | null = null;
