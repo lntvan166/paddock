@@ -5,6 +5,7 @@ import {
   type Prefs, type ThemePref,
 } from "@web/prefs";
 import { DeviceSection } from "@web/components/settings/DeviceSection";
+import { TunnelSection } from "@web/components/settings/TunnelSection";
 import { TelegramSection } from "@web/components/settings/TelegramSection";
 import { NotifySection } from "@web/components/settings/NotifySection";
 import { SaveBar } from "@web/components/settings/SaveBar";
@@ -271,6 +272,23 @@ export function Settings({ onBack }: SettingsProps) {
       <Toast message={savedAt === null ? null : "Settings saved"} />
 
       <DeviceSection prefs={prefs} setPref={setPref} />
+
+      {/* Present only while a tunnel is running: `view.tunnel` is null for a
+          paddock served the ordinary way, which has nothing to pair. */}
+      {view?.tunnel != null && (
+        <TunnelSection
+          tunnel={view.tunnel}
+          onInvite={async () => {
+            const res = await fetch("/api/pair/invite", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: "{}",
+            });
+            if (!res.ok) throw new Error(`invite failed: ${res.status}`);
+            return (await res.json()) as { code: string; expiresAt: number };
+          }}
+        />
+      )}
 
       <section className="settings-section">
         <h2>All devices</h2>

@@ -334,6 +334,7 @@ here. `.env.example` is the copy an operator edits.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `PADDOCK_PORT` | `8787` | The port. Always bound to `127.0.0.1` — see "One port, one origin". |
+| `PADDOCK_TUNNEL_PORT` | `8788` | `paddock tunnel` only: the SECOND loopback port, the one wrapped in the pairing gate and the only one `cloudflared` is pointed at. `PADDOCK_PORT` stays completely ungated. |
 | `PADDOCK_HOST_ID` | `local` | The label for this machine in the header. |
 | `PADDOCK_HERDR_SOCKET` | `$HOME/.config/herdr/herdr.sock` | Where herdr's socket is. |
 | `PADDOCK_CONFIG_DIR` | `$HOME/.config/paddock` | Where `settings.json` and `update-check.json` live. |

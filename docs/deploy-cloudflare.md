@@ -92,6 +92,39 @@ Check this from a context that carries no Access session — a private window, o
 dashboard whether or not the policy is correct, so it cannot distinguish the
 two outcomes.
 
+## Quick tunnels: `paddock tunnel`
+
+`paddock tunnel` publishes the dashboard on a Cloudflare **quick tunnel** — an
+ephemeral `*.trycloudflare.com` hostname, no domain required. It exists so that
+trying paddock from a phone does not require the setup above.
+
+**A quick tunnel cannot have an Access policy in front of it.** Access
+applications are keyed by a domain in your own Cloudflare account, and
+`trycloudflare.com` is Cloudflare's. Nothing in the Zero Trust dashboard can
+attach a policy to a hostname you were lent. That is why `paddock tunnel`
+carries its own pairing gate: a short code, shown on the terminal, exchanged
+once per device for a session cookie. Without it, publishing a quick tunnel in
+front of paddock is precisely the plain-`200` failure §3 above describes.
+
+Take the named-tunnel path above for anything lasting. It has identity, policy
+and audit logging; the pairing code has none of those — it is a floor that
+keeps "trying paddock" from meaning "publishing an open dashboard".
+
+The URL changes every time the command runs, so a home-screen icon saved from
+one run will not work after the next, and a Telegram message sent before a
+restart carries a link that no longer resolves.
+
+`paddock tunnel [--for 45s|90m|2h]` runs until `--for` elapses, `cloudflared`
+exits on its own, or you press `ctrl+c`. Every one of those paths tries to
+stop `cloudflared` and close the gated listener before the process exits; in
+the rare case a child survives even `SIGKILL`, paddock prints `paddock: could
+not stop cloudflared (...) — the tunnel may still be up. Check by hand:
+pgrep -af 'cloudflared tunnel'` rather than claiming a clean shutdown it
+cannot confirm. It refuses to start if another paddock is already running
+(see `docs/gotchas.md`) or if `cloudflared` is not installed, and it binds a
+*second* loopback port for the gated listener — `8788` by default, or move it
+with `PADDOCK_TUNNEL_PORT` if that one is already taken.
+
 ## 4. Everyday use
 
 Once the redirect is confirmed, normal browser use is: visit

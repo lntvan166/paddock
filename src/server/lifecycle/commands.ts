@@ -7,6 +7,8 @@ import {
   systemProbe,
   type Probe,
 } from "@server/lifecycle/state";
+import { SettingsStore } from "@server/settings/store";
+import { tunnelHint } from "@server/tunnel/preflight";
 
 export interface StatusOpts {
   dir: string;
@@ -421,6 +423,16 @@ export async function runStart(o: StartOpts): Promise<number> {
     const got = await checkState(o.dir, o.probe);
     if (got.kind === "running" && (await health(got.state.port))) {
       log(`paddock: started (pid ${got.state.pid}, port ${got.state.port})`);
+      // `runStart` did not read settings before this feature: it needs
+      // `publicUrl` only to decide whether to nudge toward `paddock tunnel`,
+      // so it loads the same config dir it already has rather than growing a
+      // second settings entry point. `detached: true` because this instance
+      // is the one `tunnelHint` calls "detached" — it just ran and returned,
+      // unlike the foreground process index.ts prints its own hint beside.
+      const settings = new SettingsStore(o.dir);
+      await settings.load();
+      const hint = tunnelHint(settings.current().publicUrl, true);
+      if (hint !== null) log(hint);
       return 0;
     }
     // An early exit is a failure now, not in ten seconds' time.
