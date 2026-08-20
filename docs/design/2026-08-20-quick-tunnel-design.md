@@ -220,9 +220,45 @@ that dies when the browser restarts — and a tunnel that has been up for days
 would silently log the phone out at the moment its owner is furthest from the
 terminal holding the code.
 
+**The `Domain` attribute is never set**, which makes the cookie host-only. This
+is security, not a default worth leaving to chance: `trycloudflare.com` is a
+suffix shared with every other quick tunnel in the world, so a cookie scoped to
+`.trycloudflare.com` would be attached to strangers' tunnels.
+
 Sessions live in a `Set` in memory. No store, no expiry sweep, no revoke
 command: ending the process is the revoke, and it changes the URL too, which is
 what is actually wanted after a device is lost.
+
+### Restart, and a cookie the server has never heard of
+
+A restart mints a new session set, and a quick tunnel restart also mints a new
+random hostname. Those two together mean the ordinary case cannot strand anyone:
+the phone is on a different origin, the host-only cookie does not apply there, so
+it gets the pairing page and the current code. There is no stale-code state to be
+in.
+
+The case that *can* strand a device is a stable hostname over the gated port —
+an operator who points their own named tunnel at `8788` rather than at `8787`.
+The origin survives the restart; the session set does not. The browser then
+arrives holding a token the server has never issued.
+
+**An unrecognised cookie must therefore be indistinguishable from no cookie**:
+navigations get the pairing page, `/api/*` and upgrades get `401`, and the
+response clears the dead cookie with `Max-Age=0` on its way past. Treating an
+unknown token as "authenticated, but wrong" would `401` the pairing page itself,
+leaving a device locked out for thirty days with no route to the form that would
+fix it. `tunnel-pairing.test.ts` covers this directly — a forged token and an
+expired-session token both land on the pairing page, not on a `401`.
+
+Two consequences of a restart that paddock cannot fix, and so states plainly
+rather than letting the operator discover them:
+
+- **The previous URL is dead.** A home-screen icon or saved tab pointing at it
+  gets Cloudflare's error page, not paddock. The startup banner says the URL
+  changes on every run.
+- **Telegram messages sent before the restart carry the dead link.** `publicUrl`
+  is in-memory (see above), so messages sent afterwards carry the new one, but
+  history is not rewritten.
 
 **Consequence to record in `docs/gotchas.md`:** `Secure` means the cookie is
 only accepted over HTTPS, so browsing `http://127.0.0.1:8788` directly can never
