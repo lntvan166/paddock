@@ -290,3 +290,90 @@ session does not silently re-litigate them.
 
     Dismissal is keyed by **version**, not a boolean. A boolean would make the
     first dismissal permanent and the feature would quietly stop existing.
+
+17. **A same-origin gate on every write and on the `/ws` upgrade.** This is the
+    fix decision 12 said it was not. That decision required
+    `content-type: application/json` on the three settings routes, restoring the
+    CORS preflight, and scaled itself honestly: "the pre-existing action routes
+    are POST already and carry larger levers, so this is not new in kind. It is
+    a floor, not a fix."
+
+    Two holes were open, and they composed into one attack. `/ws` upgraded
+    unconditionally — a WebSocket handshake is exempt from CORS entirely, so no
+    preflight and no browser rule stood in the way — while `hubWebSocket.open`
+    sends the whole snapshot on connect, so any page the operator visited could
+    read every agent's name, id and screen from `127.0.0.1`. And
+    `POST /api/agents/:id/text` types arbitrary text into a live coding agent
+    while reading its body with `jsonBody`, which never inspects the content
+    type: an `enctype="text/plain"` form posts syntactically valid JSON to it as
+    a CORS-*simple* request, no preflight, no same-origin check. Read the ids off
+    the socket, then type into the agent. On the loopback listener there is not
+    even an Access session to borrow — decision 3 gives that port no
+    authentication at all, which is correct for an operator on their own machine
+    and no defence whatsoever against their own browser.
+
+    `src/server/origin.ts` holds the rule as pure predicates, called from exactly
+    two enforcement points: one Hono middleware in `routes.ts` that both
+    listeners inherit with the app, and the `/ws` interception in `ws/serve.ts`,
+    which is already the single shared definition of that upgrade. Neither is a
+    per-route check, because the guard belongs to the **verb**: a future write
+    route must be covered by existing, not by remembering to opt in.
+
+    The allowlist itself is ONE thunk, built in `index.ts` and handed to every
+    consumer — both apps' middleware and both listeners' upgrade — rather than
+    derived where it is used. That is not tidiness: the first version derived it
+    twice, once in the middleware from `settings`/`tunnelUrl` and once at the
+    call site, and the gated listener's writes and its WebSocket upgrades
+    consequently answered to DIFFERENT allowlists. A gate with a seam in it is
+    the failure this repo keeps rediscovering, and `tests/origin-tunnel.test.ts`
+    is what found this instance.
+
+    Three asymmetries are deliberate, and each one is load-bearing.
+
+    **GET and HEAD are not guarded.** Browsers omit `Origin` on same-origin
+    GETs, so a guard there would have to accept a missing one and would gate
+    nothing; a cross-origin GET cannot read the response anyway, since paddock
+    sends no CORS headers. What guarding reads *would* achieve is breaking
+    `/sw.js` and the app shell — decision 3's exact failure reached from a new
+    direction.
+
+    **A missing `Origin` passes a write but fails an upgrade.** Browsers always
+    send it on a POST, so its absence means a non-browser caller, which carries
+    no hostile page to act for; refusing would break every command-line use and
+    buy nothing. Browsers also always send it on a WebSocket handshake —
+    same-origin included, unlike a GET — so requiring it there costs a browser
+    nothing and shuts out a non-browser reader. That is worth having, because
+    herdr's control socket is a FILE whose permissions keep other local users
+    out, while paddock's port is TCP and every uid on the host can reach it.
+
+    **The host allowlist is opportunistic, and empty means inactive.** Writes
+    require `Origin` to equal `Host`, which closes ordinary cross-site CSRF with
+    no configuration at all. It cannot close DNS rebinding, where the browser is
+    tricked into resolving `evil.example` to `127.0.0.1` so that `Host` and
+    `Origin` *agree*. Catching that needs to know the deployment's real
+    hostname, and paddock already does — `settings.publicUrl` plus a live
+    `paddock tunnel` URL — so `publicHostsFrom` derives the allowlist from those
+    and needs no new setting. But it is enforced only when non-empty. Making it
+    unconditional would mean a named-tunnel operator who never set `publicUrl`
+    loses the reply path, and `publicUrl` lives in the **Notifications**
+    section: a Telegram convenience would silently become the difference between
+    a working dashboard and a read-only one, for a reason no operator could
+    guess. So knowing a public hostname buys rebinding protection on top;
+    not knowing one costs nothing that already worked. Loopback is always
+    allowed even against a populated list, or setting a public URL would break
+    desk browsing and `make dev`.
+
+    **This is not authentication and decision 3 still stands.** Nothing here
+    identifies anybody. It asks the one question a browser cannot lie about —
+    which page this request acts for — and no token is minted, held or checked.
+
+    A refusal is reported on stderr, once per distinct `origin -> host` pair and
+    at most 20 pairs, because the likeliest cause is not an attack but a
+    misconfiguration. A dashboard that quietly stopped accepting replies would be
+    unexplainable; unbounded logging from a caller who chooses the origin would
+    be a flood. The message names the REMEDY, and `refusalReason` picks it,
+    because the two causes need opposite fixes: `Origin` and `Host` disagreeing
+    means a proxy is rewriting `Host`, while the pair AGREEING and being refused
+    anyway means `publicUrl` names a hostname this deployment is not reached on.
+    Telling the second operator to check their proxy would send them to a file
+    that is already correct.

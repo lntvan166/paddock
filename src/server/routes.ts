@@ -16,6 +16,8 @@ import type { Hub } from "@server/ws/hub";
 import { formatCode } from "@server/tunnel/pairing";
 import { setCookie } from "@server/tunnel/gate";
 import { EMBEDDED } from "@server/embedded";
+import { allowWrite, hostOf, refusalReason } from "@server/origin";
+import { warn } from "@server/term";
 import { isNavKey, type NotifyTrigger, type SettingsPatch } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 
@@ -159,6 +161,36 @@ function heldScreen(agentId: string, digest: string): string[] | undefined {
 /** Drop screens for agents that no longer exist, mirroring the store. */
 function pruneScreens(liveIds: Set<string>): void {
   for (const id of [...recentScreens.keys()]) if (!liveIds.has(id)) recentScreens.delete(id);
+}
+
+/**
+ * How many distinct `origin -> host` pairs a refusal will be reported for.
+ *
+ * Bounded because the caller is hostile by definition: a page that varies its
+ * origin could otherwise flood the operator's terminal, and the Set would grow
+ * without limit. Bounded rather than silent because the most likely cause of a
+ * refusal is NOT an attack — it is a proxy that rewrites `Host` so it no longer
+ * matches the browser's `Origin`, and a dashboard that stopped accepting
+ * replies with nothing on stderr would be unexplainable. `docs/gotchas.md`
+ * records exactly that class of failure.
+ */
+const REFUSAL_LOG_LIMIT = 20;
+const refusalsSeen = new Set<string>();
+
+function reportRefusal(origin: string | null, host: string, hosts: readonly string[]): void {
+  const key = `${origin ?? "(none)"} -> ${host}`;
+  if (refusalsSeen.has(key) || refusalsSeen.size >= REFUSAL_LOG_LIMIT) return;
+  refusalsSeen.add(key);
+
+  warn(`paddock: refused a write — origin ${origin ?? "(none)"}, host \`${host}\``);
+  // The remedy, not just the fact. These two causes need opposite fixes, and
+  // sending an operator to their proxy config when their proxy is correct is
+  // worse than saying nothing.
+  if (refusalReason(origin, host, hosts) === "host-not-allowed") {
+    warn("  this host is not the public URL saved in settings — correct it, or clear it");
+  } else {
+    warn("  if this is your own dashboard, the proxy in front is rewriting `Host`");
+  }
 }
 
 /**
@@ -371,6 +403,13 @@ export interface AppDeps {
   };
   /** The live tunnel URL, for the settings view. */
   tunnelUrl?: () => string | null;
+  /**
+   * The hostnames this deployment is legitimately reached on, for the
+   * same-origin gate — see `origin.ts`. Omitted in tests and in any caller with
+   * no public hostname, which is the documented INACTIVE case: the origin/Host
+   * comparison still applies, only DNS-rebinding cover is absent.
+   */
+  publicHosts?: () => readonly string[];
 }
 
 export function createApp(deps: AppDeps) {
@@ -391,6 +430,51 @@ export function createApp(deps: AppDeps) {
    * response, about 1%. The payload was always where the bytes were.
    */
   app.use("*", compress());
+
+  /**
+   * The same-origin gate on every state-changing request — the other half of
+   * decision 12, which restored the CORS preflight for the three settings
+   * routes and said what it did not cover: "the pre-existing action routes are
+   * POST already and carry larger levers ... It is a floor, not a fix."
+   *
+   * ONE middleware rather than a check per route, because the guard belongs to
+   * the VERB, not to a handler's dependencies: `/ack` is registered even in demo
+   * mode, `/text` only when `actions` is present, and a future write route must
+   * be covered by existing to be a write rather than by remembering to opt in.
+   * Both listeners share this app, so this covers the desk's 8787 and the
+   * tunnel's gated listener at once.
+   *
+   * GET and HEAD are deliberately NOT guarded. Browsers omit `Origin` on
+   * same-origin GETs, so a guard there would have to accept a missing one and
+   * would gate nothing; meanwhile a cross-origin GET cannot read the response,
+   * since paddock sends no CORS headers. What guarding reads WOULD achieve is
+   * breaking `/sw.js` and the app shell — decision 3's exact failure, arrived at
+   * from a new direction. `/ws` is not a route on this app at all: it is
+   * intercepted before `app.fetch`, and `ws/serve.ts` guards it there.
+   *
+   * This is still not authentication. Nothing here identifies anybody; it asks
+   * the one question a browser cannot lie about — which page this request acts
+   * for — so decision 3 stands untouched.
+   */
+  app.use("*", async (c, next) => {
+    const method = c.req.method;
+    if (method === "GET" || method === "HEAD") return next();
+
+    const host = hostOf(c.req.raw);
+    const origin = c.req.header("origin") ?? null;
+    // Read through the thunk on every request, never cached: `publicUrl` is
+    // editable from the settings UI while the process runs, and a tunnel URL
+    // appears mid-run. Taken as a DEPENDENCY rather than derived here from
+    // `settings` and `tunnelUrl`, because `ws/serve.ts` needs the same list and
+    // two derivations of one fact is how they come to disagree — which is not
+    // hypothetical: the first version of this middleware derived its own, and
+    // the gated listener's HTTP writes and its WebSocket upgrades then answered
+    // to different allowlists.
+    if (allowWrite(origin, host, deps.publicHosts?.() ?? [])) return next();
+
+    reportRefusal(origin, host, deps.publicHosts?.() ?? []);
+    return c.json({ ok: false, detail: "cross-origin rejected" }, 403);
+  });
 
   // No authentication middleware. Cloudflare Access is the only gate — see
   // docs/decisions.md before adding one.

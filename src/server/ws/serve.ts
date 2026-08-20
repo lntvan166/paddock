@@ -1,6 +1,7 @@
 import type { Server, WebSocketHandler } from "bun";
 import type { AgentStore } from "@server/state/store";
 import type { Hub, HubClient } from "@server/ws/hub";
+import { allowUpgrade, hostOf } from "@server/origin";
 
 /**
  * What a socket carries: the hub client it was added as, so `close` can remove
@@ -30,9 +31,27 @@ export interface HubSocketDeps {
  *  - `null`  — not this route; the caller falls through to `app.fetch`.
  *  - `undefined` — upgraded. Bun's own signal that the response IS the upgrade.
  *  - a `Response` — the upgrade was refused.
+ *
+ * The ORIGIN CHECK is here, before `srv.upgrade`, and it has to be: a WebSocket
+ * handshake is exempt from CORS entirely, so no preflight and no browser rule
+ * stopped a hostile page opening this socket — and `open` below sends the whole
+ * snapshot, so a refusal that arrived any later would have already disclosed
+ * every agent's name, id and screen. `allowUpgrade` refuses a MISSING `Origin`
+ * as well as a mismatched one; `origin.ts` says why that is right here and wrong
+ * for a write.
+ *
+ * `publicHosts` defaults to empty, which is the correct value for "no public
+ * hostname is known" rather than a weakening — see `publicHostsFrom`.
  */
-export function tryUpgradeWs(req: Request, srv: Server<WsData>): Response | undefined | null {
+export function tryUpgradeWs(
+  req: Request,
+  srv: Server<WsData>,
+  publicHosts: readonly string[] = [],
+): Response | undefined | null {
   if (new URL(req.url).pathname !== "/ws") return null;
+  if (!allowUpgrade(req.headers.get("origin"), hostOf(req), publicHosts)) {
+    return new Response("cross-origin rejected", { status: 403 });
+  }
   const upgraded = srv.upgrade(req, { data: {} });
   return upgraded ? undefined : new Response("upgrade failed", { status: 400 });
 }
