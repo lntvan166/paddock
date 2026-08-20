@@ -13,7 +13,7 @@ import {
   EVENT_PANE_CLOSED,
 } from "@server/herdr/socket";
 import { StreamKeeper } from "@server/herdr/keeper";
-import type { HerdrEvent } from "@shared/herdr-api";
+import { HERDR_PROTOCOL, type HerdrEvent } from "@shared/herdr-api";
 
 let stop: (() => void) | null = null;
 afterEach(() => { stop?.(); stop = null; });
@@ -122,13 +122,20 @@ test("a request rejects when herdr returns an error body", async () => {
   await expect(request(path, "boom", {})).rejects.toThrow("no such thing");
 });
 
+// DERIVED from HERDR_PROTOCOL, never hardcoded. These two used the literals 19
+// and 20, so bumping the pin — a routine operation every time herdr moves —
+// broke them both: "matching" stopped matching, and "different" became the new
+// pin and stopped throwing. A test that fails on a legitimate regeneration is
+// noise that trains you to edit tests instead of reading them.
 test("checkProtocol accepts a matching protocol", async () => {
-  const { path } = await fakeHerdr(19);
+  const { path } = await fakeHerdr(HERDR_PROTOCOL);
   await checkProtocol(path);
 });
 
-test("checkProtocol throws ProtocolMismatchError on a different protocol", async () => {
-  const { path } = await fakeHerdr(20);
+// OLDER, not newer, and deliberately so: an older herdr genuinely lacks what
+// this paddock reads, so it must refuse in every policy this project has held.
+test("checkProtocol throws ProtocolMismatchError on an older protocol", async () => {
+  const { path } = await fakeHerdr(HERDR_PROTOCOL - 1);
   await expect(checkProtocol(path)).rejects.toBeInstanceOf(ProtocolMismatchError);
 });
 
