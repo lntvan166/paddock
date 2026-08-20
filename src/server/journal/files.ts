@@ -47,18 +47,33 @@ export function claudeRoots(env: Record<string, string | undefined>, home: strin
  * root is exactly how a path that LOOKS contained stops being contained, and a
  * journal root is a directory the operator's tools write into freely.
  *
- * Returns null rather than throwing for a missing file — "no journal here" is
- * an ordinary answer this feature reports as a fallback, not an exception.
+ * The two `realpath` calls are resolved separately, and deliberately NOT
+ * folded into one try/catch, because they fail for different reasons:
+ *
+ * - The ROOT failing to resolve is a configuration problem — a misconfigured
+ *   `CLAUDE_CONFIG_DIR`, a permissions error, or a disk error. That is not
+ *   "no journal here"; it is a host-side fault this process should be loud
+ *   about, even though the caller still only ever sees `null`.
+ * - The CANDIDATE not existing is an ordinary "no journal here" — the answer
+ *   this feature reports as a fallback for a session with no log, not an
+ *   exception.
  */
 export async function containedRealpath(root: string, candidate: string): Promise<string | null> {
-  let real: string;
   let realRoot: string;
   try {
-    real = await realpath(resolve(candidate));
     realRoot = await realpath(resolve(root));
+  } catch (err) {
+    console.error(`journal: root does not resolve, check CLAUDE_CONFIG_DIR: ${root}`, err);
+    return null;
+  }
+
+  let real: string;
+  try {
+    real = await realpath(resolve(candidate));
   } catch {
     return null;
   }
+
   const prefix = realRoot.endsWith(sep) ? realRoot : realRoot + sep;
   return real.startsWith(prefix) ? real : null;
 }

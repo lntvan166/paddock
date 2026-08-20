@@ -36,8 +36,15 @@ test("containedRealpath accepts a file inside the root", async () => {
 });
 
 test("containedRealpath refuses a path that escapes via ..", async () => {
+  // The escape target must actually EXIST: otherwise realpath throws ENOENT
+  // and the function returns null from the missing-file catch before the
+  // containment comparison ever runs, and this test would pass even if that
+  // comparison were deleted. Creating the file makes realpath succeed, so the
+  // prefix check is what does the rejecting — mirrors the symlink test below.
   const root = await mkdtemp(join(tmpdir(), "paddock-j-"));
-  expect(await containedRealpath(root, join(root, "..", "escape.jsonl"))).toBeNull();
+  const escape = join(root, "..", "escape.jsonl");
+  await writeFile(escape, "{}\n");
+  expect(await containedRealpath(root, escape)).toBeNull();
 });
 
 test("containedRealpath refuses a symlink pointing outside the root", async () => {
