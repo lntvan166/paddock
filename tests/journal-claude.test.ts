@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { claudeAdapter } from "@server/journal/claude";
+import { MAX_TEXT_CHARS } from "@server/journal/text";
 
 const chunk = readFileSync("tests/fixtures/journal/claude-session.jsonl", "utf8");
 const entries = claudeAdapter.parse(chunk);
@@ -150,4 +151,33 @@ test("a subagent result reaching top level without isSidechain is still dropped"
   // the flag cannot see, which is why the flag alone was never sufficient.
   expect(injectedChunk).not.toContain("isSidechain");
   expect(injectedText).not.toContain("TOKEN_IN_RESULT");
+});
+
+test("the adapter strips BEFORE the text cap, not after — pinned at the call site", () => {
+  /**
+   * The ordering assertion has to live here, where `toEntry` chooses when to
+   * call `stripInjected`. Asserted in journal-text.test.ts it proves nothing
+   * about the adapter: that test picks the call order itself, so an adapter
+   * clamping first sails through it.
+   *
+   * The shape is chosen so the two orders diverge VISIBLY. A block wider than
+   * the cap sits FIRST, with the typed message after it:
+   *
+   *   strip → clamp  (correct): the whole block goes, the message remains.
+   *   clamp → strip  (broken):  the clamp cuts inside the block, taking the
+   *                             closing tag and the message with it; the
+   *                             truncated opener then strips to nothing and
+   *                             the record is dropped — the operator's own
+   *                             words gone, and the record silently absent.
+   */
+  const huge = "y".repeat(MAX_TEXT_CHARS * 2);
+  const line = JSON.stringify({
+    type: "user",
+    timestamp: "2026-08-21T10:00:00Z",
+    message: { role: "user", content: `<result>OVERSIZE_RESULT_BODY${huge}</result>the typed message` },
+  });
+  const parsed = claudeAdapter.parse(line);
+  expect(parsed).toHaveLength(1);
+  expect(parsed[0]!.text).toBe("the typed message");
+  expect(parsed[0]!.text).not.toContain("OVERSIZE_RESULT_BODY");
 });

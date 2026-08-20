@@ -217,15 +217,46 @@ test("markup a person wrote is left alone", () => {
   expect(stripInjected(typed)).toBe(typed);
 });
 
-test("stripping happens before the text cap, not after", () => {
-  // The order is load-bearing: clamped first, a record whose block ran past
-  // MAX_TEXT_CHARS was truncated to 4 KB of block and served anyway.
+test("stripping removes a block wider than the text cap rather than truncating it", () => {
+  // The unit half of the ordering rule. The half that actually pins the ORDER
+  // is in tests/journal-claude.test.ts, at the call site — asserting it here,
+  // where the test itself chooses when to call `stripInjected`, cannot fail on
+  // an adapter that clamps first.
   const huge = "x".repeat(MAX_TEXT_CHARS * 2);
-  const entries = [{
-    role: "user" as const,
-    at: null,
-    text: stripInjected(`hello<result>${huge}</result>`),
-    tools: [],
-  }];
-  expect(toLines(entries)).toEqual(["you", "hello", ""]);
+  const out = stripInjected(`hello<result>${huge}</result>`);
+  expect(out).toBe("hello");
+});
+
+test("an angle-bracket placeholder in typed prose is not a block, and survives whole", () => {
+  // Introduced by the shape rule and caught in review: an unbalanced kebab- or
+  // snake-cased bracket in a typed message is overwhelmingly a PLACEHOLDER,
+  // which is ordinary developer prose. Truncating at the opener deleted the
+  // operator's actual instruction — "replace ", "run `git push origin ",
+  // "if a" — and the design says over-stripping real prose is the worse of the
+  // two failures.
+  for (const typed of [
+    "replace <old-name> with <new-name> everywhere",
+    "run `git push origin <your-branch-name>` and then open the PR",
+    "if a<b_c and c>d then continue with the next step",
+  ]) {
+    expect(stripInjected(typed)).toBe(typed);
+  }
+});
+
+test("a shape-matched element is still removed when it is BALANCED", () => {
+  // The concession above is scoped to unbalanced brackets only. A matched pair
+  // is still machine output by its name's shape, and still goes — along with
+  // everything between the tags.
+  expect(stripInjected("keep me <some-future-hook>HOOK_BODY</some-future-hook> and me"))
+    .toBe("keep me  and me");
+  expect(stripInjected("<observed_from_session>PLUGIN_BODY</observed_from_session>tail"))
+    .toBe("tail");
+});
+
+test("a NAMED block the harness truncated still takes the remainder", () => {
+  // The asymmetry, stated as a test: the named list may take an opener's whole
+  // remainder, because a truncated `<result>` really does mean the rest of the
+  // record is machine output. The shape rule may not.
+  expect(stripInjected("typed prose <result>TRUNCATED_BODY and on and on"))
+    .toBe("typed prose ");
 });

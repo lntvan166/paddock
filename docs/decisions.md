@@ -451,7 +451,25 @@ session does not silently re-litigate them.
     absent, so that flag alone never closed the hole. Those blocks are
     stripped before anything is served, and a record stripping empties is
     dropped rather than rendered as a bare speaker row (`stripInjected` in
-    `src/server/journal/text.ts`). Absolute paths remaining in genuinely typed
+    `src/server/journal/text.ts`).
+
+    A NAMED LIST is not enough on its own — hooks, plugins and future harness
+    versions inject blocks with vocabularies nobody has listed — so a second,
+    weaker rule runs alongside it: an element whose tag NAME is kebab- or
+    snake-cased is machine output, because harness injections name their blocks
+    that way while the markup in a typed message is HTML or JSX (`<div>`,
+    `<AgentRow>`). This rule is an inference, not a contract, and it is
+    deliberately the weaker of the two. It fires only on a BALANCED pair or a
+    self-closing element, never on an unmatched bracket: `<old-name>` in
+    "replace `<old-name>` with `<new-name>`" is a placeholder, and truncating
+    at it deleted the operator's instruction. What it still costs is a message
+    quoting a real custom element or framework tag with both halves present —
+    `<router-view>…</router-view>` — which loses that element and everything
+    between the tags. The named list, by contrast, may take an opener's whole
+    remainder, because a truncated `<result>` really does mean the rest of the
+    record is machine output.
+
+    Absolute paths remaining in genuinely typed
     prose are NOT redacted: that is content the operator wrote and asked to
     see, and a scrubber over it would mangle real messages while doing nothing
     about the secret a person can type directly. The bound is on the KIND of

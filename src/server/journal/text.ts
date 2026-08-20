@@ -158,13 +158,34 @@ export function stripInjected(text: string): string {
  * this rule in place, no served `user` record on those logs contains an
  * injected element of any kind.
  *
- * THE FALSE POSITIVE IS NAMED RATHER THAN DENIED. A message quoting a real
- * custom element or framework tag — `<router-view>`, `<ng-content>`, a web
- * component — loses that element and its body. That is a piece of one typed
- * message, still readable on the live screen; the alternative is command
- * output and file contents on a route with no authentication in front of it
- * (decision 3), which decision 4 says must never happen. When those two trade
- * off, the exposure side wins.
+ * BALANCED ONLY, and this is the correction that matters most. The named list
+ * above may take an opener's whole remainder, because a truncated
+ * `<result>` really does mean the rest of the record is machine output. This
+ * rule may NOT, because an unbalanced kebab- or snake-cased bracket in a typed
+ * message is overwhelmingly an angle-bracket PLACEHOLDER, which is ordinary
+ * developer prose:
+ *
+ *   "replace <old-name> with <new-name> everywhere"
+ *   "run `git push origin <your-branch-name>` and then open the PR"
+ *   "if a<b_c and c>d then continue"
+ *
+ * Truncating at the opener turned those into "replace ", "run `git push origin "
+ * and "if a" — deleting the operator's actual instruction. The design says
+ * plainly that over-stripping real prose is the worse of the two failures, so
+ * an unbalanced shape-match is left alone and only a matched pair (or a
+ * self-closing element) is removed.
+ *
+ * WHAT IS STILL LOST, said plainly rather than understated. A message quoting a
+ * real custom element or framework tag with both halves present —
+ * `<router-view>…</router-view>`, `<ng-content>…</ng-content>`, a web
+ * component — loses that element AND everything between the tags. Where the
+ * named list fires on a truncated opener, the rest of the message goes with it.
+ * That is a real cost paid by real messages, still readable on the live screen;
+ * the alternative is command output and file contents on a route with no
+ * authentication in front of it (decision 3), which decision 4 says must never
+ * happen. When those two trade off, the exposure side wins — but only as far as
+ * a balanced pair, which is what keeps the cost to the quoted element instead
+ * of the rest of the message.
  */
 const MACHINE_NAME = "[a-zA-Z][a-zA-Z0-9]*(?:[-_][a-zA-Z0-9]+)+";
 
@@ -182,9 +203,9 @@ function stripMachineElements(text: string): string {
     out = next;
   }
   out = out.replace(new RegExp(`<${MACHINE_NAME}(?:\\s[^>]*?)?/>`, "g"), "");
-  // An opener with no close: the rest of the record is its body. Same
-  // reasoning as pass 2 above — a truncated block is still block content.
-  out = out.replace(new RegExp(`<${MACHINE_NAME}(?:\\s[^>]*?)?>[\\s\\S]*$`, ""), "");
+  // AND NOTHING ELSE. An UNBALANCED shape-match is left exactly where it is —
+  // see the "balanced only" paragraph above for the outputs that rule exists
+  // to protect.
   return out;
 }
 
