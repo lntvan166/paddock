@@ -203,13 +203,40 @@ function reportRefusal(origin: string | null, host: string, hosts: readonly stri
  * noise. The host does not get to be quiet: `CLAUDE.md` forbids swallowing
  * errors, and "history silently stopped going deeper" is otherwise invisible.
  * Once per agent, because it is reported on every page request.
+ *
+ * BOUNDED, in two directions, because a de-duplicating set that only ever
+ * grows is two bugs rather than one:
+ *
+ *  - It never forgot, so an agent whose journal came BACK — the ordinary case
+ *    after a compaction, or after the session ref arrives late — could never
+ *    be reported again if it later broke a second time. `clearJournalMiss`
+ *    below is called on every successful page, so the next genuine failure is
+ *    heard.
+ *  - It never shrank, so on a long-lived server it held one string per agent
+ *    id ever seen, forever. Agent ids do not repeat across restarts of the
+ *    harness, so this is unbounded in the literal sense. A `Set` iterates in
+ *    insertion order, so evicting the front entry is a plain FIFO and the
+ *    ceiling is the only tuning knob.
+ *
+ * The cap is generous relative to any real agent list: it exists so the set
+ * cannot grow without limit, not to be reached in normal use.
  */
+const MAX_JOURNAL_MISSES = 256;
 const journalMissesSeen = new Set<string>();
 
 function reportJournalMiss(agentId: string, detail: string): void {
   if (journalMissesSeen.has(agentId)) return;
+  if (journalMissesSeen.size >= MAX_JOURNAL_MISSES) {
+    const oldest = journalMissesSeen.values().next().value;
+    if (oldest !== undefined) journalMissesSeen.delete(oldest);
+  }
   journalMissesSeen.add(agentId);
   warn(`paddock: no journal history for \`${agentId}\` — ${detail}`);
+}
+
+/** A journal that reads again is one whose next failure must be heard again. */
+function clearJournalMiss(agentId: string): void {
+  journalMissesSeen.delete(agentId);
 }
 
 /**
@@ -555,6 +582,7 @@ export function createApp(deps: AppDeps) {
 
     const page = await deps.journal.read(deps.sessionFor?.(agent.agentId) ?? null, before, limit);
     if (page.detail !== null) reportJournalMiss(agent.agentId, page.detail);
+    else clearJournalMiss(agent.agentId);
     return c.json({ ok: true, ...page });
   });
 

@@ -40,14 +40,40 @@ export function createJournalReader(roots: JournalRoots): JournalReader {
       const path = await adapter.locate(session.value, roots.claude);
       if (path === null) return none("session log not found — compacted, rotated or removed");
 
+      /**
+       * FIXED PHRASES, never `String(err)`, and this is an exposure fix rather
+       * than tidying. A Bun/Node filesystem error stringifies with the path it
+       * failed on — `ENOENT: no such file or directory, open '<home>/.claude/
+       * projects/…'` — and `routes.ts` returns `{ ok: true, ...page }`
+       * verbatim, so a rotated or deleted log turned an ordinary miss into the
+       * operator's home path, username and project layout going over the wire
+       * to the browser. Design decision 5 says a filesystem key never reaches a
+       * client that cannot need one, and a path in an error message is the same
+       * key by another route.
+       *
+       * The RAW error is not lost: `reportJournalMiss` in `routes.ts` logs the
+       * detail host-side, where `CLAUDE.md` requires it to be loud, and the
+       * host is the side that can act on a path.
+       */
       let size: number;
       try {
         size = Bun.file(path).size;
       } catch (err) {
-        return none(`could not read the session log: ${String(err)}`);
+        console.error("journal: could not read the session log", err);
+        return none("could not read the session log");
       }
 
-      const end = before ?? size;
+      /**
+       * CLAMPED to the file, not trusted as given. `before` is format-validated
+       * in the route (digits only) but that says nothing about its range, and a
+       * cursor from a log that has since been compacted or rotated can sit far
+       * past the current end. Unclamped, the reader then spends one whole
+       * round trip per `MAX_TAIL_BYTES` walking back through bytes that do not
+       * exist before it reaches any record — 512 KB of nothing per tap.
+       * Clamping costs the operator no history: everything at or before `size`
+       * is still reachable, because `size` IS the end of the file.
+       */
+      const end = Math.min(before ?? size, size);
       if (end <= 0) return { lines: [], source: "journal", hasMore: false, cursor: null, detail: null };
 
       let text: string;
@@ -57,8 +83,10 @@ export function createJournalReader(roots: JournalRoots): JournalReader {
       } catch (err) {
         // Distinct detail from the `.size` failure above: this is "the file
         // moved or lost permissions between locate() and the read", not "we
-        // never got as far as opening it".
-        return none(`could not read a page of the session log: ${String(err)}`);
+        // never got as far as opening it". Fixed phrase for the same reason as
+        // that one — the raw error, path and all, goes to the host log.
+        console.error("journal: could not read a page of the session log", err);
+        return none("could not read a page of the session log");
       }
 
       /**

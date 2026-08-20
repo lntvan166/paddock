@@ -131,7 +131,37 @@ test("a tailChunk failure after a successful locate() is a detail, not a throw",
   const page = await createJournalReader({ claude: [root] }).read(SESSION, null, 10);
   expect(page.source).toBe("reconstruction");
   expect(page.lines).toEqual([]);
-  expect(page.detail).toContain("could not read a page of the session log");
+  // EXACTLY the fixed phrase, not merely containing it. A Bun/Node filesystem
+  // error stringifies with the path it failed on, and `routes.ts` returns
+  // `detail` to the browser verbatim, so `${String(err)}` turned an ordinary
+  // miss into the operator's home path going over the wire — the filesystem
+  // key decision 5 keeps off it. `toContain` is not enough to catch that:
+  // interpolation APPENDS, so a leaking detail still contains the phrase.
+  // Equality is what makes "nothing else travels" the assertion.
+  expect(page.detail).toBe("could not read a page of the session log");
+  expect(page.detail).not.toContain(root);
+  expect(page.detail).not.toContain(UUID);
+});
+
+test("a cursor past the end of the file is clamped, not walked back through", async () => {
+  // `before` is format-validated in the route (digits only), which says
+  // nothing about its RANGE. A cursor from a log that has since been
+  // compacted or rotated can sit far past the current end; unclamped, the
+  // reader spends one whole round trip per MAX_TAIL_BYTES crossing bytes that
+  // do not exist before it reaches any record.
+  const { roots, file } = await journal(6);
+  const size = Bun.file(file).size;
+  const reader = createJournalReader(roots);
+
+  const far = await reader.read(SESSION, size + MAX_TAIL_BYTES * 4, 50);
+  const tail = await reader.read(SESSION, null, 50);
+
+  // One request, and the SAME page a request with no cursor would have given:
+  // clamping to the end of the file costs no history, because the end of the
+  // file is where a tail read starts anyway.
+  expect(far.source).toBe("journal");
+  expect(far.lines).toEqual(tail.lines);
+  expect(far.detail).toBeNull();
 });
 
 /** A log with an arbitrary body, for the two cases `journal(n, pad)` cannot shape. */
