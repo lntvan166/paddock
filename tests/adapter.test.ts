@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyStatusEvent, toAgent } from "@server/herdr/adapter";
+import { applyStatusEvent, toAgent, toAgents } from "@server/herdr/adapter";
 import type { HerdrAgentRaw } from "@shared/herdr-api";
 
 const NOW = 1_700_000_000_000;
@@ -37,10 +37,12 @@ test("REGRESSION: agents sharing a cwd get distinct labels", () => {
   expect(a.name).not.toBe("project"); // never basename(cwd)
 });
 
-test("falls back to the pane id when name is missing, never to cwd", () => {
+test("toAgent alone falls back to the pane id — it cannot see collisions", () => {
+  // The per-row mapper has no view of the other rows, so it cannot know whether
+  // a cwd basename would be unique. `toAgents` is the layer that decides that;
+  // this fallback is the last resort for a row with no usable cwd.
   const a = toAgent(raw({ name: null }), ctx)!;
   expect(a.name).toBe("w1:p1");
-  expect(a.name).not.toBe("project");
 });
 
 test("filters out panes with status unknown", () => {
@@ -88,4 +90,85 @@ test("a status event moving an acknowledged agent off done clears the flag", () 
   const prev = { ...toAgent(raw({ agent_status: "done" }), ctx)!, acknowledgedAt: NOW };
   const next = applyStatusEvent(prev, { pane_id: "w1:p1", workspace_id: "w1", agent_status: "working" }, NOW + 5000);
   expect(next.acknowledgedAt).toBeNull();
+});
+
+// --- toAgents: the familiar-name fallback -----------------------------------
+//
+// `basename(cwd)` is allowed ONLY here, and only with disambiguation. The
+// failure this project exists to prevent is two rows rendering identically —
+// not the use of cwd itself. See docs/gotchas.md.
+
+test("a lone unnamed agent is labelled from its cwd, not its pane id", () => {
+  const [a] = toAgents([raw({ name: null })], ctx);
+  expect(a!.name).toBe("project");
+});
+
+test("an operator-set name is never rewritten", () => {
+  const [a] = toAgents([raw({ name: "api-refactor" })], ctx);
+  expect(a!.name).toBe("api-refactor");
+});
+
+test("REGRESSION: unnamed agents sharing a cwd are both suffixed, never identical", () => {
+  const agents = toAgents(
+    [
+      raw({ name: null, pane_id: "w3:p1", workspace_id: "w3" }),
+      raw({ name: null, pane_id: "w3:p2", workspace_id: "w3" }),
+    ],
+    ctx,
+  );
+  expect(agents.map((a) => a.name)).toEqual(["project p1", "project p2"]);
+  expect(agents[0]!.name).not.toBe(agents[1]!.name);
+});
+
+test("the pane suffix escalates to the full pane id when workspaces collide", () => {
+  // "w1:p1" and "w2:p1" both reduce to "p1", so the short suffix is not enough.
+  const agents = toAgents(
+    [
+      raw({ name: null, pane_id: "w1:p1", workspace_id: "w1" }),
+      raw({ name: null, pane_id: "w2:p1", workspace_id: "w2" }),
+    ],
+    ctx,
+  );
+  expect(agents.map((a) => a.name)).toEqual(["project w1:p1", "project w2:p1"]);
+});
+
+test("an unnamed agent is suffixed when a NAMED agent already holds the label", () => {
+  // Distinguishability is about what is on screen, not about where the string
+  // came from. The named agent keeps its name; the fallback moves aside.
+  const agents = toAgents(
+    [
+      raw({ name: "project", pane_id: "w1:p9" }),
+      raw({ name: null, pane_id: "w3:p1", workspace_id: "w3" }),
+    ],
+    ctx,
+  );
+  expect(agents.map((a) => a.name)).toEqual(["project", "project p1"]);
+});
+
+test("agents in DIFFERENT directories keep their plain basenames", () => {
+  const agents = toAgents(
+    [
+      raw({ name: null, cwd: "/srv/project", pane_id: "w1:p1" }),
+      raw({ name: null, cwd: "/srv/docs", pane_id: "w1:p2" }),
+    ],
+    ctx,
+  );
+  expect(agents.map((a) => a.name)).toEqual(["project", "docs"]);
+});
+
+test("a cwd with no usable basename falls back to the pane id", () => {
+  for (const cwd of ["", "/", "///"]) {
+    const [a] = toAgents([raw({ name: null, cwd, pane_id: "w3:p1" })], ctx);
+    expect(a!.name).toBe("w3:p1");
+  }
+});
+
+test("a trailing slash does not produce an empty basename", () => {
+  const [a] = toAgents([raw({ name: null, cwd: "/srv/project/" })], ctx);
+  expect(a!.name).toBe("project");
+});
+
+test("rows that are not agents are dropped before labelling", () => {
+  const agents = toAgents([raw({ agent: null }), raw({ agent_status: "unknown" }), raw()], ctx);
+  expect(agents).toHaveLength(1);
 });

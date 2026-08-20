@@ -1,4 +1,7 @@
 import { formatCode } from "@server/tunnel/pairing";
+// Re-exported: `useColour` moved to the `term.ts` leaf when hint output needed
+// it too, and this module's importers already had it from here.
+export { useColour } from "@server/term";
 
 export interface DisplayState {
   url: string;
@@ -11,15 +14,6 @@ export interface DisplayState {
   now: number;
 }
 
-/**
- * `NO_COLOR` wins whether or not it has a value — by convention the variable's
- * PRESENCE is the signal. Off entirely when stdout is not a tty, so a piped log
- * never receives escape bytes.
- */
-export function useColour(env: Record<string, string | undefined>, isTty: boolean): boolean {
-  if ("NO_COLOR" in env) return false;
-  return isTty;
-}
 
 export function human(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));

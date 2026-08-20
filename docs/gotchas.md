@@ -5,10 +5,13 @@ one, recorded here so they are not reintroduced.
 
 | Failure | Cause | Design response |
 |---|---|---|
-| Every row shows the same label | Label derived from `basename(cwd)`; agents commonly share a working directory | `name` from `agent.list` is the primary label — this is the defect the project exists to prevent |
+| Every row shows the same label | Label derived from `basename(cwd)`; agents commonly share a working directory | `name` from `agent.list` is the primary label. `basename(cwd)` is the fallback for an unnamed agent, and ONLY with the disambiguation `toAgents` adds — this is the defect the project exists to prevent |
 | A field is always empty | Read from the wrong object (pane vs workspace vs agent) | Generated types make a rename a build error — for the three v1 payloads and the `agent.read` envelope only; see the coverage limit in `docs/roadmap.md` |
 | Events dropped with no error | Push script ends `curl -s … >/dev/null 2>&1; exit 0` | Log receipt at INFO; `/api/health` exposes `lastEventAt` |
 | Sensitive paths in access logs | Payload sent as a GET query string | POST bodies only |
+| A subprocess's log lines flash and vanish | Child output and a once-a-second `ESC[H ESC[J` repaint share stdout | Buffer the child's lines while the display owns the screen, print the tail on every failure path — never silence them |
+| The screen claims a tunnel is up while it is dying | `^C` signals the whole process group, so the child begins shutdown before the draw timer is cleared | Clear the block in teardown; a stale frame asserting the opposite is worse than no frame |
+| The URL is the fourth line printed | Boot diagnostics log as they happen, and the port is not bound until after them | Collect boot facts, emit one summary line, then the banner (`boot-log.ts`) |
 | Service worker silently disabled | Auth check gates every route including `/sw.js` | No app token; Access is the gate — its cookie rides a same-origin fetch, a bearer token has nothing to ride |
 | Works on one hostname, not another | Hostname allowlist in the client | Derive the WebSocket URL from `location`, unconditionally |
 | Route order load-bearing | Hand-rolled request dispatch | Hono's explicit routing |
@@ -26,9 +29,15 @@ one, recorded here so they are not reintroduced.
   `name` field — the operator-assigned agent name. `PaneInfo` has no `name`
   field (it has `label`).
 
-- **Never label an agent from `basename(cwd)`.** Agents commonly share a
-  working directory, so every row would render identically. This is the
-  defect the project exists to prevent.
+- **Never label an agent from `basename(cwd)` WITHOUT disambiguating.** Agents
+  commonly share a working directory, so every row would render identically.
+  This is the defect the project exists to prevent — and it is the identical
+  rendering that is forbidden, not the use of `cwd`.
+
+  `toAgents` in `adapter.ts` is the only place allowed to reach for `cwd`, and
+  it earns that by promising uniqueness: `project`, then `project p1`, then
+  `project w1:p1`, climbing a rung whenever the one below is ambiguous. Take
+  the suffixing away and the flat ban comes back with it. See decision 15.
 
 - **herdr closes a socket connection after ONE response.** A second request
   on the same connection gets `EPIPE`. Only `events.subscribe` keeps its

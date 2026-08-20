@@ -47,10 +47,14 @@ afterEach(async () => {
   useStore.setState({ ...INITIAL, connect: REAL_CONNECT });
 });
 
-test("a latestKnown value applied through the store's own message reducer reaches the rendered header", async () => {
+test("a latestKnown value applied through the store's own message reducer reaches the rendered banner", async () => {
+  // A prior dismissal is per-device state that would hide the banner and make
+  // this test pass or fail on leftover storage rather than on the reducer.
+  try { localStorage.clear(); } catch { /* fails open, as the module does */ }
+
   // Neutered, not stubbed with a fake WebSocket: this test's subject is
-  // whether App reads `latestKnown` off the store and passes it to
-  // HostHeader, not the WebSocket transport itself (hub.test.ts and
+  // whether App reads `latestKnown` off the store and renders it, not the
+  // WebSocket transport itself (hub.test.ts and
   // web-store.test.ts already cover the wire format and the reducer).
   // `connect` is a module-singleton concern across test files, so replacing
   // it here — and restoring it only after unmount, in afterEach — avoids
@@ -68,5 +72,10 @@ test("a latestKnown value applied through the store's own message reducer reache
     );
   });
 
-  expect(host.textContent).toContain("paddock 9.9.9 available — run: paddock update");
+  // The notice moved from HostHeader's dim metadata line to ReleaseBanner. The
+  // subject of this test is unchanged — a value off the wire reaching the
+  // screen — so it follows the notice rather than being deleted with it.
+  const text = host.textContent ?? "";
+  expect(text).toContain("9.9.9");
+  expect(text).toContain("paddock update");
 });

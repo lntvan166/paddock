@@ -2,9 +2,14 @@ import { expect, test } from "bun:test";
 import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkForUpdate, noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
+import {
+  checkForUpdate, noUpdateCheckRequested, scheduleUpdateChecks, startUpdateCheck,
+} from "@server/update-check";
 
 const dir = async () => mkdtemp(join(tmpdir(), "paddock-uc-"));
+
+/** A disabled base: the scheduling tests inject `check`, so no disk or network. */
+const opts = () => ({ dir: "/nonexistent", current: "0.1.0", now: 1000 });
 
 const fetchOk = (async () =>
   new Response(JSON.stringify({ tag_name: "v9.9.9" }))) as unknown as typeof fetch;
@@ -154,4 +159,99 @@ test("a dev build never checks at all, so `make dev` cannot nag forever", async 
     .toBeNull();
   expect(called).toBe(false);
   expect(await Bun.file(join(d, "update-check.json")).exists()).toBe(false);
+});
+
+// --- re-checking while running ----------------------------------------------
+//
+// `startUpdateCheck` fires once. A paddock left running — which is the whole
+// point of `paddock start`, and of a dashboard open on a phone — therefore
+// froze `latestKnown` at boot and could never learn about a release published
+// afterwards. Neither the terminal line nor the dashboard's could report what
+// was never re-read.
+
+test("scheduleUpdateChecks reports the first answer without waiting for a tick", async () => {
+  const seen: (string | null)[] = [];
+  const h = scheduleUpdateChecks(
+    () => opts(),
+    (v) => void seen.push(v),
+    { everyMs: 60_000, check: async () => "0.9.0" },
+  );
+  try {
+    await Bun.sleep(5);
+    expect(seen).toEqual(["0.9.0"]);
+  } finally { h.stop(); }
+});
+
+test("it keeps checking, so a release published mid-run is found", async () => {
+  const seen: (string | null)[] = [];
+  let answer: string | null = null;
+  const h = scheduleUpdateChecks(
+    () => opts(),
+    (v) => void seen.push(v),
+    { everyMs: 5, check: async () => answer },
+  );
+  try {
+    await Bun.sleep(15);
+    answer = "0.9.0"; // published while paddock was already up
+    await Bun.sleep(25);
+    expect(seen).toContain("0.9.0");
+  } finally { h.stop(); }
+});
+
+test("each check gets a FRESH now, or the 24h cache never expires", async () => {
+  const stamps: number[] = [];
+  let t = 1_000;
+  const h = scheduleUpdateChecks(
+    () => ({ ...opts(), now: (t += 10_000) }),
+    () => {},
+    { everyMs: 5, check: async (o) => { stamps.push(o.now); return null; } },
+  );
+  try {
+    await Bun.sleep(30);
+    expect(stamps.length).toBeGreaterThan(1);
+    // A captured `now` would make every call look like the same instant, and
+    // `checkForUpdate` compares it against the cache timestamp.
+    expect(new Set(stamps).size).toBe(stamps.length);
+  } finally { h.stop(); }
+});
+
+test("stop() ends the schedule — a shutdown must not leave a timer running", async () => {
+  let calls = 0;
+  const h = scheduleUpdateChecks(
+    () => opts(),
+    () => {},
+    { everyMs: 5, check: async () => { calls += 1; return null; } },
+  );
+  await Bun.sleep(20);
+  h.stop();
+  const after = calls;
+  await Bun.sleep(20);
+  expect(calls).toBe(after);
+});
+
+// A failing check is allowed; it is not allowed to be fatal, and it must not
+// end the schedule either — a laptop offline for an hour would otherwise stop
+// checking for the rest of the process's life.
+test("a rejected check is reported and the schedule survives it", async () => {
+  const said: string[] = [];
+  const realInfo = console.info;
+  console.info = (...a: unknown[]) => { said.push(a.join(" ")); };
+  let calls = 0;
+  const h = scheduleUpdateChecks(
+    () => opts(),
+    () => {},
+    {
+      everyMs: 5,
+      check: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("offline");
+        return null;
+      },
+    },
+  );
+  try {
+    await Bun.sleep(30);
+    expect(calls).toBeGreaterThan(1);
+    expect(said.join("\n")).toContain("offline");
+  } finally { h.stop(); console.info = realInfo; }
 });

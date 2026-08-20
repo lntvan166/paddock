@@ -1,4 +1,4 @@
-import { applyStatusEvent, toAgent, workspaceLabels } from "@server/herdr/adapter";
+import { applyStatusEvent, toAgents, workspaceLabels } from "@server/herdr/adapter";
 import { checkAgentShape, type ShapeVerdict } from "@server/herdr/shape";
 import {
   EVENT_AGENT_DETECTED,
@@ -48,6 +48,15 @@ export interface SupervisorOptions {
    * which field moved.
    */
   onShapeChange?: (verdict: ShapeVerdict) => void;
+  /**
+   * The event stream was (re)subscribed, with this many panes behind it.
+   *
+   * Exists so boot can fold "subscribed" into a single status line instead of
+   * printing it — pretty-printed over three lines — above the URL the operator
+   * is actually looking for. When absent, `resubscribe` logs it itself, so
+   * nothing goes quiet by omission.
+   */
+  onSubscribed?: (panes: number) => void;
 }
 
 // Delivered names, not subscribe names — see src/server/herdr/socket.ts.
@@ -154,7 +163,13 @@ export class Supervisor {
       return;
     }
     this.openPaneKey = key;
-    console.info("herdr: subscribed", { panes: paneIds.length });
+    // Handed out rather than logged here when a handler exists, so that ONE
+    // subscribe produces one line and the boot-versus-steady-state decision
+    // lives in one place (see boot-log.ts). Without a handler this logs exactly
+    // as it always did — a Supervisor built in a test is not made quiet by
+    // this seam.
+    if (this.opts.onSubscribed) this.opts.onSubscribed(paneIds.length);
+    else console.info("herdr: subscribed", { panes: paneIds.length });
   }
 
   /**
@@ -235,9 +250,15 @@ export class Supervisor {
     // first reached.
     this.noteShape(checkAgentShape(list.agents ?? []));
 
-    const agents = (list.agents ?? [])
-      .map((raw) => toAgent(raw, { hostId: this.opts.store.hostId, labels: this.labels, now }))
-      .filter((a): a is NonNullable<typeof a> => a !== null);
+    // `toAgents`, not `.map(toAgent)`: the fallback label for an unnamed agent
+    // depends on the other rows (see adapter.ts), so it cannot be decided one
+    // row at a time. Recomputed here every reconcile, which is what lets a
+    // disambiguating suffix appear and disappear as agents come and go.
+    const agents = toAgents(list.agents ?? [], {
+      hostId: this.opts.store.hostId,
+      labels: this.labels,
+      now,
+    });
 
     const delta = this.opts.store.replaceAll(agents, now);
     if (delta.upserted.length || delta.removedIds.length) this.opts.onDelta(delta);

@@ -4,6 +4,7 @@
  */
 
 import { QUICK_TUNNEL_RE } from "@shared/quick-tunnel";
+import { warn } from "@server/term";
 
 /**
  * The regex is imported, not restated. It is anchored on BOTH ends so that
@@ -214,9 +215,9 @@ export async function startTunnel(opts: {
         // Reported, never allowed to replace the real error below: the caller
         // needs to know why the start failed, and a kill failure on top of it
         // is a second fact, not a substitute for the first.
-        console.error(
+        warn(
           `[cloudflared] could not stop the child after a failed start (${String(killErr)}) — ` +
-            "check by hand: pgrep -af 'cloudflared tunnel'",
+            "check by hand: `pgrep -af 'cloudflared tunnel'`",
         );
       }
     }

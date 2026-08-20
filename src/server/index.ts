@@ -31,7 +31,9 @@ import { runTunnel } from "@server/tunnel/run";
 import { VERSION } from "@server/version";
 import { runDoctor } from "@server/doctor";
 import { runUpdate } from "@server/update";
-import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
+import { noUpdateCheckRequested, scheduleUpdateChecks } from "@server/update-check";
+import { say, warn } from "@server/term";
+import { BootLog } from "@server/boot-log";
 import {
   errorCode,
   herdrUnreachableMessage,
@@ -50,7 +52,7 @@ const HOSTNAME = "127.0.0.1"; // loopback only; exposure is the tunnel's job
 // also how `paddock --demo agent` came out as `serve` from parseArgs and as
 // `agent` from here. Exit code 2 and the roadmap pointer are unchanged.
 if (command === "agent" || command === "hub") {
-  console.error(`paddock ${command}: not implemented — see docs/roadmap.md`);
+  warn(`paddock ${command}: not implemented — see docs/roadmap.md`);
   process.exit(2);
 }
 
@@ -59,15 +61,15 @@ if (command === "agent" || command === "hub") {
 // verbs is the "never swallow errors" shape — the operator asked for something
 // that does not exist and got a working-looking server instead of being told.
 if (command === "unknown") {
-  console.error(`paddock: unknown command '${verb}'`);
-  console.error(USAGE);
+  warn(`paddock: unknown command '${verb}'`);
+  warn(USAGE);
   process.exit(2);
 }
 
 // Before anything opens a socket or binds a port — asking what the tool does
 // must never start it. See parseArgs for what `--help` used to do here.
 if (command === "help") {
-  console.log(USAGE);
+  say(USAGE);
   process.exit(0);
 }
 
@@ -152,19 +154,19 @@ if (command === "tunnel") {
   // silently, on the one flag whose entire job is bounding how long a public
   // URL lives. `flags` is what tells the two apart.
   if (flags.has("--for") && raw === undefined) {
-    console.error("paddock: --for needs a duration (try 45s, 90m, 2h)");
+    warn("paddock: --for needs a duration (try `45s`, `90m`, `2h`)");
     process.exit(1);
   }
   const parsed = raw === undefined ? null : parseDuration(raw);
   if (raw !== undefined && parsed === null) {
-    console.error(`paddock: --for ${raw} is not a duration (try 45s, 90m, 2h)`);
+    warn(`paddock: --for ${raw} is not a duration (try \`45s\`, \`90m\`, \`2h\`)`);
     process.exit(1);
   }
   tunnelDeadlineMs = parsed;
 
   const pre = await preflight({ dir: defaultConfigDir() });
   if (!pre.ok) {
-    console.error(pre.message);
+    warn(pre.message);
     process.exit(1);
   }
   tunnelBin = pre.bin;
@@ -220,21 +222,50 @@ function currentBuildId(): string | null {
  * binding its port, and this variable simply stays `null` (its honest "don't
  * know yet" value) until the one background check resolves.
  *
- * `startUpdateCheck` rather than a bare `void checkForUpdate(...).then(...)`:
+ * `scheduleUpdateChecks` rather than a bare `void checkForUpdate(...).then(...)`:
  * that form had no `.catch`, and Bun terminates the process on an unhandled
  * rejection — so a check that threw killed a server that had already bound
  * its port and was serving. The rejection handler lives with the check
  * itself now, where it cannot be dropped by an edit to this file.
+ *
+ * SCHEDULED, not fired once. A single check froze this value at boot, so a
+ * paddock running when a release landed reported the state of the world at
+ * startup for as long as it stayed up — which is precisely the long-lived case
+ * `paddock start` and a dashboard open on a phone are both made of.
  */
 let latestKnown: string | null = null;
-startUpdateCheck(
-  {
+
+/**
+ * Collects the herdr boot diagnostics so the URL is not the fourth thing
+ * printed. See boot-log.ts for why the URL cannot simply move up instead.
+ */
+const bootLog = new BootLog();
+
+/**
+ * Set once the banner has printed WITHOUT an update result in hand, so a result
+ * arriving later still reaches the terminal. Null means "already announced, or
+ * too early to" — the banner reads it, the update callback clears it.
+ */
+let bannerPrinted = false;
+/** The version the terminal has already named, so it says it once per version. */
+let announcedVersion: string | null = null;
+const updateChecks = scheduleUpdateChecks(
+  // A factory: `now` must be fresh on every tick, or the 24h cache never looks
+  // expired. See scheduleUpdateChecks.
+  () => ({
     dir: defaultConfigDir(),
     current: VERSION,
     now: Date.now(),
     disabled: noUpdateCheckRequested(),
+  }),
+  (v) => {
+    latestKnown = v;
+    // Before the banner, the banner will say it — printing here would put the
+    // notice above the URL it is meant to sit under. After the banner, this is
+    // the only route to the terminal, which is the case that matters for a
+    // release published while paddock was already running.
+    if (v !== null && bannerPrinted && v !== announcedVersion) updateLine(v);
   },
-  (v) => { latestKnown = v; },
 );
 
 const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown });
@@ -318,7 +349,8 @@ if (DEMO) {
     path: socketPath,
     onEvent: (e) => supervisor?.handleEvent(e),
     onStateChange: (up) => {
-      console.info(`herdr event stream ${up ? "connected" : "disconnected"}`);
+      if (bootLog.inBoot) bootLog.noteStream(up);
+      else console.info(`herdr event stream ${up ? "connected" : "disconnected"}`);
       // A drop we did not ask for: start recovering. HerdrStream calls this
       // with `false` only when there is genuinely no stream left and nobody
       // asked for that — a real drop, or a reopen that tore down a live
@@ -349,13 +381,29 @@ if (DEMO) {
     // herdr is answering, so the keeper has nothing to recover. Announced only
     // on CHANGE (see Supervisor.noteShape), which is what keeps a 30s
     // reconcile from burying the one line that mattered.
+    onSubscribed: (panes) => {
+      if (bootLog.inBoot) bootLog.notePanes(panes);
+      else console.info("herdr: subscribed", { panes });
+    },
     onShapeChange: (verdict) => {
       // Three explicit branches. `shapeMessage` returns null for BOTH `ok` and
       // `unknown`, so a two-branch version announced "every field present" when
       // nothing had been inspected at all — a reassurance about data that was
       // never read.
+      // A broken shape is announced in FULL even during boot: it is the one
+      // verdict that must never be compressed into a status line.
+      if (bootLog.inBoot && verdict.kind !== "broken") {
+        bootLog.noteShape(verdict.kind);
+        return;
+      }
       if (verdict.kind === "broken") {
-        console.error(shapeMessage(verdict, herdrProtocol ?? 0));
+        // `shapeMessage` is typed `string | null` because it returns null for
+        // `ok` and `unknown`. This branch is `broken`, so a null here would be
+        // a bug in shape.ts — reported, never quietly passed over.
+        warn(
+          shapeMessage(verdict, herdrProtocol ?? 0) ??
+            "paddock: herdr's agent.list does not match what paddock reads, and shapeMessage gave no detail",
+        );
       } else if (verdict.kind === "ok") {
         console.info("herdr: agent.list carries every field paddock reads");
       } else {
@@ -432,13 +480,13 @@ if (DEMO) {
       process.exit(1);
     }
   } catch (err) {
-    if (err instanceof ProtocolMismatchError) console.error(err.message);
+    if (err instanceof ProtocolMismatchError) warn(err.message);
     else {
       const kind = inspectSocketPath(socketPath);
       // Only what we can diagnose. A parse bug wearing a "cannot reach herdr"
       // message is harder to debug than the raw throw it replaced.
       if (isDiagnosableHerdrFailure(err, kind))
-        console.error(herdrUnreachableMessage(socketPath, err, kind));
+        warn(herdrUnreachableMessage(socketPath, err, kind));
       else console.error(err);
     }
     process.exit(1);
@@ -497,7 +545,7 @@ try {
   // than the trace it replaced, and this project's rules forbid swallowing
   // errors, not formatting the one condition we recognise.
   if (errorCode(err) !== "EADDRINUSE") throw err;
-  console.error(portInUseMessage(PORT, HOSTNAME));
+  warn(portInUseMessage(PORT, HOSTNAME));
   process.exit(1);
 }
 
@@ -505,13 +553,59 @@ try {
 // declare a perfectly healthy link stale after 60s of idle agents.
 hub.startHeartbeat();
 
-console.info(`paddock listening on http://${HOSTNAME}:${PORT}`);
+// Boot is over. The single collected diagnostic line first, then the banner —
+// so the URL sits under a blank line with nothing competing for the eye. Every
+// call site above logs individually from here on.
+const bootSummary = bootLog.summary();
+if (bootSummary !== null) console.info(bootSummary);
+bootLog.end();
+
+say("");
+say(`  paddock  \`http://${HOSTNAME}:${PORT}\``);
 
 // Nothing to nudge an operator who is already running `paddock tunnel` toward.
 if (command !== "tunnel") {
   const hint = tunnelHint(settings.current().publicUrl, false);
-  if (hint !== null) console.info(hint);
+  if (hint !== null) say(hint);
 }
+
+// What paddock is actually watching, under the labels the dashboard will show.
+// This is where the cwd fallback earns its place: an operator who never named
+// an agent can see at a glance whether `project p1` is the row they expected,
+// instead of finding out by opening the dashboard.
+const watching = store.snapshot();
+if (watching.length > 0) {
+  const names = watching.map((a) => a.name);
+  // Truncated rather than wrapped: this is orientation, not the agent list.
+  // The dashboard is the place that shows all of them.
+  const shown = names.slice(0, 6).join(", ");
+  const rest = names.length > 6 ? `, +${names.length - 6} more` : "";
+  say(`  watching ${names.length === 1 ? "1 agent" : `${names.length} agents`}: ${shown}${rest}`);
+}
+say("");
+
+/**
+ * A new release, told to the operator where they are certain to look.
+ *
+ * The dashboard has carried this since the update check existed — `latestKnown`
+ * rides the heartbeat to `HostHeader`, which renders it deliberately dim,
+ * because an available update is not an alarm. What none of that reaches is the
+ * TERMINAL: `paddock` was started there, and nothing printed there ever
+ * mentioned a new version, so the only way to find out was to already be
+ * looking at the dashboard for another reason.
+ *
+ * Announced when the answer ARRIVES, not at banner time. The check is async and
+ * caches for a day, so the cached case usually resolves before the bind and the
+ * uncached case lands seconds after it — printing only at banner time would
+ * have silently dropped whichever half of that race lost.
+ */
+function updateLine(latest: string): void {
+  announcedVersion = latest;
+  say(`  paddock ${latest} is available — run \`paddock update\``);
+  say("");
+}
+bannerPrinted = true;
+if (latestKnown !== null) updateLine(latestKnown);
 
 // Written AFTER the bind, deliberately. A paddock that failed to take the port
 // must not overwrite the state of the one already holding it.
@@ -523,7 +617,7 @@ if (command !== "tunnel") {
 // 1000, and docker-compose.yml runs `user: "${UID}:${GID}"` from the host, so
 // on any host whose UID isn't 1000 `homedir()` resolves to `/` and the write
 // is EACCES — the exact shape that, unguarded, previously killed an
-// already-bound server via startUpdateCheck (see update-check.ts).
+// already-bound server via scheduleUpdateChecks (see update-check.ts).
 const stateDir = defaultConfigDir();
 await recordState(stateDir, {
   pid: process.pid,
@@ -561,6 +655,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // open — but a timer that fires against a torn-down store would report
     // about an agent nobody is watching any more.
     notifier.dispose();
+    // Unref'd, so it could never hold the process open — cleared anyway, so a
+    // tick cannot land mid-teardown and print an update notice underneath the
+    // shutdown report.
+    updateChecks.stop();
     void (async () => {
       /**
        * 0 ONLY for a shutdown that actually finished.
