@@ -13,7 +13,7 @@ const TUNNEL = "https://quiet-harbor-8f31.trycloudflare.com";
 
 const health = () => ({
   ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: true,
-  lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null,
+  lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, herdrProtocol: null, schemaWarning: null,
 });
 
 // Mirrors tests/settings-routes.test.ts: a real SettingsStore over a fresh

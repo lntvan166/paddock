@@ -16,7 +16,7 @@ function app(
       clients: hub.clientCount, herdrConnected: over.herdrConnected ?? true,
       lastEventAt: over.lastEventAt ?? null,
       lastNotifyError: over.lastNotifyError ?? null,
-      version: "0.0.0-dev", latestKnown: null,
+      version: "0.0.0-dev", latestKnown: null, herdrProtocol: null, schemaWarning: null,
     }),
   });
 }

@@ -1,4 +1,5 @@
 import { applyStatusEvent, toAgent, workspaceLabels } from "@server/herdr/adapter";
+import { checkAgentShape, type ShapeVerdict } from "@server/herdr/shape";
 import {
   EVENT_AGENT_DETECTED,
   EVENT_PANE_CLOSED,
@@ -38,6 +39,15 @@ export interface SupervisorOptions {
    * are still logged; this is additional, not a replacement.
    */
   onBackgroundFailure?: (err: unknown) => void;
+  /**
+   * Fired only when the verdict on herdr's `agent.list` shape CHANGES.
+   *
+   * Separate from `onBackgroundFailure` because this is not a failure to
+   * recover from — the stream is healthy and herdr is answering. It is a
+   * contract change, and the only useful response is to tell the operator
+   * which field moved.
+   */
+  onShapeChange?: (verdict: ShapeVerdict) => void;
 }
 
 // Delivered names, not subscribe names — see src/server/herdr/socket.ts.
@@ -48,6 +58,8 @@ export class Supervisor {
   private timer: ReturnType<typeof setInterval> | null = null;
   private labels = new Map<string, string>();
   private eventAt: number | null = null;
+  /** Latest verdict on herdr's `agent.list` shape. See `herdr/shape.ts`. */
+  private shapeVerdict: ShapeVerdict = { kind: "unknown" };
   private readonly now: () => number;
   private readonly reconcileMs: number;
 
@@ -73,6 +85,17 @@ export class Supervisor {
 
   get lastEventAt(): number | null {
     return this.eventAt;
+  }
+
+  /**
+   * The latest verdict on herdr's `agent.list` shape, for `/api/health`.
+   *
+   * Read rather than pushed, for the same reason `health()` reads
+   * `stream.connected` instead of a cached boolean: a copy can go stale and
+   * then lie, and this one exists precisely to be trusted.
+   */
+  get shape(): ShapeVerdict {
+    return this.shapeVerdict;
   }
 
   /**
@@ -168,6 +191,29 @@ export class Supervisor {
     this.opts.onBackgroundFailure?.(err);
   }
 
+  /**
+   * Record a verdict, announcing only CHANGES.
+   *
+   * `reconcile` runs on a 30s timer and on every event-driven refresh, so
+   * announcing an unchanged verdict each time would bury the one line that
+   * mattered under hundreds of identical ones — the shape of "never swallow
+   * errors" that still leaves the error findable.
+   */
+  private noteShape(next: ShapeVerdict): void {
+    // `unknown` means zero rows were inspected — "we learned nothing", which
+    // must not erase what we did learn. Without this, a real break was silently
+    // cleared the moment the operator closed their panes: `health.schemaWarning`
+    // returned to null and the log announced every field present, while the
+    // contract was still broken. Only positive evidence of health clears a break.
+    if (next.kind === "unknown" && this.shapeVerdict.kind !== "unknown") return;
+
+    const key = (v: ShapeVerdict) =>
+      v.kind === "broken" ? `broken:${v.missing.join(",")}|${v.unknownStatuses.join(",")}` : v.kind;
+    const changed = key(next) !== key(this.shapeVerdict);
+    this.shapeVerdict = next;
+    if (changed) this.opts.onShapeChange?.(next);
+  }
+
   async reconcile(): Promise<Delta> {
     const now = this.now();
 
@@ -178,6 +224,17 @@ export class Supervisor {
     this.labels = workspaceLabels(ws.workspaces ?? []);
 
     const list = await this.opts.client.request<{ agents: HerdrAgentRaw[] }>("agent.list", {});
+
+    // Checked on the RAW response, before `toAgent` maps it. After mapping,
+    // every absence has already been papered over by a fallback — the whole
+    // point is to see what herdr actually sent.
+    //
+    // Every reconcile, not just at startup: a herdr upgraded underneath a
+    // running paddock is the case a boot-time assertion cannot see, and it is
+    // the ordinary case, because the protocol is only read when the daemon is
+    // first reached.
+    this.noteShape(checkAgentShape(list.agents ?? []));
+
     const agents = (list.agents ?? [])
       .map((raw) => toAgent(raw, { hostId: this.opts.store.hostId, labels: this.labels, now }))
       .filter((a): a is NonNullable<typeof a> => a !== null);

@@ -13,7 +13,7 @@ import {
   EVENT_PANE_CLOSED,
 } from "@server/herdr/socket";
 import { StreamKeeper } from "@server/herdr/keeper";
-import type { HerdrEvent } from "@shared/herdr-api";
+import { HERDR_PROTOCOL, type HerdrEvent } from "@shared/herdr-api";
 
 let stop: (() => void) | null = null;
 afterEach(() => { stop?.(); stop = null; });
@@ -35,7 +35,7 @@ afterEach(() => { stop?.(); stop = null; });
  */
 async function fakeHerdr(
   protocol = 19,
-  opts: { dropSubscribeAck?: boolean; mute?: boolean } = {},
+  opts: { dropSubscribeAck?: boolean; mute?: boolean; omitProtocol?: boolean } = {},
 ) {
   const dir = await mkdtemp(join(tmpdir(), "paddock-sock-"));
   const path = join(dir, "h.sock");
@@ -72,7 +72,16 @@ async function fakeHerdr(
 
           const reply =
             req.method === "ping"
-              ? { id: req.id, result: { type: "pong", version: "0.8.0", protocol } }
+              ? {
+                  id: req.id,
+                  // `omitProtocol` sends a pong with NO protocol field at all.
+                  // Passing `undefined` as the argument cannot express this —
+                  // the default parameter would silently substitute 19 and the
+                  // test would pass by throwing for the wrong reason.
+                  result: opts.omitProtocol
+                    ? { type: "pong", version: "0.8.0" }
+                    : { type: "pong", version: "0.8.0", protocol },
+                }
               : req.method === "boom"
                 ? { id: req.id, error: { code: "invalid_request", message: "no such thing" } }
                 : { id: req.id, result: { type: "agent_list", agents: [] } };
@@ -122,14 +131,41 @@ test("a request rejects when herdr returns an error body", async () => {
   await expect(request(path, "boom", {})).rejects.toThrow("no such thing");
 });
 
+// DERIVED from HERDR_PROTOCOL, never hardcoded. These two used the literals 19
+// and 20, so bumping the pin — a routine operation every time herdr moves —
+// broke them both: "matching" stopped matching, and "different" became the new
+// pin and stopped throwing. A test that fails on a legitimate regeneration is
+// noise that trains you to edit tests instead of reading them.
 test("checkProtocol accepts a matching protocol", async () => {
-  const { path } = await fakeHerdr(19);
+  const { path } = await fakeHerdr(HERDR_PROTOCOL);
   await checkProtocol(path);
 });
 
-test("checkProtocol throws ProtocolMismatchError on a different protocol", async () => {
-  const { path } = await fakeHerdr(20);
+// OLDER, not newer, and deliberately so: an older herdr genuinely lacks what
+// this paddock reads, so it must refuse in every policy this project has held.
+test("checkProtocol throws ProtocolMismatchError on an older protocol", async () => {
+  const { path } = await fakeHerdr(HERDR_PROTOCOL - 1);
   await expect(checkProtocol(path)).rejects.toBeInstanceOf(ProtocolMismatchError);
+});
+
+// The asymmetry `scripts/protocol-guard.ts` already encodes for `make types`,
+// now applied at runtime: herdr bumps its protocol often (0.8.0 → 0.8.2 moved
+// 19 → 20 and changed nothing paddock reads), and refusing to start over an
+// integer that carried no consequence took the dashboard down for nothing.
+// Newer is REPORTED, not fatal — what actually breaks is a field going away,
+// and `checkAgentShape` is what watches for that.
+test("checkProtocol accepts a NEWER herdr and reports the drift", async () => {
+  const { path } = await fakeHerdr(HERDR_PROTOCOL + 1);
+  expect(await checkProtocol(path)).toEqual({
+    kind: "newer",
+    herdr: HERDR_PROTOCOL + 1,
+    paddock: HERDR_PROTOCOL,
+  });
+});
+
+test("checkProtocol reports a match plainly", async () => {
+  const { path } = await fakeHerdr(HERDR_PROTOCOL);
+  expect(await checkProtocol(path)).toEqual({ kind: "match" });
 });
 
 test("status subscriptions carry a pane_id; global ones do not", () => {
@@ -433,4 +469,19 @@ test("the mismatch message tells a contributor with a newer herdr to regenerate 
   expect(msg).toContain("make types");
   expect(msg).toContain("adapter.ts");
   expect(msg).toContain("paddock update");
+});
+
+// A hole the `!==` → ordered-comparison change opened, found in review.
+// `undefined < N` and `undefined > N` are BOTH false, so an absent or
+// non-numeric protocol fell through to "match" and paddock started as if it had
+// verified something. The old `!==` threw with "herdr reports undefined", which
+// was loud and correct.
+test("a ping with no protocol is a mismatch, not a match", async () => {
+  const { path } = await fakeHerdr(HERDR_PROTOCOL, { omitProtocol: true });
+  await expect(checkProtocol(path)).rejects.toBeInstanceOf(ProtocolMismatchError);
+});
+
+test("a non-numeric protocol is a mismatch, not a match", async () => {
+  const { path } = await fakeHerdr("20" as unknown as number);
+  await expect(checkProtocol(path)).rejects.toBeInstanceOf(ProtocolMismatchError);
 });

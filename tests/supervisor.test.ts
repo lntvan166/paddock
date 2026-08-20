@@ -349,3 +349,122 @@ test("an unrelated event kind is ignored", async () => {
   sup.handleEvent({ event: "pane.scroll_changed", data: { pane_id: "w1:p1" } });
   expect(store.snapshot()[0]!.state).toBe("working");
 });
+
+// ---------------------------------------------------------------------------
+// Shape reporting. `checkProtocol` now accepts a NEWER herdr, so a version
+// number no longer stands guard over the contract — these do. What actually
+// breaks the dashboard is a field paddock reads going away, and only the live
+// `agent.list` response can show that.
+// ---------------------------------------------------------------------------
+
+test("reconcile reports a healthy shape", async () => {
+  const sup = new Supervisor({
+    client: fakeClient(), store: new AgentStore("dev-box"), onDelta: () => {}, now: () => NOW,
+  });
+  await sup.start();
+  expect(sup.shape).toEqual({ kind: "ok" });
+});
+
+test("reconcile reports a missing required field, naming it", async () => {
+  const broken = rawAgent();
+  delete (broken as Record<string, unknown>).agent_status;
+  const sup = new Supervisor({
+    client: fakeClient([broken]), store: new AgentStore("dev-box"), onDelta: () => {}, now: () => NOW,
+  });
+  await sup.start();
+  expect(sup.shape).toEqual({ kind: "broken", missing: ["agent_status"], unknownStatuses: [] });
+});
+
+test("no panes open reports unknown, not broken", async () => {
+  const sup = new Supervisor({
+    client: fakeClient([]), store: new AgentStore("dev-box"), onDelta: () => {}, now: () => NOW,
+  });
+  await sup.start();
+  expect(sup.shape).toEqual({ kind: "unknown" });
+});
+
+test("onShapeChange fires on a change, and NOT on every reconcile", async () => {
+  // The dedupe matters because reconcile runs on a 30s timer and on every
+  // event-driven refresh: reporting an unchanged verdict each time would bury
+  // the one line that mattered under hundreds of identical ones.
+  const seen: unknown[] = [];
+  const sup = new Supervisor({
+    client: fakeClient(), store: new AgentStore("dev-box"), onDelta: () => {},
+    now: () => NOW, onShapeChange: (v) => seen.push(v),
+  });
+  await sup.start();
+  await sup.reconcile();
+  await sup.reconcile();
+  expect(seen).toEqual([{ kind: "ok" }]);
+});
+
+test("onShapeChange fires again when the verdict actually changes", async () => {
+  // herdr upgraded underneath a running paddock — the case a startup-only
+  // check cannot see, and the reason this is not just a boot assertion.
+  const healthy = rawAgent();
+  const broken = rawAgent();
+  delete (broken as Record<string, unknown>).workspace_id;
+
+  let agents: unknown[] = [healthy];
+  const client = {
+    async request<T>(method: string): Promise<T> {
+      if (method === "agent.list") return { agents } as T;
+      return { workspaces: [{ workspace_id: "w1", label: "api work", number: 1 }] } as T;
+    },
+    async openStream() {},
+  };
+
+  const seen: unknown[] = [];
+  const sup = new Supervisor({
+    client, store: new AgentStore("dev-box"), onDelta: () => {},
+    now: () => NOW, onShapeChange: (v) => seen.push(v),
+  });
+  await sup.start();
+  agents = [broken];
+  await sup.reconcile();
+
+  expect(seen).toEqual([
+    { kind: "ok" },
+    { kind: "broken", missing: ["workspace_id"], unknownStatuses: [] },
+  ]);
+});
+
+test("an unknown verdict never overwrites what was already observed", async () => {
+  // Found in review. A break was recorded, then the operator closed every pane
+  // → zero rows → `unknown` → `health.schemaWarning` silently returned to null
+  // and the log announced every field present, while the break was unresolved.
+  //
+  // Zero rows is "we learned nothing", and learning nothing must not erase what
+  // we did learn. Only positive evidence of health clears a break.
+  const broken = rawAgent();
+  delete (broken as Record<string, unknown>).workspace_id;
+
+  let agents: unknown[] = [broken];
+  const client = {
+    async request<T>(method: string): Promise<T> {
+      if (method === "agent.list") return { agents } as T;
+      return { workspaces: [] } as T;
+    },
+    async openStream() {},
+  };
+
+  const seen: unknown[] = [];
+  const sup = new Supervisor({
+    client, store: new AgentStore("dev-box"), onDelta: () => {},
+    now: () => NOW, onShapeChange: (v) => seen.push(v),
+  });
+  await sup.start();
+  expect(sup.shape.kind).toBe("broken");
+
+  agents = [];
+  await sup.reconcile();
+  expect(sup.shape).toEqual({ kind: "broken", missing: ["workspace_id"], unknownStatuses: [] });
+  // And nothing was announced, because nothing changed.
+  expect(seen).toHaveLength(1);
+
+  // Positive evidence of health DOES clear it.
+  agents = [rawAgent()];
+  await sup.reconcile();
+  expect(sup.shape).toEqual({ kind: "ok" });
+  expect(seen).toHaveLength(2);
+});

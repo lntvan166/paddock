@@ -14,6 +14,7 @@ import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
+import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import { buildIdFrom } from "@server/build-id";
@@ -23,6 +24,7 @@ import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, parseDuration, USAGE } from "@server/cli";
+import { HERDR_PROTOCOL } from "@shared/herdr-api";
 import { Pairing } from "@server/tunnel/pairing";
 import { preflight, tunnelHint } from "@server/tunnel/preflight";
 import { runTunnel } from "@server/tunnel/run";
@@ -269,6 +271,16 @@ const notifier = new Notifier({
   },
 });
 
+/**
+ * The protocol the LIVE herdr reported, or null before it answered.
+ *
+ * Recorded rather than assumed equal to HERDR_PROTOCOL, because paddock now
+ * accepts a herdr NEWER than the one it was built against — so the two numbers
+ * genuinely differ in normal operation, and `/api/health` is where an operator
+ * sees that without reading a log.
+ */
+let herdrProtocol: number | null = null;
+
 let supervisor: Supervisor | null = null;
 let demo: DemoSource | null = null;
 // Demo has no herdr to act on, so the herdr-backed action routes stay unset
@@ -333,6 +345,23 @@ if (DEMO) {
     // nobody, so a rejection there used to be a log line and nothing more.
     // Arming the keeper makes a background failure self-heal instead.
     onBackgroundFailure: () => keeper?.notifyClosed(),
+    // A contract change, not a connection failure — the stream is healthy and
+    // herdr is answering, so the keeper has nothing to recover. Announced only
+    // on CHANGE (see Supervisor.noteShape), which is what keeps a 30s
+    // reconcile from burying the one line that mattered.
+    onShapeChange: (verdict) => {
+      // Three explicit branches. `shapeMessage` returns null for BOTH `ok` and
+      // `unknown`, so a two-branch version announced "every field present" when
+      // nothing had been inspected at all — a reassurance about data that was
+      // never read.
+      if (verdict.kind === "broken") {
+        console.error(shapeMessage(verdict, herdrProtocol ?? 0));
+      } else if (verdict.kind === "ok") {
+        console.info("herdr: agent.list carries every field paddock reads");
+      } else {
+        console.info("herdr: no panes to inspect — the agent.list contract is unverified");
+      }
+    },
   });
 
   // The pane set after a herdr restart is usually IDENTICAL to what it was
@@ -351,7 +380,21 @@ if (DEMO) {
   // refresh's post-await `openPaneKey` write. The losing side is the stale
   // claim, not the invalidation — worst case one extra reopen.
   keeper = new StreamKeeper({
-    refresh: () => {
+    refresh: async () => {
+      // Re-ping, so `health.herdrProtocol` is the daemon actually answering
+      // rather than the one that answered at boot. A herdr upgraded underneath
+      // a running paddock is the ordinary case — the protocol is read only when
+      // the daemon is first reached — and without this the reported number went
+      // stale in exactly the scenario the field exists for, including printing
+      // a boot-time protocol next to a genuinely missing field.
+      //
+      // A ProtocolMismatchError here is fatal by the keeper's own rule: an
+      // OLDER daemon cannot be retried into compatibility. Deliberately NOT
+      // logged on the newer path — recovery can run repeatedly, and the drift
+      // was already announced once at startup.
+      const recheck = await checkProtocol(socketPath);
+      herdrProtocol = recheck.kind === "newer" ? recheck.herdr : HERDR_PROTOCOL;
+
       supervisor!.invalidateSubscription();
       return supervisor!.refresh();
     },
@@ -359,8 +402,35 @@ if (DEMO) {
   });
 
   try {
-    await checkProtocol(socketPath);
+    const check = await checkProtocol(socketPath);
+    herdrProtocol = check.kind === "newer" ? check.herdr : HERDR_PROTOCOL;
+    if (check.kind === "newer") {
+      // Reported once, at INFO: this is the ordinary case now, not a problem.
+      // herdr bumps its protocol often and mostly additively, and the fields
+      // paddock reads are verified against live data below.
+      console.info(
+        `herdr protocol ${check.herdr} is newer than this paddock (built for ${check.paddock});` +
+          " verifying the fields paddock reads against agent.list",
+      );
+    }
+
     await supervisor.start();
+
+    // The startup half of the shape check. `start()` has just reconciled, so
+    // this verdict is about real data. Refusing here is deliberate: rendering
+    // every agent in one wrong state, or every row under the same label, is
+    // worse than not starting, because the operator would act on it.
+    const shape = supervisor.shape;
+    if (shape.kind === "broken") {
+      // Worded for BOTH causes. A verdict can be broken because a required
+      // field is gone OR because agent_status carries a value outside the
+      // generated enum, and "missing fields" would misdescribe the second —
+      // sending the operator to look for an absent key that is right there.
+      console.error(
+        "paddock: refusing to start — herdr's agent.list does not match what paddock reads",
+      );
+      process.exit(1);
+    }
   } catch (err) {
     if (err instanceof ProtocolMismatchError) console.error(err.message);
     else {
@@ -396,6 +466,10 @@ const appDeps = {
     lastNotifyError: notifier.lastError,
     version: VERSION,
     latestKnown,
+    herdrProtocol: DEMO ? HERDR_PROTOCOL : herdrProtocol,
+    // Read from the supervisor rather than cached here, for the same reason
+    // herdrConnected reads the stream: a copy can go stale and then lie.
+    schemaWarning: shapeSummary(supervisor?.shape ?? { kind: "unknown" }),
   }),
   staticDir: process.env.PADDOCK_STATIC_DIR ?? "dist",
 };

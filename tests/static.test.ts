@@ -12,7 +12,7 @@ function app() {
     health: () => ({
       ok: true, hostId: "dev-box", agents: 0, clients: 0,
       herdrConnected: true, lastEventAt: null, lastNotifyError: null,
-      version: "0.0.0-dev", latestKnown: null,
+      version: "0.0.0-dev", latestKnown: null, herdrProtocol: null, schemaWarning: null,
     }),
     staticDir: "dist",
   });

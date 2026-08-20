@@ -189,3 +189,46 @@ session does not silently re-litigate them.
 
     Not a token, and not a precedent for one. See
     `docs/design/2026-08-20-quick-tunnel-design.md`.
+
+14. **Protocol drift is directional, and fields are the real contract.**
+    `checkProtocol` compared herdr's protocol with `!==`, so any drift in either
+    direction was a fatal startup error. Measured cost: herdr 0.8.0 → 0.8.2
+    moved the protocol 19 → 20 and the regenerated types differed by two lines —
+    the number and its comment, with a byte-identical status enum. Nothing
+    paddock reads had changed, and paddock refused to start at all.
+
+    `scripts/protocol-guard.ts` already encoded the asymmetry that matters: it
+    refuses to regenerate against an OLDER herdr, because that shrinks the enums
+    and silently narrows the contract, while an upgrade is allowed. The runtime
+    gate now matches it. An older herdr throws, since it genuinely lacks what
+    this paddock reads. A newer one is accepted and reported once at INFO, and
+    `/api/health` carries the observed `herdrProtocol` so the drift is visible
+    to a `curl` or a monitor rather than only in a log. Not to the dashboard:
+    nothing under `src/web/` reads `/api/health`, so this is the same
+    operator-diagnostic surface `lastNotifyError` already uses. Surfacing it in
+    the UI would mean putting it on the hub's hello payload.
+
+    What replaces the version comparison is `src/server/herdr/shape.ts`, which
+    checks the fields paddock actually reads against the live `agent.list`
+    response on every reconcile — not just at startup, because a herdr upgraded
+    underneath a running paddock is the ordinary case: the protocol is read only
+    when the daemon is first reached, so a long-lived instance keeps working
+    across an upgrade and only a restart reveals the break.
+
+    It covers only fields that are REQUIRED in `HerdrAgentRaw`. `name` and
+    `terminal_title_stripped` are optional and `adapter.ts` already falls back
+    for both, so a pane that was never named legitimately lacks them — checking
+    those would report a protocol break on an ordinary install, and a check that
+    cries wolf on normal data trains you to ignore it. Zero panes yields
+    `unknown`, never `broken`: you cannot conclude a field is gone from no rows.
+
+    Checked against live data rather than `herdr api schema --json`, for the
+    reason `doctor.ts` already records — the CLI answers from the binary on disk
+    while the socket answers from the running daemon, and the two disagree after
+    an upgrade, which is the exact confusion this decision exists to end.
+
+    A broken shape refuses at startup and, once running, is logged on change and
+    exposed as `health.schemaWarning`. Rendering every agent in one wrong state,
+    or every row under the same label, is worse than not starting — the operator
+    would act on it. Do not restore `!==` here without deleting the shape check
+    too: that would bring the brittleness back with none of the protection.

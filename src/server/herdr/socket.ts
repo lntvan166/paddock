@@ -170,11 +170,53 @@ export function request<T>(
   });
 }
 
-export async function checkProtocol(path: string): Promise<void> {
+/** What the live herdr's protocol means for this paddock. */
+export type ProtocolCheck =
+  | { kind: "match" }
+  | { kind: "newer"; herdr: number; paddock: number };
+
+/**
+ * DIRECTIONAL, and that asymmetry is the whole point.
+ *
+ * An OLDER herdr throws: it genuinely lacks what this paddock reads, and
+ * `mismatchMessage` already says what to do about it.
+ *
+ * A NEWER herdr is REPORTED, not fatal. `scripts/protocol-guard.ts` has always
+ * encoded this asymmetry for `make types` — it refuses a downgrade and allows an
+ * upgrade — but this function used strict inequality and treated both directions
+ * as equally fatal. Measured cost of that: herdr 0.8.0 → 0.8.2 moved the
+ * protocol 19 → 20 and changed nothing paddock reads (the status enum was
+ * byte-identical), yet paddock refused to start at all. An integer that carried
+ * no consequence took the whole dashboard down.
+ *
+ * A version number was never the real contract. What breaks paddock is a FIELD
+ * going away, so `checkAgentShape` verifies that against live `agent.list` data
+ * and is the safety this relaxation trades for. Do not reintroduce equality
+ * here without deleting that check too, or you get the brittleness back with
+ * none of the protection.
+ */
+export async function checkProtocol(path: string): Promise<ProtocolCheck> {
   const pong = await request<{ protocol: number }>(path, "ping", {});
-  if (pong.protocol !== HERDR_PROTOCOL) {
+
+  // Guarded BEFORE the comparisons, because two ordered comparisons have a hole
+  // that `!==` did not: `undefined < N` and `undefined > N` are both false, so
+  // an absent or non-numeric protocol fell straight through to "match" and
+  // paddock started as if it had verified something. `request` does no
+  // validation — it resolves `frame.result` as-is — so a renamed field, a
+  // different daemon answering on this socket path, or any unexpected result
+  // shape lands here. Reported as a mismatch against NaN so the message still
+  // shows what herdr actually said.
+  if (typeof pong.protocol !== "number" || !Number.isFinite(pong.protocol)) {
+    throw new ProtocolMismatchError(HERDR_PROTOCOL, pong.protocol as unknown as number);
+  }
+
+  if (pong.protocol < HERDR_PROTOCOL) {
     throw new ProtocolMismatchError(HERDR_PROTOCOL, pong.protocol);
   }
+  if (pong.protocol > HERDR_PROTOCOL) {
+    return { kind: "newer", herdr: pong.protocol, paddock: HERDR_PROTOCOL };
+  }
+  return { kind: "match" };
 }
 
 // ---------------------------------------------------------------------------

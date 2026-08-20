@@ -30,7 +30,22 @@ export function doctorReport(
   extra: { cloudflared: string | null } = { cloudflared: null },
 ): DoctorReport {
   if (probe.kind === "unreachable") return { code: 2, text: probe.message };
-  if (probe.protocol !== expected) {
+  // DIRECTIONAL, matching `checkProtocol`. Only an OLDER herdr is incompatible:
+  // it genuinely lacks what this paddock reads. A newer one is reported below
+  // and scored 0, because `install.sh` reads this code and herdr moving ahead
+  // (0.8.0 → 0.8.2 bumped 19 → 20 and changed nothing paddock reads) is not a
+  // broken install. If these two ever disagree about a direction, this file is
+  // the one that lies to install.sh.
+  // Guarded before the comparison, and the stakes here are higher than in
+  // `checkProtocol`: `install.sh` reads this code, so a non-numeric protocol
+  // falling through to 0 would print nothing at all while the text said
+  // "herdr reports undefined" — the code and the text disagreeing, which is
+  // exactly what this file must never do.
+  if (typeof probe.protocol !== "number" || !Number.isFinite(probe.protocol)) {
+    return { code: 1, text: new ProtocolMismatchError(expected, probe.protocol).message };
+  }
+
+  if (probe.protocol < expected) {
     // Deliberately the server's own message rather than a second wording of it.
     // Two texts for one condition drift, and this is the text an operator will
     // see again seconds later if they start paddock anyway. Nothing about
@@ -55,6 +70,18 @@ export function doctorReport(
       ? "  cloudflared      not installed (only paddock tunnel needs it)"
       : `  cloudflared      ${extra.cloudflared}`,
   );
+
+  if (probe.protocol > expected) {
+    // Compatible, but say which side is ahead — it is the only part that tells
+    // an operator whether there is anything for them to do.
+    lines.push(
+      "",
+      "  herdr is newer than this paddock, which is accepted: paddock checks",
+      "  the fields it reads against live agent.list data rather than trusting",
+      "  the protocol number. `paddock update` picks up support for anything",
+      "  the newer protocol added.",
+    );
+  }
   return { code: 0, text: lines.join("\n") };
 }
 
