@@ -21,7 +21,10 @@ import { recordState, removeState } from "@server/lifecycle/state";
 import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
-import { parseArgs, USAGE } from "@server/cli";
+import { parseArgs, parseDuration, USAGE } from "@server/cli";
+import { Pairing } from "@server/tunnel/pairing";
+import { preflight, tunnelHint } from "@server/tunnel/preflight";
+import { runTunnel } from "@server/tunnel/run";
 import { VERSION } from "@server/version";
 import { runDoctor } from "@server/doctor";
 import { runUpdate } from "@server/update";
@@ -34,7 +37,7 @@ import {
   portInUseMessage,
 } from "@server/startup-errors";
 
-const { command, flags, verb } = parseArgs(Bun.argv.slice(2));
+const { command, flags, values, verb } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
 const PORT = Number(process.env.PADDOCK_PORT ?? 8787);
 const HOSTNAME = "127.0.0.1"; // loopback only; exposure is the tunnel's job
@@ -119,6 +122,42 @@ if (command === "start") {
   process.exit(await runStart({ dir: defaultConfigDir(), demo: DEMO }));
 }
 
+/**
+ * `paddock tunnel` is dispatched in TWO halves, and this is the first of them.
+ *
+ * The refusals belong up here with the other early verbs for the reason
+ * preflight.ts states: a command that is going to fail must not bind a port or
+ * open a herdr socket on its way to failing. But there is a sharper reason it
+ * cannot go down beside `runTunnel` at the bottom of this file. By that point
+ * `recordState` has written THIS process's pid and command line into
+ * paddock.state.json, and `preflight` asks `checkState` whether a paddock is
+ * already running — which probes that pid with signal 0, finds itself alive,
+ * matches its own args, and answers "running". Every `paddock tunnel` would
+ * refuse to start, quoting its own pid back at the operator.
+ *
+ * The second half — the pairing gate, the second listener and the child — is
+ * at the very bottom, after the signal handlers, because it must not run
+ * before there is a handler able to tear it down. See the comment there.
+ */
+let tunnelBin: string | undefined;
+let tunnelDeadlineMs: number | null = null;
+if (command === "tunnel") {
+  const raw = values.get("--for");
+  const parsed = raw === undefined ? null : parseDuration(raw);
+  if (raw !== undefined && parsed === null) {
+    console.error(`paddock: --for ${raw} is not a duration (try 45s, 90m, 2h)`);
+    process.exit(1);
+  }
+  tunnelDeadlineMs = parsed;
+
+  const pre = await preflight({ dir: defaultConfigDir() });
+  if (!pre.ok) {
+    console.error(pre.message);
+    process.exit(1);
+  }
+  tunnelBin = pre.bin;
+}
+
 const socketPath =
   process.env.PADDOCK_HERDR_SOCKET ?? join(homedir(), ".config", "herdr", "herdr.sock");
 
@@ -195,8 +234,19 @@ await settings.load();
 // never the token, but the rule is never swallow errors either way.
 if (settings.error) console.error(`[settings] ${settings.error}`);
 
+/**
+ * The live quick-tunnel URL, or null. IN MEMORY ONLY, deliberately: it must
+ * reach the notifier so a Telegram deeplink points somewhere the phone can
+ * open, and it must NEVER be written to settings.json, where `publicUrl` may
+ * already hold the real hostname of a named-tunnel deployment.
+ */
+let tunnelUrl: string | null = null;
+
 const notifier = new Notifier({
   settings,
+  // A getter, so the notifier reads whatever is live at send time rather than
+  // capturing a URL that did not exist yet when it was constructed.
+  publicUrlOverride: () => tunnelUrl,
   send: async (text, replyMarkup) => {
     const s = settings.current();
     // The same `isConfigured` the store's view() and the routes use — one
@@ -315,7 +365,10 @@ if (DEMO) {
   }
 }
 
-const app = createApp({
+// Named rather than inline so `paddock tunnel` can build a SECOND app from the
+// same dependencies plus the pairing gate — one description of the app, not two
+// that could drift.
+const appDeps = {
   store,
   hub,
   actions,
@@ -335,7 +388,9 @@ const app = createApp({
     latestKnown,
   }),
   staticDir: process.env.PADDOCK_STATIC_DIR ?? "dist",
-});
+};
+
+const app = createApp(appDeps);
 
 interface WsData {
   client?: HubClient;
@@ -384,6 +439,12 @@ hub.startHeartbeat();
 
 console.info(`paddock listening on http://${HOSTNAME}:${PORT}`);
 
+// Nothing to nudge an operator who is already running `paddock tunnel` toward.
+if (command !== "tunnel") {
+  const hint = tunnelHint(settings.current().publicUrl, false);
+  if (hint !== null) console.info(hint);
+}
+
 // Written AFTER the bind, deliberately. A paddock that failed to take the port
 // must not overwrite the state of the one already holding it.
 //
@@ -403,6 +464,21 @@ await recordState(stateDir, {
   startedAt: Date.now(),
 });
 
+/**
+ * Extra teardown for whatever this run happens to own, or null.
+ *
+ * THE ONLY SIGNAL HANDLERS IN THIS PROCESS ARE THE PAIR BELOW. Anything that
+ * needs to shut something down on Ctrl-C registers here instead of calling
+ * `process.on("SIGINT", …)` itself — `paddock tunnel` does exactly that with
+ * `registerShutdown`. Two handlers would run CONCURRENTLY, not in sequence,
+ * and this one calls `process.exit(0)`: it would routinely win the race and
+ * kill the process while the other was still awaiting a child's death, which
+ * for the tunnel means an ORPHANED cloudflared — a public URL still resolving
+ * with no paddock behind it, from a terminal that has already returned to a
+ * prompt. See the matching comment in `tunnel/run.ts`.
+ */
+let onShutdown: (() => Promise<void>) | null = null;
+
 // Foreground runs write it too, so `status` and `stop` do not depend on how
 // paddock was started.
 let clearing = false;
@@ -414,8 +490,60 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // open — but a timer that fires against a torn-down store would report
     // about an agent nobody is watching any more.
     notifier.dispose();
-    void removeState(stateDir)
-      .catch((e) => console.error(`paddock: could not clear state file (${String(e)})`))
-      .finally(() => process.exit(0));
+    void (async () => {
+      try {
+        // AWAITED, and before the exit below: the point of routing the
+        // tunnel's teardown through here is that the child is dead before
+        // this process is.
+        await onShutdown?.();
+      } catch (e) {
+        // Reported, then stepped past. A teardown that failed must not stop
+        // the state file from being cleared, or `status` reports a running
+        // paddock for ever.
+        console.error(`paddock: shutdown step failed (${String(e)})`);
+      }
+      await removeState(stateDir).catch((e) =>
+        console.error(`paddock: could not clear state file (${String(e)})`),
+      );
+      process.exit(0);
+    })();
   });
+}
+
+/**
+ * The second half of `paddock tunnel` — see the first half near the top.
+ *
+ * LAST IN THE FILE, deliberately. `runTunnel` spawns cloudflared, and the
+ * handler above is what kills it again; dispatching the tunnel any earlier
+ * would open a window in which a `SIGTERM` reached a process with no handler
+ * registered at all, which is the orphaned-child failure by yet another route.
+ *
+ * The plain listener above is already bound and behaves exactly as it does for
+ * a bare `paddock`. Everything the tunnel adds is a SECOND listener.
+ */
+if (command === "tunnel") {
+  const pairing = new Pairing();
+  // Rebuilt WITH `pairing`, because the pairing routes must exist on the app
+  // the gated listener serves — and must not exist on the plain one.
+  const gatedApp = createApp({ ...appDeps, pairing, tunnelUrl: () => tunnelUrl });
+  const code = await runTunnel({
+    app: gatedApp,
+    hub,
+    hostId,
+    store,
+    pairing,
+    port: Number(process.env.PADDOCK_TUNNEL_PORT ?? 8788),
+    bin: tunnelBin,
+    deadlineMs: tunnelDeadlineMs,
+    setPublicUrl: (u) => { tunnelUrl = u; },
+    registerShutdown: (fn) => { onShutdown = fn; },
+  });
+  // Reached only when the run ended on its own — `--for` elapsed, or
+  // cloudflared died. A Ctrl-C exits from the handler above instead. The state
+  // file is cleared here too, or an instance that closed its own tunnel would
+  // leave `paddock status` describing a process that no longer exists.
+  await removeState(stateDir).catch((e) =>
+    console.error(`paddock: could not clear state file (${String(e)})`),
+  );
+  process.exit(code);
 }
