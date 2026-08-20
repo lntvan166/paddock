@@ -115,13 +115,15 @@ one run will not work after the next, and a Telegram message sent before a
 restart carries a link that no longer resolves.
 
 `paddock tunnel [--for 45s|90m|2h]` runs until `--for` elapses, `cloudflared`
-exits on its own, or you press `ctrl+c` — every path stops `cloudflared` and
-closes the gate's listener before the process exits, so no orphaned tunnel is
-left resolving with nothing paddock behind it. It refuses to start if a
-detached paddock is already running (see `docs/gotchas.md`) or if `cloudflared`
-is not installed, and it binds a *second* loopback port for the gated listener
-— `8788` by default, overridable with `PADDOCK_TUNNEL_PORT` if that port is
-already taken.
+exits on its own, or you press `ctrl+c`. Every one of those paths tries to
+stop `cloudflared` and close the gated listener before the process exits; in
+the rare case a child survives even `SIGKILL`, paddock prints `paddock: could
+not stop cloudflared (...) — the tunnel may still be up. Check by hand:
+pgrep -af 'cloudflared tunnel'` rather than claiming a clean shutdown it
+cannot confirm. It refuses to start if another paddock is already running
+(see `docs/gotchas.md`) or if `cloudflared` is not installed, and it binds a
+*second* loopback port for the gated listener — `8788` by default, or move it
+with `PADDOCK_TUNNEL_PORT` if that one is already taken.
 
 ## 4. Everyday use
 
