@@ -303,3 +303,24 @@ one, recorded here so they are not reintroduced.
   session.** An already-authenticated browser renders the dashboard whether or
   not the policy is correct, so it cannot tell a working gate from a missing
   one. See `docs/deploy-cloudflare.md` for the check and the expected result.
+
+## Quick tunnels
+
+- **`Secure` cookies never arrive over `http://127.0.0.1:8788`.** The pairing
+  cookie is `Secure`, so browsing the gated port directly can never pair — the
+  port looks broken while behaving correctly. The pairing page detects a
+  plaintext origin (from `x-forwarded-proto`, falling back to the request
+  URL's own protocol when that header is absent) and shows a warning. Use the
+  tunnel URL instead.
+
+- **A `Host`-header exemption is not a gate.** `cloudflared` connects over
+  loopback like any local client, so a tunnel request is indistinguishable
+  from a desk request at the socket, and the only differing header is one the
+  remote client sets. `Host: localhost` through the tunnel would take the
+  exempt path. This is why the gate lives on a second listener.
+
+- **Two paddocks against one herdr notify twice.** Each has its own
+  `Notifier`, so every blocked agent buzzes the phone once per process.
+  `paddock tunnel` refuses to start while another paddock is already running
+  for this reason, not because of the port — the port conflict, if there is
+  one, is a separate and later failure.
