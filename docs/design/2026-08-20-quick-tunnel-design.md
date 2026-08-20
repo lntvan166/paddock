@@ -342,6 +342,22 @@ Both hints are suppressed when `publicUrl` is configured — an operator already
 running the named-tunnel path has solved this and must not be nudged toward the
 worse option.
 
+**Except when the saved `publicUrl` is itself a quick-tunnel host.** A
+`*.trycloudflare.com` value in settings is not a deployment; it is a dead link
+someone pasted in from an earlier run, since the hostname changes on every
+start. Treating it as "configured" would silence the hint for precisely the
+operator who needs it, so the test is "configured **and** not a quick tunnel".
+
+The same predicate serves the Settings screen, which flags a saved quick-tunnel
+`publicUrl` as stale rather than letting the operator keep a Telegram deeplink
+pointed at a hostname that stopped resolving days ago.
+
+It lives in `src/shared/` because both the server (the hint) and the UI (the
+warning) need it, and there must be exactly ONE regex for the hostname shape —
+`cloudflared.ts` imports it for `extractUrl` rather than keeping a second copy.
+Two definitions of "is this a quick tunnel" is how one of them ends up
+accepting `a.trycloudflare.com.example.net`.
+
 ```
 $ paddock
 paddock 0.6.1 · http://127.0.0.1:8787
