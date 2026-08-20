@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ActionResult, Agent, NavKey, OutputResult, ParsedPrompt } from "@shared/types";
-import { answerWithKey, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
+import { answerWithKey, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
 import { StateDot } from "@web/components/AgentRow";
@@ -138,8 +138,23 @@ export function nextRefreshMs(current: number, changed: boolean, floor: number =
   return Math.min(MAX_REFRESH_MS, Math.round(current * REFRESH_BACKOFF));
 }
 
-/** Settled lines revealed per tap of "show earlier". */
+/** Settled lines revealed per tap of "show earlier" for a plain shell pane. */
 const HISTORY_PAGE = 200;
+
+/**
+ * Earlier turns fetched per tap of "show earlier" for an agent with a
+ * journal — `fetchHistory`'s `limit`.
+ *
+ * Counted in TURNS, not lines — deliberately its own constant rather than
+ * reusing `HISTORY_PAGE` above, which counts LINES for the reconstructed-
+ * scrollback path. A single assistant turn routinely flattens to several
+ * lines, so a page size chosen the way `HISTORY_PAGE` was (as a count of
+ * lines) would ask for far more prose than it looks like: 50 turns lands
+ * 250+ lines in one tap — a wall dumped on a phone screen, not the
+ * thumb-flick "show earlier" is meant to be. 20 keeps one tap's growth in
+ * the same ballpark as what the reconstructed path already reveals.
+ */
+const JOURNAL_PAGE_TURNS = 20;
 
 export interface AgentTerminalProps {
   agent: Agent;
@@ -173,6 +188,13 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // a pane stays open.
   const [fontPx] = useState(() => readPrefs().fontPx);
   const [shownHistory, setShownHistory] = useState(0);
+  // Journal-sourced lines, oldest first, and the cursor for the next page.
+  // Kept separate from `history.settled` because the two sources never mix
+  // for one agent (design decision 2) — this is WHICH ONE is in play for
+  // this agent, not something merged with the reconstructed path.
+  const [journalLines, setJournalLines] = useState<string[]>([]);
+  const [journalCursor, setJournalCursor] = useState<string | null>(null);
+  const [journalDone, setJournalDone] = useState(false);
   const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
 
   /**
@@ -459,9 +481,15 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // before until "show earlier" is tapped, which is what keeps a 2000-line
   // history from becoming 36,000 DOM nodes nobody asked for.
   const history = historyFor(agent.agentId) ?? { settled: [], gaps: 0 };
-  const revealed = shownHistory > 0
-    ? history.settled.slice(Math.max(0, history.settled.length - shownHistory))
-    : [];
+  // Design decision 2: the two sources never coexist for one agent. A
+  // journal-capable agent's revealed history is exactly the journal pages
+  // fetched so far; everything else keeps today's client-side reconstruction
+  // unchanged.
+  const revealed = agent.hasJournal
+    ? journalLines
+    : shownHistory > 0
+      ? history.settled.slice(Math.max(0, history.settled.length - shownHistory))
+      : [];
 
   // parseAnsi carries style ACROSS lines, so it must see history and the live
   // screen as one sequence — parsing them separately would drop any colour a
@@ -562,21 +590,46 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           content, which would otherwise shove the screen down and lose the
           operator's place, so the scroll position is pinned across the growth
           in the handler below. */}
-      {!error && history.settled.length > revealed.length && (
+      {!error && (agent.hasJournal ? !journalDone : history.settled.length > revealed.length) && (
         <button
           type="button"
           className="term-earlier"
           onClick={() => {
             const el = paneRef.current;
             const before = el ? el.scrollHeight - el.scrollTop : 0;
-            setShownHistory((n) => n + HISTORY_PAGE);
-            requestAnimationFrame(() => {
+            const restore = () => requestAnimationFrame(() => {
               if (el) el.scrollTop = el.scrollHeight - before;
             });
+            if (!agent.hasJournal) {
+              setShownHistory((n) => n + HISTORY_PAGE);
+              restore();
+              return;
+            }
+            // The agent's own log, not the reconstructed path — see design
+            // decision 2. A rejected request (unknown agent, malformed
+            // cursor) ends the "show earlier" affordance for this pane rather
+            // than retrying forever against a request that can only fail the
+            // same way again.
+            void fetchHistory(agent.agentId, journalCursor, JOURNAL_PAGE_TURNS)
+              .then((page) => {
+                // PREPEND: a page fetched with a cursor is older than what is
+                // already held.
+                setJournalLines((held) => [...page.lines, ...held]);
+                setJournalCursor(page.cursor);
+                // `source: "reconstruction"` here means the server has no
+                // journal for this agent after all — not an error, but there
+                // is nothing further to page through from this route.
+                if (!page.hasMore || page.source !== "journal") setJournalDone(true);
+                restore();
+              })
+              .catch(() => setJournalDone(true));
           }}
         >
-          Show earlier · {history.settled.length - revealed.length} lines
-          {history.gaps > 0 && <span className="term-gapnote"> · {history.gaps} gaps</span>}
+          Show earlier
+          {!agent.hasJournal && ` · ${history.settled.length - revealed.length} lines`}
+          {!agent.hasJournal && history.gaps > 0 && (
+            <span className="term-gapnote"> · {history.gaps} gaps</span>
+          )}
         </button>
       )}
 

@@ -223,6 +223,17 @@ one, recorded here so they are not reintroduced.
   `pane_closed`). Matching on the subscribe name for the underscored ones
   silently never fires.
 
+- **A coding agent's pane has no scrollback to read, at any price.** It runs
+  on the terminal's alternate screen, which keeps nothing behind the
+  viewport: every such pane reports `scroll.max_offset_from_bottom: 0`.
+  Measured against herdr 0.8.0, asking anyway costs ~35 ms per line past the
+  viewport — 300 lines 10.7 s (past `HERDR_TIMEOUT_MS`), and 500/1000/2000
+  lines each ~15.8 s while returning LESS than `visible` returns in 2 ms. The
+  bytes were never retained; there is no cheaper way to ask herdr for them,
+  and no larger timeout recovers content that was not kept. This is why
+  history comes from the harness's own log instead — see
+  `src/server/journal/`.
+
 ## Build and tooling
 
 - **Bun's runtime module resolver does not try `.d.ts` on extensionless

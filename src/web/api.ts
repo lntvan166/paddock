@@ -1,4 +1,4 @@
-import type { ActionResult, KeyResult, NavKey, OutputResult, ParsedPrompt } from "@shared/types";
+import type { ActionResult, HistoryResult, KeyResult, NavKey, OutputResult, ParsedPrompt } from "@shared/types";
 
 /**
  * Just the call signature these helpers use — not `typeof fetch`.
@@ -66,6 +66,25 @@ export async function fetchOutput(
 
 export async function fetchPrompt(id: string, f: Fetch = fetch) {
   return readJson<ParsedPrompt>(url(id, "prompt"), {}, f);
+}
+
+/**
+ * Earlier history from the agent's own session log.
+ *
+ * `before` is the OPAQUE cursor from a previous response's `cursor`, echoed
+ * back verbatim — never constructed here — or `null` for the newest page.
+ * `limit` counts TURNS, not lines; see `JOURNAL_PAGE_TURNS` in
+ * `AgentTerminal.tsx` for why that unit — and that page size — differs from
+ * the reconstructed-scrollback path's `HISTORY_PAGE`.
+ *
+ * A non-2xx response (unknown agent, malformed cursor) rejects, same as
+ * every other read — see `readJson`'s note on why a failure must not resolve
+ * with a value shaped like success.
+ */
+export async function fetchHistory(
+  id: string, before: string | null, limit: number, f: Fetch = fetch,
+): Promise<HistoryResult> {
+  return readJson<HistoryResult>(url(id, "history"), { before, limit }, f);
 }
 
 /**

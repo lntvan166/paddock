@@ -52,6 +52,14 @@ surprise.
   There is no explicit "show history" control and no hidden second request;
   see `README.md`'s "What it does not do".
 
+  **Narrower since the journal route shipped:** for an agent whose
+  `hasJournal` is true, "Show earlier" now IS an explicit second request —
+  `POST /api/agents/:id/history`, reading the harness's own session log
+  rather than the reconstructed viewport buffer. The two sources never mix
+  for one agent (`docs/decisions.md` decision 18); this entry's description
+  stands unchanged for every agent without a journal, which remains most of
+  them in v2.
+
 - **Stuck-agent detection.** `working` for more than N minutes with no output
   change is worth surfacing. `pane.output_matched` may serve.
 - **Preact swap** if first-load size disappoints (~45 KB → ~4 KB gzipped,
@@ -197,17 +205,23 @@ surprise.
   here rather than half-done. **Until then, treat a herdr protocol bump as
   requiring a manual re-read of `actions.ts` against the live schema.**
 
-- **`MAX_READ_LINES` (2000) is not a usable request against an idle agent.**
+- ~~**`MAX_READ_LINES` (2000) is not a usable request against an idle
+  agent.**~~ *Resolved, by routing around the ceiling rather than raising it.*
   Scrollback lives on the alternate screen, so herdr recovers it by scrolling
   the pane: measured on herdr 0.8.0, `recent_unwrapped` costs ~35 ms per line
   past the viewport — 120 lines took 3.1 s, 300 lines 10.7 s (past
   `HERDR_TIMEOUT_MS`, so `POST /output` with `lines: 300` fails outright), and
   500/1000/2000 lines each took ~15.8 s and returned *less* than `visible`
-  returns in 2 ms. The clamp bounds the response size, which was its purpose,
-  but not the wall time, and the ceiling is far above what herdr can actually
-  serve. Fixing it properly means either a much lower scrollback ceiling or a
-  transport timeout that scales with the request; both are policy decisions
-  the read-source fix deliberately did not make on its own.
+  returns in 2 ms. The clamp bounded the response size, which was its
+  purpose, but not the wall time, and the ceiling was far above what herdr
+  could actually serve — no transport timeout or lower ceiling was going to
+  make asking herdr for it a good idea, because the bytes past the viewport
+  were never retained at all (`docs/gotchas.md`'s alternate-screen entry).
+  So this was never fixed by tuning the clamp: `POST /api/agents/:id/history`
+  reads a journal-capable harness's own session log instead, and
+  `MAX_READ_LINES` still governs exactly what it always did — the
+  `visible`/`recent_unwrapped` ceiling for a plain shell pane, which has no
+  journal to fall back to and is unaffected by this work.
 
 - **Nothing guards `index.ts`'s call site for the delta fan-out.**
   `fanOut()` in `server/notify/notifier.ts` is covered

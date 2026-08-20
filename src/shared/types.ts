@@ -196,6 +196,27 @@ export interface KeyResult extends ActionResult {
 }
 
 /**
+ * Earlier turns from the agent's own session log — the success body of
+ * `POST /api/agents/:id/history`.
+ *
+ * `source: "reconstruction"` is not an error: it is the server saying "I have
+ * no journal for this agent," and it always arrives with `lines: []` — the
+ * caller falls back to its existing client-side reconstruction silently, the
+ * same way it does today.
+ *
+ * `cursor` is OPAQUE. The client echoes it back as the next request's
+ * `before` and never constructs one; the server refuses anything that is not
+ * a run of digits with a 400.
+ */
+export interface HistoryResult {
+  lines: string[];
+  source: "journal" | "reconstruction";
+  hasMore: boolean;
+  cursor: string | null;
+  detail: string | null;
+}
+
+/**
  * A read response, which may say "nothing changed" instead of resending.
  *
  * Measured on a live working agent: consecutive 3s polls differ by 3 lines out

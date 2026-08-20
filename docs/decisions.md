@@ -377,3 +377,74 @@ session does not silently re-litigate them.
     anyway means `publicUrl` names a hostname this deployment is not reached on.
     Telling the second operator to check their proxy would send them to a file
     that is already correct.
+
+18. **The journal — flattened server-side, never mixed with reconstruction,
+    menus stripped, prose only, no session id on the wire, quiet in the UI.**
+    `POST /api/agents/:id/history` reads a harness's own session log so "Show
+    earlier" can answer with what was actually said, instead of the client's
+    best guess from screen snapshots. Six decisions went into it.
+
+    **The journal is flattened server-side; the client only ever sees lines.**
+    `journal/` returns text, and the terminal renders it the way it renders any
+    other history — no per-harness knowledge crosses into `web/`. Same
+    reasoning as `parsePrompt` living in `src/server/`: harness- and
+    protocol-shaped assumptions stay on the server side of the socket. A
+    structured-turns payload was considered, so a future conversation view
+    could reuse the route unchanged, and rejected — it would put a second
+    renderer, and per-harness rendering rules, in `web/`. Pushing history over
+    the WebSocket was rejected too: it needs file watching and a per-agent
+    buffer for every open pane, which is a lot of machinery for an affordance
+    the operator taps.
+
+    **Journal history and reconstruction never coexist for one agent.** Where
+    a journal is readable it is the ONLY source above the live screen, and the
+    reconstructed path (`web/history.ts`) is switched off for that agent.
+    Where one is not, nothing changes from before this feature. Two sources
+    for one range means reconciling overlapping text produced by two different
+    mechanisms — guesswork of exactly the kind this feature exists to remove.
+
+    **One continuous scroll, with menus stripped from journal lines.** Journal
+    text joins the buffer above the live screen with no labelled divider, and
+    that cost is stated plainly: those lines are a RECONSTRUCTION RENDERED AS
+    PROSE, and will not look like the live screen below them — they cannot
+    reproduce the box drawing and colour the agent actually painted. That
+    sharp edge is cosmetic and accepted. A different one is not: a journal
+    turn can contain an old prompt menu — `❯ 1. Yes / 2. No` — which, blended
+    directly above the live screen with no divider, reads as the question
+    being asked NOW. `prompt-parse.ts` already records this exact failure
+    mode in its own scoping comment (a marker left on an already-answered
+    question reappearing as the live menu's selection), so cursor markers and
+    option rows are stripped from journal-derived lines before they ever
+    leave the server (`stripMenu` in `src/server/journal/text.ts`). Only the
+    live screen may ever render a selectable menu; the client additionally
+    never treats a journal line as a source of option buttons — those come
+    from `/prompt` alone.
+
+    **Prose is served; tool output is not.** The journal holds far more than
+    the screen ever showed: every file the agent read, every command's
+    output, any secret that passed through either. paddock has no
+    authentication of its own (decision 3), so what this route serves is
+    bounded at the source rather than at the gate. Kept: assistant text, and
+    user text the operator actually typed. Summarised: a `tool_use` becomes
+    one line (`▸ Bash · <hint>`). Dropped entirely: every `tool_result`,
+    subagent traffic, and thinking blocks.
+
+    **The session id never reaches the browser.** `adapter.ts` maps
+    `agent_session` into a server-side map of `agentId → session ref`; the
+    wire type `Agent` gains exactly one field, `hasJournal: boolean`, which is
+    all the UI needs to choose a history source. A session id is a filesystem
+    key, and the browser has no use for one paddock could not itself resolve.
+
+    **A missing journal is quiet in the UI and loud on the host.** The
+    operator sees the old behaviour, not an error: falling back to
+    reconstruction is a working dashboard, and a red banner for a pane that
+    never had a journal would be noise for the common case (a plain shell
+    pane has no journal by definition). The server does not get to be quiet —
+    `CLAUDE.md` forbids swallowing errors — so each cause (no adapter for
+    this harness, no session ref from herdr, file missing, permission denied)
+    logs once per agent on the host and travels in the response's `detail`;
+    an unparseable line skips that line, never the whole file. On the client,
+    `source: "reconstruction"` is read as this same signal, not a failure: it
+    means "the server has no journal for this agent," arrives with
+    `lines: []`, and the terminal falls back to its existing client-side
+    reconstruction without surfacing anything to the operator.
