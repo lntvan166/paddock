@@ -174,9 +174,17 @@ stylesheet, no icon. That is what lets every real asset stay behind the gate
 rather than carving out an unauthenticated static path that then has to be
 audited.
 
-`hub.ts` learns nothing about pairing. The middleware refuses the upgrade before
-the hub sees it, so the WebSocket is gated without a line changing in the
-transport layer, and the dependency direction in `docs/architecture.md` holds.
+**The gate cannot be only a Hono middleware.** `index.ts` intercepts
+`/ws` in `Bun.serve`'s `fetch` and calls `server.upgrade` *before* `app.fetch`
+is reached, so a middleware mounted on the app never sees the upgrade at all.
+The decision is therefore a pure function — `decide(req, has)` — called from two
+places: the Hono middleware for ordinary requests, and the gated listener's own
+`fetch` before it upgrades anything. One rule, two call sites, no possibility of
+them disagreeing about what a valid session is.
+
+`hub.ts` still learns nothing about pairing: the refusal happens before the hub
+is reached, so the WebSocket is gated without a line changing in the transport
+layer, and the dependency direction in `docs/architecture.md` holds.
 
 ### The code
 
