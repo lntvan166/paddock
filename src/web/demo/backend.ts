@@ -22,6 +22,9 @@ import {
 
 const HOST_ID = "demo-box";
 
+/** The one seeded agent whose session log the demo can "read" — see `DEMO_HISTORY`. */
+const JOURNAL_AGENT_ID = "d6:p1";
+
 const SEED: Array<{ id: string; name: string; task: string; state: AgentState; ageMs: number }> = [
   { id: "d1:p1", name: "schema-migration", task: "Apply migration to staging", state: "blocked", ageMs: 120_000 },
   { id: "d2:p1", name: "lint-config", task: "Align eslint with the style guide", state: "done", ageMs: 300_000 },
@@ -43,8 +46,39 @@ const agents: Agent[] = SEED.map((s) => ({
   stateSince: Date.now() - s.ageMs,
   updatedAt: Date.now(),
   acknowledgedAt: null,
-  hasJournal: false,
+  // Only ONE seeded agent claims a journal. The point of this fixture is to
+  // demonstrate both paths side by side — "Show earlier" reading a real log
+  // vs. falling back to client-side reconstruction — not to pretend every
+  // demo agent has one.
+  hasJournal: s.id === JOURNAL_AGENT_ID,
 }));
+
+/**
+ * A short canned transcript for the one demo agent that has a journal.
+ *
+ * Invented content, per house rule 2 — never copied from a real session. It
+ * exists so `Show earlier` is demonstrable in the mode README screenshots come
+ * from, rather than being a feature only a live herdr can show.
+ */
+const DEMO_HISTORY: string[] = [
+  "you · 13:04",
+  "the flaky-test-fix suite times out about one run in five — can you dig in?",
+  "",
+  "agent · 13:05",
+  "▸ Bash · run the suite three times",
+  "Reproduced it on the second run: the retry budget is exhausted before the " +
+    "first assertion fires, so the harness treats a slow fixture boot as a failure.",
+  "",
+  "you · 13:08",
+  "is it the fixture or the assertion timeout?",
+  "",
+  "agent · 13:09",
+  "▸ Read · tests/fixtures/upload.ts",
+  "The fixture waits on a fake clock that only advances on tick(); the suite's " +
+    "timeout is real wall time. Bumping the tick interval should fix it without " +
+    "touching the assertion.",
+  "",
+];
 
 /** Cursor position on the blocked agent's menu, moved by the arrow keys. */
 let cursor = 0;
@@ -141,6 +175,18 @@ function handle(url: string, body: Record<string, unknown>): Response {
     }
     answer(agent);
     return json({ ok: true });
+  }
+
+  if (route === "history") {
+    if (!agent.hasJournal) {
+      return json({
+        ok: true, lines: [], source: "reconstruction", hasMore: false, cursor: null,
+        detail: "no journal for this demo agent",
+      });
+    }
+    return json({
+      ok: true, lines: DEMO_HISTORY, source: "journal", hasMore: false, cursor: null, detail: null,
+    });
   }
 
   if (route === "ack") {
