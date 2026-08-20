@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { createDemoSource, DEMO_HOST_ID, DemoSource, demoAgents } from "@server/demo";
+import {
+  createDemoSource, DEMO_HOST_ID, DemoSource, demoAgents, demoJournalPage, demoSessionFor,
+} from "@server/demo";
 import { AgentStore } from "@server/state/store";
 import type { Agent, HistoryResult } from "@shared/types";
 import { installDemoBackend } from "@web/demo/backend";
@@ -35,6 +37,65 @@ test("demo cwd is not a real home directory", () => {
 
 test("demo agents all belong to the demo host", () => {
   for (const a of demoAgents(NOW)) expect(a.hostId).toBe(DEMO_HOST_ID);
+});
+
+// ── the CLI demo's /history answers (server/demo.ts, `paddock --demo`) ──────
+//
+// `paddock --demo` is the mode CLAUDE.md names for README screenshots. Its
+// `/history` route (`routes.ts`) is registered unconditionally and always
+// calls whatever `JournalReader` `index.ts` wires in; in demo mode that used
+// to be the REAL reader fed a `sessionFor` with no supervisor to ask, so
+// every seeded agent answered `source: "reconstruction"` no matter what
+// `hasJournal` said. `demoJournalPage`/`demoSessionFor` are what `index.ts`
+// wires in instead, confined to the `DEMO` branch — these tests exercise
+// that decision directly, the same way the tests above exercise `demoAgents`
+// directly rather than booting the whole server.
+
+test("exactly one CLI demo agent has a journal", () => {
+  const withJournal = demoAgents(NOW).filter((a) => a.hasJournal);
+  expect(withJournal).toHaveLength(1);
+});
+
+test("the CLI demo journal answers source: journal with the shared invented transcript", () => {
+  const journalAgent = demoAgents(NOW).find((a) => a.hasJournal);
+  if (!journalAgent) throw new Error("no seeded demo agent has a journal");
+
+  const page = demoJournalPage(demoSessionFor(journalAgent.agentId));
+  expect(page.source).toBe("journal");
+  expect(page.lines.length).toBeGreaterThan(3);
+  expect(page.lines.join("\n")).toContain("flaky-test-fix");
+  // Served whole in one page: no further page for the client to ask for.
+  expect(page.hasMore).toBe(false);
+  expect(page.cursor).toBeNull();
+});
+
+test("a different CLI demo agent still answers reconstruction, unaffected", () => {
+  const other = demoAgents(NOW).find((a) => !a.hasJournal);
+  if (!other) throw new Error("expected at least one demo agent without a journal");
+
+  expect(demoSessionFor(other.agentId)).toBeNull();
+  const page = demoJournalPage(demoSessionFor(other.agentId));
+  expect(page.source).toBe("reconstruction");
+  expect(page.lines).toEqual([]);
+});
+
+test("the CLI demo and the static-build demo agree on which agent has the journal", async () => {
+  // Two independent demo hosts (server/demo.ts for `--demo`, web/demo/backend.ts
+  // for the static build) must tell the SAME invented story — this is the
+  // regression `@shared/demo-history` exists to prevent.
+  const savedFetch = globalThis.fetch;
+  const savedWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
+  try {
+    installDemoBackend();
+    const staticAgents = await demoSnapshotAgents();
+    const staticJournalId = staticAgents.find((a) => a.hasJournal)?.agentId;
+    const cliJournalId = demoAgents(NOW).find((a) => a.hasJournal)?.agentId;
+    expect(staticJournalId).toBeDefined();
+    expect(cliJournalId).toBe(staticJournalId);
+  } finally {
+    globalThis.fetch = savedFetch;
+    (globalThis as { WebSocket?: unknown }).WebSocket = savedWebSocket;
+  }
 });
 
 test("tick emits a delta", () => {
