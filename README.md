@@ -104,7 +104,10 @@ for the durable setup.
 
 It checks for a newer release at most once a day, caching the answer in
 `~/.config/paddock/update-check.json` — set `PADDOCK_NO_UPDATE_CHECK=1` and it
-makes no request and writes nothing.
+makes no request and writes nothing. A running paddock re-reads that answer
+hourly, so an instance left up for a week still notices; the once-a-day limit is
+on the request, not on the noticing. When there is something newer, the terminal
+says so and the dashboard shows a dismissable banner.
 
 > [!WARNING]
 > paddock has **no login of its own**. Anyone who reaches its port can send

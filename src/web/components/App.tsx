@@ -12,6 +12,8 @@ import { staleAttrs } from "@web/components/staleness";
 import { agentHash, useAgentRoute, useSettingsRoute } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { UpdateBar } from "@web/components/UpdateBar";
+import { ReleaseBanner } from "@web/components/ReleaseBanner";
+import { dismissedRelease, dismissRelease, shouldShowRelease } from "@web/release-notice";
 import { readPrefs, themeAttr } from "@web/prefs";
 
 export function App() {
@@ -24,6 +26,9 @@ export function App() {
   // that usually holds MOST of the agents was also the one showing least
   // about them. Collapsing stays available; it is just no longer the default.
   const [idleOpen, setIdleOpen] = useState(true);
+  // Read once on mount, not on every render: localStorage is synchronous, and
+  // this sits in a component that re-renders on a one-second clock.
+  const [dismissedVersion, setDismissedVersion] = useState(dismissedRelease);
   const openId = useAgentRoute();
   const showSettings = useSettingsRoute();
 
@@ -111,9 +116,22 @@ export function App() {
       {/* Stale data dims here — the banner above stays at full opacity so the
           message announcing staleness is never itself hard to read. */}
       <div {...staleAttrs(stale)}>
+        {/* Inside the dimming wrapper, unlike UpdateBar: that one explains why
+            everything else might be wrong, so it must never read as "possibly
+            stale". This one is about the binary on the host, which stale data
+            says nothing about. */}
+        {shouldShowRelease(latestKnown, dismissedVersion) && (
+          <ReleaseBanner
+            version={latestKnown!}
+            onDismiss={() => {
+              dismissRelease(latestKnown!);
+              setDismissedVersion(latestKnown);
+            }}
+          />
+        )}
         <InstallHint />
         <HostHeader
-          hostId={hostId} agents={agents} latestKnown={latestKnown}
+          hostId={hostId} agents={agents}
           onOpenSettings={() => { location.hash = "#/settings"; }}
         />
 

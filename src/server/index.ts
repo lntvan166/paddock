@@ -31,7 +31,7 @@ import { runTunnel } from "@server/tunnel/run";
 import { VERSION } from "@server/version";
 import { runDoctor } from "@server/doctor";
 import { runUpdate } from "@server/update";
-import { noUpdateCheckRequested, startUpdateCheck } from "@server/update-check";
+import { noUpdateCheckRequested, scheduleUpdateChecks } from "@server/update-check";
 import { say, warn } from "@server/term";
 import { BootLog } from "@server/boot-log";
 import {
@@ -222,11 +222,16 @@ function currentBuildId(): string | null {
  * binding its port, and this variable simply stays `null` (its honest "don't
  * know yet" value) until the one background check resolves.
  *
- * `startUpdateCheck` rather than a bare `void checkForUpdate(...).then(...)`:
+ * `scheduleUpdateChecks` rather than a bare `void checkForUpdate(...).then(...)`:
  * that form had no `.catch`, and Bun terminates the process on an unhandled
  * rejection — so a check that threw killed a server that had already bound
  * its port and was serving. The rejection handler lives with the check
  * itself now, where it cannot be dropped by an edit to this file.
+ *
+ * SCHEDULED, not fired once. A single check froze this value at boot, so a
+ * paddock running when a release landed reported the state of the world at
+ * startup for as long as it stayed up — which is precisely the long-lived case
+ * `paddock start` and a dashboard open on a phone are both made of.
  */
 let latestKnown: string | null = null;
 
@@ -241,24 +246,25 @@ const bootLog = new BootLog();
  * arriving later still reaches the terminal. Null means "already announced, or
  * too early to" — the banner reads it, the update callback clears it.
  */
-let announceLater: ((latest: string) => void) | null = null;
-startUpdateCheck(
-  {
+let bannerPrinted = false;
+/** The version the terminal has already named, so it says it once per version. */
+let announcedVersion: string | null = null;
+const updateChecks = scheduleUpdateChecks(
+  // A factory: `now` must be fresh on every tick, or the 24h cache never looks
+  // expired. See scheduleUpdateChecks.
+  () => ({
     dir: defaultConfigDir(),
     current: VERSION,
     now: Date.now(),
     disabled: noUpdateCheckRequested(),
-  },
+  }),
   (v) => {
     latestKnown = v;
-    // The check may resolve either side of the bind. Whichever way the race
-    // goes, the operator is told exactly once: the banner announces a result
-    // that is already in, and this announces one that arrives after it.
-    if (v !== null && announceLater !== null) {
-      const announce = announceLater;
-      announceLater = null;
-      announce(v);
-    }
+    // Before the banner, the banner will say it — printing here would put the
+    // notice above the URL it is meant to sit under. After the banner, this is
+    // the only route to the terminal, which is the case that matters for a
+    // release published while paddock was already running.
+    if (v !== null && bannerPrinted && v !== announcedVersion) updateLine(v);
   },
 );
 
@@ -593,12 +599,13 @@ say("");
  * uncached case lands seconds after it — printing only at banner time would
  * have silently dropped whichever half of that race lost.
  */
-function announceUpdate(latest: string): void {
+function updateLine(latest: string): void {
+  announcedVersion = latest;
   say(`  paddock ${latest} is available — run \`paddock update\``);
   say("");
 }
-if (latestKnown !== null) announceUpdate(latestKnown);
-else announceLater = announceUpdate;
+bannerPrinted = true;
+if (latestKnown !== null) updateLine(latestKnown);
 
 // Written AFTER the bind, deliberately. A paddock that failed to take the port
 // must not overwrite the state of the one already holding it.
@@ -610,7 +617,7 @@ else announceLater = announceUpdate;
 // 1000, and docker-compose.yml runs `user: "${UID}:${GID}"` from the host, so
 // on any host whose UID isn't 1000 `homedir()` resolves to `/` and the write
 // is EACCES — the exact shape that, unguarded, previously killed an
-// already-bound server via startUpdateCheck (see update-check.ts).
+// already-bound server via scheduleUpdateChecks (see update-check.ts).
 const stateDir = defaultConfigDir();
 await recordState(stateDir, {
   pid: process.pid,
@@ -648,6 +655,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // open — but a timer that fires against a torn-down store would report
     // about an agent nobody is watching any more.
     notifier.dispose();
+    // Unref'd, so it could never hold the process open — cleared anyway, so a
+    // tick cannot land mid-teardown and print an update notice underneath the
+    // shutdown report.
+    updateChecks.stop();
     void (async () => {
       /**
        * 0 ONLY for a shutdown that actually finished.

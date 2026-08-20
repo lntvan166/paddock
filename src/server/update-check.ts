@@ -134,3 +134,53 @@ export function startUpdateCheck(
 export function noUpdateCheckRequested(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.PADDOCK_NO_UPDATE_CHECK === "1";
 }
+
+/**
+ * How often the schedule below wakes up. NOT how often GitHub is asked.
+ *
+ * `checkForUpdate` owns the rate limit — the on-disk cache means a call inside
+ * 24h answers from `update-check.json` and makes no request. So this timer only
+ * decides how soon after that day expires the answer is noticed, and an hourly
+ * disk read is cheap enough not to think about. Do not "optimise" this to 24h:
+ * a tick that lines up exactly with the cache window would be one drifting
+ * millisecond away from waiting two days.
+ */
+const RECHECK_MS = 60 * 60 * 1000;
+
+export interface ScheduleHandle {
+  stop: () => void;
+}
+
+/**
+ * Keep asking, for as long as paddock runs.
+ *
+ * `startUpdateCheck` fires exactly once, which is right for a command that
+ * exits and wrong for a server. Measured consequence: a paddock started before
+ * a release existed reported `latestKnown: null` forever — so the dashboard's
+ * notice and the terminal's both faithfully displayed a value that could never
+ * change. `paddock start` and a dashboard left open on a phone are the two
+ * documented ways to use this thing, and both were the case that never learned.
+ *
+ * `make` is a FACTORY, not a value: `CheckOpts.now` is a timestamp, and a
+ * captured one would make every tick look like the same instant to the cache
+ * comparison — the cache would then never appear to expire, which is the
+ * original bug wearing a timer.
+ *
+ * A rejection is reported and the schedule CONTINUES. A laptop that was offline
+ * for one tick must not stop checking for the rest of the process's life, and
+ * the throw must not be fatal — same reasoning as `startUpdateCheck`, which
+ * this delegates to for exactly that reason rather than restating the `.catch`.
+ */
+export function scheduleUpdateChecks(
+  make: () => CheckOpts,
+  onResult: (latest: string | null) => void,
+  opts: { everyMs?: number; check?: (o: CheckOpts) => Promise<string | null> } = {},
+): ScheduleHandle {
+  const everyMs = opts.everyMs ?? RECHECK_MS;
+  const run = () => startUpdateCheck(make(), onResult, opts.check);
+  run(); // immediately: the first answer must not wait a full interval
+  const timer = setInterval(run, everyMs);
+  // Never the reason the process stays alive. The server's own listener is.
+  timer.unref?.();
+  return { stop: () => clearInterval(timer) };
+}

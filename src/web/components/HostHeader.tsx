@@ -12,7 +12,7 @@ import { Mark } from "@web/components/Mark";
 const DEFAULT_HOST_ID = "local";
 
 export function HostHeader({
-  hostId, agents, onOpenSettings, latestKnown,
+  hostId, agents, onOpenSettings,
 }: {
   hostId: string | null;
   agents: Agent[];
@@ -29,22 +29,13 @@ export function HostHeader({
    */
   onOpenSettings: () => void;
   /**
-   * A version string when the server's once-a-day check has found something
-   * newer than the running build, or `null` before that check has run or
-   * when the running build is current.
-   *
-   * Sourced from the store's `latestKnown` (see `@web/store`), which rides
-   * the WebSocket snapshot/heartbeat envelope rather than a one-shot
-   * `/api/health` fetch — this component itself has no opinion about that,
-   * it only renders whatever it is given.
-   *
-   * REQUIRED, not optional, for the same reason as `onOpenSettings` above —
-   * ruling P5 on `HealthBody` (the field's origin on the server) exists
-   * precisely so an edit that stops passing this is a type error at every
-   * call site, not a silently absent line. Callers that have no value yet
-   * (a fixture, a test that does not care) pass `null` explicitly.
+   * `latestKnown` was here, REQUIRED so that an edit which stopped passing it
+   * would be a type error rather than a silently absent line. The line it fed
+   * has moved to `ReleaseBanner`, so the prop is gone rather than left required
+   * and unrendered — a required prop nothing reads is the same trap pointing
+   * the other way. The guarantee now lives in `App.tsx`, which is the one
+   * caller that has the value.
    */
-  latestKnown: string | null;
 }) {
   const n = (s: Agent["state"]) => agents.filter((a) => a.state === s).length;
   const parts = [
@@ -74,15 +65,12 @@ export function HostHeader({
         <span className="text-[10px]" style={{ color: "var(--fg-dim)" }}>
           {parts.length ? parts.join(" · ") : "no agents"}
         </span>
-        {/* Deliberately dim, not a banner: `paddock update` is something the
-            operator runs when they feel like it, not an alarm. No new colour
-            token — `--fg-dim` is already defined on bare :root and redefined
-            under both `prefers-color-scheme` and `[data-theme]` above. */}
-        {latestKnown !== null && (
-          <span className="text-[10px]" style={{ color: "var(--fg-dim)" }}>
-            paddock {latestKnown} available — run: paddock update
-          </span>
-        )}
+        {/* The new-release notice USED to live here, as one dim line among the
+            other dim metadata. The reasoning was sound — `paddock update` is
+            not an alarm — but a 10px line the colour of its neighbours is not
+            read, it is skipped, and an operator a version behind did not know.
+            It is now `ReleaseBanner`, shown once and dismissible. Do not add a
+            second copy here: one fact, one channel. */}
         {/* A real button, not a hover-revealed affordance — the only route
             into #/settings, so it must be reachable by touch on the first
             tap, not discoverable only with a mouse. */}

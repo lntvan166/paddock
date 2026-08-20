@@ -259,3 +259,34 @@ session does not silently re-litigate them.
     idle section — usually most of the list — would be five identical chips,
     five controls with no way to know which one you are about to tap. A stable
     label nobody can read is not stability worth having.
+
+16. **The new-release notice is a dismissable banner, and the check repeats
+    while paddock runs.** Two faults, one symptom: an operator a version behind
+    did not know.
+
+    The check fired **once**, at startup, and `latestKnown` was frozen from that
+    moment. `paddock start` and a dashboard left open on a phone are the two
+    documented ways to use this, and both are exactly the long-lived case that
+    could never learn about a release published afterwards. It now re-checks on
+    an hourly timer. The timer is not the rate limit — `checkForUpdate`'s 24h
+    on-disk cache is, unchanged, so GitHub is still contacted at most once a day
+    and `PADDOCK_NO_UPDATE_CHECK=1` still disables everything. Deliberately NOT
+    a 24h timer: a tick the same length as the cache window drifts against it,
+    and landing a millisecond early means waiting nearly two days.
+
+    The notice itself was one dim 10px line in `HostHeader`, among other dim
+    metadata, on the reasoning that `paddock update` is "something the operator
+    runs when they feel like it, not an alarm". That reasoning was right and the
+    placement was wrong: a line the colour of its neighbours is not read, it is
+    skipped. It is now `ReleaseBanner`, and the old line is GONE rather than
+    kept — two copies of one fact is how they drift.
+
+    Dismissable, which no other banner in this app is, because of an asymmetry
+    unique to this one: you **cannot act on it from the device you are reading
+    it on**. `paddock update` runs on the host, which is by definition not the
+    phone. A notice you can neither act on nor silence is how a dashboard
+    teaches you to ignore banners, and the next one is the connection banner —
+    which does mean an agent's state may be wrong right now.
+
+    Dismissal is keyed by **version**, not a boolean. A boolean would make the
+    first dismissal permanent and the feature would quietly stop existing.
