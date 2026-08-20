@@ -159,15 +159,15 @@ export function pairingPage(opts: { insecure: boolean }): string {
  * `Response` is so there is one place, not two, that turns a refusal into
  * bytes on the wire.
  *
- * `url` is needed only to tell `https:` from `http:`, so the pairing page can
- * warn about a plaintext origin instead of silently failing to set a `Secure`
- * cookie.
+ * Takes the full `Request`, not just its URL, because telling the pairing
+ * page's plaintext warning apart from a real tunnel visit needs a header, not
+ * only the URL's own scheme — see `clientIsSecure` below.
  *
  * A `pass` decision has no refusal to render — passing one here is a
  * programming error at the call site, not a reachable runtime state, so it
  * throws rather than quietly answering 401.
  */
-export function gateResponse(d: Decision, url: string): Response {
+export function gateResponse(d: Decision, req: Request): Response {
   if (d.kind === "pass") {
     throw new Error("gateResponse: a pass decision has no refusal to render");
   }
@@ -177,8 +177,10 @@ export function gateResponse(d: Decision, url: string): Response {
 
   if (d.kind === "page") {
     headers.set("content-type", "text/html; charset=utf-8");
-    const insecure = new URL(url).protocol !== "https:";
-    return new Response(pairingPage({ insecure }), { status: 200, headers });
+    return new Response(pairingPage({ insecure: !clientIsSecure(req) }), {
+      status: 200,
+      headers,
+    });
   }
   headers.set("content-type", "application/json");
   return new Response(JSON.stringify({ ok: false, detail: "not paired" }), {
@@ -187,10 +189,34 @@ export function gateResponse(d: Decision, url: string): Response {
   });
 }
 
+/**
+ * Whether the ORIGINAL client — the browser — spoke https, not whether this
+ * hop did. Behind `paddock tunnel`, `cloudflared` always speaks plain http to
+ * this listener even when the browser is on the https tunnel URL, so reading
+ * the request URL's own protocol reports every real visitor as insecure and
+ * shows the plaintext warning to precisely the people who are already doing
+ * it right. `cloudflared` sets `x-forwarded-proto: https` for exactly this
+ * reason, so it is read first; the request URL's protocol is the fallback,
+ * which is correct for the direct `http://127.0.0.1:8788` case the warning
+ * exists to catch.
+ *
+ * `x-forwarded-proto` is CLIENT-INFLUENCABLE — anything able to reach the
+ * gated listener can set it to whatever it likes. It must gate NOTHING but
+ * this cosmetic warning. Never let it become an input to an authentication or
+ * authorisation decision; `decide()` does not read it and must not start.
+ */
+function clientIsSecure(req: Request): boolean {
+  const forwarded = req.headers.get("x-forwarded-proto");
+  if (forwarded !== null) {
+    return (forwarded.split(",")[0] ?? "").trim().toLowerCase() === "https";
+  }
+  return new URL(req.url).protocol === "https:";
+}
+
 export function gateMiddleware(pairing: { has(t: string): boolean }): MiddlewareHandler {
   return async (c, next) => {
     const d = decide(c.req.raw, (t) => pairing.has(t));
     if (d.kind === "pass") return next();
-    return gateResponse(d, c.req.url);
+    return gateResponse(d, c.req.raw);
   };
 }

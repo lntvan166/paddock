@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { Hono } from "hono";
 import { COOKIE_NAME, SESSION_MAX_AGE_S } from "@server/tunnel/pairing";
 import {
-  clearCookie, decide, gateMiddleware, pairingPage, setCookie, tokenFromCookie,
+  clearCookie, decide, gateMiddleware, gateResponse, pairingPage, setCookie, tokenFromCookie,
 } from "@server/tunnel/gate";
 
 const GOOD = "known-token";
@@ -94,6 +94,34 @@ test("the page explains a plaintext origin rather than silently failing", () => 
   // directly can never work. Saying so beats looking broken.
   expect(pairingPage({ insecure: true })).toContain("only works over");
   expect(pairingPage({ insecure: false })).not.toContain("only works over");
+});
+
+test("gateResponse trusts x-forwarded-proto over the hop's own scheme", async () => {
+  // cloudflared always speaks plain http to this listener, even when the
+  // browser is on the https tunnel URL. Reading the request URL's own
+  // protocol would warn every real tunnel visitor — the people already
+  // doing it right.
+  const forwardedHttps = new Request("http://127.0.0.1:8788/", {
+    headers: { ...html, "x-forwarded-proto": "https" },
+  });
+  const page = await gateResponse({ kind: "page", stale: false }, forwardedHttps).text();
+  expect(page).not.toContain("only works over");
+});
+
+test("gateResponse warns when there is no forwarded header and the hop itself is http", async () => {
+  // The direct 127.0.0.1:8788 case, with no reverse proxy in front to have
+  // set the header at all — the warning is correct here.
+  const direct = new Request("http://127.0.0.1:8788/", { headers: html });
+  const page = await gateResponse({ kind: "page", stale: false }, direct).text();
+  expect(page).toContain("only works over");
+});
+
+test("gateResponse reads a list-valued x-forwarded-proto as its first entry", async () => {
+  const listed = new Request("http://127.0.0.1:8788/", {
+    headers: { ...html, "x-forwarded-proto": "https,http" },
+  });
+  const page = await gateResponse({ kind: "page", stale: false }, listed).text();
+  expect(page).not.toContain("only works over");
 });
 
 test("the middleware gates a real app and lets a paired session through", async () => {
