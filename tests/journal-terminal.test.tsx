@@ -5,7 +5,7 @@ import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { digestOf } from "@shared/screen";
-import { rememberHistory } from "@web/pane-cache";
+import { journalFor, prunePanes, rememberHistory } from "@web/pane-cache";
 import { agent, render, settle, stubFetch, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
@@ -207,4 +207,98 @@ test("a double-tap on Show earlier fires exactly one request", async () => {
   expect(calls.filter((c) => c.url.endsWith("/history")).length).toBe(1);
   const occurrences = (host.textContent?.match(/one turn, fetched once/g) ?? []).length;
   expect(occurrences).toBe(1);
+});
+
+test("journal history survives leaving the pane and coming back", async () => {
+  // `AgentTerminal` is remounted per agent and on every navigation. Held as
+  // component state, six taps of history — six round trips, and pages the
+  // operator had already scrolled — vanished the moment they went back to the
+  // list and reopened the pane, and only six more taps brought them back. The
+  // reconstructed path this replaces never loses its scrollback on that same
+  // journey, so losing it here was a regression for exactly the agents this
+  // feature was built for.
+  prunePanes(new Set());
+  let served = 0;
+  const { fn, calls } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/history": () => {
+      served++;
+      return {
+        ok: true,
+        lines: [`page ${served}`],
+        source: "journal",
+        // Still more to fetch, so the button stays offered and a second mount
+        // cannot be mistaken for "the affordance ended".
+        hasMore: true,
+        cursor: String(1000 - served * 100),
+        detail: null,
+      };
+    },
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const first = await render(
+    <AgentTerminal agent={agent({ agentId: "j7:p1", hasJournal: true })} onBack={() => {}} />,
+  );
+  await settle();
+  (first.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await settle();
+  expect(first.textContent).toContain("page 1");
+
+  // Back to the list, then into the pane again — a fresh mount.
+  await unmount();
+  const second = await render(
+    <AgentTerminal agent={agent({ agentId: "j7:p1", hasJournal: true })} onBack={() => {}} />,
+  );
+  await settle();
+
+  // The page is on screen with NO new request: it came from the cache.
+  const before = calls.filter((c) => c.url.endsWith("/history")).length;
+  expect(second.textContent).toContain("page 1");
+  expect(before).toBe(1);
+
+  // And the cursor came back with it, so the next tap asks for the page AFTER
+  // the one already held rather than re-fetching page one onto itself.
+  (second.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await settle();
+  const asked = calls.filter((c) => c.url.endsWith("/history")).at(-1);
+  expect((asked!.body as { before?: string }).before).toBe("900");
+  expect(second.textContent).toContain("page 2");
+  expect(second.textContent).toContain("page 1");
+});
+
+test("a pane that fell back does not re-ask the route on every reopen", async () => {
+  // `fellBack` is the pane's permanent answer to "is there a journal here".
+  // Held in the component, every navigation asked the server again — and got
+  // the same "no" — before showing the reconstruction it already had.
+  prunePanes(new Set());
+  const { fn, calls } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/history": () => ({
+      ok: true, lines: [], source: "reconstruction", hasMore: false, cursor: null,
+      detail: "no journal adapter for this harness",
+    }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+  rememberHistory("j8:p1", { settled: ["reconstructed line"], gaps: 0 });
+
+  const first = await render(
+    <AgentTerminal agent={agent({ agentId: "j8:p1", hasJournal: true })} onBack={() => {}} />,
+  );
+  await settle();
+  (first.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await settle();
+  expect(journalFor("j8:p1")!.fellBack).toBe(true);
+
+  await unmount();
+  const second = await render(
+    <AgentTerminal agent={agent({ agentId: "j8:p1", hasJournal: true })} onBack={() => {}} />,
+  );
+  await settle();
+  (second.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await settle();
+
+  // One request, ever: the reopened pane behaves like a journal-less one.
+  expect(calls.filter((c) => c.url.endsWith("/history"))).toHaveLength(1);
+  expect(second.textContent).toContain("reconstructed line");
 });
