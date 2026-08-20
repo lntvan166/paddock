@@ -48,14 +48,30 @@ test("a deadline adds a closing clock, and its absence removes it", () => {
 });
 
 test("colour decorates and never informs", () => {
-  const plain = render(state(), false);
-  const colour = render(state(), true);
   const ESC = /\x1b\[[0-9;]*m/g;
-  expect(plain).not.toMatch(ESC);
-  expect(colour).toMatch(ESC);
-  // Stripping every escape from the coloured render gives the plain one back,
-  // so a piped log and a terminal read identically.
-  expect(colour.replace(ESC, "")).toBe(plain);
+
+  // Table-driven: verify strip-equality across all branches that render() exercises.
+  const cases = [
+    { name: "paired: 0 (no devices)", overrides: { paired: 0 } },
+    { name: "paired: 1 (1 device)", overrides: { paired: 1 } },
+    { name: "paired: 3 (plural)", overrides: { paired: 3 } },
+    { name: "deadline: null (no closes line)", overrides: { deadline: null } },
+    { name: "deadline: set (closes line)", overrides: { deadline: T0 + 4_320_000 } },
+  ];
+
+  for (const { name, overrides } of cases) {
+    const plain = render(state(overrides), false);
+    const colour = render(state(overrides), true);
+    expect(plain).not.toMatch(ESC);
+    expect(colour).toMatch(ESC);
+    // Stripping every escape from the coloured render gives the plain one back,
+    // so a piped log and a terminal read identically.
+    try {
+      expect(colour.replace(ESC, "")).toBe(plain);
+    } catch (e) {
+      throw new Error(`${name}: ${(e as Error).message}`);
+    }
+  }
 });
 
 test("colour is off unless stdout is a tty, and NO_COLOR always wins", () => {
