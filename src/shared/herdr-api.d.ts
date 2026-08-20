@@ -22,10 +22,26 @@ export type HerdrReadSource = "visible" | "recent" | "recent_unwrapped" | "detec
 
 export type HerdrReadFormat = "text" | "ansi";
 
+/**
+ * The harness session herdr has associated with a pane, or null.
+ *
+ * `kind` is "id" for a session identifier and `value` is that id;
+ * `agent` names the harness ("claude", "codex"). This is the key
+ * `src/server/journal/` uses to find the harness's own log, and it is why
+ * that feature needs no second herdr call: it rides on `agent.list`.
+ */
+export interface HerdrAgentSession {
+  agent: string;
+  kind: string;
+  source: string;
+  value: string;
+}
+
 /** One entry from `agent.list` -> result.agents[]. */
 export interface HerdrAgentRaw {
   agent?: string | null;
   agent_status: HerdrAgentStatus;
+  agent_session?: HerdrAgentSession | null;
   cwd: string;
   foreground_cwd?: string;
   focused: boolean;
