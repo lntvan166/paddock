@@ -52,6 +52,24 @@ export interface HealthBody {
    * field from `health()` must be a type error, not a silently missing key.
    */
   latestKnown: string | null;
+  /**
+   * The protocol the LIVE herdr reports, or null before it has answered.
+   *
+   * A fact, not a warning — paddock now accepts a herdr newer than the one it
+   * was built against (see `herdr/socket.ts`), so drift is normal and this is
+   * how an operator sees it without reading a log. Required for the same reason
+   * as `lastNotifyError`: an optional field lets a future edit to `health()`
+   * drop it silently, with neither the type checker nor a test to notice.
+   */
+  herdrProtocol: number | null;
+  /**
+   * Set when herdr's `agent.list` stopped carrying a field paddock reads — the
+   * failure a protocol number never caught, and the one this exists for.
+   *
+   * `null` is the healthy answer AND the answer when no panes are open, because
+   * you cannot conclude a field is gone from zero rows. See `herdr/shape.ts`.
+   */
+  schemaWarning: string | null;
 }
 
 // Vite's content hash is base64url (letters, digits, "_", "-"), joined to the

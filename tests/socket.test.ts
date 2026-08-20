@@ -139,6 +139,26 @@ test("checkProtocol throws ProtocolMismatchError on an older protocol", async ()
   await expect(checkProtocol(path)).rejects.toBeInstanceOf(ProtocolMismatchError);
 });
 
+// The asymmetry `scripts/protocol-guard.ts` already encodes for `make types`,
+// now applied at runtime: herdr bumps its protocol often (0.8.0 → 0.8.2 moved
+// 19 → 20 and changed nothing paddock reads), and refusing to start over an
+// integer that carried no consequence took the dashboard down for nothing.
+// Newer is REPORTED, not fatal — what actually breaks is a field going away,
+// and `checkAgentShape` is what watches for that.
+test("checkProtocol accepts a NEWER herdr and reports the drift", async () => {
+  const { path } = await fakeHerdr(HERDR_PROTOCOL + 1);
+  expect(await checkProtocol(path)).toEqual({
+    kind: "newer",
+    herdr: HERDR_PROTOCOL + 1,
+    paddock: HERDR_PROTOCOL,
+  });
+});
+
+test("checkProtocol reports a match plainly", async () => {
+  const { path } = await fakeHerdr(HERDR_PROTOCOL);
+  expect(await checkProtocol(path)).toEqual({ kind: "match" });
+});
+
 test("status subscriptions carry a pane_id; global ones do not", () => {
   const subs = statusSubscriptions(["w1:p1", "w1:p2"]);
   expect(subs).toEqual([

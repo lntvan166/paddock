@@ -14,6 +14,7 @@ import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
+import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub, type HubClient } from "@server/ws/hub";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
@@ -22,6 +23,7 @@ import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, USAGE } from "@server/cli";
+import { HERDR_PROTOCOL } from "@shared/herdr-api";
 import { VERSION } from "@server/version";
 import { runDoctor } from "@server/doctor";
 import { runUpdate } from "@server/update";
@@ -209,6 +211,16 @@ const notifier = new Notifier({
   },
 });
 
+/**
+ * The protocol the LIVE herdr reported, or null before it answered.
+ *
+ * Recorded rather than assumed equal to HERDR_PROTOCOL, because paddock now
+ * accepts a herdr NEWER than the one it was built against — so the two numbers
+ * genuinely differ in normal operation, and `/api/health` is where an operator
+ * sees that without reading a log.
+ */
+let herdrProtocol: number | null = null;
+
 let supervisor: Supervisor | null = null;
 let demo: DemoSource | null = null;
 // Demo has no herdr to act on, so the herdr-backed action routes stay unset
@@ -273,6 +285,15 @@ if (DEMO) {
     // nobody, so a rejection there used to be a log line and nothing more.
     // Arming the keeper makes a background failure self-heal instead.
     onBackgroundFailure: () => keeper?.notifyClosed(),
+    // A contract change, not a connection failure — the stream is healthy and
+    // herdr is answering, so the keeper has nothing to recover. Announced only
+    // on CHANGE (see Supervisor.noteShape), which is what keeps a 30s
+    // reconcile from burying the one line that mattered.
+    onShapeChange: (verdict) => {
+      const message = shapeMessage(verdict, herdrProtocol ?? 0);
+      if (message !== null) console.error(message);
+      else console.info("herdr: agent.list carries every field paddock reads");
+    },
   });
 
   // The pane set after a herdr restart is usually IDENTICAL to what it was
@@ -299,8 +320,29 @@ if (DEMO) {
   });
 
   try {
-    await checkProtocol(socketPath);
+    const check = await checkProtocol(socketPath);
+    herdrProtocol = check.kind === "newer" ? check.herdr : HERDR_PROTOCOL;
+    if (check.kind === "newer") {
+      // Reported once, at INFO: this is the ordinary case now, not a problem.
+      // herdr bumps its protocol often and mostly additively, and the fields
+      // paddock reads are verified against live data below.
+      console.info(
+        `herdr protocol ${check.herdr} is newer than this paddock (built for ${check.paddock});` +
+          " verifying the fields paddock reads against agent.list",
+      );
+    }
+
     await supervisor.start();
+
+    // The startup half of the shape check. `start()` has just reconciled, so
+    // this verdict is about real data. Refusing here is deliberate: rendering
+    // every agent in one wrong state, or every row under the same label, is
+    // worse than not starting, because the operator would act on it.
+    const shape = supervisor.shape;
+    if (shape.kind === "broken") {
+      console.error("paddock: refusing to start — herdr's agent.list is missing fields paddock reads");
+      process.exit(1);
+    }
   } catch (err) {
     if (err instanceof ProtocolMismatchError) console.error(err.message);
     else {
@@ -333,6 +375,10 @@ const app = createApp({
     lastNotifyError: notifier.lastError,
     version: VERSION,
     latestKnown,
+    herdrProtocol: DEMO ? HERDR_PROTOCOL : herdrProtocol,
+    // Read from the supervisor rather than cached here, for the same reason
+    // herdrConnected reads the stream: a copy can go stale and then lie.
+    schemaWarning: shapeSummary(supervisor?.shape ?? { kind: "unknown" }),
   }),
   staticDir: process.env.PADDOCK_STATIC_DIR ?? "dist",
 });
