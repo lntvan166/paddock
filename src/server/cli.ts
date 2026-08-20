@@ -10,18 +10,24 @@
  * else the operator typed.
  */
 export type Command =
-  | "serve" | "update" | "start" | "stop" | "status" | "doctor" | "help" | "agent" | "hub"
+  | "serve" | "update" | "start" | "stop" | "status" | "doctor" | "tunnel"
+  | "help" | "agent" | "hub"
   | "unknown";
 
 export interface ParsedArgs {
   command: Command;
   flags: Set<string>;
+  /** Values for the flags that take one, e.g. `--for` → `"2h"`. */
+  values: Map<string, string>;
   /** The verb as typed, so an error can quote it back. Null for a bare run. */
   verb: string | null;
 }
 
 /** Reserved, and deliberately not implemented — see docs/roadmap.md. */
 const RESERVED = new Set(["agent", "hub"]);
+
+/** The only flags that consume the token after them. */
+const VALUE_FLAGS = new Set(["--for"]);
 
 export const USAGE = [
   "usage: paddock [--demo]          start the dashboard in the foreground",
@@ -30,6 +36,7 @@ export const USAGE = [
   "       paddock status            is it running?",
   "       paddock update [--check]  install the latest release",
   "       paddock doctor            can this paddock talk to your herdr?",
+  "       paddock tunnel [--for D]  publish it on a quick tunnel, gated by a code",
   "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",
 ].join("\n");
@@ -54,25 +61,38 @@ export const USAGE = [
  * parsed as `serve` here and as `agent` there.
  */
 export function parseArgs(argv: string[]): ParsedArgs {
-  const flags = new Set(argv.filter((a) => a.startsWith("-")));
-  const verb = argv.find((a) => !a.startsWith("-")) ?? null;
-  const command = commandFor(verb);
+  const flags = new Set<string>();
+  const values = new Map<string, string>();
+  let verb: string | null = null;
 
-  // `--help` and `-h` ask exactly what the `help` verb asks, and they were the
-  // sharp edge here: both start with "-", so `verb` was null, so commandFor
-  // returned "serve" and `paddock --help` opened a herdr socket and served a
-  // live dashboard while printing nothing about usage. The most standard way
-  // to ask a CLI what it does silently started a server that can send
-  // keystrokes to the operator's agents.
-  //
-  // Only where the command would otherwise be `serve`: `paddock updte --help`
-  // stays `unknown`, the same rule --version already follows. The operator
-  // asked for a command that does not exist, and answering a different
-  // question pretends the typo was understood.
-  if (command === "serve" && (flags.has("--help") || flags.has("-h"))) {
-    return { command: "help", flags, verb };
+  // A POSITIONAL scan, not two independent filters. The old
+  // `argv.find(a => !a.startsWith("-"))` had no way to know that the token
+  // after `--for` belongs to the flag, so `paddock --for 2h tunnel` read "2h"
+  // as the verb.
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (!a.startsWith("-")) {
+      verb ??= a;
+      continue;
+    }
+    const eq = a.indexOf("=");
+    if (eq !== -1) {
+      const name = a.slice(0, eq);
+      flags.add(name);
+      values.set(name, a.slice(eq + 1));
+      continue;
+    }
+    flags.add(a);
+    if (VALUE_FLAGS.has(a) && i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
+      values.set(a, argv[++i]!);
+    }
   }
-  return { command, flags, verb };
+
+  const command = commandFor(verb);
+  if (command === "serve" && (flags.has("--help") || flags.has("-h"))) {
+    return { command: "help", flags, values, verb };
+  }
+  return { command, flags, values, verb };
 }
 
 function commandFor(verb: string | null): Command {
@@ -80,7 +100,25 @@ function commandFor(verb: string | null): Command {
   if (verb === "serve" || verb === "update") return verb;
   if (verb === "start" || verb === "stop" || verb === "status") return verb;
   if (verb === "doctor") return "doctor";
+  if (verb === "tunnel") return "tunnel";
   if (verb === "help") return "help";
   if (RESERVED.has(verb)) return verb as Command;
   return "unknown";
+}
+
+/**
+ * `45s`, `90m`, `2h`. Returns null for anything else — including `2`, `2d` and
+ * `2h30m`.
+ *
+ * Null is a REFUSAL, not a default. `--for` exists to bound how long a public
+ * URL lives; a typo that quietly became "no deadline" would defeat the only
+ * reason to type the flag.
+ */
+export function parseDuration(input: string): number | null {
+  const m = /^(\d+)([smh])$/.exec(input);
+  if (m === null) return null;
+  const n = Number(m[1]);
+  if (n <= 0) return null;
+  const unit = { s: 1_000, m: 60_000, h: 3_600_000 }[m[2] as "s" | "m" | "h"];
+  return n * unit;
 }

@@ -756,6 +756,28 @@ body {
   opacity: 0.5;
 }
 
+/* The code from POST /api/pair/invite. Sized and spaced like the pairing
+   page's own input (src/server/tunnel/gate.ts) so the code looks the same
+   wherever an operator has to read or type it — monospace so every character
+   is unambiguous (no visual 0/O, 1/I confusion), letter-spaced for the same
+   reason at this size. Uses only tokens already defined on bare :root, so
+   nothing new needs redefining under the dark media query or [data-theme]. */
+.pair-code {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+
+.pair-code code {
+  font-family: ui-monospace, monospace;
+  font-size: 1.1rem;
+  letter-spacing: 0.12em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
 .settings-save-bar {
   position: fixed;
   left: 0;

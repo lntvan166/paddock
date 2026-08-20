@@ -23,6 +23,12 @@ session does not silently re-litigate them.
    of its own. See `docs/deploy-cloudflare.md` for how the gate is verified.
    Do not reintroduce a token as a "hardening" improvement.
 
+   Scope, added later: this governs the DEFAULT listener, which is still
+   unauthenticated and loopback-only. `paddock tunnel` adds a separate,
+   temporary listener with a cookie gate, because a quick tunnel cannot have
+   Access in front of it at all — see decision 13 for why that is not the
+   mechanism this decision rules out.
+
 4. **`agent.list`, not `pane.list`.** Only `agent.list` returns the
    operator-assigned `name` field; `PaneInfo` has no `name` (it has `label`).
    Using `pane.list` is the difference between a useful dashboard and one
@@ -154,7 +160,37 @@ session does not silently re-litigate them.
     CSRF in general, and it is not a reason to reintroduce an application auth
     token (decision 3 still stands).
 
-13. **Protocol drift is directional, and fields are the real contract.**
+13. **A pairing gate on its own socket, for quick tunnels only.** Decision 3
+    stands for the default listener: `127.0.0.1:8787` has no authentication and
+    Cloudflare Access in front of a named tunnel remains the recommended
+    deployment. But a *quick* tunnel cannot take an Access policy — Access
+    applications are keyed by a domain in your own account and
+    `trycloudflare.com` is Cloudflare's — so `paddock tunnel` without a gate
+    would publish keystroke access to every agent on the machine, which is the
+    plain-`200` outcome `docs/deploy-cloudflare.md` §3 exists to warn about.
+
+    This is not the mechanism decision 3 forbids, for three reasons. The
+    credential is a same-origin cookie, not a token in a URL or header, so a
+    browser attaches it to page requests and to the WebSocket upgrade alike —
+    the exact property decision 3 observes a shared secret lacks. The gate lives
+    on a second listener that exists only while `paddock tunnel` runs, so the
+    default socket is untouched. And paddock has no service worker: Web Push was
+    superseded by Telegram in v2, so `/sw.js` does not exist to be broken — and
+    `docs/gotchas.md` already records that an expired Access session breaks a
+    service-worker fetch the same way, so this introduces no constraint the
+    recommended deployment does not already impose.
+
+    Rejected: exempting loopback by `Host` header on a single port. `cloudflared`
+    connects over loopback like any local client, so a tunnel request and a desk
+    request are indistinguishable at the socket; the only difference is a header
+    the REMOTE client controls, and `Host: localhost` through the tunnel would
+    take the exempt path. Two listeners make the gate a property of the socket a
+    request arrived on, which nothing outside the machine can forge.
+
+    Not a token, and not a precedent for one. See
+    `docs/design/2026-08-20-quick-tunnel-design.md`.
+
+14. **Protocol drift is directional, and fields are the real contract.**
     `checkProtocol` compared herdr's protocol with `!==`, so any drift in either
     direction was a fatal startup error. Measured cost: herdr 0.8.0 → 0.8.2
     moved the protocol 19 → 20 and the regenerated types differed by two lines —

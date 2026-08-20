@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { childCommand, runStart } from "@server/lifecycle/commands";
 import { stateFile, writeState, type Probe } from "@server/lifecycle/state";
+import { SettingsStore } from "@server/settings/store";
 
 const dir = () => mkdtemp(join(tmpdir(), "paddock-start-"));
 
@@ -220,4 +221,64 @@ test("start refuses before spawning when the config dir cannot hold the log", as
   expect(code, why).not.toBe(0);
   expect(out.join(" "), "the refusal must name the directory").toContain(d);
   expect(out.join(" ").toLowerCase()).toContain("not start");
+});
+
+// --- The tunnel hint on the success path ------------------------------------
+
+// Both tests below reuse the exact successful-start harness from "a detached
+// child that binds is reported as started": a probe that reports the parent
+// alive, a spawn that writes real state shortly after being called, and
+// `healthCheck: async () => true` so `runStart` reaches its one success path
+// (`return 0` inside the poll loop) rather than any of its refusal branches.
+// The only additions are `log` capturing lines instead of discarding them,
+// and — for the second test — a `SettingsStore` write before `runStart` runs,
+// since `runStart` reads `publicUrl` from the same config dir it is given.
+
+test("start points at the tunnel when no publicUrl is configured", async () => {
+  const d = await dir();
+  const lines: string[] = [];
+  const code = await runStart({
+    dir: d,
+    probe: { isAlive: () => true, argsOf: () => "paddock" },
+    log: (l) => lines.push(l),
+    waitMs: 3000,
+    spawn: () => {
+      // Model a child that writes its state shortly after being spawned.
+      void (async () => {
+        await Bun.sleep(50);
+        await writeState(d, { pid: 777, args: "paddock", port: 8787, version: "0.4.0", startedAt: Date.now() });
+      })();
+      return { pid: 777, exited: new Promise(() => {}) };
+    },
+    healthCheck: async () => true,
+  });
+  expect(code).toBe(0);
+  expect(lines.join("\n")).toContain("paddock tunnel");
+});
+
+test("start says nothing about tunnels when publicUrl is set", async () => {
+  const d = await dir();
+  // A real deployment, saved before start runs — the settings.json a
+  // configured operator would actually have on disk.
+  const settings = new SettingsStore(d);
+  await settings.load();
+  await settings.patch({ publicUrl: "https://paddock.example.com" });
+
+  const lines: string[] = [];
+  const code = await runStart({
+    dir: d,
+    probe: { isAlive: () => true, argsOf: () => "paddock" },
+    log: (l) => lines.push(l),
+    waitMs: 3000,
+    spawn: () => {
+      void (async () => {
+        await Bun.sleep(50);
+        await writeState(d, { pid: 777, args: "paddock", port: 8787, version: "0.4.0", startedAt: Date.now() });
+      })();
+      return { pid: 777, exited: new Promise(() => {}) };
+    },
+    healthCheck: async () => true,
+  });
+  expect(code).toBe(0);
+  expect(lines.join("\n")).not.toContain("paddock tunnel");
 });

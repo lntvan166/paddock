@@ -103,6 +103,11 @@ paddock stays on `127.0.0.1`. Put an authenticating tunnel in front — a
 out, so no inbound port is opened and the identity check happens before any
 request reaches paddock.
 
+To try it from a phone without setting any of that up, `paddock tunnel`
+publishes a temporary Cloudflare quick tunnel gated by a one-time pairing code.
+It is a try-it path, not a deployment: a quick tunnel cannot have Cloudflare
+Access in front of it, so the code is the only gate there is.
+
 Then **Share → Add to Home Screen**, and it is an app: its own icon, no browser
 chrome, and it opens where you left off.
 

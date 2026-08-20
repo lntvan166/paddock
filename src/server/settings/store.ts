@@ -281,6 +281,9 @@ export class SettingsStore {
         settleMs: { ...this.#s.notify.settleMs },
       },
       publicUrl: this.#s.publicUrl,
+      // The store knows nothing about tunnels and must not learn — routes.ts
+      // composes the real value in when `paddock tunnel` supplies deps.pairing.
+      tunnel: null,
       serverNow: now,
       error: this.error,
     };

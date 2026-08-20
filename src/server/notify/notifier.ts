@@ -18,6 +18,13 @@ export interface NotifierOpts {
    *  The default unrefs, so a pending settle cannot hold the process open. */
   setTimer?: (fn: () => void, ms: number) => TimerHandle;
   clearTimer?: (h: TimerHandle) => void;
+  /**
+   * A live `paddock tunnel` URL, which wins over the saved `publicUrl` for the
+   * life of that run. Not a settings field: `publicUrl` on disk may be the
+   * operator's real named-tunnel hostname, and a quick tunnel must not
+   * overwrite it to make one notification's link work.
+   */
+  publicUrlOverride?: () => string | null;
 }
 
 /**
@@ -248,7 +255,10 @@ export class Notifier {
     // which is how the retry path becomes one Telegram POST per delta.
     this.#lastSentAt.set(a.agentId, now);
 
-    const m = composeMessage(a, state, s.publicUrl);
+    // Read at SEND time, not when the notifier was built: a tunnel can come up
+    // or go down between two notifications, and the override is a getter so
+    // that a message always carries whatever URL a phone can actually open now.
+    const m = composeMessage(a, state, this.o.publicUrlOverride?.() ?? s.publicUrl);
     const r = await this.o.send(m.text, m.replyMarkup);
 
     // EVERYTHING BELOW RESUMES LATER — a Telegram POST takes up to 10s, and

@@ -18,6 +18,13 @@ export interface SettingsView {
     cooldownMs: number;
   };
   publicUrl: string | null;
+  /**
+   * Non-null only while `paddock tunnel` is running. The UI renders its
+   * "add a device" control from this, so `null` means the section is absent
+   * rather than empty — a paddock served the ordinary way has no tunnel to
+   * describe and must not offer to pair one.
+   */
+  tunnel: { url: string; pairedDevices: number } | null;
   /** The server's clock at the moment this view was built. The UI renders
    *  "muted until 07:14 (in 6h 22m)" from `mutedUntil`, and the phone's clock
    *  is not the server's — so the offset is computed from this, not Date.now(). */

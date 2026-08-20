@@ -1,9 +1,10 @@
-import { ProtocolMismatchError, request } from "@server/herdr/socket";
 import {
   herdrUnreachableMessage,
   inspectSocketPath,
   isDiagnosableHerdrFailure,
 } from "@server/startup-errors";
+import { findCloudflared } from "@server/tunnel/cloudflared";
+import { ProtocolMismatchError, request } from "@server/herdr/socket";
 import { HERDR_PROTOCOL } from "@shared/herdr-api";
 
 /** What was learned about herdr, or that nothing was. */
@@ -23,7 +24,11 @@ export interface DoctorReport {
   text: string;
 }
 
-export function doctorReport(expected: number, probe: DoctorProbe): DoctorReport {
+export function doctorReport(
+  expected: number,
+  probe: DoctorProbe,
+  extra: { cloudflared: string | null } = { cloudflared: null },
+): DoctorReport {
   if (probe.kind === "unreachable") return { code: 2, text: probe.message };
   // DIRECTIONAL, matching `checkProtocol`. Only an OLDER herdr is incompatible:
   // it genuinely lacks what this paddock reads. A newer one is reported below
@@ -43,7 +48,10 @@ export function doctorReport(expected: number, probe: DoctorProbe): DoctorReport
   if (probe.protocol < expected) {
     // Deliberately the server's own message rather than a second wording of it.
     // Two texts for one condition drift, and this is the text an operator will
-    // see again seconds later if they start paddock anyway.
+    // see again seconds later if they start paddock anyway. Nothing about
+    // cloudflared is appended here either: this branch is herdr's own message
+    // about the one problem worth reporting, and an unrelated line about an
+    // optional binary would bury the finding an operator actually needs.
     return { code: 1, text: new ProtocolMismatchError(expected, probe.protocol).message };
   }
   const lines = [
@@ -52,6 +60,17 @@ export function doctorReport(expected: number, probe: DoctorProbe): DoctorReport
     `  herdr reports    ${probe.protocol}`,
   ];
   if (probe.version) lines.push(`  herdr version    ${probe.version}`);
+  // Reported, never scored. cloudflared is optional — `paddock tunnel` needs
+  // it and nothing else does, so its absence must not turn a healthy herdr
+  // into a non-zero exit that install.sh would read as a broken install. A
+  // future edit that "tidies" this into the exit code would break install.sh
+  // silently, since 0 is the only code it treats as success.
+  lines.push(
+    extra.cloudflared === null
+      ? "  cloudflared      not installed (only paddock tunnel needs it)"
+      : `  cloudflared      ${extra.cloudflared}`,
+  );
+
   if (probe.protocol > expected) {
     // Compatible, but say which side is ahead — it is the only part that tells
     // an operator whether there is anything for them to do.
@@ -102,7 +121,7 @@ export async function runDoctor(opts: {
     };
   }
 
-  const report = doctorReport(expected, probe);
+  const report = doctorReport(expected, probe, { cloudflared: findCloudflared() });
   print(report.text);
   return report.code;
 }

@@ -46,6 +46,19 @@ the dashboard.
 The public URL (e.g. `https://paddock.example.com`) is what turns a bare
 "docs-cleanup is blocked" into a tap-through link — set it once here.
 
+**While a `paddock tunnel` run is live, its quick-tunnel URL overrides this
+field for notifications — in memory only, never written to
+`settings.json`.** The saved `publicUrl` may be a named-tunnel deployment's
+real hostname, and a quick tunnel's URL is temporary and different on every
+run, so overwriting the file with it would clobber that value the moment the
+tunnel closed. A notification sent during the run links to the live quick
+tunnel; the file on disk, and what `GET /api/settings` reports, is unchanged
+throughout. This is also why a **Tunnel** section — paired-device count, and a
+button to mint a code for another device — appears in Settings only while
+`paddock tunnel` is the process serving the page; a paddock started the
+ordinary way, or a named-tunnel deployment behind it, has no tunnel to pair
+and does not show the section at all.
+
 ## The Telegram token
 
 Written to `~/.config/paddock/settings.json` at file mode `0600`, in a

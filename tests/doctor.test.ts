@@ -112,3 +112,24 @@ test("a non-numeric protocol is incompatible, not compatible", () => {
 test("a string protocol is incompatible too", () => {
   expect(doctorReport(20, { kind: "answered", protocol: "20" as unknown as number }).code).toBe(1);
 });
+
+test("doctor reports whether cloudflared is present", () => {
+  const yes = doctorReport(3, { kind: "answered", protocol: 3 }, { cloudflared: "/somewhere/cloudflared" });
+  expect(yes.text).toContain("cloudflared");
+  expect(yes.text).toContain("/somewhere/cloudflared");
+
+  const no = doctorReport(3, { kind: "answered", protocol: 3 }, { cloudflared: null });
+  expect(no.text).toContain("cloudflared");
+  expect(no.text).toMatch(/not installed/i);
+  // Absent cloudflared is NOT a herdr problem: install.sh reads this code,
+  // so it must not become non-zero over an optional binary.
+  expect(no.code).toBe(0);
+});
+
+test("the cloudflared line is omitted when herdr is the problem", () => {
+  // A protocol mismatch answers with herdr's own message and nothing else;
+  // adding an unrelated line to it would bury the finding.
+  const bad = doctorReport(3, { kind: "answered", protocol: 2 }, { cloudflared: null });
+  expect(bad.code).toBe(1);
+  expect(bad.text).not.toContain("cloudflared");
+});
