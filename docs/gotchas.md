@@ -310,6 +310,34 @@ one, recorded here so they are not reintroduced.
   notification was worth sending. A longer Access session duration lowers the
   frequency and removes nothing.
 
+- **A proxy that rewrites `Host` breaks every write, and the browser reports
+  nothing useful.** Since decision 17, a state-changing request must carry an
+  `Origin` matching the request's `Host`. `cloudflared`'s ordinary HTTP ingress
+  forwards the browser's `Host` unchanged, which is what `docs/deploy-cloudflare.md`
+  describes and what makes the check hold — but a proxy configured to override
+  it (cloudflared's own `httpHostHeader`, or an nginx `proxy_set_header Host`
+  pointing at `localhost`) makes `Host` disagree with `Origin` on every request,
+  and paddock refuses all of them with a `403`. From the phone this reads as
+  replies silently failing while the dashboard still updates, because reads are
+  deliberately ungated. **The tell is on the host's stderr:** paddock logs
+  `refused a cross-origin write` once per distinct `origin -> host` pair, naming
+  both, precisely so this is diagnosable in seconds rather than guessed at. The
+  fix is to forward `Host` unchanged; adding the rewritten value to
+  `settings.publicUrl` would NOT help, because the mismatch is between the two
+  headers and not with any allowlist.
+
+- **A `publicUrl` naming a hostname you do not actually reach paddock on
+  refuses every write.** The other half of the entry above, and the opposite
+  fix. Once `settings.publicUrl` is set, its host becomes an allowlist (that is
+  what buys DNS-rebinding cover), so a stale value, a typo, or a SECOND
+  legitimate hostname for the same paddock is refused with a `403` even though
+  `Origin` and `Host` agree. Loopback is always exempt, so it fails from the
+  phone while the desk keeps working — which reads as "the tunnel broke". The
+  stderr line distinguishes it from a rewriting proxy: `this host is not the
+  public URL saved in settings`. Fix by correcting `publicUrl` to the hostname
+  in the browser's address bar, or by clearing it — clearing costs only the
+  rebinding cover and the Telegram deep link, never the reply path.
+
 - **A verification request must come from a context holding no Access
   session.** An already-authenticated browser renders the dashboard whether or
   not the policy is correct, so it cannot tell a working gate from a missing

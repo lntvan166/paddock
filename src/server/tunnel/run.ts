@@ -36,6 +36,17 @@ export interface TunnelDeps {
   startTunnel?: typeof realStartTunnel;
   setPublicUrl?: (url: string | null) => void;
   /**
+   * The origins a `/ws` upgrade on THIS listener may claim, for the same-origin
+   * gate in `ws/serve.ts`. A thunk because a tunnel run learns its own hostname
+   * partway through starting up.
+   *
+   * Optional, defaulting to none: empty is `origin.ts`'s documented "no public
+   * hostname is known" case, under which the origin/Host comparison still
+   * applies. A test that omits it is therefore testing the same rule an
+   * operator without a saved `publicUrl` runs under, not a relaxed one.
+   */
+  publicHosts?: () => readonly string[];
+  /**
    * The environment and the terminal, injected for the same reason every clock
    * in this codebase is. Read from the real ones in production; a test that
    * read `process.stdout.isTTY` instead would, under a pty, emit
@@ -85,7 +96,7 @@ export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
       // Past the gate, this listener serves EXACTLY what the plain one serves,
       // from one definition — see `ws/serve.ts`. `null` means the request is
       // not the socket route and belongs to the app.
-      const ws = tryUpgradeWs(req, srv);
+      const ws = tryUpgradeWs(req, srv, deps.publicHosts?.() ?? []);
       if (ws !== null) return ws;
       return deps.app.fetch(req);
     },

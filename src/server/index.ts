@@ -17,6 +17,7 @@ import { Supervisor } from "@server/supervisor";
 import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
+import { publicHostsFrom } from "@server/origin";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { recordState, removeState } from "@server/lifecycle/state";
@@ -496,8 +497,22 @@ if (DEMO) {
 // Named rather than inline so `paddock tunnel` can build a SECOND app from the
 // same dependencies plus the pairing gate — one description of the app, not two
 // that could drift.
+/**
+ * The public hostnames this process answers on, for the same-origin gate.
+ *
+ * ONE definition, handed to every consumer: both apps' write middleware and
+ * both listeners' `/ws` upgrade. They must never be able to disagree about
+ * which origins are legitimate — a write accepted from an origin the socket
+ * refuses (or the reverse) is a gate with a seam in it.
+ *
+ * Empty until an operator saves a `publicUrl` or a tunnel run sets one, which
+ * is `origin.ts`'s documented inactive case rather than a weakening.
+ */
+const publicHosts = () => publicHostsFrom(settings.current().publicUrl, tunnelUrl);
+
 const appDeps = {
   store,
+  publicHosts,
   hub,
   actions,
   settings,
@@ -533,7 +548,11 @@ try {
       // handlers below are shared with the tunnel's gated listener rather than
       // written out here — `ws/serve.ts` says why. `null` means this request
       // is not the socket route, so it belongs to the app.
-      const ws = tryUpgradeWs(req, server);
+      // The hostnames a `/ws` upgrade may claim to come from. Read through a
+      // thunk rather than captured: `publicUrl` is editable from the settings UI
+      // while the process runs, and `tunnelUrl` is set mid-run by `paddock
+      // tunnel`.
+      const ws = tryUpgradeWs(req, server, publicHosts());
       if (ws !== null) return ws;
       return app.fetch(req);
     },
@@ -724,6 +743,7 @@ if (command === "tunnel") {
       bin: tunnelBin,
       deadlineMs: tunnelDeadlineMs,
       setPublicUrl: (u) => { tunnelUrl = u; },
+      publicHosts,
       registerShutdown: (fn) => { onShutdown = fn; },
     });
   } catch (err) {
