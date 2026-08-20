@@ -18,8 +18,10 @@ import { setCookie } from "@server/tunnel/gate";
 import { EMBEDDED } from "@server/embedded";
 import { allowWrite, hostOf, refusalReason } from "@server/origin";
 import { warn } from "@server/term";
+import type { JournalReader } from "@server/journal/read";
 import { isNavKey, type NotifyTrigger, type SettingsPatch } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
+import type { HerdrAgentSession } from "@shared/herdr-api";
 
 export interface HealthBody {
   ok: boolean;
@@ -191,6 +193,50 @@ function reportRefusal(origin: string | null, host: string, hosts: readonly stri
   } else {
     warn("  if this is your own dashboard, the proxy in front is rewriting `Host`");
   }
+}
+
+/**
+ * A journal that could not be read is quiet in the UI and loud here.
+ *
+ * The operator sees the old behaviour — falling back to reconstruction is a
+ * working dashboard, and a banner for a pane that never had a journal would be
+ * noise. The host does not get to be quiet: `CLAUDE.md` forbids swallowing
+ * errors, and "history silently stopped going deeper" is otherwise invisible.
+ * Once per agent, because it is reported on every page request.
+ *
+ * BOUNDED, in two directions, because a de-duplicating set that only ever
+ * grows is two bugs rather than one:
+ *
+ *  - It never forgot, so an agent whose journal came BACK — the ordinary case
+ *    after a compaction, or after the session ref arrives late — could never
+ *    be reported again if it later broke a second time. `clearJournalMiss`
+ *    below is called on every successful page, so the next genuine failure is
+ *    heard.
+ *  - It never shrank, so on a long-lived server it held one string per agent
+ *    id ever seen, forever. Agent ids do not repeat across restarts of the
+ *    harness, so this is unbounded in the literal sense. A `Set` iterates in
+ *    insertion order, so evicting the front entry is a plain FIFO and the
+ *    ceiling is the only tuning knob.
+ *
+ * The cap is generous relative to any real agent list: it exists so the set
+ * cannot grow without limit, not to be reached in normal use.
+ */
+const MAX_JOURNAL_MISSES = 256;
+const journalMissesSeen = new Set<string>();
+
+function reportJournalMiss(agentId: string, detail: string): void {
+  if (journalMissesSeen.has(agentId)) return;
+  if (journalMissesSeen.size >= MAX_JOURNAL_MISSES) {
+    const oldest = journalMissesSeen.values().next().value;
+    if (oldest !== undefined) journalMissesSeen.delete(oldest);
+  }
+  journalMissesSeen.add(agentId);
+  warn(`paddock: no journal history for \`${agentId}\` — ${detail}`);
+}
+
+/** A journal that reads again is one whose next failure must be heard again. */
+function clearJournalMiss(agentId: string): void {
+  journalMissesSeen.delete(agentId);
 }
 
 /**
@@ -369,6 +415,10 @@ export interface AppDeps {
   actions?: HerdrActions;
   /** Settings store. Omit in tests that only exercise the agent API. */
   settings?: SettingsStore;
+  /** Reads a harness's own session log. Omit in tests that do not exercise it. */
+  journal?: JournalReader;
+  /** The server-side session id for an agent. Never crosses the socket. */
+  sessionFor?: (agentId: string) => HerdrAgentSession | null;
   /**
    * Clock for `/ack`'s `acknowledgedAt` stamp, every `settings.view()` call
    * (its `serverNow`), and the mute route's stamped `mutedUntil`. One clock
@@ -497,6 +547,43 @@ export function createApp(deps: AppDeps) {
     if (!delta) return c.json({ ok: false, detail: "not a fresh done agent" }, 409);
     deps.hub.queue(delta); // reaches every other open browser
     return c.json({ ok: true });
+  });
+
+  /**
+   * Earlier history from the agent's OWN session log.
+   *
+   * Registered unconditionally, like `/ack` and unlike the action routes:
+   * this reads a file and never touches herdr, so gating it on a herdr
+   * dependency it does not use would repeat the mistake `/ack`'s comment
+   * records — the one feature that works without herdr being the one
+   * visibly broken in `--demo`.
+   *
+   * POST, not GET: a cursor in a query string lands in edge access logs.
+   */
+  app.post("/api/agents/:id/history", async (c) => {
+    const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+    if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+    if (!deps.journal) return c.json({ ok: false, detail: "journal reading is not configured" }, 404);
+
+    const body = await jsonBody(c);
+    // Refused, never coerced: the cursor is opaque and must be one this
+    // server issued. Folding garbage to 0 would silently serve the top of
+    // the file instead of the page the operator asked for.
+    let before: number | null = null;
+    if (body.before !== undefined && body.before !== null) {
+      if (typeof body.before !== "string" || !/^\d+$/.test(body.before)) {
+        return c.json({ ok: false, detail: "before must be a cursor from a previous response" }, 400);
+      }
+      before = Number(body.before);
+    }
+    const limit = typeof body.limit === "number" && body.limit > 0 && body.limit <= 200
+      ? Math.floor(body.limit)
+      : 50;
+
+    const page = await deps.journal.read(deps.sessionFor?.(agent.agentId) ?? null, before, limit);
+    if (page.detail !== null) reportJournalMiss(agent.agentId, page.detail);
+    else clearJournalMiss(agent.agentId);
+    return c.json({ ok: true, ...page });
   });
 
   const pairing = deps.pairing;

@@ -74,6 +74,20 @@ export interface Agent {
    * herdr's `done` stays true, paddock just stops surfacing it.
    */
   acknowledgedAt: number | null;
+  /**
+   * Whether paddock can read this agent's own session log, which decides
+   * WHICH history source the terminal view uses (see
+   * `docs/design/2026-08-20-journal-history-design.md`).
+   *
+   * A boolean and nothing more, deliberately. The session id it is derived
+   * from is a filesystem key that stays on the server: the UI's only question
+   * is "fetch, or use my local reconstruction?".
+   *
+   * Required, not optional — an optional field lets a future edit drop it
+   * silently, and the terminal would fall back to reconstruction for every
+   * agent with nothing to notice.
+   */
+  hasJournal: boolean;
 }
 
 /**
@@ -179,6 +193,27 @@ export interface KeyResult extends ActionResult {
    * anything.
    */
   selected?: string | null;
+}
+
+/**
+ * Earlier turns from the agent's own session log — the success body of
+ * `POST /api/agents/:id/history`.
+ *
+ * `source: "reconstruction"` is not an error: it is the server saying "I have
+ * no journal for this agent," and it always arrives with `lines: []` — the
+ * caller falls back to its existing client-side reconstruction silently, the
+ * same way it does today.
+ *
+ * `cursor` is OPAQUE. The client echoes it back as the next request's
+ * `before` and never constructs one; the server refuses anything that is not
+ * a run of digits with a 400.
+ */
+export interface HistoryResult {
+  lines: string[];
+  source: "journal" | "reconstruction";
+  hasMore: boolean;
+  cursor: string | null;
+  detail: string | null;
 }
 
 /**

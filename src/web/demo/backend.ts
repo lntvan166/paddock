@@ -1,5 +1,6 @@
 import type { Agent, AgentState, ServerMessage } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
+import { DEMO_JOURNAL_AGENT_ID, DEMO_JOURNAL_LINES } from "@shared/demo-history";
 import {
   blockedScreen, DEMO_OPTIONS, DONE_SCREEN, IDLE_DOCS_SCREEN, SCREENS, WORKING_SCREEN,
 } from "@web/demo/screens";
@@ -43,6 +44,13 @@ const agents: Agent[] = SEED.map((s) => ({
   stateSince: Date.now() - s.ageMs,
   updatedAt: Date.now(),
   acknowledgedAt: null,
+  // Only ONE seeded agent claims a journal. The point of this fixture is to
+  // demonstrate both paths side by side — "Show earlier" reading a real log
+  // vs. falling back to client-side reconstruction — not to pretend every
+  // demo agent has one. `DEMO_JOURNAL_AGENT_ID` and the transcript below are
+  // shared with `server/demo.ts` (the CLI's `--demo` backend) so both hosts
+  // tell the same invented story rather than two that could drift.
+  hasJournal: s.id === DEMO_JOURNAL_AGENT_ID,
 }));
 
 /** Cursor position on the blocked agent's menu, moved by the arrow keys. */
@@ -140,6 +148,18 @@ function handle(url: string, body: Record<string, unknown>): Response {
     }
     answer(agent);
     return json({ ok: true });
+  }
+
+  if (route === "history") {
+    if (!agent.hasJournal) {
+      return json({
+        ok: true, lines: [], source: "reconstruction", hasMore: false, cursor: null,
+        detail: "no journal for this demo agent",
+      });
+    }
+    return json({
+      ok: true, lines: DEMO_JOURNAL_LINES, source: "journal", hasMore: false, cursor: null, detail: null,
+    });
   }
 
   if (route === "ack") {

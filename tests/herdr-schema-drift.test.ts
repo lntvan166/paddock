@@ -27,6 +27,7 @@ import type {
 const DECLARED_FIELD_FLAGS = {
   agent: true,
   agent_status: true,
+  agent_session: true,
   cwd: true,
   foreground_cwd: true,
   focused: true,
@@ -47,7 +48,6 @@ const DECLARED_FIELDS = Object.keys(DECLARED_FIELD_FLAGS) as (keyof HerdrAgentRa
 // does not model (as of protocol 19). Named explicitly so a new upstream
 // field shows up here as a decision to make, not a silently ignored column.
 const IGNORED_FIELDS = [
-  "agent_session",
   "display_agent",
   "interactive_ready",
   "launch_pending",

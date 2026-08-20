@@ -2,7 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@server/routes";
-import { createDemoSource, DemoSource, DEMO_HOST_ID } from "@server/demo";
+import { createDemoSource, DemoSource, DEMO_HOST_ID, demoJournalPage, demoSessionFor } from "@server/demo";
 import {
   HerdrStream,
   ProtocolMismatchError,
@@ -14,6 +14,7 @@ import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
+import { createJournalReader, defaultRoots, type JournalReader } from "@server/journal/read";
 import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
@@ -510,12 +511,35 @@ if (DEMO) {
  */
 const publicHosts = () => publicHostsFrom(settings.current().publicUrl, tunnelUrl);
 
+/**
+ * The DEMO's own `JournalReader` — confined to the `DEMO` branch below, never
+ * touching a real session log. `--demo` is the mode README screenshots come
+ * from (CLAUDE.md), and until this existed every seeded demo agent answered
+ * `source: "reconstruction"` unconditionally: `sessionFor` had no supervisor
+ * to ask (demo mode never constructs one), so the real `createJournalReader`
+ * always got `session: null` — the exact gap this wiring closes.
+ *
+ * The decision itself (`demoJournalPage`) lives in `@server/demo`, alongside
+ * `demoAgents`'s matching `hasJournal` flag and the SAME shared transcript
+ * `web/demo/backend.ts` serves for the static build, so both demo hosts tell
+ * one story. This object only adapts that decision to the real
+ * `JournalReader` interface `routes.ts` expects.
+ */
+const demoJournal: JournalReader = {
+  read: (session) => Promise.resolve(demoJournalPage(session)),
+};
+
 const appDeps = {
   store,
   publicHosts,
   hub,
   actions,
   settings,
+  // Confined to the DEMO branch: a demo run must never read a real journal
+  // off the operator's own disk, the same reasoning that keeps demo mode
+  // from opening a real herdr connection.
+  journal: DEMO ? demoJournal : createJournalReader(defaultRoots(process.env, homedir())),
+  sessionFor: (id: string) => (DEMO ? demoSessionFor(id) : (supervisor?.sessionFor(id) ?? null)),
   health: () => ({
     ok: true,
     hostId,

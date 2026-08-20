@@ -1,0 +1,11 @@
+{"type":"user","timestamp":"2026-08-20T13:04:00Z","message":{"role":"user","content":"fix the flaky test"}}
+{"type":"assistant","timestamp":"2026-08-20T13:04:30Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"private reasoning that must not be served"},{"type":"text","text":"Looking at the timer now."},{"type":"tool_use","name":"Bash","input":{"command":"bun test","description":"run tests"}}]}}
+{"type":"user","timestamp":"2026-08-20T13:04:31Z","message":{"role":"user","content":[{"type":"tool_result","content":"SECRET_TOKEN=abc123 leaked in output"}]}}
+{"type":"assistant","timestamp":"2026-08-20T13:05:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Found it: the timer resets."}]}}
+{"type":"assistant","timestamp":"2026-08-20T13:05:10Z","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"subagent chatter"}]}}
+{"type":"mode","timestamp":"2026-08-20T13:05:20Z","mode":"default"}
+not valid json at all
+{"type":"assistant","timestamp":"2026-08-20T13:05:40Z","message":{"role":"assistant","content":[null,{"type":"text","text":"survives next to a null part"}]}}
+{"type":"assistant","timestamp":"2026-08-20T13:05:50Z"}
+{"type":"user","timestamp":"2026-08-20T13:05:55Z","message":{"role":"user","content":42}}
+{"type":"assistant","timestamp":"2026-08-20T13:06:00Z","message":{"role":"assistant","content":[{"type":"text","text":"❯ 1. Yes"}]}}

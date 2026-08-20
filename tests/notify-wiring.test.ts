@@ -15,6 +15,7 @@ const agent = (state: Agent["state"]): Agent => ({
   stateSince: 0,
   updatedAt: 0,
   acknowledgedAt: null,
+  hasJournal: false,
 });
 
 // The regression this guards: wiring the notifier by REPLACING

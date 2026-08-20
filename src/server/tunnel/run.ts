@@ -423,6 +423,27 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   ]);
 
   if (outcome.kind === "child") {
+    /**
+     * A death this run ASKED for is not a failure, and must not be reported as
+     * one.
+     *
+     * `^C` reaches cloudflared straight from the tty — same foreground process
+     * group — so the child dies at the same moment index.ts's handler calls
+     * `teardown`. Both land: the teardown prints its closing report, and this
+     * branch used to print `cloudflared exited 143 — the URL is gone` beside
+     * it, followed by the tail as its diagnosis. On a tunnel that had been up
+     * for half an hour that tail is whatever cloudflared last happened to say
+     * — its SUCCESSFUL startup prechecks — presented as the explanation of a
+     * crash. 143 is the signal the operator sent, and the URL going away is
+     * what they asked for.
+     *
+     * Nothing is swallowed. cloudflared's shutdown lines still print live
+     * (`teardown` drops the display first, so `onLog` is pass-through again),
+     * `teardown` still says `tunnel closed`, and a kill that FAILED still
+     * warns and still ends the run non-zero — the exit status comes from
+     * `teardown`, which answers with the outcome it already had.
+     */
+    if (stopping) return (await teardown()) ? 0 : 1;
     warn(`paddock: cloudflared exited ${outcome.code} — the URL is gone`);
     // The lines above are the diagnosis. Without them this message names the
     // exit code and nothing that would explain it.

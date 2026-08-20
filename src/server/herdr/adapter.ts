@@ -1,10 +1,17 @@
 import { carryAcknowledged, type Agent, type AgentState } from "@shared/types";
-import type { HerdrAgentRaw, HerdrStatusChanged, HerdrWorkspaceRaw } from "@shared/herdr-api";
+import type { HerdrAgentRaw, HerdrAgentSession, HerdrStatusChanged, HerdrWorkspaceRaw } from "@shared/herdr-api";
 
 export interface AdaptContext {
   hostId: string;
   labels: Map<string, string>;
   now: number;
+  /**
+   * Whether a journal adapter exists for this session. INJECTED rather than
+   * imported: `journal/` is a harness-axis module and this file is the herdr
+   * adapter, so importing it here would cross the two axes permanently.
+   * Defaults to false, which is exactly "paddock reads no journals".
+   */
+  hasJournal?: (session: HerdrAgentSession | null | undefined) => boolean;
 }
 
 /** Leading status glyphs some agents prepend to the terminal title. */
@@ -51,6 +58,7 @@ export function toAgent(rawAgent: HerdrAgentRaw, ctx: AdaptContext): Agent | nul
     stateSince: ctx.now,
     updatedAt: ctx.now,
     acknowledgedAt: null,
+    hasJournal: ctx.hasJournal?.(rawAgent.agent_session) ?? false,
   };
 }
 
@@ -179,4 +187,18 @@ function baseName(cwd: string): string | null {
 /** `w3:p1` → `p1`. Unchanged when there is no workspace prefix to drop. */
 function paneSuffix(paneId: string): string {
   return paneId.slice(paneId.lastIndexOf(":") + 1);
+}
+
+/**
+ * Session ids by pane id, for the server side only.
+ *
+ * Separate from `toAgents` because the result must NOT travel with the agent:
+ * `Agent` crosses the socket to the browser and this does not.
+ */
+export function sessionRefs(rows: HerdrAgentRaw[]): Map<string, HerdrAgentSession> {
+  const out = new Map<string, HerdrAgentSession>();
+  for (const row of rows) {
+    if (row.agent_session) out.set(row.pane_id, row.agent_session);
+  }
+  return out;
 }

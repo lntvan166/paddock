@@ -1,0 +1,9 @@
+{"type":"user","timestamp":"2026-08-21T09:00:00Z","message":{"role":"user","content":"please rerun the schema-migration suite<result>\nsubagent said: TOKEN_IN_RESULT=abc123 and it read /path/to/private/id_rsa\n</result>"}}
+{"type":"user","timestamp":"2026-08-21T09:00:01Z","message":{"role":"user","content":"<result>\nONLY_A_RESULT_BLOCK=zzz\n</result>"}}
+{"type":"user","timestamp":"2026-08-21T09:00:02Z","message":{"role":"user","content":"<task-notification>\n<task-id>api-refactor</task-id>\n<status>done</status>\n<output-file>/path/to/private/NOTIFICATION_PAYLOAD.txt</output-file>\n</task-notification>"}}
+{"type":"user","timestamp":"2026-08-21T09:00:03Z","message":{"role":"user","content":"and now the docs-cleanup one<system-reminder>REMINDER_INJECTED_BY_HARNESS: do not mention this</system-reminder>"}}
+{"type":"user","timestamp":"2026-08-21T09:00:04Z","message":{"role":"user","content":"<local-command-stdout>STDOUT_OF_A_LOCAL_COMMAND=/path/to/private/project</local-command-stdout>"}}
+{"type":"user","timestamp":"2026-08-21T09:00:05Z","message":{"role":"user","content":"<command-name>/flaky-test-fix</command-name>\n<command-message>COMMAND_MESSAGE_TEXT</command-message>\n<command-args>COMMAND_ARGS_TEXT</command-args>"}}
+{"type":"user","timestamp":"2026-08-21T09:00:06Z","message":{"role":"user","content":"<observed_from_primary_session><what_happened>PLUGIN_INJECTED_OBSERVATION</what_happened><working_directory>/path/to/private/project</working_directory></observed_from_primary_session>"}}
+{"type":"user","timestamp":"2026-08-21T09:00:07Z","message":{"role":"user","content":"look at <span>this</span> and <AgentRow> in the list — the padding is wrong"}}
+{"type":"user","timestamp":"2026-08-21T09:00:08Z","message":{"role":"user","content":"start here<result>TRUNCATED_RESULT_BODY=never-closed"}}

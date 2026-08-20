@@ -78,3 +78,13 @@ test("gen-herdr-types refuses an older herdr and leaves the contract untouched",
   expect(r.stderr.toString()).toContain("older");
   expect(readFileSync(out, "utf8")).toBe(before);
 });
+
+test("HerdrAgentRaw declares agent_session, the key journal history needs", () => {
+  // A generated file, so this asserts the GENERATOR emitted it. herdr 0.8.2
+  // sends agent_session on every agent.list row; without it in the declared
+  // shape, journal/ has no session id to look up and the feature is dead at
+  // the type level rather than at runtime.
+  const src = readFileSync("src/shared/herdr-api.d.ts", "utf8");
+  expect(src).toContain("export interface HerdrAgentSession");
+  expect(src).toMatch(/agent_session\?: HerdrAgentSession \| null;/);
+});

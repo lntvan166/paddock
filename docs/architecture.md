@@ -53,6 +53,10 @@ One process. No relay hop, no plugin, no polling loop.
 | `web/components/AgentDetail.tsx` | The detail sheet: one agent's output, and — while `blocked` — its parsed prompt options plus a free-text reply box, fetched on open, on a state change, and on the explicit Refresh control. Split into a stateful `AgentDetail` and a hook-free `AgentDetailView`, so the markup is testable with `renderToStaticMarkup` and no DOM. Mounted with `key={openAgent.agentId}` in `App.tsx` so switching the selected agent unmounts the old instance rather than reusing its in-flight state. Attribution across *time* — one agent's successive prompts — is handled instead by tagging the typed reply and the action result with the prompt they belong to: keying on `state` would unmount the sheet on the very delta a successful answer causes. The result line sits outside the `blocked`-only section for that same reason. |
 | `web/release-notice.ts` | Whether the new-release banner is still owed, and the only owner of its dismissal key. `shouldShowRelease` is pure and separate from the storage access, because the behaviour worth asserting is that a NEWER release re-shows after an older one was dismissed. Dismissal stores the version, never a boolean — see decision 16. Fails open on a `localStorage` throw, same posture as `install.ts`: this is read during render. |
 | `web/components/ReleaseBanner.tsx` | "The binary on the host is behind." Distinct from `UpdateBar`, which means "this TAB is running stale JavaScript" and has a button that fixes it — this one names the command instead, because nothing tappable here could update the host. `--accent`, not `--warn`: a new release must not read as urgently as a stale connection. |
+| `server/journal/read.ts` | `createJournalReader`, paging an agent's own session log backward from the tail in bounded chunks, in TURNS (`limit`), not lines. Behind `POST /api/agents/:id/history` (`routes.ts`), registered unconditionally like `/ack` — it reads a file and never touches herdr. |
+| `server/journal/registry.ts` | `adapterFor` / `hasAdapter`: the single decision site for "does this agent have a readable history." Adding a harness is one entry here plus its adapter module, never a new branch in the route or a condition in the client. |
+| `server/journal/claude.ts` | The one adapter in v1: Claude Code's own `.jsonl` transcript format, turned into turns. |
+| `server/journal/text.ts` | Truncation, ANSI stripping, tool-call summarising, and `stripMenu` — the same menu-marker strip `prompt-parse.ts` needs, applied here so a stale option row from an old turn can never blend into the live screen (decision 18). |
 | `web/` | React + Tailwind, single screen. |
 
 ## The dependency rule
@@ -78,6 +82,24 @@ other module has to.
 `notify/` (`notifier.ts` plus its `telegram.ts` transport) hangs off `index.ts`
 as a second leaf, alongside `hub.ts`, not chained into the line above: nothing
 in `herdr/`, `state/store.ts` or `ws/hub.ts` imports it or knows it exists.
+
+`journal/` is a second axis beside `herdr/`, not a branch off it. It knows
+HARNESSES (Claude Code's own transcript format today), never herdr — nothing
+under `server/journal/` imports `server/herdr/*` or `@shared/herdr-api`'s
+socket-shaped types, only the one field (`agent_session`) `adapter.ts` maps
+out of a herdr payload. `adapter.ts` in turn does not import `server/journal/*`
+either: `toAgent`'s `AdaptContext` takes a `hasJournal` PREDICATE, and
+`supervisor.ts` (the composition point that already knows both trees) is what
+passes `journal/registry.ts`'s `hasAdapter` in. Wiring it as an injected
+function rather than an import is what keeps `adapter.ts` — the one file
+permitted to know herdr's wire shapes — from also having to know what a
+"journal" is. `routes.ts` is the other place the two axes meet: `AppDeps`
+carries both a `journal?: JournalReader` and a `sessionFor?:` accessor into
+herdr's session-ref map, and the `/history` handler reads across both to turn
+an agent id into a page of text. That is the route layer taking a dependency
+on each axis it needs, the same way it already depended on `state/store.ts`
+and `herdr/actions.ts` before this feature existed — not a new coupling
+between `journal/` and `herdr/` themselves.
 `index.ts` composes the two leaves with `fanOut(hub, notifier)` and passes the
 result as `Supervisor`'s single `onDelta`, so one delta reaches both without
 either learning the other is there. It deliberately does not live inside

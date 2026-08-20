@@ -1,4 +1,6 @@
 import type { Agent, AgentState } from "@shared/types";
+import type { HerdrAgentSession } from "@shared/herdr-api";
+import { DEMO_JOURNAL_AGENT_ID, DEMO_JOURNAL_LINES } from "@shared/demo-history";
 
 export const DEMO_HOST_ID = "demo-box";
 
@@ -28,7 +30,63 @@ export function demoAgents(now: number): Agent[] {
     stateSince: now - s.ageMs,
     updatedAt: now,
     acknowledgedAt: null,
+    // Only ONE seeded agent claims a journal, matching `web/demo/backend.ts`
+    // (the static build's demo host) exactly — `DEMO_JOURNAL_AGENT_ID` is the
+    // single shared source of truth for which one, so both demo hosts
+    // demonstrate the same "Show earlier" story rather than two that could
+    // drift. `index.ts` wires this agent's `/history` answer in the DEMO
+    // branch; this flag is only the client-facing hint (decision 18).
+    hasJournal: s.id === DEMO_JOURNAL_AGENT_ID,
   }));
+}
+
+/**
+ * The shape `server/journal/read.ts`'s real `JournalReader.read` returns —
+ * matched structurally rather than imported, so demo.ts (which stands in for
+ * herdr, per the note on `DemoStoreSink` below) does not take on a dependency
+ * on `journal/`, a separate leaf off the composition root. `index.ts` wraps
+ * `demoJournalPage` in an object satisfying the real `JournalReader`
+ * interface — the two shapes agreeing is what TypeScript checks for it.
+ */
+export interface DemoJournalPage {
+  lines: string[];
+  source: "journal" | "reconstruction";
+  hasMore: boolean;
+  cursor: string | null;
+  detail: string | null;
+}
+
+/**
+ * The DEMO's whole answer for `/history`: one agent (`DEMO_JOURNAL_AGENT_ID`)
+ * gets the shared invented transcript with `source: "journal"` — the field
+ * the client actually keys its routing on, not the static `hasJournal` hint
+ * (decision 18) — and every other agent gets the same "no journal" shape the
+ * real reader sends for a harness with no adapter. Never reads a real file:
+ * `index.ts` confines this to the `DEMO` branch, the same way demo mode never
+ * opens a real herdr connection.
+ *
+ * Served whole in one page, so `hasMore: false` and `cursor: null` are the
+ * only self-consistent answer — there is no second page to point `cursor` at.
+ */
+export function demoJournalPage(session: HerdrAgentSession | null | undefined): DemoJournalPage {
+  if (!session || session.value !== DEMO_JOURNAL_AGENT_ID) {
+    return {
+      lines: [], source: "reconstruction", hasMore: false, cursor: null,
+      detail: "no journal for this demo agent",
+    };
+  }
+  return { lines: DEMO_JOURNAL_LINES, source: "journal", hasMore: false, cursor: null, detail: null };
+}
+
+/**
+ * The DEMO's `sessionFor`: a synthetic session ref for the one journal agent,
+ * `null` for every other — mirroring what a real `Supervisor.sessionFor`
+ * would answer, without a real herdr connection to ask.
+ */
+export function demoSessionFor(id: string): HerdrAgentSession | null {
+  return id === DEMO_JOURNAL_AGENT_ID
+    ? { agent: "demo", kind: "id", source: "demo", value: id }
+    : null;
 }
 
 interface DemoDelta {

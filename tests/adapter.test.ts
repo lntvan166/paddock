@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyStatusEvent, toAgent, toAgents } from "@server/herdr/adapter";
+import { applyStatusEvent, sessionRefs, toAgent, toAgents } from "@server/herdr/adapter";
 import type { HerdrAgentRaw } from "@shared/herdr-api";
 
 const NOW = 1_700_000_000_000;
@@ -171,4 +171,42 @@ test("a trailing slash does not produce an empty basename", () => {
 test("rows that are not agents are dropped before labelling", () => {
   const agents = toAgents([raw({ agent: null }), raw({ agent_status: "unknown" }), raw()], ctx);
   expect(agents).toHaveLength(1);
+});
+
+// --- hasJournal: injected predicate, session ids stay off the wire ---------
+
+test("hasJournal is false when herdr sends no session", () => {
+  const [a] = toAgents([raw({ pane_id: "w1:p1", name: "api-refactor" })], ctx);
+  expect(a!.hasJournal).toBe(false);
+});
+
+test("hasJournal asks the injected predicate, never the harness name directly", () => {
+  // Injected, because `adapter.ts` sits on the herdr axis and `journal/` sits
+  // on the harness axis. A direct import would tie the two together and put
+  // harness knowledge in the herdr adapter.
+  const session = { agent: "claude", kind: "id", source: "herdr:claude", value: "u" };
+  const [a] = toAgents([raw({ pane_id: "w1:p1", agent_session: session })], {
+    ...ctx,
+    hasJournal: (s) => s?.agent === "claude",
+  });
+  expect(a!.hasJournal).toBe(true);
+});
+
+test("sessionRefs keys by pane id and drops rows with no session", () => {
+  const session = { agent: "claude", kind: "id", source: "herdr:claude", value: "u1" };
+  const refs = sessionRefs([
+    raw({ pane_id: "w1:p1", agent_session: session }),
+    raw({ pane_id: "w1:p2" }),
+  ]);
+  expect(refs.get("w1:p1")).toEqual(session);
+  expect(refs.has("w1:p2")).toBe(false);
+});
+
+test("the session id is NOT on the wire type", () => {
+  // A session id is a filesystem key. The browser cannot need one, and paddock
+  // does not hand filesystem keys to clients. Asserted on the serialized shape
+  // because that is what actually crosses the socket.
+  const session = { agent: "claude", kind: "id", source: "herdr:claude", value: "secret-uuid" };
+  const [a] = toAgents([raw({ pane_id: "w1:p1", agent_session: session })], ctx);
+  expect(JSON.stringify(a)).not.toContain("secret-uuid");
 });

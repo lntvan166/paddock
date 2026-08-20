@@ -30,7 +30,7 @@ function agent(state: Agent["state"] = "blocked"): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state, workspaceId: "w1",
     workspaceLabel: "api work", cwd: "/srv/project",
-    stateSince: NOW, updatedAt: NOW, acknowledgedAt: null,
+    stateSince: NOW, updatedAt: NOW, acknowledgedAt: null, hasJournal: false,
   };
 }
 

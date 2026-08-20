@@ -377,3 +377,144 @@ session does not silently re-litigate them.
     anyway means `publicUrl` names a hostname this deployment is not reached on.
     Telling the second operator to check their proxy would send them to a file
     that is already correct.
+
+18. **The journal — flattened server-side, never mixed with reconstruction,
+    menus stripped, prose only, no session id on the wire, quiet in the UI.**
+    `POST /api/agents/:id/history` reads a harness's own session log so "Show
+    earlier" can answer with what was actually said, instead of the client's
+    best guess from screen snapshots. Six decisions went into it.
+
+    **The journal is flattened server-side; the client only ever sees lines.**
+    `journal/` returns text, and the terminal renders it the way it renders any
+    other history — no per-harness knowledge crosses into `web/`. Same
+    reasoning as `parsePrompt` living in `src/server/`: harness- and
+    protocol-shaped assumptions stay on the server side of the socket. A
+    structured-turns payload was considered, so a future conversation view
+    could reuse the route unchanged, and rejected — it would put a second
+    renderer, and per-harness rendering rules, in `web/`. Pushing history over
+    the WebSocket was rejected too: it needs file watching and a per-agent
+    buffer for every open pane, which is a lot of machinery for an affordance
+    the operator taps.
+
+    **Journal history and reconstruction never coexist for one agent.** Where
+    a journal is readable it is the ONLY source RENDERED above the live screen:
+    the reconstructed buffer is not drawn for that agent, and the two are never
+    concatenated or reconciled. It keeps ACCUMULATING in the background, and
+    that is deliberate rather than an oversight — `history.ts` can only commit
+    a line it watched scroll off the viewport, so a buffer switched off at the
+    source would be empty at the exact moment it is needed: when a journal read
+    answers `source: "reconstruction"` and the pane falls back. Merging costs a
+    diff per poll and buys the fallback its content. Where no journal is
+    readable, nothing changes from before this feature. Two sources DISPLAYED
+    for one range means reconciling overlapping text produced by two different
+    mechanisms — guesswork of exactly the kind this feature exists to remove.
+
+    **One continuous scroll, with menus stripped from journal lines.** Journal
+    text joins the buffer above the live screen with no labelled divider, and
+    that cost is stated plainly: those lines are a RECONSTRUCTION RENDERED AS
+    PROSE, and will not look like the live screen below them — they cannot
+    reproduce the box drawing and colour the agent actually painted. That
+    sharp edge is cosmetic and accepted. A different one is not: a journal
+    turn can contain an old prompt menu — `❯ 1. Yes / 2. No` — which, blended
+    directly above the live screen with no divider, reads as the question
+    being asked NOW. `prompt-parse.ts` already records this exact failure
+    mode in its own scoping comment (a marker left on an already-answered
+    question reappearing as the live menu's selection), so cursor markers and
+    option rows are stripped from journal-derived lines before they ever
+    leave the server (`stripMenu` in `src/server/journal/text.ts`). Only the
+    live screen may ever render a selectable menu; the client additionally
+    never treats a journal line as a source of option buttons — those come
+    from `/prompt` alone.
+
+    **Prose is served; tool output is not.** The journal holds far more than
+    the screen ever showed: every file the agent read, every command's
+    output, any secret that passed through either. paddock has no
+    authentication of its own (decision 3), so what this route serves is
+    bounded at the source rather than at the gate. Kept: assistant text, and
+    user text the operator actually typed. Summarised: a `tool_use` becomes
+    one line (`▸ Bash ×3 · Read timer.ts`), a run of the same tool collapsing
+    to one `×N` token, and the hint drawn from a short allow-list of input
+    fields — never `pattern`, since a search pattern routinely embeds the very
+    secret being searched for. Dropped entirely: every `tool_result`, subagent
+    traffic, and thinking blocks.
+
+    "User text the operator actually typed" is narrower than "a `user` record
+    whose content is a string", and the difference is measured rather than
+    theoretical. The harness injects its own blocks into that same field —
+    subagent `<result>` bodies, `<task-notification>`/`<output-file>` rows,
+    `<system-reminder>`s, `<local-command-stdout>`, and the
+    `<command-name>`/`<command-message>`/`<command-args>` triple a slash
+    command expands to. Across the three largest session logs on the
+    development machine, 733 string-content `user` records would have been
+    served and 176 of them carried a `<result>` body. `<result>` is also how a
+    SIDECHAIN's output reaches a record whose top-level `isSidechain` flag is
+    absent, so that flag alone never closed the hole. Those blocks are
+    stripped before anything is served, and a record stripping empties is
+    dropped rather than rendered as a bare speaker row (`stripInjected` in
+    `src/server/journal/text.ts`).
+
+    A NAMED LIST is not enough on its own — hooks, plugins and future harness
+    versions inject blocks with vocabularies nobody has listed — so a second,
+    weaker rule runs alongside it: an element whose tag NAME is kebab- or
+    snake-cased is machine output, because harness injections name their blocks
+    that way while the markup in a typed message is HTML or JSX (`<div>`,
+    `<AgentRow>`). This rule is an inference, not a contract, and it is
+    deliberately the weaker of the two. It fires only on a BALANCED pair or a
+    self-closing element, never on an unmatched bracket: `<old-name>` in
+    "replace `<old-name>` with `<new-name>`" is a placeholder, and truncating
+    at it deleted the operator's instruction. What it still costs is a message
+    quoting a real custom element or framework tag with both halves present —
+    `<router-view>…</router-view>` — which loses that element and everything
+    between the tags. The named list, by contrast, may take an opener's whole
+    remainder, because a truncated `<result>` really does mean the rest of the
+    record is machine output.
+
+    Absolute paths remaining in genuinely typed
+    prose are NOT redacted: that is content the operator wrote and asked to
+    see, and a scrubber over it would mangle real messages while doing nothing
+    about the secret a person can type directly. The bound is on the KIND of
+    content served, which is what "bounded at the source" means.
+
+    A failure `detail` carries a FIXED PHRASE, never a stringified error. Node
+    and Bun stringify a filesystem error with the path it failed on, and the
+    route returns `detail` to the browser verbatim, so an ordinary miss on a
+    rotated log would otherwise disclose the operator's home path — the same
+    filesystem key the next decision keeps off the wire. The raw error goes to
+    the host log, where the host can act on it.
+
+    **The session id never reaches the browser.** `adapter.ts` maps
+    `agent_session` into a server-side map of `agentId → session ref`; the
+    wire type `Agent` gains exactly one field, `hasJournal: boolean`. That
+    field is a HINT that this pane is worth trying — a property of the
+    harness, decided once at reconcile time — not a guarantee any given
+    request will succeed: the session ref can be missing or the file can be
+    gone even when the harness itself has an adapter. The per-request
+    `source` on each `/history` response is the actual answer, and
+    `AgentTerminal` decides which history is "in play" for a pane from that
+    answer, not from the static hint — an earlier version of this code
+    rendered off `hasJournal` alone and stranded a pane whose every request
+    came back `source: "reconstruction"` on permanently empty journal lines,
+    never reading `history.settled` at all. A session id is a filesystem key
+    regardless, and the browser has no use for one paddock could not itself
+    resolve.
+
+    **A missing journal is quiet in the UI and loud on the host — but only
+    for that specific answer, never for a failed request.** The operator
+    sees the old behaviour, not an error, when the server answers
+    `source: "reconstruction"`: falling back to reconstruction is a working
+    dashboard, and a red banner for a pane that never had a journal would be
+    noise for the common case (a plain shell pane has no journal by
+    definition). The server does not get to be quiet — `CLAUDE.md` forbids
+    swallowing errors — so each cause (no adapter for this harness, no
+    session ref from herdr, file missing, permission denied) logs once per
+    agent on the host and travels in the response's `detail`; an unparseable
+    line skips that line, never the whole file. On the client,
+    `source: "reconstruction"` is read as this same signal, not a failure: it
+    always arrives with `lines: []`, and the pane hands itself over to its
+    existing client-side reconstruction permanently, without surfacing
+    anything to the operator. A REJECTED request (a network blip, herdr
+    itself unreachable) is a different thing entirely and is not silent: it
+    is neither "no journal" nor "no more history", so it is surfaced the same
+    way a failed key press or reply already is, the affordance is left in
+    place for a retry, and the cursor is left exactly where it was so the
+    retry asks for the same page rather than skipping ahead.
