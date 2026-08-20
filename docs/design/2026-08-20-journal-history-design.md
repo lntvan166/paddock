@@ -82,9 +82,13 @@ an affordance the operator taps.
 
 ### 2. Journal history and reconstruction never coexist for one agent
 
-Where a journal is readable it is the **only** source above the live screen, and
-`history.ts` is switched off for that agent. Where one is not, nothing changes
-from today.
+Where a journal is readable it is the **only** source RENDERED above the live
+screen — the reconstructed buffer is not drawn for that agent, and the two are
+never concatenated. It keeps accumulating in the background, deliberately:
+`history.ts` can only commit a line it watched scroll off the viewport, so a
+buffer switched off at the source would be empty at the exact moment the pane
+needs it — when a journal read answers `source: "reconstruction"` and the pane
+falls back. Where no journal is readable, nothing changes from today.
 
 Two sources for one range means reconciling overlapping text that was produced by
 two different mechanisms, which is guesswork of exactly the kind this feature
@@ -116,7 +120,10 @@ at the source rather than at the gate.
 
 - **Kept:** assistant text, and user text the operator actually typed.
 - **Summarised:** a `tool_use` becomes one line — `▸ Bash ×3 · Read timer.ts` —
-  carrying the tool name and a short input hint.
+  carrying the tool name and a short input hint. A run of the same tool
+  collapses to one `×N` token. The hint comes from a short allow-list of input
+  fields and never from `pattern`: a search pattern routinely embeds the very
+  secret being searched for.
 - **Dropped:** every `tool_result`. That is where file contents and command
   output live.
 - **Dropped:** subagent (sidechain) traffic and thinking blocks.
@@ -124,6 +131,25 @@ at the source rather than at the gate.
 A `user` record whose content is a **list** is tool-result traffic, not something
 a person typed. Folding those into the call that produced them is what stops a
 session rendering hundreds of fabricated "you" turns.
+
+A `user` record whose content is a **string** is not automatically something a
+person typed either, and this is measured rather than assumed. The harness
+injects its own blocks into that same field — `<result>` (subagent and tool
+result text), `<task-notification>`, `<output-file>`, `<system-reminder>`,
+`<local-command-stdout>`, and the
+`<command-name>`/`<command-message>`/`<command-args>` triple a slash command
+expands to. Across the three largest session logs on the development machine,
+733 string-content `user` records would have been served, 176 of them carrying a
+`<result>` body. `<result>` is also how a **sidechain's** output reaches a record
+whose top-level `isSidechain` is absent, so that flag alone never closed the
+hole. Those blocks are **stripped**, before any truncation, and a record left
+empty by stripping is **dropped** rather than rendered as a bare speaker row.
+
+Absolute paths surviving in genuinely typed prose are deliberately **not**
+redacted. That is content the operator wrote and asked to see; a scrubber over
+it would mangle real messages while doing nothing about the secret a person can
+type directly into a message. The bound is on the KIND of content served, which
+is what "bounded at the source" means.
 
 ### 5. The session id never reaches the browser
 

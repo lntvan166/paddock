@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-  clamp, MAX_TEXT_CHARS, stripAnsi, stripMenu, summariseTool, toLines,
+  clamp, MAX_TEXT_CHARS, stripAnsi, stripInjected, stripMenu, summariseTool,
+  summariseTools, toLines,
 } from "@server/journal/text";
 
 test("ansi escapes are removed", () => {
@@ -110,4 +111,121 @@ test("toLines drops a turn left empty by stripping", () => {
 
 test("the text cap is bounded", () => {
   expect(MAX_TEXT_CHARS).toBe(4_000);
+});
+
+test("a search pattern is never used as a hint", () => {
+  // A pattern is operator-supplied text that routinely embeds the very thing
+  // being searched for. Design decision 4 bounds this route at the SOURCE, so
+  // the field is not on the hint allow-list at all — a bare tool name is the
+  // whole orientation this line owes anyone.
+  expect(summariseTool("Grep", { pattern: "AKIA_SECRET_KEY_SHAPE" })).toBe("Grep");
+  expect(summariseTool("Grep", { pattern: "x" })).not.toContain("x");
+});
+
+test("a run of the same tool collapses to one ×N token", () => {
+  // `src/server/journal/types.ts` and the design's §4 both promise `Bash ×3`.
+  // Un-aggregated, three calls rendered as `Bash · x · Bash · y · Bash · z` —
+  // the promise false, and the longest possible line on the narrowest screen.
+  expect(summariseTools([
+    { name: "Bash", input: { description: "one" } },
+    { name: "Bash", input: { description: "two" } },
+    { name: "Bash", input: { description: "three" } },
+    { name: "Read", input: { file_path: "/srv/project/src/timer.ts" } },
+  ])).toEqual(["Bash ×3", "Read · timer.ts"]);
+});
+
+test("aggregation keeps call order rather than totalling", () => {
+  // A sequence of what happened, not a frequency table: two separate runs of
+  // the same tool stay two tokens, in the order they were called.
+  expect(summariseTools([
+    { name: "Read", input: {} },
+    { name: "Bash", input: {} },
+    { name: "Bash", input: {} },
+    { name: "Read", input: {} },
+  ])).toEqual(["Read", "Bash ×2", "Read"]);
+});
+
+test("a single call still carries its hint", () => {
+  expect(summariseTools([{ name: "Bash", input: { description: "run tests" } }]))
+    .toEqual(["Bash · run tests"]);
+});
+
+test("journal times are the host's local clock, not UTC", () => {
+  // These lines sit inches above the live screen, which shows whatever clock
+  // the agent's terminal printed — local. Two clocks an inch apart, differing
+  // by the machine's UTC offset, is a reader mis-ordering their own session.
+  //
+  // The timezone is SET here rather than inherited: `bun test` runs with TZ
+  // pinned to UTC, so a test that merely read the ambient zone would pass
+  // identically against the `getUTCHours` this replaced — a guard that cannot
+  // fail is not a guard.
+  const saved = process.env.TZ;
+  try {
+    process.env.TZ = "Asia/Tokyo"; // UTC+9, no DST, so the arithmetic is fixed
+    expect(toLines([
+      { role: "user", at: "2026-08-20T13:04:00Z", text: "hello", tools: [] },
+    ])[0]).toBe("you · 22:04");
+  } finally {
+    process.env.TZ = saved;
+  }
+});
+
+test("every named injected block is removed, body and all", () => {
+  for (const [tag, body] of [
+    ["result", "SUBAGENT_RESULT_BODY"],
+    ["task-notification", "NOTIFICATION_BODY"],
+    ["output-file", "OUTPUT_FILE_BODY"],
+    ["system-reminder", "REMINDER_BODY"],
+    ["local-command-stdout", "STDOUT_BODY"],
+    ["command-name", "COMMAND_NAME_BODY"],
+    ["command-message", "COMMAND_MESSAGE_BODY"],
+    ["command-args", "COMMAND_ARGS_BODY"],
+  ] as const) {
+    const out = stripInjected(`typed prose <${tag}>${body}</${tag}> more prose`);
+    expect(out).not.toContain(body);
+    expect(out).toContain("typed prose");
+    expect(out).toContain("more prose");
+  }
+});
+
+test("an injected block the harness never closed takes the rest of the record", () => {
+  // A truncated block is still block content. Keeping the tail because the
+  // writer did not close its own tag would leak exactly what pass 1 removes.
+  expect(stripInjected("typed prose <result>UNCLOSED_BODY and on and on"))
+    .not.toContain("UNCLOSED_BODY");
+});
+
+test("a closing tag with no opener takes everything before it", () => {
+  // The mirror case: that text was inside the block.
+  expect(stripInjected("ORPHANED_BODY</result> tail")).not.toContain("ORPHANED_BODY");
+});
+
+test("a block shape nobody has listed yet is still removed, by its NAME's shape", () => {
+  // A list only covers injectors somebody has already seen; hooks and plugins
+  // write into the same field with vocabularies of their own. Kebab- and
+  // snake-cased names are machine-written; HTML and JSX names are not.
+  expect(stripInjected("<some-future-hook>HOOK_BODY</some-future-hook>"))
+    .not.toContain("HOOK_BODY");
+  expect(stripInjected("<observed_from_session>PLUGIN_BODY</observed_from_session>"))
+    .not.toContain("PLUGIN_BODY");
+});
+
+test("markup a person wrote is left alone", () => {
+  // The false positive worth avoiding: over-stripping here deletes something
+  // an operator typed. `<div>`, `<span>`, `<AgentRow>` are never touched.
+  const typed = "the <div><span>row</span></div> under <AgentRow> is misaligned";
+  expect(stripInjected(typed)).toBe(typed);
+});
+
+test("stripping happens before the text cap, not after", () => {
+  // The order is load-bearing: clamped first, a record whose block ran past
+  // MAX_TEXT_CHARS was truncated to 4 KB of block and served anyway.
+  const huge = "x".repeat(MAX_TEXT_CHARS * 2);
+  const entries = [{
+    role: "user" as const,
+    at: null,
+    text: stripInjected(`hello<result>${huge}</result>`),
+    tools: [],
+  }];
+  expect(toLines(entries)).toEqual(["you", "hello", ""]);
 });

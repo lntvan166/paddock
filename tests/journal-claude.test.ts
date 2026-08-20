@@ -5,6 +5,18 @@ import { claudeAdapter } from "@server/journal/claude";
 const chunk = readFileSync("tests/fixtures/journal/claude-session.jsonl", "utf8");
 const entries = claudeAdapter.parse(chunk);
 
+/**
+ * A second fixture, for the ONE rule that "a string is a person typing" got
+ * wrong: the harness (and any hook or plugin) injects its own blocks into that
+ * same field. Invented content throughout, per house rule 2 — the SHAPES are
+ * real, every byte between the tags is made up, and the absolute paths are
+ * `/path/to/…` placeholders (a literal home path in a fixture is what
+ * `make check-clean` exists to catch).
+ */
+const injectedChunk = readFileSync("tests/fixtures/journal/claude-injected.jsonl", "utf8");
+const injected = claudeAdapter.parse(injectedChunk);
+const injectedText = JSON.stringify(injected);
+
 test("a typed user message becomes a user turn", () => {
   expect(entries[0]).toEqual({
     role: "user", at: "2026-08-20T13:04:00Z", text: "fix the flaky test", tools: [],
@@ -77,4 +89,65 @@ test("the adapter records the harness version its shape was verified against", (
 
 test("locate refuses a value that is not a session id, before touching disk", async () => {
   expect(await claudeAdapter.locate("../../etc/passwd", ["/nonexistent"])).toBeNull();
+});
+
+/**
+ * Every injected block shape, asserted on the whole parse — one leak anywhere
+ * is the whole failure, exactly like the `SECRET_TOKEN` assertion above.
+ *
+ * The BODIES are what matter, so each is given a distinctive invented marker
+ * in the fixture rather than being checked by tag name: a test that only
+ * asserted the tags were gone would pass on an implementation that stripped
+ * the angle brackets and served the text between them.
+ */
+test("no injected block body reaches the output, whatever shape it arrived in", () => {
+  for (const leak of [
+    "TOKEN_IN_RESULT",                 // <result> — subagent / tool result text
+    "/path/to/private",                // an absolute path carried inside a block
+    "ONLY_A_RESULT_BLOCK",             // a record that is nothing but a result
+    "NOTIFICATION_PAYLOAD",            // <output-file> inside <task-notification>
+    "REMINDER_INJECTED_BY_HARNESS",    // <system-reminder>
+    "STDOUT_OF_A_LOCAL_COMMAND",       // <local-command-stdout>
+    "COMMAND_MESSAGE_TEXT",            // <command-message>
+    "COMMAND_ARGS_TEXT",               // <command-args>
+    "flaky-test-fix",                  // <command-name>
+    "PLUGIN_INJECTED_OBSERVATION",     // a plugin's own block, not on the list
+    "TRUNCATED_RESULT_BODY",           // an OPENED block the harness never closed
+  ]) {
+    expect(injectedText).not.toContain(leak);
+  }
+});
+
+test("the typed message a block was appended to still arrives, minus the block", () => {
+  // The whole reason stripping beats dropping the record: the operator really
+  // did type this, and it is the only thing in the record worth showing.
+  const kept = injected.filter((e) => e.role === "user").map((e) => e.text.trim());
+  expect(kept).toContain("please rerun the schema-migration suite");
+  expect(kept).toContain("and now the docs-cleanup one");
+  expect(kept).toContain("start here");
+});
+
+test("a record that was ONLY an injected block is dropped, not served as a blank turn", () => {
+  // Five of the fixture's nine records are pure injection. None may survive
+  // as an empty "you" row above the live screen, so four turns remain.
+  expect(injected.every((e) => e.text.trim() !== "")).toBe(true);
+  expect(injected).toHaveLength(4);
+});
+
+test("markup a PERSON wrote survives — the strip is not a blanket tag filter", () => {
+  // `<span>` and `<AgentRow>` are HTML and JSX names: single lowercase word,
+  // or PascalCase. Only kebab/snake-cased names are treated as injected, so a
+  // message quoting real markup is not silently eaten.
+  const kept = injected.find((e) => e.text.includes("the padding is wrong"));
+  expect(kept).toBeDefined();
+  expect(kept!.text).toContain("<span>this</span>");
+  expect(kept!.text).toContain("<AgentRow>");
+});
+
+test("a subagent result reaching top level without isSidechain is still dropped", () => {
+  // `isSidechain` is a TOP-LEVEL flag; none of these records carry it. A
+  // `<result>` block is exactly how a subagent's output arrives in a record
+  // the flag cannot see, which is why the flag alone was never sufficient.
+  expect(injectedChunk).not.toContain("isSidechain");
+  expect(injectedText).not.toContain("TOKEN_IN_RESULT");
 });

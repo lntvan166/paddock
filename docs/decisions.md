@@ -397,9 +397,15 @@ session does not silently re-litigate them.
     the operator taps.
 
     **Journal history and reconstruction never coexist for one agent.** Where
-    a journal is readable it is the ONLY source above the live screen, and the
-    reconstructed path (`web/history.ts`) is switched off for that agent.
-    Where one is not, nothing changes from before this feature. Two sources
+    a journal is readable it is the ONLY source RENDERED above the live screen:
+    the reconstructed buffer is not drawn for that agent, and the two are never
+    concatenated or reconciled. It keeps ACCUMULATING in the background, and
+    that is deliberate rather than an oversight — `history.ts` can only commit
+    a line it watched scroll off the viewport, so a buffer switched off at the
+    source would be empty at the exact moment it is needed: when a journal read
+    answers `source: "reconstruction"` and the pane falls back. Merging costs a
+    diff per poll and buys the fallback its content. Where no journal is
+    readable, nothing changes from before this feature. Two sources DISPLAYED
     for one range means reconciling overlapping text produced by two different
     mechanisms — guesswork of exactly the kind this feature exists to remove.
 
@@ -426,8 +432,37 @@ session does not silently re-litigate them.
     authentication of its own (decision 3), so what this route serves is
     bounded at the source rather than at the gate. Kept: assistant text, and
     user text the operator actually typed. Summarised: a `tool_use` becomes
-    one line (`▸ Bash · <hint>`). Dropped entirely: every `tool_result`,
-    subagent traffic, and thinking blocks.
+    one line (`▸ Bash ×3 · Read timer.ts`), a run of the same tool collapsing
+    to one `×N` token, and the hint drawn from a short allow-list of input
+    fields — never `pattern`, since a search pattern routinely embeds the very
+    secret being searched for. Dropped entirely: every `tool_result`, subagent
+    traffic, and thinking blocks.
+
+    "User text the operator actually typed" is narrower than "a `user` record
+    whose content is a string", and the difference is measured rather than
+    theoretical. The harness injects its own blocks into that same field —
+    subagent `<result>` bodies, `<task-notification>`/`<output-file>` rows,
+    `<system-reminder>`s, `<local-command-stdout>`, and the
+    `<command-name>`/`<command-message>`/`<command-args>` triple a slash
+    command expands to. Across the three largest session logs on the
+    development machine, 733 string-content `user` records would have been
+    served and 176 of them carried a `<result>` body. `<result>` is also how a
+    SIDECHAIN's output reaches a record whose top-level `isSidechain` flag is
+    absent, so that flag alone never closed the hole. Those blocks are
+    stripped before anything is served, and a record stripping empties is
+    dropped rather than rendered as a bare speaker row (`stripInjected` in
+    `src/server/journal/text.ts`). Absolute paths remaining in genuinely typed
+    prose are NOT redacted: that is content the operator wrote and asked to
+    see, and a scrubber over it would mangle real messages while doing nothing
+    about the secret a person can type directly. The bound is on the KIND of
+    content served, which is what "bounded at the source" means.
+
+    A failure `detail` carries a FIXED PHRASE, never a stringified error. Node
+    and Bun stringify a filesystem error with the path it failed on, and the
+    route returns `detail` to the browser verbatim, so an ordinary miss on a
+    rotated log would otherwise disclose the operator's home path — the same
+    filesystem key the next decision keeps off the wire. The raw error goes to
+    the host log, where the host can act on it.
 
     **The session id never reaches the browser.** `adapter.ts` maps
     `agent_session` into a server-side map of `agentId → session ref`; the

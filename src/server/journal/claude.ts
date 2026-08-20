@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { containedRealpath, isSessionId } from "@server/journal/files";
-import { summariseTool } from "@server/journal/text";
+import { stripInjected, summariseTools, type ToolCall } from "@server/journal/text";
 import type { JournalAdapter, JournalEntry } from "@server/journal/types";
 
 /**
@@ -25,7 +25,10 @@ import type { JournalAdapter, JournalEntry } from "@server/journal/types";
  *   {"type":"assistant", "message":{"role":"assistant","content":[ {type:"text"|"thinking"|"tool_use"} ]}}
  *
  * A `user` record whose content is a LIST is tool-result traffic, not something
- * a person typed. `isSidechain` marks subagent traffic.
+ * a person typed. `isSidechain` marks subagent traffic — but only at the
+ * record's TOP LEVEL, so it is not sufficient on its own: a subagent's output
+ * also arrives as an injected `<result>` block inside an unmarked record's
+ * string content. See `stripInjected` in `text.ts`.
  */
 export const claudeAdapter: JournalAdapter = {
   name: "claude",
@@ -94,15 +97,34 @@ function toEntry(rec: Record<string, unknown>): JournalEntry | null {
   const content = message?.content;
 
   if (type === "user") {
-    // A STRING is a person typing. A LIST is tool-result traffic wearing the
-    // user role, and rendering those would fabricate hundreds of "you" turns.
+    // A LIST is tool-result traffic wearing the user role, and rendering those
+    // would fabricate hundreds of "you" turns.
     if (typeof content !== "string" || content.trim() === "") return null;
-    return { role: "user", at, text: content, tools: [] };
+    /**
+     * A STRING is NOT, on its own, "a person typing" — that rule was the leak.
+     * The harness injects its own blocks into this same field: subagent
+     * `<result>` bodies, `<task-notification>`/`<output-file>` rows,
+     * `<system-reminder>`s, `<local-command-stdout>`, and the
+     * `<command-name>`/`<command-message>`/`<command-args>` triple a slash
+     * command expands to. All of that is tool output or harness bookkeeping,
+     * which design decision 4 says is never served — and `<result>` in
+     * particular is how a SIDECHAIN's output reaches a record whose top-level
+     * `isSidechain` is absent, so the check above cannot see it.
+     *
+     * Stripped rather than dropped, and then dropped if nothing prose-shaped
+     * is left: see `stripInjected` for why both halves are needed. Note the
+     * order — stripping happens HERE, before `toLines` clamps to
+     * `MAX_TEXT_CHARS`, because clamping first would have served the first
+     * 4 KB of a block instead of none of it.
+     */
+    const text = stripInjected(content);
+    if (text.trim() === "") return null;
+    return { role: "user", at, text, tools: [] };
   }
 
   if (!Array.isArray(content)) return null;
   const texts: string[] = [];
-  const tools: string[] = [];
+  const calls: ToolCall[] = [];
   for (const part of content) {
     // A content element is allowed to be anything valid JSON permits — this
     // is a private, unversioned format. `null`, a bare string, a number: none
@@ -112,10 +134,13 @@ function toEntry(rec: Record<string, unknown>): JournalEntry | null {
     const p = part as Record<string, unknown>;
     if (p.type === "text" && typeof p.text === "string") texts.push(p.text);
     else if (p.type === "tool_use" && typeof p.name === "string") {
-      tools.push(summariseTool(p.name, p.input));
+      // Collected raw and summarised together at the end: a run of the same
+      // tool collapses to `Bash ×3`, which cannot be decided one call at a
+      // time.
+      calls.push({ name: p.name, input: p.input });
     }
     // "thinking" and everything unknown falls through deliberately.
   }
-  if (texts.length === 0 && tools.length === 0) return null;
-  return { role: "assistant", at, text: texts.join("\n"), tools };
+  if (texts.length === 0 && calls.length === 0) return null;
+  return { role: "assistant", at, text: texts.join("\n"), tools: summariseTools(calls) };
 }
