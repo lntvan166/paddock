@@ -503,3 +503,89 @@ test("teardown clears the block instead of leaving it claiming the tunnel is up"
     expect(out.writes.slice(marker).join("")).toContain("\x1b[H\x1b[J");
   } finally { c.restore(); out.restore(); }
 });
+
+// A `^C` reaches cloudflared straight from the tty, so the child dies at the
+// same moment paddock's teardown runs — and the race in `runTunnel` used to
+// take that death for an unexplained one. The operator got
+// `cloudflared exited 143 — the URL is gone` plus a 50-line tail, which on a
+// long-lived tunnel is the last thing cloudflared happened to say: its
+// SUCCESSFUL startup prechecks, printed as if they explained a crash.
+test("a requested stop is not reported as a tunnel that failed", async () => {
+  const out = captureStdout();
+  const c = capture();
+  const reg: { teardown: (() => Promise<boolean>) | null } = { teardown: null };
+  const sink: { emit: ((l: string) => void) | null } = { emit: null };
+  let code: number;
+  try {
+    let release: (n: number) => void = () => {};
+    const exited = new Promise<number>((r) => { release = r; });
+    const run = runTunnel({
+      ...base(),
+      isTty: true,
+      port: 0,
+      startTunnel: fakeTunnel({
+        onSink: (emit) => {
+          sink.emit = emit;
+          // Held back while the display owns the screen: the buffer a real run
+          // arrives at teardown with.
+          void Bun.sleep(5).then(() => emit("INF Registered tunnel connection"));
+        },
+        exited,
+        // The child is already on its way out by the time the kill lands.
+        stop: async () => {
+          sink.emit?.("INF Initiating graceful shutdown due to signal interrupt");
+          release(143);
+        },
+      }),
+      registerShutdown: (fn) => { reg.teardown = fn; },
+    });
+    await Bun.sleep(10);
+    expect(await reg.teardown!()).toBe(true);
+    code = await run;
+  } finally { c.restore(); out.restore(); }
+
+  const text = c.text();
+  // Not silence: cloudflared's own account of the shutdown still comes through,
+  // and the teardown's closing line is the report.
+  expect(text).toContain("graceful shutdown due to signal interrupt");
+  expect(text).toContain("tunnel closed");
+  // 143 is the signal the operator sent, and the URL going away is what they
+  // asked for. Neither is a failure to warn about.
+  expect(text).not.toContain("the URL is gone");
+  // And there is nothing to diagnose, so no tail.
+  expect(text).not.toContain("line(s) from cloudflared");
+  expect(code).toBe(0);
+});
+
+test("a requested stop whose kill failed still ends the run non-zero", async () => {
+  // The one thing that must survive the quieting above. A `stop()` that was
+  // refused means a cloudflared may still be holding a public URL with no
+  // paddock behind it, and the exit status is all a wrapper script has.
+  const out = captureStdout();
+  const c = capture();
+  const reg: { teardown: (() => Promise<boolean>) | null } = { teardown: null };
+  let code: number;
+  try {
+    let release: (n: number) => void = () => {};
+    const exited = new Promise<number>((r) => { release = r; });
+    const run = runTunnel({
+      ...base(),
+      isTty: true,
+      port: 0,
+      startTunnel: fakeTunnel({
+        exited,
+        stop: async () => {
+          release(143);
+          throw new Error("kill: operation not permitted");
+        },
+      }),
+      registerShutdown: (fn) => { reg.teardown = fn; },
+    });
+    await Bun.sleep(10);
+    expect(await reg.teardown!()).toBe(false);
+    code = await run;
+  } finally { c.restore(); out.restore(); }
+
+  expect(code).toBe(1);
+  expect(c.text()).toContain("the tunnel may still be up");
+});
