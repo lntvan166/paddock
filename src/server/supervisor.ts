@@ -1,5 +1,6 @@
-import { applyStatusEvent, toAgents, workspaceLabels } from "@server/herdr/adapter";
+import { applyStatusEvent, sessionRefs, toAgents, workspaceLabels } from "@server/herdr/adapter";
 import { checkAgentShape, type ShapeVerdict } from "@server/herdr/shape";
+import { hasAdapter } from "@server/journal/registry";
 import {
   EVENT_AGENT_DETECTED,
   EVENT_PANE_CLOSED,
@@ -12,6 +13,7 @@ import {
 import type { AgentStore, Delta } from "@server/state/store";
 import type {
   HerdrAgentRaw,
+  HerdrAgentSession,
   HerdrEvent,
   HerdrStatusChanged,
   HerdrWorkspaceRaw,
@@ -86,6 +88,12 @@ export class Supervisor {
   // awaiting openStream() and refuses to record a subscription as live if it
   // moved during that await — see resubscribe().
   private subscriptionGeneration = 0;
+
+  private sessions = new Map<string, HerdrAgentSession>();
+
+  sessionFor(agentId: string): HerdrAgentSession | null {
+    return this.sessions.get(agentId) ?? null;
+  }
 
   constructor(private readonly opts: SupervisorOptions) {
     this.now = opts.now ?? Date.now;
@@ -258,7 +266,12 @@ export class Supervisor {
       hostId: this.opts.store.hostId,
       labels: this.labels,
       now,
+      hasJournal: hasAdapter,
     });
+    // Server-side only: the ids these hold are filesystem keys and must not
+    // travel with the agent. Replaced wholesale each reconcile, so a closed
+    // pane's id does not linger.
+    this.sessions = sessionRefs(list.agents ?? []);
 
     const delta = this.opts.store.replaceAll(agents, now);
     if (delta.upserted.length || delta.removedIds.length) this.opts.onDelta(delta);

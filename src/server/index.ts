@@ -14,6 +14,7 @@ import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
+import { createJournalReader, defaultRoots } from "@server/journal/read";
 import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
@@ -516,6 +517,8 @@ const appDeps = {
   hub,
   actions,
   settings,
+  journal: createJournalReader(defaultRoots(process.env, homedir())),
+  sessionFor: (id: string) => supervisor?.sessionFor(id) ?? null,
   health: () => ({
     ok: true,
     hostId,
