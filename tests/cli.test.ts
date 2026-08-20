@@ -2,32 +2,32 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseArgs, USAGE } from "@server/cli";
+import { parseArgs, parseDuration, USAGE } from "@server/cli";
 
 test("bare invocation serves — the Docker CMD and every doc depend on it", () => {
-  expect(parseArgs([])).toEqual({ command: "serve", flags: new Set(), verb: null });
+  expect(parseArgs([])).toEqual({ command: "serve", flags: new Set(), values: new Map(), verb: null });
 });
 
 test("--demo still serves", () => {
   expect(parseArgs(["--demo"]))
-    .toEqual({ command: "serve", flags: new Set(["--demo"]), verb: null });
+    .toEqual({ command: "serve", flags: new Set(["--demo"]), values: new Map(), verb: null });
 });
 
 test("an explicit `serve` verb serves too — CLAUDE.md documents `paddock serve --demo`", () => {
   expect(parseArgs(["serve", "--demo"]))
-    .toEqual({ command: "serve", flags: new Set(["--demo"]), verb: "serve" });
+    .toEqual({ command: "serve", flags: new Set(["--demo"]), values: new Map(), verb: "serve" });
 });
 
 test("update is a command, and carries its own flag", () => {
   expect(parseArgs(["update"]))
-    .toEqual({ command: "update", flags: new Set(), verb: "update" });
+    .toEqual({ command: "update", flags: new Set(), values: new Map(), verb: "update" });
   expect(parseArgs(["update", "--check"]))
-    .toEqual({ command: "update", flags: new Set(["--check"]), verb: "update" });
+    .toEqual({ command: "update", flags: new Set(["--check"]), values: new Map(), verb: "update" });
 });
 
 test("flags may precede the command", () => {
   expect(parseArgs(["--check", "update"]))
-    .toEqual({ command: "update", flags: new Set(["--check"]), verb: "update" });
+    .toEqual({ command: "update", flags: new Set(["--check"]), values: new Map(), verb: "update" });
 });
 
 test("an unrecognised verb is `unknown`, never `serve`", () => {
@@ -35,9 +35,9 @@ test("an unrecognised verb is `unknown`, never `serve`", () => {
   // `paddock updte` launched a dashboard instead of saying the verb does not
   // exist. The verb is carried through so the error can quote it back.
   expect(parseArgs(["updte"]))
-    .toEqual({ command: "unknown", flags: new Set(), verb: "updte" });
+    .toEqual({ command: "unknown", flags: new Set(), values: new Map(), verb: "updte" });
   expect(parseArgs(["--demo", "nonsense"]))
-    .toEqual({ command: "unknown", flags: new Set(["--demo"]), verb: "nonsense" });
+    .toEqual({ command: "unknown", flags: new Set(["--demo"]), values: new Map(), verb: "nonsense" });
 });
 
 test("the reserved verbs come through the parser, not a second argv scan", () => {
@@ -55,6 +55,61 @@ test("the usage line names every implemented verb", () => {
   expect(USAGE).toContain("paddock update");
   expect(USAGE).toContain("--demo");
   expect(USAGE).toContain("--version");
+});
+
+test("tunnel is a command", () => {
+  expect(parseArgs(["tunnel"]).command).toBe("tunnel");
+});
+
+test("--for carries its value in both spellings", () => {
+  expect(parseArgs(["tunnel", "--for", "2h"]).values.get("--for")).toBe("2h");
+  expect(parseArgs(["tunnel", "--for=2h"]).values.get("--for")).toBe("2h");
+});
+
+test("a --for value is never mistaken for the verb", () => {
+  // `verb` was "the first token that does not start with a dash", so without
+  // consuming the value, `paddock --for 2h tunnel` read "2h" as the verb —
+  // which `commandFor` calls unknown, and the operator gets no tunnel.
+  const p = parseArgs(["--for", "2h", "tunnel"]);
+  expect(p.command).toBe("tunnel");
+  expect(p.values.get("--for")).toBe("2h");
+});
+
+test("--demo still composes with tunnel", () => {
+  const p = parseArgs(["tunnel", "--demo"]);
+  expect(p.command).toBe("tunnel");
+  expect(p.flags.has("--demo")).toBe(true);
+});
+
+test("the existing verb behaviour is unchanged", () => {
+  // Guards the regressions cli.ts's own comments describe, now that the
+  // parser has been rewritten to consume flag values.
+  expect(parseArgs([]).command).toBe("serve");
+  expect(parseArgs(["--demo"]).command).toBe("serve");
+  expect(parseArgs(["--help"]).command).toBe("help");
+  expect(parseArgs(["-h"]).command).toBe("help");
+  expect(parseArgs(["updte"]).command).toBe("unknown");
+  expect(parseArgs(["updte", "--help"]).command).toBe("unknown");
+  expect(parseArgs(["--demo", "agent"]).command).toBe("agent");
+  expect(parseArgs(["update", "--check"]).command).toBe("update");
+  expect(parseArgs(["update", "--check"]).flags.has("--check")).toBe(true);
+});
+
+test("durations parse in seconds, minutes and hours", () => {
+  expect(parseDuration("45s")).toBe(45_000);
+  expect(parseDuration("90m")).toBe(5_400_000);
+  expect(parseDuration("2h")).toBe(7_200_000);
+});
+
+test("a malformed duration is null, never a default", () => {
+  // A mistyped deadline that silently becomes "no deadline" defeats the flag.
+  for (const bad of ["", "2", "h", "2d", "-2h", "2.5h", "0h", "two hours", "2h30m"]) {
+    expect(parseDuration(bad)).toBe(null);
+  }
+});
+
+test("USAGE documents the verb", () => {
+  expect(USAGE).toContain("paddock tunnel");
 });
 
 // --- What the process actually does with those commands --------------------
