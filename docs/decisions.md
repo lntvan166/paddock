@@ -431,20 +431,37 @@ session does not silently re-litigate them.
 
     **The session id never reaches the browser.** `adapter.ts` maps
     `agent_session` into a server-side map of `agentId → session ref`; the
-    wire type `Agent` gains exactly one field, `hasJournal: boolean`, which is
-    all the UI needs to choose a history source. A session id is a filesystem
-    key, and the browser has no use for one paddock could not itself resolve.
+    wire type `Agent` gains exactly one field, `hasJournal: boolean`. That
+    field is a HINT that this pane is worth trying — a property of the
+    harness, decided once at reconcile time — not a guarantee any given
+    request will succeed: the session ref can be missing or the file can be
+    gone even when the harness itself has an adapter. The per-request
+    `source` on each `/history` response is the actual answer, and
+    `AgentTerminal` decides which history is "in play" for a pane from that
+    answer, not from the static hint — an earlier version of this code
+    rendered off `hasJournal` alone and stranded a pane whose every request
+    came back `source: "reconstruction"` on permanently empty journal lines,
+    never reading `history.settled` at all. A session id is a filesystem key
+    regardless, and the browser has no use for one paddock could not itself
+    resolve.
 
-    **A missing journal is quiet in the UI and loud on the host.** The
-    operator sees the old behaviour, not an error: falling back to
-    reconstruction is a working dashboard, and a red banner for a pane that
-    never had a journal would be noise for the common case (a plain shell
-    pane has no journal by definition). The server does not get to be quiet —
-    `CLAUDE.md` forbids swallowing errors — so each cause (no adapter for
-    this harness, no session ref from herdr, file missing, permission denied)
-    logs once per agent on the host and travels in the response's `detail`;
-    an unparseable line skips that line, never the whole file. On the client,
+    **A missing journal is quiet in the UI and loud on the host — but only
+    for that specific answer, never for a failed request.** The operator
+    sees the old behaviour, not an error, when the server answers
+    `source: "reconstruction"`: falling back to reconstruction is a working
+    dashboard, and a red banner for a pane that never had a journal would be
+    noise for the common case (a plain shell pane has no journal by
+    definition). The server does not get to be quiet — `CLAUDE.md` forbids
+    swallowing errors — so each cause (no adapter for this harness, no
+    session ref from herdr, file missing, permission denied) logs once per
+    agent on the host and travels in the response's `detail`; an unparseable
+    line skips that line, never the whole file. On the client,
     `source: "reconstruction"` is read as this same signal, not a failure: it
-    means "the server has no journal for this agent," arrives with
-    `lines: []`, and the terminal falls back to its existing client-side
-    reconstruction without surfacing anything to the operator.
+    always arrives with `lines: []`, and the pane hands itself over to its
+    existing client-side reconstruction permanently, without surfacing
+    anything to the operator. A REJECTED request (a network blip, herdr
+    itself unreachable) is a different thing entirely and is not silent: it
+    is neither "no journal" nor "no more history", so it is surfaced the same
+    way a failed key press or reply already is, the affordance is left in
+    place for a retry, and the cursor is left exactly where it was so the
+    retry asks for the same page rather than skipping ahead.

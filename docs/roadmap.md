@@ -55,10 +55,14 @@ surprise.
   **Narrower since the journal route shipped:** for an agent whose
   `hasJournal` is true, "Show earlier" now IS an explicit second request —
   `POST /api/agents/:id/history`, reading the harness's own session log
-  rather than the reconstructed viewport buffer. The two sources never mix
-  for one agent (`docs/decisions.md` decision 18); this entry's description
-  stands unchanged for every agent without a journal, which remains most of
-  them in v2.
+  rather than the reconstructed viewport buffer. `hasJournal` is only a
+  hint, though: if the server's per-request answer for that pane ever comes
+  back `source: "reconstruction"` (no session ref, a missing or unreadable
+  file), the pane falls back to exactly the mechanism this entry describes,
+  permanently, for the rest of that pane's life — see
+  `docs/decisions.md` decision 18. This entry's description stands unchanged
+  for every agent without a journal, which remains most of them in v2, and
+  for any journal-hinted agent that has fallen back.
 
 - **Stuck-agent detection.** `working` for more than N minutes with no output
   change is worth surfacing. `pane.output_matched` may serve.

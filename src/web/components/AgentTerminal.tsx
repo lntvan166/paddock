@@ -190,11 +190,40 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const [shownHistory, setShownHistory] = useState(0);
   // Journal-sourced lines, oldest first, and the cursor for the next page.
   // Kept separate from `history.settled` because the two sources never mix
-  // for one agent (design decision 2) — this is WHICH ONE is in play for
+  // for one agent (design decision 18) — this is WHICH ONE is in play for
   // this agent, not something merged with the reconstructed path.
   const [journalLines, setJournalLines] = useState<string[]>([]);
   const [journalCursor, setJournalCursor] = useState<string | null>(null);
+  // "No more JOURNAL pages" — distinct from having fallen back to
+  // reconstruction below. Sets only on a genuine `hasMore: false` from a
+  // `source: "journal"` response.
   const [journalDone, setJournalDone] = useState(false);
+  /**
+   * `agent.hasJournal` is a HINT that this pane is worth trying — it is a
+   * property of the harness, decided once at reconcile time. `source` on
+   * each `/history` response is the ANSWER for this pane, decided per
+   * request: the session ref can be missing, the file can be gone or
+   * unreadable, even though the harness itself has a journal adapter (see
+   * decision 18's "quiet in the UI, loud on the host" cases). Rendering off
+   * the hint alone stranded the operator on a pane whose every response came
+   * back `source: "reconstruction", lines: []` — `journalDone` latched true
+   * and `revealed` stayed pinned to the empty `journalLines` forever, with
+   * `history.settled` never read. This flips permanently false→true the
+   * first time a response says so, and once it does this pane behaves
+   * EXACTLY like a journal-less one from then on — the two sources still
+   * never coexist, decided here instead of from the static prop.
+   */
+  const [journalFellBack, setJournalFellBack] = useState(false);
+  // Guards the in-flight `/history` request against a double-tap on the
+  // button re-firing it with the same (not yet advanced) cursor. A REF, not
+  // just the `journalBusy` state below: two synchronous `click()`s land
+  // before React re-renders to reflect a state update, so only a ref read
+  // synchronously inside the handler can see the first click's effect
+  // before the second one runs.
+  const journalBusyRef = useRef(false);
+  // Mirrors the ref, so the button can be visually `disabled` while a
+  // request is in flight — the ref alone has no way to trigger a re-render.
+  const [journalBusy, setJournalBusy] = useState(false);
   const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
 
   /**
@@ -481,11 +510,14 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // before until "show earlier" is tapped, which is what keeps a 2000-line
   // history from becoming 36,000 DOM nodes nobody asked for.
   const history = historyFor(agent.agentId) ?? { settled: [], gaps: 0 };
-  // Design decision 2: the two sources never coexist for one agent. A
-  // journal-capable agent's revealed history is exactly the journal pages
-  // fetched so far; everything else keeps today's client-side reconstruction
-  // unchanged.
-  const revealed = agent.hasJournal
+  // Design decision 18: the two sources never coexist for one agent, but
+  // which one is "in play" is decided by what the SERVER has answered for
+  // this pane (`journalFellBack`), not by the static `hasJournal` hint —
+  // see the comment on `journalFellBack` above for why that distinction is
+  // load-bearing. Once a pane has fallen back, it reveals reconstructed
+  // history exactly like a journal-less agent always has.
+  const useJournal = agent.hasJournal && !journalFellBack;
+  const revealed = useJournal
     ? journalLines
     : shownHistory > 0
       ? history.settled.slice(Math.max(0, history.settled.length - shownHistory))
@@ -590,44 +622,80 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           content, which would otherwise shove the screen down and lose the
           operator's place, so the scroll position is pinned across the growth
           in the handler below. */}
-      {!error && (agent.hasJournal ? !journalDone : history.settled.length > revealed.length) && (
+      {!error && (useJournal ? !journalDone : history.settled.length > revealed.length) && (
         <button
           type="button"
           className="term-earlier"
+          disabled={journalBusy}
           onClick={() => {
             const el = paneRef.current;
             const before = el ? el.scrollHeight - el.scrollTop : 0;
             const restore = () => requestAnimationFrame(() => {
               if (el) el.scrollTop = el.scrollHeight - before;
             });
-            if (!agent.hasJournal) {
+            if (!useJournal) {
               setShownHistory((n) => n + HISTORY_PAGE);
               restore();
               return;
             }
+            // Synchronous re-entrancy guard: two `click()`s land before
+            // React re-renders to reflect `journalBusy`, so only a ref read
+            // here — not the state below — actually stops a double-tap from
+            // firing the request twice against the same, not-yet-advanced
+            // cursor.
+            if (journalBusyRef.current) return;
+            journalBusyRef.current = true;
+            setJournalBusy(true);
             // The agent's own log, not the reconstructed path — see design
-            // decision 2. A rejected request (unknown agent, malformed
-            // cursor) ends the "show earlier" affordance for this pane rather
-            // than retrying forever against a request that can only fail the
-            // same way again.
+            // decision 18.
             void fetchHistory(agent.agentId, journalCursor, JOURNAL_PAGE_TURNS)
               .then((page) => {
+                if (page.source !== "journal") {
+                  // The server has no journal for THIS pane after all — no
+                  // adapter, no session ref, a missing or unreadable file
+                  // (decision 18's "quiet in the UI" causes). Hand the pane
+                  // over to the reconstructed path ENTIRELY and permanently,
+                  // exactly as if `hasJournal` had been false from the
+                  // start — never retry the journal route again for it, and
+                  // never leave `revealed` pinned to the empty `journalLines`
+                  // it fetched nothing into. Grant the first page of
+                  // reconstruction now too, so this tap is not wasted on
+                  // discovering the fallback alone.
+                  setJournalFellBack(true);
+                  setShownHistory((n) => n + HISTORY_PAGE);
+                  restore();
+                  return;
+                }
                 // PREPEND: a page fetched with a cursor is older than what is
                 // already held.
                 setJournalLines((held) => [...page.lines, ...held]);
                 setJournalCursor(page.cursor);
-                // `source: "reconstruction"` here means the server has no
-                // journal for this agent after all — not an error, but there
-                // is nothing further to page through from this route.
-                if (!page.hasMore || page.source !== "journal") setJournalDone(true);
+                // A genuine "no more journal pages" — the only case that
+                // ends the affordance without a fallback.
+                if (!page.hasMore) setJournalDone(true);
                 restore();
               })
-              .catch(() => setJournalDone(true));
+              .catch((err) => {
+                // A transient failure (network blip, herdr hiccup) is NOT
+                // "no more history" and NOT "no journal" — `journalCursor`
+                // and `journalDone` are left untouched so the next tap
+                // retries the SAME page, and this is surfaced the way every
+                // other action failure in this component is (`feedback`),
+                // never swallowed into a permanently hidden button.
+                setFeedback({
+                  ok: false,
+                  detail: err instanceof Error ? err.message : String(err),
+                });
+              })
+              .finally(() => {
+                journalBusyRef.current = false;
+                setJournalBusy(false);
+              });
           }}
         >
           Show earlier
-          {!agent.hasJournal && ` · ${history.settled.length - revealed.length} lines`}
-          {!agent.hasJournal && history.gaps > 0 && (
+          {!useJournal && ` · ${history.settled.length - revealed.length} lines`}
+          {!useJournal && history.gaps > 0 && (
             <span className="term-gapnote"> · {history.gaps} gaps</span>
           )}
         </button>
