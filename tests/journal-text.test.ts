@@ -21,6 +21,42 @@ test("a numbered option row is stripped even without a cursor", () => {
   expect(stripMenu("1. Approve this change")).toBe("");
 });
 
+test("a real multi-line menu is stripped down to its question", () => {
+  // THE decisive case. A real prompt is a question plus two or more option
+  // lines, not one bare option line on its own — an anchored ^...$ match
+  // against the WHOLE turn text only ever fires on the single-line toy case.
+  expect(
+    stripMenu("Do you want to proceed?\n❯ 1. Yes\n  2. No, tell it what to do differently"),
+  ).toBe("Do you want to proceed?");
+});
+
+test("an ASCII > cursor is treated like ❯", () => {
+  expect(stripMenu("> 1. Yes")).toBe("");
+});
+
+test("a ) separator is accepted alongside .", () => {
+  expect(stripMenu("2) No")).toBe("");
+});
+
+test("an option row survives no matter how long its label is", () => {
+  // Length must not decide whether a row is an option: a long real option is
+  // still an option.
+  expect(
+    stripMenu("❯ 1. Yes, and also run the full regression suite before merging"),
+  ).toBe("");
+});
+
+test("a cursor sitting on ordinary prose is kept, not stripped", () => {
+  // A cursor glyph quoting a shell prompt is not the hazard this guards —
+  // deleting it would silently eat real content, the worse failure.
+  expect(stripMenu("❯ npm install")).toBe("❯ npm install");
+});
+
+test("a lettered option is stripped only when a cursor marks it", () => {
+  expect(stripMenu("❯ a. Yes")).toBe("");
+  expect(stripMenu("a. done")).toBe("a. done");
+});
+
 test("ordinary prose that merely starts with a number survives", () => {
   // Over-stripping would silently eat real content, which is worse than the
   // hazard it guards: "2. " here is prose the agent wrote, not an option row.

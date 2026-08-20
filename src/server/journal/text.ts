@@ -14,27 +14,52 @@ export function stripAnsi(text: string): string {
 }
 
 /**
- * A cursor-marked row, e.g. `❯ 1. Yes`, or a bare numbered option row.
+ * A digit-numbered option row, cursor optional: "1. Yes", "❯ 2. No",
+ * "1) Yes", "> 3) No, keep it". `>` is treated the same as `❯` — the glyph
+ * is not universal and ASCII `>` is at least as common a cursor marker.
  *
- * Requires the row to be ONLY the option — anchored both ends, short label —
- * so ordinary prose that happens to open with a number survives. Over-stripping
- * silently eats real content, which is a worse failure than the one this
- * guards.
+ * No length cap on the label: length must never decide whether a row is an
+ * option, or a long real option (e.g. "❯ 1. Yes, and also run the full
+ * regression suite before merging") would survive whole.
  */
-const MENU_RE = /^\s*(?:❯\s*)?\d{1,2}\.\s+\S[^\n]{0,60}$/;
-const CURSOR_ONLY_RE = /^\s*❯\s*\S[^\n]{0,60}$/;
+const DIGIT_OPTION_RE = /^\s*(?:[❯>]\s*)?\d+[.)]\s+\S.*$/;
 
 /**
- * Remove an option row from journal text, leaving "" if that is all it was.
+ * A lettered option row, cursor REQUIRED: "❯ a. Yes". Without a cursor, a
+ * bare "a. done" is too easily real prose — over-stripping is the worse
+ * failure than the one this guards, so a lettered row only counts as an
+ * option when a cursor marks it as selected.
+ */
+const CURSOR_LETTER_OPTION_RE = /^\s*[❯>]\s*[A-Za-z][.)]\s+\S.*$/;
+
+function isOptionRow(line: string): boolean {
+  return DIGIT_OPTION_RE.test(line) || CURSOR_LETTER_OPTION_RE.test(line);
+}
+
+/**
+ * Remove option rows from journal text, dropped line by line, leaving "" if
+ * every line was one.
  *
- * WHY: journal lines are blended directly above the live screen with no
- * divider (design decision 3). A menu from an already-answered question would
- * then read as the live prompt — the failure `prompt-parse.ts` already records
- * in its own scoping comment. Only the live screen may show a selectable menu.
+ * WHY LINE BY LINE: a real prompt is a question plus two or more option
+ * lines, not one bare option line on its own. Matching the anchored pattern
+ * against the WHOLE turn text only ever fires on that single-line toy case;
+ * a real multi-line menu — "Do you want to proceed?\n❯ 1. Yes\n  2. No" —
+ * would sail through unchanged. Splitting into lines and dropping only the
+ * ones shaped like options is what strips the menu down to its question.
+ *
+ * WHY a bare cursor on non-option text is KEPT, not stripped: journal lines
+ * are blended directly above the live screen with no divider (design
+ * decision 3), and a menu from an already-answered question reading as the
+ * live prompt is the specific failure `prompt-parse.ts` already records. But
+ * a cursor glyph sitting on ordinary prose — "❯ npm install" quoted in a
+ * message — is not that hazard, and deleting it would silently eat real
+ * content, which is the worse failure this function exists to avoid.
  */
 export function stripMenu(text: string): string {
-  if (MENU_RE.test(text) || CURSOR_ONLY_RE.test(text)) return "";
-  return text;
+  return text
+    .split("\n")
+    .filter((line) => !isOptionRow(line))
+    .join("\n");
 }
 
 /**
