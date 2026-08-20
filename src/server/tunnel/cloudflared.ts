@@ -45,6 +45,41 @@ export interface Child {
 
 export type SpawnFn = (cmd: string[]) => Child;
 
+/** How long a child gets to honour a signal before the next one. */
+export const KILL_GRACE_MS = 3000;
+
+async function exitedWithin(child: Child, ms: number): Promise<boolean> {
+  const late = Symbol("late");
+  const timer = new Promise<typeof late>((r) => {
+    setTimeout(() => r(late), ms).unref?.();
+  });
+  return (await Promise.race([child.exited, timer])) !== late;
+}
+
+/**
+ * SIGTERM, grace, SIGKILL, grace. The ONE kill sequence in this codebase.
+ *
+ * Extracted because there are now three callers — `Tunnel.stop()`, the
+ * pre-resolve failure path in `startTunnel`, and `runTunnel`'s teardown for a
+ * child that was spawned but never published a URL. A second transcription of
+ * this sequence is a second chance to get the escalation wrong, and the thing
+ * being escalated is a process holding a PUBLIC URL open.
+ *
+ * It is BOUNDED, and throws rather than waiting for ever. An unbounded
+ * `await child.exited` after the kill would hang the shutdown path itself,
+ * which for `paddock tunnel` means Ctrl-C never returning and the state file
+ * never being cleared — a worse failure than the one it was waiting to
+ * confirm. A child still alive after SIGKILL is something only the operator
+ * can act on, so it is reported as an error and never as a clean stop.
+ */
+export async function terminate(child: Child, graceMs: number = KILL_GRACE_MS): Promise<void> {
+  child.kill("SIGTERM");
+  if (await exitedWithin(child, graceMs)) return;
+  child.kill("SIGKILL");
+  if (await exitedWithin(child, graceMs)) return;
+  throw new Error(`cloudflared did not exit within ${graceMs}ms of SIGKILL`);
+}
+
 export interface Tunnel {
   url: string;
   exited: Promise<number>;
@@ -65,6 +100,15 @@ const defaultSpawn: SpawnFn = (cmd) =>
  *
  * BOTH pipes are drained. cloudflared logs to stderr, but draining only the
  * pipe we expect would let the other fill its buffer and stall the child.
+ *
+ * NOTHING SPAWNED HERE OUTLIVES A FAILED START. Every path that rejects before
+ * a `Tunnel` exists kills the child first — the no-URL timeout especially,
+ * which used to reject and walk away from a running cloudflared: a public URL
+ * alive with no paddock behind it, which is the worst failure this feature has.
+ * `onSpawn` closes the other half of that window: the caller cannot register a
+ * teardown for a child it has no handle on, and the wait for a URL is seconds
+ * long, so the child is handed over the moment it exists rather than when it
+ * has said something useful.
  */
 export async function startTunnel(opts: {
   port: number;
@@ -72,15 +116,38 @@ export async function startTunnel(opts: {
   spawn?: SpawnFn;
   timeoutMs?: number;
   onLog?: (line: string) => void;
+  /**
+   * Called with the child as soon as it is spawned, BEFORE any URL is read, so
+   * the caller can reap it if the process is asked to shut down during startup.
+   * The same object this function later wraps in the returned `Tunnel`.
+   */
+  onSpawn?: (child: Child) => void;
+  /** Injected so a test does not wait out a real grace period. */
+  killGraceMs?: number;
 }): Promise<Tunnel> {
   const bin = opts.bin ?? "cloudflared";
   const spawn = opts.spawn ?? defaultSpawn;
   const timeoutMs = opts.timeoutMs ?? 30_000;
+  const graceMs = opts.killGraceMs ?? KILL_GRACE_MS;
   const log = opts.onLog ?? ((l: string) => console.info(`[cloudflared] ${l}`));
 
   const child = spawn([
     bin, "tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${opts.port}`,
   ]);
+  // Before the first await, so a caller that registers a teardown and only
+  // then awaits this promise is already holding the child by the time it does.
+  opts.onSpawn?.(child);
+
+  // Whether a kill is still owed. Not a swallowed error: `child.exited` is the
+  // only thing that can answer this, and the rejection branch reports.
+  let hasExited = false;
+  void child.exited.then(
+    () => { hasExited = true; },
+    (e) => {
+      hasExited = true;
+      console.error(`[cloudflared] could not wait on the child: ${String(e)}`);
+    },
+  );
 
   let found: string | null = null;
   let resolveUrl: (u: string) => void = () => {};
@@ -132,18 +199,33 @@ export async function startTunnel(opts: {
   // it — so even the loser is never "unhandled" from the runtime's point of
   // view; the race's internal subscription counts as handling. See the
   // Promise-lifetime note in the report for the full argument.
-  const url = await Promise.race([urlSeen, died, timedOut]);
+  let url: string;
+  try {
+    url = await Promise.race([urlSeen, died, timedOut]);
+  } catch (e) {
+    // The reason this try/catch exists. A timeout leaves a LIVE cloudflared,
+    // and rejecting without killing it hands the operator a failure message
+    // and a public URL at the same time — the failure they were told about
+    // being precisely the one they cannot see.
+    if (!hasExited) {
+      try {
+        await terminate(child, graceMs);
+      } catch (killErr) {
+        // Reported, never allowed to replace the real error below: the caller
+        // needs to know why the start failed, and a kill failure on top of it
+        // is a second fact, not a substitute for the first.
+        console.error(
+          `[cloudflared] could not stop the child after a failed start (${String(killErr)}) — ` +
+            "check by hand: pgrep -af 'cloudflared tunnel'",
+        );
+      }
+    }
+    throw e;
+  }
 
   return {
     url,
     exited: child.exited,
-    async stop() {
-      child.kill("SIGTERM");
-      const grace = new Promise<"grace">((r) => {
-        setTimeout(() => r("grace"), 3000).unref?.();
-      });
-      if ((await Promise.race([child.exited, grace])) === "grace") child.kill("SIGKILL");
-      await child.exited;
-    },
+    stop: () => terminate(child, graceMs),
   };
 }

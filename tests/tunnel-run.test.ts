@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
 import { AgentStore } from "@server/state/store";
-import type { Tunnel } from "@server/tunnel/cloudflared";
+import type { Child, Tunnel } from "@server/tunnel/cloudflared";
 import { COOKIE_NAME, Pairing } from "@server/tunnel/pairing";
 import { runTunnel, serveGated, type TunnelDeps } from "@server/tunnel/run";
 import { Hub } from "@server/ws/hub";
@@ -228,4 +228,46 @@ test("a stop() that fails is reported, and the rest of the teardown still runs",
   // Everything after the failed stop still happened.
   expect(urls.at(-1)).toBeNull();
   await expect(fetch(`http://127.0.0.1:${gatedPort}/api/agents`)).rejects.toThrow();
+});
+
+test("a teardown during startup kills the child cloudflared already spawned", async () => {
+  // The other half of the orphan window. `runTunnel` cannot register a
+  // teardown for a child it has no handle on, and `startTunnel` may spend tens
+  // of seconds waiting for a URL — so it hands the child over at spawn time
+  // via `onSpawn`, and the teardown must reap it even though no `Tunnel` was
+  // ever produced. Before this, a `kill -TERM` in that window left cloudflared
+  // running with a public URL and no paddock behind it.
+  const killed: (number | string | undefined)[] = [];
+  const urls: (string | null)[] = [];
+  let resolveExit: (n: number) => void = () => {};
+  const reg: { teardown: (() => Promise<void>) | null } = { teardown: null };
+  const c = capture();
+  try {
+    const run = runTunnel({
+      ...base(),
+      port: 0,
+      registerShutdown: (fn) => { reg.teardown = fn; },
+      startTunnel: async (opts) => {
+        const spawned: Child = {
+          stdout: null,
+          stderr: null,
+          exited: new Promise<number>((r) => { resolveExit = r; }),
+          kill: (sig) => { killed.push(sig); resolveExit(0); },
+        };
+        opts.onSpawn?.(spawned);
+        // Never publishes a URL: the state the teardown has to cope with.
+        return new Promise<Tunnel>(() => {});
+      },
+      setPublicUrl: (u) => urls.push(u),
+    });
+    await Bun.sleep(10);
+    expect(reg.teardown, "the teardown must be registered BEFORE the URL").not.toBeNull();
+    await reg.teardown!();
+    void run; // still pending: in production the process exits from index.ts
+  } finally { c.restore(); }
+
+  expect(killed).toEqual(["SIGTERM"]);
+  // Said out loud, so a log does not read as a clean close of a live tunnel.
+  expect(c.text()).toContain("before it published a URL");
+  expect(urls).toEqual([null]);
 });

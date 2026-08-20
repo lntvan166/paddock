@@ -1,6 +1,11 @@
 import type { AgentStore } from "@server/state/store";
 import type { Hub, HubClient } from "@server/ws/hub";
-import { startTunnel as realStartTunnel, type Tunnel } from "@server/tunnel/cloudflared";
+import {
+  startTunnel as realStartTunnel,
+  terminate,
+  type Child,
+  type Tunnel,
+} from "@server/tunnel/cloudflared";
 import { decide, gateResponse } from "@server/tunnel/gate";
 import type { Pairing } from "@server/tunnel/pairing";
 import { human, render, useColour } from "@server/tunnel/display";
@@ -103,6 +108,14 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   const gated = serveGated(deps);
 
   let tunnel: Tunnel | null = null;
+  /**
+   * The child, from the moment it is spawned — which is EARLIER than `tunnel`,
+   * by however long cloudflared takes to publish a URL (seconds, sometimes
+   * tens of them). Without this the teardown had nothing to kill during that
+   * window and a `SIGTERM` there orphaned the child; `startTunnel`'s `onSpawn`
+   * exists for exactly this.
+   */
+  let child: Child | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let stopping = false;
 
@@ -119,9 +132,9 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
    * So it is reported — loudly, with the command to check by hand, because
    * this project never swallows an error — and then stepped past.
    */
-  const stopChild = async (child: Tunnel): Promise<void> => {
+  const stopChild = async (kill: () => Promise<void>): Promise<void> => {
     try {
-      await child.stop();
+      await kill();
     } catch (e) {
       console.error(
         `paddock: could not stop cloudflared (${String(e)}) — the tunnel may still be up. ` +
@@ -134,20 +147,29 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
     if (stopping) return;
     stopping = true;
     if (timer !== null) clearInterval(timer);
-    if (tunnel !== null) await stopChild(tunnel);
-    else {
-      // Reached only by a signal that arrives while `startTunnel` is still
-      // waiting for a URL. `startTunnel` owns the child and does not hand it
-      // over until it has one, so there is nothing here to kill — say so
-      // rather than implying a clean close.
-      console.error(
-        "paddock: shutting down before cloudflared published a URL — if a cloudflared " +
-          "process is left behind, stop it: pgrep -af 'cloudflared tunnel'",
-      );
+    // THREE startup states, and the child must die in the two where one
+    // exists. `tunnel` is set only once cloudflared has published a URL;
+    // `child` is set from the moment it was spawned; both are null before
+    // that. The same kill sequence runs either way — `Tunnel.stop()` IS
+    // `terminate(child)` — so the only difference is which handle is to hand.
+    // Bound to locals: the arrow closures below would otherwise widen these
+    // back to `| null` (TypeScript cannot know when a callback runs).
+    const up = tunnel;
+    const spawned = child;
+    if (up !== null) await stopChild(() => up.stop());
+    else if (spawned !== null) {
+      console.info("paddock: closing cloudflared before it published a URL");
+      await stopChild(() => terminate(spawned));
+    } else {
+      // Nothing was ever spawned: `startTunnel` had not been reached, or its
+      // own failure path already killed what it spawned.
+      console.info("paddock: no tunnel was running");
     }
     gated.stop();
     deps.setPublicUrl?.(null);
-    console.info("\npaddock: tunnel closed");
+    // Only claimed when there was something to close. "tunnel closed" after
+    // "no tunnel was running" is a log that contradicts itself two lines apart.
+    if (up !== null || spawned !== null) console.info("\npaddock: tunnel closed");
   };
 
   /**
@@ -170,17 +192,23 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   deps.registerShutdown?.(teardown);
 
   try {
-    tunnel = await start({ port: gated.port, bin: deps.bin });
+    tunnel = await start({
+      port: gated.port,
+      bin: deps.bin,
+      // The child, the instant it exists. `registerShutdown` above has already
+      // handed the teardown out, so from here on a signal has something to
+      // kill even though this await may not return for another thirty seconds.
+      onSpawn: (c) => { child = c; },
+    });
   } catch (e) {
-    stopping = true; // nothing was ever registered as up; do not double-report
+    // `startTunnel` kills whatever it spawned on every path that rejects, so
+    // there is no child left to reap here — only the listener to close.
+    stopping = true; // and nothing for a later teardown to repeat
     gated.stop();
     deps.setPublicUrl?.(null);
     // Loud and specific: this is the one failure the operator cannot diagnose
     // from a dashboard, because there is no dashboard to look at.
     console.error(`paddock: could not publish a tunnel — ${(e as Error).message}`);
-    // `startTunnel` rejects on a timeout without killing what it spawned, so
-    // the child may well have outlived the failure. Never implied to be clean.
-    console.error("  if cloudflared is still running, stop it: pgrep -af 'cloudflared tunnel'");
     return 1;
   }
   const live = tunnel;
