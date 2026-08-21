@@ -2,6 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { freePort } from "./support/port";
 import { parseArgs, parseDuration, USAGE } from "@server/cli";
 
 test("bare invocation serves — the Docker CMD and every doc depend on it", () => {
@@ -190,6 +191,13 @@ function runVerb(verb: string, extraArgs: string[] = []) {
       PADDOCK_NO_UPDATE_CHECK: "1",
       PADDOCK_CONFIG_DIR: CONFIG,
       PADDOCK_HERDR_SOCKET: join(CONFIG, "no-such-herdr.sock"),
+      // An OS-assigned free port, not the default 8787. `status` and `stop`
+      // now probe the port for an instance no state file describes, and the
+      // default port is exactly where the developer's OWN paddock is
+      // listening — so inheriting it made this file's outcome depend on
+      // whether the machine happened to be running one. Same guess
+      // `docs/gotchas.md` already records for port ranges that "look unused".
+      PADDOCK_PORT: String(freePort()),
     },
     stdout: "pipe",
     stderr: "pipe",

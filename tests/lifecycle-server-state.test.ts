@@ -116,3 +116,55 @@ test("an unwritable config dir does not kill an already-bound paddock", async ()
   const stderrText = await new Response(proc.stderr).text();
   expect(stderrText).toContain("could not record state");
 }, 60_000);
+
+test("a second paddock on ANOTHER port neither takes over nor deletes the first's state", async () => {
+  // THE ORPHAN BUG, at the level it actually bit: two instances that both bind
+  // fine. `PADDOCK_PORT=8788 paddock`, a `--demo` on a spare port and a dev
+  // server are separate serving processes sharing ONE state file, so
+  // B used to overwrite A's record on start and delete the file outright on
+  // exit. A then held its port for the rest of its life with nothing tracking
+  // it: `stop` said "not running", and `start` refused the port it held.
+  const cfg = await mkdtemp(join(tmpdir(), "paddock-cfg-"));
+  const base = {
+    ...process.env, PADDOCK_CONFIG_DIR: cfg, PADDOCK_NO_UPDATE_CHECK: "1",
+  };
+  const portA = freePort();
+  const portB = freePort();
+
+  const a = Bun.spawn(["bun", "src/server/index.ts", "--demo"],
+    { env: { ...base, PADDOCK_PORT: String(portA) }, stdout: "pipe", stderr: "pipe" });
+  try {
+    let aState: string | null = null;
+    for (let i = 0; i < 60 && aState === null; i++) {
+      try { aState = await readFile(stateFile(cfg), "utf8"); } catch { await Bun.sleep(100); }
+    }
+    expect(aState, "instance A's state file never appeared").not.toBeNull();
+    expect(JSON.parse(aState!).pid).toBe(a.pid);
+
+    const b = Bun.spawn(["bun", "src/server/index.ts", "--demo"],
+      { env: { ...base, PADDOCK_PORT: String(portB) }, stdout: "pipe", stderr: "pipe" });
+    // B really is serving — this is not the losing-bind case.
+    let bUp = false;
+    for (let i = 0; i < 60 && !bUp; i++) {
+      try { bUp = (await fetch(`http://127.0.0.1:${portB}/api/health`)).ok; } catch { await Bun.sleep(100); }
+    }
+    expect(bUp, "instance B never came up on its own port").toBe(true);
+
+    // First instance wins the record.
+    expect(JSON.parse(await readFile(stateFile(cfg), "utf8")).pid).toBe(a.pid);
+
+    b.kill("SIGTERM");
+    await b.exited;
+    // And B's exit must leave A's record alone. This is the half that made the
+    // orphan permanent.
+    const afterB = await readFile(stateFile(cfg), "utf8");
+    expect(JSON.parse(afterB).pid, "B's shutdown deleted or rewrote A's record").toBe(a.pid);
+    expect(JSON.parse(afterB).port).toBe(portA);
+
+    // A is still both serving and trackable.
+    expect((await fetch(`http://127.0.0.1:${portA}/api/health`)).ok).toBe(true);
+  } finally {
+    a.kill("SIGTERM");
+    await a.exited;
+  }
+}, 60_000);

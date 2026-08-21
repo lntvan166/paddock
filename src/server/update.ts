@@ -69,6 +69,13 @@ export interface UpdateOpts {
   checkOnly?: boolean;
   fetchImpl?: typeof fetch;
   log?: (s: string) => void;
+  /**
+   * The instance still serving, if any — pid, port, and the version IT is
+   * running. Injected rather than read here: this module knows about releases
+   * and binaries, and the state file belongs to `lifecycle/`. `index.ts`
+   * supplies the real one.
+   */
+  running?: () => Promise<{ pid: number; port: number; version: string } | null>;
 }
 
 /** Returns a process exit code. Never throws for an expected failure. */
@@ -186,5 +193,34 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
     return 1;
   }
   log(`paddock: updated to ${latest}`);
+
+  /**
+   * A replaced binary does not restart the process running it.
+   *
+   * `update` swapped the file; an instance already serving keeps running from
+   * the REPLACED inode — `/proc/<pid>/exe` reads "… (deleted)" — and goes on
+   * answering the old version until someone bounces it. Nothing said so, so
+   * the update looked complete while the dashboard stayed on the old build
+   * indefinitely.
+   *
+   * Told, not done. Restarting here would drop every connected phone mid
+   * session to finish a command the operator ran for the binary's sake, and a
+   * dashboard taken down without warning is a worse surprise than a version
+   * that lags until they choose the moment.
+   *
+   * Only when the running instance is on a DIFFERENT version: after the
+   * restart it reports the new one, and repeating the hint then would send an
+   * operator to bounce an instance that is already current.
+   */
+  const live = await o.running?.();
+  if (live !== null && live !== undefined && live.version !== latest) {
+    log("");
+    log(
+      `paddock: pid ${live.pid} on port ${live.port} is still serving ${live.version} ` +
+        "from the replaced binary.",
+    );
+    log("  restart it to pick this up:");
+    log("    paddock stop && paddock start");
+  }
   return 0;
 }

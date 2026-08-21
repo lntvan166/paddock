@@ -21,7 +21,7 @@ import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import { publicHostsFrom } from "@server/origin";
 import { buildIdFrom } from "@server/build-id";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
-import { recordState, removeState } from "@server/lifecycle/state";
+import { checkState, recordState, removeOwnState } from "@server/lifecycle/state";
 import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
@@ -103,6 +103,20 @@ if (command === "update") {
     arch: process.arch,
     current: VERSION,
     checkOnly: flags.has("--check"),
+    /**
+     * Whatever is still serving the binary that is about to be replaced. The
+     * state file is the only thing that knows, and `update.ts` deliberately
+     * does not read it — see `UpdateOpts.running`.
+     */
+    running: async () => {
+      // Default logger, NOT a silencer: `checkState` announces a state file
+      // it had to ignore, and swallowing that here would hide a broken record
+      // at the one moment an operator is already watching output.
+      const got = await checkState(defaultConfigDir());
+      return got.kind === "running"
+        ? { pid: got.state.pid, port: got.state.port, version: got.state.version }
+        : null;
+    },
   }));
 }
 
@@ -110,14 +124,16 @@ if (command === "update") {
 // `status` should not open a herdr socket or bind a port just to answer a
 // question that only needs the state file and a signal-0 probe.
 if (command === "status") {
-  process.exit(await runStatus({ dir: defaultConfigDir() }));
+  process.exit(await runStatus({ dir: defaultConfigDir(), port: PORT }));
 }
 
 // Must run before any server setup below, same reasoning as `update` and
 // `status` above: `stop` should not open a herdr socket or bind a port just
 // to signal a pid it reads from the state file.
 if (command === "stop") {
-  process.exit(await runStop({ dir: defaultConfigDir(), force: flags.has("--force") }));
+  process.exit(await runStop({
+    dir: defaultConfigDir(), port: PORT, force: flags.has("--force"),
+  }));
 }
 
 // Must run before any server setup below, same reasoning as the three verbs
@@ -731,7 +747,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         console.error(`paddock: shutdown step failed (${String(e)})`);
         code = 1;
       }
-      await removeState(stateDir).catch((e) =>
+      await removeOwnState(stateDir, process.pid).catch((e) =>
         console.error(`paddock: could not clear state file (${String(e)})`),
       );
       process.exit(code);
@@ -774,10 +790,10 @@ if (command === "tunnel") {
     // `runTunnel` turns the failures it recognises into exit codes, so this is
     // the unrecognised remainder. The state file is cleared BEFORE the rethrow
     // regardless: a throw out of a top-level await ends the process without
-    // running either `removeState` below, and the residue is a state file
+    // running either `removeOwnState` below, and the residue is a state file
     // describing a process that has gone — which `paddock status` then reports
     // as running. The error itself is rethrown untouched, stack and all.
-    await removeState(stateDir).catch((e) =>
+    await removeOwnState(stateDir, process.pid).catch((e) =>
       console.error(`paddock: could not clear state file (${String(e)})`),
     );
     throw err;
@@ -786,7 +802,7 @@ if (command === "tunnel") {
   // cloudflared died. A Ctrl-C exits from the handler above instead. The state
   // file is cleared here too, or an instance that closed its own tunnel would
   // leave `paddock status` describing a process that no longer exists.
-  await removeState(stateDir).catch((e) =>
+  await removeOwnState(stateDir, process.pid).catch((e) =>
     console.error(`paddock: could not clear state file (${String(e)})`),
   );
   process.exit(code);

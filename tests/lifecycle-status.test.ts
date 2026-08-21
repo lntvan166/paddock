@@ -75,3 +75,26 @@ test("an unreadable state file is reported as such, distinct from absence", asyn
   expect(line).not.toContain("not running");
   expect(line).toContain("could not");
 });
+
+test("status names an untracked instance instead of calling it 'not running'", async () => {
+  // A record can vanish while the process it described keeps serving — a
+  // SIGKILL leaves no cleanup behind. Reporting that as "not running" points
+  // the operator at the wrong problem: they go on to `start`, which fails on a
+  // port they were just told nothing was using.
+  const d = await mkdtemp(join(tmpdir(), "paddock-status-"));
+  const said: string[] = [];
+  const code = await runStatus({
+    dir: d,
+    port: 8787,
+    log: (l) => said.push(l),
+    listener: async () => ({ version: "0.8.1" }),
+  });
+
+  // Still non-zero — it was non-zero before, and an instance nothing can stop
+  // is not a healthy "running" either.
+  expect(code).toBe(1);
+  const text = said.join("\n");
+  expect(text).not.toContain("not running");
+  expect(text).toContain("0.8.1");
+  expect(text).toContain("8787");
+});

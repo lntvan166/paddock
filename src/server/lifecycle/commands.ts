@@ -11,9 +11,71 @@ import { SettingsStore } from "@server/settings/store";
 import { tunnelHint } from "@server/tunnel/preflight";
 import { say } from "@server/term";
 
+/**
+ * What answers on a port, if anything paddock-shaped does.
+ *
+ * `null` for "nothing there" — the ordinary case, and the reason the default
+ * implementation catches: nothing listening is ECONNREFUSED, which is an
+ * ANSWER here, not a fault. It refuses to call a stranger paddock: only a
+ * `/api/health` body with `ok: true` and a version string counts, so an
+ * unrelated server on the port is reported as nothing rather than as an
+ * instance the operator should go hunting for.
+ */
+export type Listener = (port: number) => Promise<{ version: string } | null>;
+
+export const httpListener: Listener = async (port) => {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      signal: AbortSignal.timeout(1_500),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { ok?: unknown; version?: unknown };
+    if (body.ok !== true || typeof body.version !== "string") return null;
+    return { version: body.version };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Report an instance that is serving but that NO record describes, or `false`
+ * if there is no such thing.
+ *
+ * "paddock — not running" is a lie when something is holding the port, and it
+ * is the lie that wasted the operator's time: `stop` said nothing was running,
+ * so `start` was the obvious next move, and it failed on a port they had just
+ * been told was free. A record goes missing while its process lives when the
+ * process was SIGKILLed, or — before the ownership guards in `state.ts` — when
+ * another paddock run deleted it.
+ *
+ * No signal is sent. The pid is not known here (the record is what carried it,
+ * and it is gone) and finding a pid from a port is platform-specific, so this
+ * hands over the command that does it rather than guessing at a kill.
+ */
+async function reportUntracked(
+  port: number,
+  listener: Listener,
+  log: (line: string) => void,
+): Promise<boolean> {
+  const found = await listener(port);
+  if (found === null) return false;
+  log(`paddock ${found.version} — serving on 127.0.0.1:${port}, but NOT tracked`);
+  log("  Nothing on disk describes it, so paddock cannot stop it. Its state");
+  log("  file is gone: killed with SIGKILL, or removed by another paddock run");
+  log("  on this machine (a bug in versions before 0.8.3).");
+  log("  Find it and stop it by hand:");
+  log(`    ss -ltnp | grep :${port}                     # Linux`);
+  log(`    lsof -nP -iTCP:${port} -sTCP:LISTEN          # macOS`);
+  return true;
+}
+
 export interface StatusOpts {
   dir: string;
+  /** The port an untracked instance would be holding. */
+  port?: number;
   probe?: Probe;
+  /** Injected so a test can drive the untracked-instance path. */
+  listener?: Listener;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -59,6 +121,8 @@ export async function runStatus(o: StatusOpts): Promise<number> {
 
   switch (got.kind) {
     case "none":
+      if (o.port !== undefined &&
+          await reportUntracked(o.port, o.listener ?? httpListener, log)) return 1;
       log("paddock — not running");
       return 1;
     case "unreadable":
@@ -96,6 +160,10 @@ export async function runStatus(o: StatusOpts): Promise<number> {
 
 export interface StopOpts {
   dir: string;
+  /** The port an untracked instance would be holding. */
+  port?: number;
+  /** Injected so a test can drive the untracked-instance path. */
+  listener?: Listener;
   force?: boolean;
   probe?: Probe;
   log?: (line: string) => void;
@@ -146,6 +214,11 @@ export async function runStop(o: StopOpts): Promise<number> {
 
   switch (got.kind) {
     case "none":
+      // Non-zero when something IS there: `paddock stop && paddock start` must
+      // halt here, with the reason, instead of walking into a bind failure on
+      // a port it was just told was free.
+      if (o.port !== undefined &&
+          await reportUntracked(o.port, o.listener ?? httpListener, log)) return 1;
       log("paddock — not running");
       return 0;
     case "unreadable":

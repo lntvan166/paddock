@@ -7,6 +7,7 @@ import {
   capturedArgs,
   checkState,
   recordState,
+  removeOwnState,
   removeState,
   stateFile,
   writeState,
@@ -262,4 +263,129 @@ test("an argsOf that throws is 'cannot tell', not 'someone else owns this pid'",
     existsSync(stateFile(d)),
     "nothing may be deleted on a 'cannot tell'",
   ).toBe(true);
+});
+
+// --- one state file, many instances ----------------------------------------
+//
+// THE ORPHAN BUG. There is one state file per config dir, but paddock is
+// per-port: `PADDOCK_PORT=8788 paddock`, a `--demo` on another port, and dev
+// or test servers are all separate serving processes writing this same file.
+// (`paddock tunnel` is NOT one of them — it serves the dashboard itself and
+// refuses to start beside a recorded instance.)
+// Unguarded, the second to start overwrote the first's record and the first to
+// EXIT deleted the file outright — so a long-running instance became
+// permanently untrackable, and `stop` answered "not running" while the port
+// stayed held and `start` refused it. Reproduced end to end before this
+// guard existed.
+
+test("recordState refuses to overwrite a DIFFERENT live instance's record", async () => {
+  const d = await dir();
+  await writeState(d, state({ pid: 4242, port: 8787, args: "paddock" }));
+  const said: string[] = [];
+
+  // A second instance, on another port, whose own identity captures fine.
+  const ok = await recordState(
+    d,
+    { pid: 5150, port: 8788, version: "0.8.2", startedAt: 1_700_000_000_001 },
+    {
+      capture: () => "paddock",
+      // The incumbent is alive and is what it says it is.
+      probe: probe(true, "paddock"),
+      warn: (l) => said.push(l),
+      log: (l) => said.push(l),
+    },
+  );
+
+  expect(ok).toBe(false);
+  // The incumbent's record is intact — that is the whole point.
+  expect(JSON.parse(await readFile(stateFile(d), "utf8")).pid).toBe(4242);
+  // And the refusal is announced: an untracked instance the operator was not
+  // told about is how this became invisible in the first place.
+  expect(said.join("\n")).toContain("8787");
+  expect(said.join("\n")).toContain("4242");
+});
+
+test("recordState still claims a record left by a DEAD instance", async () => {
+  // The ordinary restart. A stale record must not lock the file for ever.
+  const d = await dir();
+  await writeState(d, state({ pid: 4242 }));
+  const ok = await recordState(
+    d,
+    { pid: 5150, port: 8787, version: "0.8.2", startedAt: 1 },
+    { capture: () => "paddock", probe: probe(false, null), warn: () => {}, log: () => {} },
+  );
+  expect(ok).toBe(true);
+  expect(JSON.parse(await readFile(stateFile(d), "utf8")).pid).toBe(5150);
+});
+
+test("recordState overwrites its OWN earlier record", async () => {
+  // Same pid, re-recording: not a conflict, and refusing would leave a live
+  // instance describing itself with stale facts.
+  const d = await dir();
+  await writeState(d, state({ pid: 4242, port: 8787, version: "0.8.1" }));
+  const ok = await recordState(
+    d,
+    { pid: 4242, port: 8787, version: "0.8.2", startedAt: 2 },
+    { capture: () => "paddock", probe: probe(true, "paddock"), warn: () => {}, log: () => {} },
+  );
+  expect(ok).toBe(true);
+  expect(JSON.parse(await readFile(stateFile(d), "utf8")).version).toBe("0.8.2");
+});
+
+test("removeOwnState leaves a record that belongs to another instance", async () => {
+  // The deletion half of the same bug. A demo or spare-port run exiting must not
+  // untrack the instance that actually holds the dashboard's port.
+  const d = await dir();
+  await writeState(d, state({ pid: 4242, port: 8787 }));
+  await removeOwnState(d, 5150);
+  expect(existsSync(stateFile(d))).toBe(true);
+  expect(JSON.parse(await readFile(stateFile(d), "utf8")).pid).toBe(4242);
+});
+
+test("removeOwnState removes its own record", async () => {
+  const d = await dir();
+  await writeState(d, state({ pid: 4242 }));
+  await removeOwnState(d, 4242);
+  expect(existsSync(stateFile(d))).toBe(false);
+});
+
+test("removeOwnState is quiet when there is no record at all", async () => {
+  // Every exit path calls it, including those that never recorded anything.
+  const d = await dir();
+  await removeOwnState(d, 4242);
+  expect(existsSync(stateFile(d))).toBe(false);
+});
+
+test("recordState survives a conflict check that THROWS, and still refuses", async () => {
+  // recordState runs at top level immediately after the bind, and its contract
+  // is that it never throws: an escaping rejection there kills a paddock that
+  // is already serving — the failure this file's other guards exist to
+  // prevent. The conflict check added a second way to throw (a probe reaching
+  // for `ps`, a filesystem that fails in a new way) and it must be caught like
+  // the identity capture below it.
+  const d = await dir();
+  await writeState(d, state({ pid: 4242 }));
+  const said: string[] = [];
+  const ok = await recordState(
+    d,
+    { pid: 5150, port: 8788, version: "0.8.2", startedAt: 1 },
+    {
+      capture: () => "paddock",
+      probe: {
+        isAlive: () => { throw new Error("ps: command not found"); },
+        argsOf: () => "paddock",
+      },
+      warn: (l) => said.push(l),
+      log: (l) => said.push(l),
+    },
+  );
+
+  // Refused, not crashed. "Cannot tell who holds the record" must not become
+  // "overwrite it": mis-tracking a live instance is the bug this guards.
+  expect(ok).toBe(false);
+  // And the incumbent's record is untouched.
+  expect(JSON.parse(await readFile(stateFile(d), "utf8")).pid).toBe(4242);
+  // Announced — an untracked instance nobody was told about is how this
+  // became invisible in the first place.
+  expect(said.join("\n")).toContain("ps: command not found");
 });
