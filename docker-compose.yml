@@ -6,6 +6,11 @@ services:
     user: "${UID}:${GID}"
     # 127.0.0.1 prefix is REQUIRED. The short form "8787:8787" publishes on every
     # interface and exposes the dashboard to the local network.
+    #
+    # This prefix and PADDOCK_HOST below are NOT the same control, and both are
+    # needed. PADDOCK_HOST is what the listener binds INSIDE the container;
+    # this prefix is which host interface the port is published ON. The prefix
+    # is the one keeping the dashboard off your network.
     ports:
       - "127.0.0.1:8787:8787"
     volumes:
@@ -13,5 +18,10 @@ services:
     environment:
       PADDOCK_HERDR_SOCKET: /herdr.sock
       PADDOCK_PORT: "8787"
+      # REQUIRED in a container, and only in a container. A published port is
+      # delivered to the container's own interface, so paddock's default
+      # loopback bind refuses it and the published port reaches nothing.
+      # Safe here ONLY because the publish above is pinned to 127.0.0.1.
+      PADDOCK_HOST: "0.0.0.0"
       PADDOCK_HOST_ID: ${PADDOCK_HOST_ID:-local}
     restart: unless-stopped

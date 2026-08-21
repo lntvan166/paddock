@@ -6,7 +6,11 @@ import {
   herdrUnreachableMessage,
   inspectSocketPath,
   isDiagnosableHerdrFailure,
+  isLoopbackBind,
+  listeningLine,
+  nonLoopbackBindWarning,
   portInUseMessage,
+  resolveHost,
   type SocketPathKind,
 } from "@server/startup-errors";
 
@@ -188,4 +192,77 @@ test("a failure paddock cannot diagnose keeps its own message, not a herdr one",
   expect(isDiagnosableHerdrFailure(new TypeError("bug"), "not-a-socket")).toBe(
     true,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Where paddock BINDS, which is a different question from which `Host` headers
+// it answers (`origin.ts`). A bind address can be a wildcard; a `Host` header
+// never is, so the two predicates must not be shared.
+//
+// The default has to stay loopback. `docs/decisions.md` decision 3 gives this
+// listener no authentication at all, so a wildcard bind reached from anywhere
+// is full control of the operator's agents — which is why the override warns.
+
+test("resolveHost defaults to loopback when PADDOCK_HOST is unset", () => {
+  expect(resolveHost({})).toBe("127.0.0.1");
+});
+
+test("resolveHost honours an explicit PADDOCK_HOST", () => {
+  expect(resolveHost({ PADDOCK_HOST: "0.0.0.0" })).toBe("0.0.0.0");
+});
+
+// A compose file with `PADDOCK_HOST:` and no value, or `PADDOCK_HOST=` in an
+// .env, must not bind a wildcard by accident — it means "unset", not "any".
+test("resolveHost treats an empty or whitespace PADDOCK_HOST as unset", () => {
+  expect(resolveHost({ PADDOCK_HOST: "" })).toBe("127.0.0.1");
+  expect(resolveHost({ PADDOCK_HOST: "   " })).toBe("127.0.0.1");
+});
+
+test("resolveHost trims surrounding whitespace", () => {
+  expect(resolveHost({ PADDOCK_HOST: " 0.0.0.0 " })).toBe("0.0.0.0");
+});
+
+test("isLoopbackBind accepts every spelling of loopback", () => {
+  for (const host of ["127.0.0.1", "127.0.0.53", "localhost", "::1", "[::1]"]) {
+    expect(isLoopbackBind(host)).toBe(true);
+  }
+});
+
+// The wildcards are the whole point: `0.0.0.0` is what a bridge-network
+// container needs, and it is also what exposes a desk to its LAN.
+//
+// The routable examples are RFC 5737 documentation addresses, standing in for
+// the RFC1918 ranges a container bridge and a home network actually use.
+// `make check-clean` refuses private address literals in a public repo, and it
+// is right to: the predicate under test cannot tell the two apart, so the test
+// loses nothing by not naming a real network.
+test("isLoopbackBind refuses wildcards and routable addresses", () => {
+  for (const host of ["0.0.0.0", "::", "[::]", "203.0.113.5", "198.51.100.7"]) {
+    expect(isLoopbackBind(host)).toBe(false);
+  }
+});
+
+test("nonLoopbackBindWarning stays silent for a loopback bind", () => {
+  expect(nonLoopbackBindWarning("127.0.0.1", 8787)).toBeNull();
+});
+
+test("nonLoopbackBindWarning names the address, the port and the risk", () => {
+  const warning = nonLoopbackBindWarning("0.0.0.0", 8787);
+  expect(warning).not.toBeNull();
+  expect(warning).toContain("0.0.0.0:8787");
+  // The operator has to be told the thing that is actually true: there is no
+  // authentication behind this port.
+  expect(warning).toContain("no authentication");
+});
+
+// `http://0.0.0.0:8787` is not a URL anyone can open, so a wildcard bind must
+// not print one — it was the banner's only job to be clickable.
+test("listeningLine prints a clickable URL for a specific host", () => {
+  expect(listeningLine("127.0.0.1", 8787)).toContain("http://127.0.0.1:8787");
+});
+
+test("listeningLine does not offer a wildcard as a URL", () => {
+  const line = listeningLine("0.0.0.0", 8787);
+  expect(line).not.toContain("http://0.0.0.0");
+  expect(line).toContain("all interfaces");
 });
