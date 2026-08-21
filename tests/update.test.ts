@@ -250,3 +250,57 @@ test("a failed download names the HTTP status for each half, not just 'download 
   expect(await readFile(self, "utf8")).toBe("OLD BINARY");
   expect((await readdir(dir)).sort()).toEqual(["paddock"]);
 });
+
+// --- the instance still running the binary that was just replaced ----------
+//
+// `update` swaps the file on disk; a paddock already running keeps serving
+// from the REPLACED inode (`/proc/<pid>/exe` reads "… (deleted)") until it is
+// restarted. Nothing said so, so `paddock update` looked complete while the
+// dashboard went on serving the old version indefinitely. Observed: an
+// instance still answering 0.8.1 long after `paddock: updated to 0.8.2`.
+
+test("update tells the operator to restart an instance still on the old version", async () => {
+  const body = "NEW BINARY";
+  const h = await harness(body, await sha(body));
+  const said: string[] = [];
+  const code = await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64",
+    current: "0.1.0", fetchImpl: h.fetchImpl, log: (l) => said.push(l),
+    running: async () => ({ pid: 3558072, port: 8787, version: "0.1.0" }),
+  });
+
+  expect(code).toBe(0);
+  const text = said.join("\n");
+  expect(text).toContain("3558072");
+  expect(text).toContain("8787");
+  expect(text).toContain("0.1.0");
+  // The exact command, because "restart it" leaves the operator guessing which
+  // of stop/start/kill is meant.
+  expect(text).toContain("paddock stop && paddock start");
+});
+
+test("update says nothing about restarting when the running instance is already new", async () => {
+  // The ordinary second run. A hint here would send the operator to bounce a
+  // dashboard that is already serving the new binary.
+  const body = "NEW BINARY";
+  const h = await harness(body, await sha(body));
+  const said: string[] = [];
+  await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64",
+    current: "0.1.0", fetchImpl: h.fetchImpl, log: (l) => said.push(l),
+    running: async () => ({ pid: 111, port: 8787, version: "9.9.9" }),
+  });
+  expect(said.join("\n")).not.toContain("paddock stop && paddock start");
+});
+
+test("update says nothing about restarting when nothing is running", async () => {
+  const body = "NEW BINARY";
+  const h = await harness(body, await sha(body));
+  const said: string[] = [];
+  await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64",
+    current: "0.1.0", fetchImpl: h.fetchImpl, log: (l) => said.push(l),
+    running: async () => null,
+  });
+  expect(said.join("\n")).not.toContain("restart");
+});

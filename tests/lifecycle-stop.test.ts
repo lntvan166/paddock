@@ -391,3 +391,62 @@ test("a cleanup failure does not turn a successful stop into a stack trace", asy
     await chmod(d, 0o700);
   }
 });
+
+// --- an instance nothing is tracking --------------------------------------
+//
+// A record can go missing while the process it described is still serving: it
+// was killed with SIGKILL (no shutdown, no cleanup), or — before the ownership
+// guards in state.ts — another paddock run deleted it. "paddock — not running"
+// is then a LIE told about a process holding the port, and `stop` returning 0
+// let `paddock stop && paddock start` walk straight into "port already in
+// use". Reported end to end by the operator: "always have this issue".
+
+test("stop reports an untracked instance still holding the port, and refuses success", async () => {
+  const d = await dir(); // no state file at all
+  const said: string[] = [];
+  const code = await runStop({
+    dir: d,
+    port: 8787,
+    log: (l) => said.push(l),
+    listener: async (port) => (port === 8787 ? { version: "0.8.1" } : null),
+  });
+
+  // NOT 0. `stop && start` must stop here rather than fail at the bind.
+  expect(code).toBe(1);
+  const text = said.join("\n");
+  expect(text).not.toContain("not running");
+  expect(text).toContain("0.8.1");
+  expect(text).toContain("8787");
+  // Actionable, on both platforms paddock ships binaries for.
+  expect(text).toContain("ss -ltnp");
+  expect(text).toContain("lsof");
+});
+
+test("stop still says plainly that nothing is running when nothing answers", async () => {
+  const d = await dir();
+  const said: string[] = [];
+  const code = await runStop({
+    dir: d, port: 8787, log: (l) => said.push(l), listener: async () => null,
+  });
+  expect(code).toBe(0);
+  expect(said.join("\n")).toBe("paddock — not running");
+});
+
+test("stop does not probe a port when a state file already answers", async () => {
+  // The probe is a fallback for a MISSING record, not an extra opinion. A
+  // recorded instance must be stopped by pid, exactly as before.
+  const d = await dir();
+  await writeState(d, s);
+  let probed = 0;
+  const sent: string[] = [];
+  await runStop({
+    dir: d,
+    port: 8787,
+    probe: dyingProbe(1, "paddock").probe,
+    signal: (_p, sig) => sent.push(sig),
+    log: () => {},
+    listener: async () => { probed += 1; return { version: "0.8.1" }; },
+  });
+  expect(sent).toContain("SIGTERM");
+  expect(probed).toBe(0);
+});

@@ -92,6 +92,8 @@ export async function writeState(dir: string, s: PaddockState): Promise<void> {
 export interface RecordStateDeps {
   /** Injected so a test can drive the "cannot identify myself" path. */
   capture?: (pid: number) => string | null;
+  /** Injected so a test can drive the "someone else is already here" path. */
+  probe?: Probe;
   log?: (line: string) => void;
   warn?: (line: string) => void;
 }
@@ -120,6 +122,58 @@ export async function recordState(
   const capture = deps.capture ?? capturedArgs;
   const log = deps.log ?? console.info;
   const warn = deps.warn ?? termWarn;
+
+  /**
+   * ONE state file, MANY possible instances. This is the check that keeps the
+   * file describing an instance that actually exists.
+   *
+   * paddock is per-PORT — `PADDOCK_PORT=8788 paddock`, a `--demo` on a spare
+   * port, a dev or test server — but the state file is per CONFIG DIR. (NOT
+   * `paddock tunnel`: it serves the dashboard itself and its preflight refuses
+   * to start beside a recorded instance.) And the operator is walked into it by
+   * paddock's OWN advice: "port 8787 is already in use … choose another port:
+   * PADDOCK_PORT=8788 paddock". Writing unconditionally meant the second
+   * instance
+   * to start silently took over the record of the first, and (with the
+   * matching `removeOwnState`) the first to EXIT deleted the file outright.
+   * The instance still holding the dashboard's port was then untrackable for
+   * the rest of its life: `paddock status` and `paddock stop` both answered
+   * "not running" while the port stayed bound and `paddock start` refused it.
+   * Reproduced end to end; the operator's report was "always have this issue".
+   *
+   * FIRST INSTANCE WINS, and the loser is told. Only a `running` record for a
+   * DIFFERENT pid blocks the write: a `stale` record (the ordinary restart), a
+   * `mismatch`, garbage, or this pid's own earlier record must all still be
+   * claimable, or one leftover file would lock out every future start.
+   */
+  // Wrapped for the same reason as the capture below, and it is not
+  // theoretical: `checkState` calls `probe.isAlive` and `probe.argsOf`, and
+  // the default probe reaches for `ps` where /proc does not exist — which
+  // THROWS when `ps` is absent. This runs at top level right after the bind,
+  // so an escaping rejection would kill a paddock that is already serving.
+  //
+  // "Cannot tell who holds the record" is answered as a CONFLICT, not as a
+  // free pass: overwriting on an error we could not interpret is exactly the
+  // mis-tracking this check exists to stop, and this function's stated
+  // preference is to be untracked-and-announced over mis-tracked.
+  let held: StateCheck;
+  try {
+    held = await checkState(dir, deps.probe ?? systemProbe, log);
+  } catch (e) {
+    warn(
+      `paddock: could not check for an instance already recorded in ${dir} (${String(e)}) — ` +
+        `not recording pid ${s.pid}, so \`paddock status\` and \`paddock stop\` will not find it`,
+    );
+    return false;
+  }
+  if (held.kind === "running" && held.state.pid !== s.pid) {
+    warn(
+      `paddock: pid ${held.state.pid} is already recorded on port ${held.state.port} — ` +
+        `not recording pid ${s.pid} on port ${s.port} over it, so \`paddock status\` and ` +
+        "`paddock stop` will keep pointing at the older instance",
+    );
+    return false;
+  }
 
   // Inside the guard, not outside it: `capturedArgs` falls back to
   // Bun.spawnSync(["ps", ...]), which THROWS if `ps` is absent rather than
@@ -158,6 +212,29 @@ export async function recordState(
 
 export async function removeState(dir: string): Promise<void> {
   await rm(stateFile(dir), { force: true });
+}
+
+/**
+ * Remove the state file only if it describes THIS process.
+ *
+ * What every exiting SERVER must call. `removeState` stays unconditional for
+ * `stop` and `status`, which delete only after deciding the record is stale,
+ * mismatched or theirs to clear — but an exiting server knows nothing about
+ * whose record is on disk, and a second-port instance shutting down used to
+ * delete the record of the instance still serving the dashboard. See the
+ * conflict check in `recordState` for the whole failure.
+ *
+ * Reads with `checkState` rather than parsing here, so "unusable file" and
+ * "no file" reach this the same way they reach everything else. Anything it
+ * cannot positively identify as this pid's own record is LEFT ALONE: a file
+ * this function is unsure about is exactly the file it must not delete.
+ */
+export async function removeOwnState(dir: string, pid: number): Promise<void> {
+  const held = await checkState(dir, systemProbe, () => {});
+  const mine =
+    (held.kind === "running" || held.kind === "stale" || held.kind === "mismatch") &&
+    held.state.pid === pid;
+  if (mine) await removeState(dir);
 }
 
 export async function checkState(
