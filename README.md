@@ -36,6 +36,8 @@ walk back and look.
 - **answer** — the agent's own option labels, and what Enter will commit before you tap it
 - **notify** — a Telegram message when an agent needs you, sent only once the
   state has held, with mute and a per-agent cooldown. [settings →](docs/settings.md)
+- **reach it in one command** — `paddock tunnel` publishes a temporary URL
+  gated by a short-lived pairing code. No DNS, no inbound port, nothing to configure
 - **install as an app** — Add to Home Screen gives it an icon and no browser chrome
 - **cheap to watch** — adaptive polling, and only changed lines on the wire
 
@@ -80,7 +82,26 @@ then start it where herdr is running:
 paddock
 ```
 
-`ctrl+c` stops it. To keep it running after you close the terminal:
+`ctrl+c` stops it. It serves on `127.0.0.1` only, which is what the next step
+is for.
+
+**Do this next — it is the thing paddock is for.** `paddock tunnel` serves the
+dashboard *itself*, so `ctrl+c` the one above first, then:
+
+```bash
+paddock tunnel
+```
+
+That publishes a temporary public URL and a pairing code, and prints both. Nothing to configure, no DNS, no inbound port: open the URL on your
+phone, type the code once, and you are watching the same agents from the sofa.
+`--for 2h` bounds how long it lives; `ctrl+c` ends it.
+
+It is a try-it path, not a deployment. A quick tunnel cannot have Cloudflare
+Access in front of it, so that pairing code is the only gate there is, and the
+URL is public until you close it — [from your phone](#from-your-phone) has what
+that does and does not protect, and the durable setup.
+
+To keep paddock running after you close the terminal:
 
 ```bash
 paddock start     # detached
@@ -88,16 +109,8 @@ paddock status    # is it up?
 paddock stop
 ```
 
-To reach it from your phone without configuring anything first:
-
-```bash
-paddock tunnel
-```
-
-That publishes a temporary public URL gated by a one-time pairing code, and
-prints both. It is a try-it path, not a deployment — see
-[from your phone](#from-your-phone) for what it does and does not protect, and
-for the durable setup.
+`paddock tunnel` serves the dashboard itself, so it refuses to start beside a
+detached instance — `paddock stop` first, or run the tunnel in its place.
 
 `paddock update` upgrades it; paddock never updates itself unasked. `paddock
 --demo` runs it with synthetic agents and no herdr.
@@ -116,16 +129,31 @@ says so and the dashboard shows a dismissable banner.
 
 ## from your phone
 
-paddock stays on `127.0.0.1`. Put an authenticating tunnel in front — a
-[Cloudflare Tunnel with Zero Trust Access](docs/deploy-cloudflare.md) dials
-out, so no inbound port is opened and the identity check happens before any
-request reaches paddock.
+Start here. One command, nothing configured:
 
-`paddock tunnel`, from the install steps above, is the shortcut: a temporary
-Cloudflare quick tunnel gated by a one-time pairing code. It is a try-it path,
-not a deployment — a quick tunnel cannot have Cloudflare Access in front of it,
-so that code is the only gate there is, and the URL is public until you close
-it. `--for 2h` bounds how long it lives.
+```bash
+paddock tunnel
+```
+
+A temporary Cloudflare quick tunnel, gated by a pairing code — both printed in
+the terminal. It dials **out**, so no inbound port is opened and nothing on your
+network changes. Pair the phone once and the session lasts as long as the tunnel
+does. `--for 2h` bounds how long it lives.
+
+The code is good for **10 minutes**, then it rotates; five wrong guesses burn it
+early. It is not single-use, so anything that can read it inside that window can
+pair too — treat it like a password for the length of that window, not like a
+receipt you have already spent.
+
+Know exactly what that is, though: a try-it path, not a deployment. A quick
+tunnel **cannot** have Cloudflare Access in front of it, so the pairing code is
+the only gate there is, and the URL is public until you close it. Close it when
+you are done rather than leaving it up.
+
+For anything lasting, paddock stays on `127.0.0.1` and you put an
+*authenticating* tunnel in front: a [Cloudflare Tunnel with Zero Trust
+Access](docs/deploy-cloudflare.md) also dials out, and the identity check
+happens before any request reaches paddock at all.
 
 Then **Share → Add to Home Screen**, and it is an app: its own icon, no browser
 chrome, and it opens where you left off.
