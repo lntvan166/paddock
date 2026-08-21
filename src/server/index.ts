@@ -41,13 +41,20 @@ import {
   herdrUnreachableMessage,
   inspectSocketPath,
   isDiagnosableHerdrFailure,
+  listeningLine,
+  nonLoopbackBindWarning,
   portInUseMessage,
+  resolveHost,
 } from "@server/startup-errors";
 
 const { command, flags, values, verb } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
 const PORT = Number(process.env.PADDOCK_PORT ?? 8787);
-const HOSTNAME = "127.0.0.1"; // loopback only; exposure is the tunnel's job
+// Loopback by default; exposure is normally the tunnel's job. `PADDOCK_HOST`
+// exists for the one case that cannot use loopback: in a container, a published
+// port arrives on the container's own interface, so a loopback listener refuses
+// it. A non-loopback bind warns at startup — see `nonLoopbackBindWarning`.
+const HOSTNAME = resolveHost(process.env);
 
 // Reserved, and routed through the parser like every other verb. This used to
 // scan raw `Bun.argv` instead — two argv mechanisms in one function, which is
@@ -620,7 +627,18 @@ if (bootSummary !== null) console.info(bootSummary);
 bootLog.end();
 
 say("");
-say(`  paddock  \`http://${HOSTNAME}:${PORT}\``);
+say(listeningLine(HOSTNAME, PORT));
+
+// After the URL, so it is the line the eye lands on last, and before the tunnel
+// hint, which would otherwise separate the warning from what it is about.
+const bindWarning = nonLoopbackBindWarning(HOSTNAME, PORT);
+if (bindWarning !== null) {
+  say("");
+  warn(bindWarning);
+  // The tunnel hint below is indented like the warning's own lines and reads as
+  // part of it otherwise.
+  say("");
+}
 
 // Nothing to nudge an operator who is already running `paddock tunnel` toward.
 if (command !== "tunnel") {

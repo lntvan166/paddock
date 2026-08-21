@@ -111,3 +111,90 @@ export function herdrUnreachableMessage(
     "  no herdr at all: `paddock --demo` runs with synthetic agents",
   ].join("\n");
 }
+
+/**
+ * Where the listener BINDS, and what the operator is told when that is not
+ * loopback.
+ *
+ * This is a different question from the one `origin.ts` answers, and the two
+ * must not share a predicate. `origin.ts` classifies `Host` HEADERS, which name
+ * one machine and are never wildcards. A bind address can be `0.0.0.0` or `::`,
+ * which name every interface at once — the case that matters here and the case
+ * a `Host` header cannot express.
+ *
+ * WHY THE DEFAULT MUST STAY LOOPBACK. `docs/decisions.md` decision 3 gives this
+ * listener no authentication of its own, deliberately, and the same-origin gate
+ * in `origin.ts` says so in as many words: it is a CSRF control, not an
+ * authenticator. So reachability IS authority here — anything that can open the
+ * port can read every agent's screen and type into it. Loopback is what makes
+ * that acceptable, which is why the override exists but announces itself.
+ */
+
+/** Bind addresses that name only this machine, other than the `127.0.0.0/8` block. */
+const LOOPBACK_BINDS: readonly string[] = ["localhost", "::1", "[::1]"];
+
+/** Bind addresses that mean "every interface". */
+const WILDCARD_BINDS: readonly string[] = ["0.0.0.0", "::", "[::]"];
+
+/**
+ * The address to bind, from the environment.
+ *
+ * An empty or whitespace-only value is treated as UNSET rather than as a
+ * wildcard. `PADDOCK_HOST:` with nothing after it in a compose file, and
+ * `PADDOCK_HOST=` in an `.env`, both arrive here as `""` — and resolving that
+ * to `0.0.0.0` would silently publish an unauthenticated dashboard because
+ * somebody left a line half-written.
+ */
+export function resolveHost(env: Record<string, string | undefined>): string {
+  const value = env.PADDOCK_HOST?.trim();
+  return value === undefined || value === "" ? "127.0.0.1" : value;
+}
+
+/** Whether a bind address reaches only this machine. */
+export function isLoopbackBind(host: string): boolean {
+  const name = host.trim().toLowerCase();
+  if (LOOPBACK_BINDS.includes(name)) return true;
+  // The whole 127.0.0.0/8 block, not just 127.0.0.1 — a resolver stub on
+  // 127.0.0.53 is loopback too, and warning about it would be noise.
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(name);
+}
+
+/** Whether a bind address names every interface. */
+function isWildcardBind(host: string): boolean {
+  return WILDCARD_BINDS.includes(host.trim().toLowerCase());
+}
+
+/**
+ * What the operator is told when the bind is not loopback, or `null` when it is.
+ *
+ * Not an error: a container REQUIRES a non-loopback bind, because published
+ * ports are delivered to the container's own interface and a loopback listener
+ * refuses them. So this warns and proceeds. It names the address and port
+ * literally, because the failure it is trying to prevent is someone believing
+ * this is still a private dashboard.
+ */
+export function nonLoopbackBindWarning(host: string, port: number): string | null {
+  if (isLoopbackBind(host)) return null;
+  return [
+    `paddock: bound to ${host}:${port} — not loopback`,
+    "  every host that can reach this port has full control of your agents:",
+    "  it can read their screens and type into them. paddock has",
+    "  no authentication of its own (docs/decisions.md decision 3).",
+    "  In a container this is expected — keep the published port on 127.0.0.1.",
+    "  On a desk it means your network can drive your agents.",
+  ].join("\n");
+}
+
+/**
+ * The banner line naming where the dashboard is.
+ *
+ * A wildcard bind gets a loopback URL plus the fact of the wildcard, never
+ * `http://0.0.0.0:8787` — that string looks like a link, and it is not one any
+ * browser can open. The banner's only job is to be clickable.
+ */
+export function listeningLine(host: string, port: number): string {
+  if (isWildcardBind(host)) {
+    return `  paddock  \`http://127.0.0.1:${port}\`  (all interfaces, port ${port})`;
+  }
+  return `  paddock  \`http://${host}:${port}\``;
+}

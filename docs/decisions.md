@@ -29,6 +29,22 @@ session does not silently re-litigate them.
    Access in front of it at all — see decision 13 for why that is not the
    mechanism this decision rules out.
 
+   Bind address, added later: the default listener binds loopback *by default*,
+   not unconditionally — `PADDOCK_HOST` can move it. That is not a softening of
+   this decision, because it adds no authentication and removes none: there was
+   never any. It exists because a container cannot use loopback at all. A
+   published port is delivered to the container's own interface, so a
+   loopback-bound listener refuses it, and `docker-compose.yml` shipped a
+   container nothing could reach for exactly that reason.
+
+   What protects a non-loopback bind is therefore NOT paddock. It is whatever
+   sits in front of the port — the `127.0.0.1:` prefix on a compose publish, a
+   container network, a firewall. paddock's only contribution is to say so: a
+   non-loopback bind prints a warning naming the address and the fact that the
+   port has no authentication behind it. Do not read this entry as permission
+   to bind `0.0.0.0` on a workstation; on a shared network that hands every
+   device full control of the operator's agents.
+
 4. **`agent.list`, not `pane.list`.** Only `agent.list` returns the
    operator-assigned `name` field; `PaneInfo` has no `name` (it has `label`).
    Using `pane.list` is the difference between a useful dashboard and one
