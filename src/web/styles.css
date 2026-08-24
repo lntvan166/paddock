@@ -223,14 +223,35 @@ body {
 
 .card-row + .card-row { border-top: 1px solid var(--border); }
 
-/* Wide enough to show "Automatic" in full. Without this, an `<input
-   type="number">` with no explicit width shrinks to whatever the row's free
-   space leaves it, which truncated that placeholder to "Auto" — the one word
-   that tells an operator leaving Font size blank keeps responsive sizing.
-   Scoped to every `.card-row` input rather than just that one field, so
-   Chat id / Cooldown / Public URL (also plain inputs in a `.card-row`) get
-   the same breathing room instead of each needing its own rule. */
-.card-row input { min-width: 7rem; }
+/* Text and number fields inside a card. Replaces `.settings-field input`,
+   whose deletion left every settings field borderless, transparent and 19px
+   tall — rendering as right-aligned static text, so an operator could not
+   tell the Telegram token field was editable at all. The border IS the
+   affordance here; there is no hover state to fall back on on a phone.
+
+   2.75rem rather than the 2.5rem the old rule used: 44px is the app's stated
+   touch floor (`.tap`, `.term-keys`, `.settings-save-bar button`) and the old
+   value predated it. Checkboxes are excluded — they draw their own sizing
+   from `.settings-triggers`.
+
+   `min-width` is wide enough to show "Automatic" in full: without it, an
+   `<input type="number">` with no explicit width shrinks to whatever the
+   row's free space leaves it, which truncated that placeholder to "Auto" —
+   the one word that tells an operator leaving Font size blank keeps
+   responsive sizing. Scoped to every `.card-row` input rather than just that
+   one field, so Chat id / Cooldown / Public URL get the same breathing
+   room instead of each needing its own rule. */
+.card-row input:not([type="checkbox"]),
+.card-row select {
+  min-height: 2.75rem;
+  min-width: 7rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.8rem;
+}
 
 /* A one-line explanation below a `.card-row`. Replaces both `.settings-hint`
    (a fieldset-level note) and `.settings-hint-inline` (a per-field one) —

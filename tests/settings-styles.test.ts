@@ -50,6 +50,16 @@ test("a labelled row inside a card clears the touch target", () => {
   expect(declaration(".card-row", "min-height")).toBe(TOUCH_TARGET);
 });
 
+test("a text field inside a card looks like a field, and is a full touch target", () => {
+  // Deleting `.settings-field input` left every settings field borderless,
+  // transparent and 19px tall — indistinguishable from static text. The old
+  // rule's border and height were never guarded, only its sibling row's,
+  // which is why nothing failed when they went.
+  const sel = '.card-row input:not([type="checkbox"])';
+  expect(declaration(sel, "min-height")).toBe(TOUCH_TARGET);
+  expect(declaration(sel, "border")).toContain("var(--border)");
+});
+
 test("the triggers legend is not laid out inline with its options", () => {
   // `.settings-triggers` is a `fieldset` with `display: flex`, which makes its
   // `<legend>` a flex item — "Notify on" then rendered on the same line as the
