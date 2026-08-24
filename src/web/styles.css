@@ -496,19 +496,6 @@ body {
   cursor: pointer;
 }
 
-/* Every control here is the same KIND of thing, so it gets the same treatment:
-   bordered, on --surface, at the 0.4rem the whole app uses. They were three
-   different things before — two borderless text links and a bare glyph — which
-   is most of why this header read as a toolbar from another app.
-
-   `.term-back` is excluded by the selector: it is navigation, not a control,
-   and the settings screen's back link is plain text too. */
-.term-header button:not(.term-back) {
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  background: var(--surface);
-}
-
 .term-back { font-weight: 600; }
 
 /* `center`, not `baseline`: the state is a DOT now, and an empty flex item has
