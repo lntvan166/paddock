@@ -206,6 +206,46 @@ body {
   color: var(--fg-dim);
 }
 
+.toggle {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0 0 0 0.5rem;
+  cursor: pointer;
+}
+
+.toggle:disabled { opacity: 0.45; cursor: default; }
+
+.toggle-track {
+  width: 44px;
+  height: 26px;
+  border-radius: 9999px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.toggle[data-on="yes"] .toggle-track { background: var(--accent); border-color: var(--accent); }
+
+.toggle-knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--bg);
+  transition: transform 140ms ease;
+}
+
+.toggle[data-on="yes"] .toggle-knob { transform: translateX(18px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle-knob { transition: none; }
+}
+
 /* Bottom sheet on a narrow screen, side panel on a wide one. A width media
    query only — no device detection anywhere in this project. */
 /* A column, not one scrolling block. The transcript is the only part that
