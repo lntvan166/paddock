@@ -115,10 +115,19 @@ test("the Enter preview shows what is selected, and FOLLOWS the cursor", async (
   expect(host.querySelector(".term-selected")?.textContent).toContain("2. Option 2");
 });
 
-test("the keypad is present in EVERY state, not only when blocked", async () => {
-  // A pad that appeared and vanished as the agent's state changed would move
-  // under the operator's thumb.
-  for (const state of ["idle", "working", "done", "blocked"] as const) {
+test("the keypad opens itself only when it is the only way to answer", async () => {
+  // This test used to require the pad in EVERY state, to stop it moving under
+  // the operator's thumb. The hazard was real; the rule was wider than the
+  // hazard. What actually moves under a thumb is a pad that CLOSES itself, and
+  // nothing here ever closes one — see the following test, which is the half of
+  // the old assertion worth keeping.
+  //
+  // What changed: the pad costs 106px of a 390x844 phone, and on a parsed
+  // prompt it is a duplicate path. Tapping an option calls `answerWithKey` with
+  // the agent's own digit, in one tap, and cannot be off by one the way arrowing
+  // to it can. So it opens itself for a blocked agent whose prompt the parser
+  // REFUSED, which is the case where no option buttons exist at all.
+  for (const state of ["idle", "working", "done"] as const) {
     const { fn } = stubFetch({
       "/output": () => screenOf(["out"]),
       "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
@@ -126,10 +135,93 @@ test("the keypad is present in EVERY state, not only when blocked", async () => 
     globalThis.fetch = fn as typeof fetch;
     const host = await render(<AgentTerminal agent={agent({ state })} onBack={() => {}} />);
     await settle();
+    expect(textsOf(host, ".term-key"), `${state} has nothing to answer`).toEqual([]);
+    await unmount();
+  }
+
+  // Blocked, parser refused: the pad is the floor, so it opens.
+  {
+    const { fn } = stubFetch({
+      "/output": () => screenOf(["menu"]),
+      "/prompt": () => ({ question: null, options: null, selected: "3. Chat", raw: "" }),
+    });
+    globalThis.fetch = fn as typeof fetch;
+    const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+    await settle();
     expect(textsOf(host, ".term-key")).toContain("⏎ Enter");
     await unmount();
   }
+
+  // Blocked with real options: the buttons answer in one tap, so the pad stays
+  // out of the way and `Keys` is one tap from bringing it back.
+  {
+    const { fn } = stubFetch({
+      "/output": () => screenOf(["Do you want to proceed?"]),
+      "/prompt": () => ({
+        question: "Do you want to proceed?",
+        options: [{ key: "1", label: "Yes" }, { key: "2", label: "No" }],
+        selected: null, raw: "",
+      }),
+    });
+    globalThis.fetch = fn as typeof fetch;
+    const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+    await settle();
+    expect(textsOf(host, ".term-option").length).toBe(2);
+    expect(textsOf(host, ".term-key"), "options already are the arrows").toEqual([]);
+    expect(host.querySelector(".term-keys-toggle")).not.toBeNull();
+    await unmount();
+  }
 });
+
+test("the pad never closes itself once it is open", async () => {
+  // The invariant the old "present in every state" rule existed to protect, and
+  // the one that must survive the pad becoming closable: a pad that vanished as
+  // the agent's screen changed would move under a reaching thumb. The automatic
+  // transition is expand-only — it declines to OPEN, it never closes.
+  //
+  // Proved through the stored preference, which is the strongest form available
+  // in one mount: `/prompt` is fetched once per blocked agent, so options cannot
+  // go from refused to parsed without a state change. An operator holding
+  // `full` opens a blocked agent WITH real options — the exact state that
+  // chooses `hidden` on a fresh default — and the pad is still there.
+  localStorage.setItem("paddock.term.keypad", "full");
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["Do you want to proceed?"]),
+    "/prompt": () => ({
+      question: "Do you want to proceed?",
+      options: [{ key: "1", label: "Yes" }, { key: "2", label: "No" }],
+      selected: null, raw: "",
+    }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+  expect(textsOf(host, ".term-option").length).toBe(2);
+  expect(textsOf(host, ".term-key"), "the operator's open pad survives a parsed prompt")
+    .toContain("⏎ Enter");
+});
+
+test("one tap on Keys brings the pad back", async () => {
+  // The whole basis for hiding it by default: it is never more than one tap
+  // away, for the Esc or the Tab that no option button carries.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<AgentTerminal agent={agent({ state: "working" })} onBack={() => {}} />);
+  await settle();
+  expect(textsOf(host, ".term-key")).toEqual([]);
+
+  const toggle = host.querySelector(".term-keys-toggle")!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await click(toggle);
+  expect(textsOf(host, ".term-key")).toContain("⏎ Enter");
+  expect(host.querySelector(".term-keys-toggle")?.getAttribute("aria-expanded")).toBe("true");
+});
+
 
 test("no option buttons are rendered when the parser refuses", async () => {
   // `options: null` is an outcome, not an error: the keypad is the floor, and
@@ -259,11 +351,17 @@ test("the header spends its width on the agent's name, not on labels", async () 
   // written for one silently match the other, by DOM order rather than intent.
   expect(host.querySelectorAll(".term-wrap-toggle").length).toBe(1);
   expect(host.querySelectorAll(".term-keys-toggle").length).toBe(1);
-  // No aria-label: the visible text IS the accessible name, and `aria-pressed`
-  // carries the state. An aria-label that does not contain the visible label is
-  // a WCAG 2.5.3 hazard for voice control, and it bought nothing here.
-  expect(host.querySelector(".term-keys-toggle")?.textContent?.trim()).toBe("Keys");
-  expect(host.querySelector(".term-keys-toggle")?.hasAttribute("aria-label")).toBe(false);
+  // No aria-label: the visible text IS the accessible name. An aria-label that
+  // does not contain the visible label is a WCAG 2.5.3 hazard for voice
+  // control, and when this control grew a third state the tempting fix was
+  // exactly that — `aria-label="Keys: arrows and Enter"` against a visible
+  // "Keys ·". `aria-expanded` carries the state instead, which is the attribute
+  // for a disclosure, and the decorative dots are hidden from the name rather
+  // than spoken as punctuation.
+  const keysToggle = host.querySelector(".term-keys-toggle")!;
+  expect(keysToggle.textContent?.trim()).toBe("Keys");
+  expect(keysToggle.hasAttribute("aria-label")).toBe(false);
+  expect(keysToggle.hasAttribute("aria-expanded")).toBe(true);
 });
 
 test("after an arrow tap the border moves and the preview reappears", async () => {
@@ -276,6 +374,13 @@ test("after an arrow tap the border moves and the preview reappears", async () =
   // too far into a persistent grant.
   //
   // `prompt.selected` is now the single fresh source for both.
+  //
+  // The pad is opened explicitly because this test's subject is what an ARROW
+  // does to the border, and a blocked agent with parsed options now hides the
+  // pad by default — the option buttons answer in one tap, so the arrows are a
+  // duplicate path there. An operator who still wants them holds `full`, which
+  // is exactly the state being set up here.
+  localStorage.setItem("paddock.term.keypad", "full");
   const { fn } = stubFetch({
     "/output": () => screenOf(["menu"]),
     "/prompt": () => ({

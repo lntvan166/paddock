@@ -33,7 +33,7 @@ test("defaults are returned when nothing is stored", () => {
   // deliberately rather than inheriting whatever `readPrefs` happens to return.
   expect(readPrefs()).toEqual({
     theme: "system", rate: "live", wrap: true, fontPx: null,
-    keypad: "full", keypadAuto: true,
+    keypad: "hidden", keypadAuto: true,
   });
 });
 
@@ -159,12 +159,19 @@ test("writing a null fontPx REMOVES the key rather than storing the string 'null
   expect(readPrefs().fontPx).toBe(null);
 });
 
-test("the keypad prefs default to a full pad that expands itself", () => {
-  // Visible by default, and allowed to open itself when an agent needs an
-  // answer — the two things asked for. A collapsed default would hide the
-  // committing action from an operator who never opened settings.
+test("the keypad defaults to hidden, and is still allowed to open itself", () => {
+  // It defaulted to `full`, on the reasoning that a collapsed default would
+  // hide the committing action from an operator who never opened settings. What
+  // that reasoning predates: the pad is not the committing action on a parsed
+  // prompt. The option buttons are, they carry the agent's own digits, and
+  // tapping one answers in a single tap — so on the commonest blocked screen
+  // the pad was charging 106px of a 390x844 phone for a duplicate path.
+  //
+  // `keypadAuto` still true, and it still only ever OPENS: a blocked agent
+  // whose prompt the parser refused has no buttons, and the pad appears for it
+  // without anyone visiting settings.
   const p = readPrefs();
-  expect(p.keypad).toBe("full");
+  expect(p.keypad).toBe("hidden");
   expect(p.keypadAuto).toBe(true);
 });
 
@@ -182,7 +189,18 @@ test("a boolean pref round-trips, and 'never stored' is not 'explicitly off'", (
   expect(readPrefs().keypadAuto).toBe(true);
 });
 
-test("an unrecognised stored keypad value falls back to full", () => {
+test("an unrecognised stored keypad value falls back to the default", () => {
   localStorage.setItem("paddock.term.keypad", "sideways");
-  expect(readPrefs().keypad).toBe("full");
+  expect(readPrefs().keypad).toBe("hidden");
+});
+
+test("a pad size stored by an older build is still honoured", () => {
+  // `full` and `compact` were the only two values this pref ever had. An
+  // operator who chose to see the pad keeps seeing it across the update that
+  // made `hidden` the default — the migration must not read their choice as
+  // unrecognised and quietly close it.
+  for (const stored of ["full", "compact"] as const) {
+    localStorage.setItem("paddock.term.keypad", stored);
+    expect(readPrefs().keypad).toBe(stored);
+  }
 });

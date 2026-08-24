@@ -261,6 +261,17 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // request is in flight — the ref alone has no way to trigger a re-render.
   const [journalBusy, setJournalBusy] = useState(false);
   const [prompt, setPrompt] = useState<ParsedPrompt | null>(null);
+  /**
+   * How many real option buttons this screen will render.
+   *
+   * Derived here, above the auto-reveal effect below, because that effect needs
+   * it in its dependency array and a dependency has to exist at render time.
+   * Zero means the parser refused, which is exactly when the key pad is the
+   * only way to answer.
+   */
+  const promptOptionCount = prompt?.options?.length ?? 0;
+  /** Whether the `/prompt` fetch below has settled — see its own note. */
+  const [promptLoaded, setPromptLoaded] = useState(false);
 
   /**
    * A blocked agent may OPEN a collapsed pad. It may never close one.
@@ -275,8 +286,22 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   useEffect(() => {
     if (agent.state !== "blocked") return;
     if (!readPrefs().keypadAuto) return;
+    // Only when the pad is the ONLY way in. A parsed prompt renders real option
+    // buttons, and tapping one sends the agent's own digit in a single tap —
+    // `answerWithKey` below, and the note there on why that cannot be off by
+    // one the way arrowing to it can. Forcing 106px of arrows onto that screen
+    // buys nothing; `Keys` is one tap away for Esc or Tab.
+    //
+    // Still expand-only. This declines to OPEN the pad; it never closes one, so
+    // a prompt that becomes parseable while the operator is reaching for Esc
+    // leaves the pad exactly where their thumb expects it.
+    // Wait until the prompt is actually known. On mount it is null because
+    // nothing has been fetched yet, which is indistinguishable from "the parser
+    // refused" without this flag.
+    if (!promptLoaded) return;
+    if (promptOptionCount > 0) return;
     setKeypad("full");
-  }, [agent.state]);
+  }, [agent.state, promptOptionCount, promptLoaded]);
   const [reply, setReply] = useState("");
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
@@ -445,9 +470,16 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   useEffect(() => {
     if (agent.state !== "blocked") { setPrompt(null); return; }
     let live = true;
+    setPromptLoaded(false);
     void fetchPrompt(agent.agentId)
-      .then((p) => { if (live) setPrompt(p); })
-      .catch(() => { if (live) setPrompt(null); });
+      // Settled either way, success or failure: "the parser refused" and "we
+      // have not asked yet" are both `prompt === null`, and the pad's
+      // auto-reveal has to tell them apart. Without this it fired on mount
+      // while the fetch was still in flight, saw no options, and opened the pad
+      // on every blocked agent — including the ones whose options arrived a
+      // beat later, which is the case it exists to leave alone.
+      .then((p) => { if (live) { setPrompt(p); setPromptLoaded(true); } })
+      .catch(() => { if (live) { setPrompt(null); setPromptLoaded(true); } });
     return () => { live = false; };
   }, [agent.agentId, agent.state]);
 
@@ -918,22 +950,49 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
             already records that a symbol renders as tofu in several mobile
             system fonts — the pressed state is carried by `aria-pressed`,
             which the stylesheet dims. */}
+        {/* Three states, cycled: hidden -> compact -> full -> hidden. The pad
+            is 106px of a 390x844 phone, measured, and its default is now
+            `hidden` — a parsed prompt renders real option buttons and tapping
+            one answers in a single tap, so on the commonest blocked screen the
+            arrows were a duplicate path charging a quarter of the transcript.
+
+            A cycle rather than two controls because this row has 36px and
+            already carries Wrap and refresh.
+
+            The accessible name stays exactly "Keys". `aria-pressed` is gone
+            with the boolean it described, and it is NOT replaced by an
+            aria-label: this file already records that an accessible name which
+            does not contain the visible label is a WCAG 2.5.3 hazard for voice
+            control, and "Keys ·" against "Keys: arrows and Enter" is that
+            hazard. `aria-expanded` carries the part that matters instead — the
+            pad is a disclosure, which is what that attribute is for — and the
+            dots are decorative, so they are hidden from the name rather than
+            being spoken as punctuation. Which of the two open sizes is showing
+            is audible the way it is visible: the keys themselves appear. */}
         <button
           type="button"
           className="term-keys-toggle"
-          aria-pressed={keypad === "full"}
+          data-state={keypad}
+          aria-expanded={keypad !== "hidden"}
           onClick={() => {
-            const v: KeypadPref = keypad === "full" ? "compact" : "full";
+            const next: Record<KeypadPref, KeypadPref> = {
+              hidden: "compact", compact: "full", full: "hidden",
+            };
+            const v = next[keypad];
             setKeypad(v);
             writePref("keypad", v);
           }}
         >
           Keys
+          {keypad !== "hidden" && (
+            <span aria-hidden="true">{keypad === "compact" ? " ·" : " ··"}</span>
+          )}
         </button>
         <button type="button" onClick={() => void load()} disabled={busy} aria-label="Refresh">
           ↻
         </button>
       </div>
+      {keypad !== "hidden" && (
       <div className="term-keys" role="group" aria-label="Send key">
         <div className="term-keys-primary">
           {PRIMARY_KEYS.map((k) => (
@@ -962,6 +1021,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
         </div>
         )}
       </div>
+      )}
 
       <form
         className="term-reply"

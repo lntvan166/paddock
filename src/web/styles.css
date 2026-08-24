@@ -978,8 +978,12 @@ body {
   padding: 0 0.5rem;
   border-radius: 0.4rem;
 }
-.term-wrap-toggle[aria-pressed="false"],
-.term-keys-toggle[aria-pressed="false"] { color: var(--fg-dim); }
+.term-wrap-toggle[aria-pressed="false"] { color: var(--fg-dim); }
+
+/* Dimmed while the pad is hidden, which is its default. Keyed on the state
+   attribute, because this control stopped being a boolean when it gained a
+   third state and `[aria-pressed="false"]` no longer matches anything here. */
+.term-keys-toggle[data-state="hidden"] { color: var(--fg-dim); }
 
 /* Reveals reconstructed scrollback. Sits above the pane rather than inside it
    so that revealing more cannot be mistaken for output the agent produced. */

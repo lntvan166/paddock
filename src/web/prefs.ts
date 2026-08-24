@@ -9,15 +9,26 @@ export type ThemePref = "system" | "light" | "dark";
 export type RatePref = "live" | "balanced" | "frugal";
 
 /**
- * Whether the terminal's secondary key row is on screen.
+ * How much of the terminal's key pad is on screen.
  *
- * Only the SECOND row collapses. `↑ ↓ ⏎ Enter` stay put in every state,
- * because that row is how a prompt is answered and `AgentTerminal` records why
- * a pad that moves under a thumb is its own hazard. Esc/←/→/Tab/Space are the
- * rarely-reached half, and on a phone they are ~3rem of a screen whose job is
- * showing a transcript.
+ * - `full`     — both rows: ↑ ↓ ⏎ Enter, then Esc ← → Tab Space.
+ * - `compact`  — the primary row only. Esc/←/→/Tab/Space are the
+ *                rarely-reached half, and on a phone they are ~3rem of a
+ *                screen whose job is showing a transcript.
+ * - `hidden`   — no pad. 106px of a 390x844 phone, measured, handed back to
+ *                the transcript.
+ *
+ * `hidden` is the default, and the reason is that tapping a parsed option does
+ * NOT need the pad. `AgentTerminal`'s option buttons call `answerWithKey` with
+ * the agent's OWN digit — one tap, and per that code's own note "committing one
+ * cannot be off by one the way arrowing to it can". The pad exists for the
+ * prompt shapes the parser refuses, where no buttons render at all.
+ *
+ * The invariant this file used to state as "↑ ↓ ⏎ Enter stay put in every
+ * state" is intact in the form that mattered: nothing ever moves under a thumb,
+ * because the automatic transition only ever REVEALS. See `keypadAuto`.
  */
-export type KeypadPref = "full" | "compact";
+export type KeypadPref = "full" | "compact" | "hidden";
 
 /** Named points, not a milliseconds field: a free numeric input invites a
  *  value that hammers herdr, and the real decision is whether the connection
@@ -75,7 +86,7 @@ const DEFAULTS: Prefs = {
   theme: "system", rate: "live", wrap: true, fontPx: null,
   // Visible by default, for the same reason `wrap` is: a default that hides a
   // control is indistinguishable from an operator who chose to hide it.
-  keypad: "full", keypadAuto: true,
+  keypad: "hidden", keypadAuto: true,
 };
 
 /** `wrap` is kept verbatim from AgentTerminal's own `WRAP_KEY` so no
@@ -121,7 +132,12 @@ export function readPrefs(): Prefs {
     rate: rate === "balanced" || rate === "frugal" ? rate : DEFAULTS.rate,
     wrap: wrapRaw === null ? DEFAULTS.wrap : wrapRaw === "1",
     fontPx: Number.isFinite(font) && font >= 10 && font <= 22 ? font : DEFAULTS.fontPx,
-    keypad: keypad === "compact" ? "compact" : DEFAULTS.keypad,
+    // An unrecognised or absent value falls back to the default. A value
+    // stored by a build that only knew "full" | "compact" is still honoured —
+    // an operator who chose to see the pad keeps seeing it.
+    keypad: keypad === "compact" || keypad === "full" || keypad === "hidden"
+      ? keypad
+      : DEFAULTS.keypad,
     keypadAuto: autoRaw === null ? DEFAULTS.keypadAuto : autoRaw === "1",
   };
 }
