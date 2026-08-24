@@ -168,6 +168,44 @@ body {
   display: inline-flex;
 }
 
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.card + .card { margin-top: 0.75rem; }
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem;
+}
+
+.card-icon { color: var(--fg-dim); display: inline-flex; flex-shrink: 0; }
+.card-icon svg { width: 18px; height: 18px; }
+
+.card-heading { min-width: 0; flex: 1; }
+
+.card-title { margin: 0; font-size: 0.85rem; font-weight: 600; }
+
+.card-sub { margin: 0.1rem 0 0; font-size: 0.75rem; color: var(--fg-dim); }
+
+/* Centred against a two-line heading rather than top-aligned: the switch is
+   about the whole setting, not about its first line. */
+.card-control { flex-shrink: 0; display: inline-flex; align-items: center; }
+
+.card-body { border-top: 1px solid var(--border); padding: 0.8rem 0.9rem; }
+
+.card-foot {
+  border-top: 1px solid var(--border);
+  padding: 0.6rem 0.9rem;
+  font-size: 0.72rem;
+  color: var(--fg-dim);
+}
+
 /* Bottom sheet on a narrow screen, side panel on a wide one. A width media
    query only — no device detection anywhere in this project. */
 /* A column, not one scrolling block. The transcript is the only part that
