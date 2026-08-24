@@ -4,7 +4,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { HostHeader } from "@web/components/HostHeader";
-import { render, unmount } from "./support/render";
+import { agent, render, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
@@ -28,4 +28,39 @@ test("the settings button is the entry point to #/settings", async () => {
   expect(button).not.toBeNull();
   button?.click();
   expect(calls).toEqual(["#/settings"]);
+});
+
+test("the summary counts by section, so it cannot contradict the section headers", async () => {
+  // The defect this guards: counting `blocked` + `done` by raw state made the
+  // header read "2 needs you" over sections reading "NEEDS YOU · 1" and
+  // "READY · 1", and tallied an acknowledged finish — which renders under
+  // Idle — as needing attention.
+  const host = await render(
+    <HostHeader
+      hostId="dev-box"
+      agents={[
+        agent({ agentId: "a", name: "schema-migration", state: "blocked" }),
+        agent({ agentId: "b", name: "lint-config", state: "done", acknowledgedAt: null }),
+        agent({ agentId: "c", name: "api-refactor", state: "working" }),
+      ]}
+      onOpenSettings={() => {}}
+    />,
+  );
+  const text = (host.textContent ?? "").replace(/\s+/g, " ");
+  expect(text).toContain("1 needs you");
+  expect(text).toContain("1 ready");
+  expect(text).toContain("1 working");
+});
+
+test("an acknowledged finish is counted as idle, not as needing attention", async () => {
+  const host = await render(
+    <HostHeader
+      hostId="dev-box"
+      agents={[agent({ agentId: "d", name: "docs-cleanup", state: "done", acknowledgedAt: 1 })]}
+      onOpenSettings={() => {}}
+    />,
+  );
+  const text = (host.textContent ?? "").replace(/\s+/g, " ");
+  expect(text).toContain("1 idle");
+  expect(text).not.toContain("needs you");
 });
