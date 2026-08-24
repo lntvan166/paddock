@@ -3,8 +3,10 @@ import {
   SECTION_ORDER,
   sectionFor,
   type Agent,
+  type AgentState,
   type Section as SectionKey,
 } from "@shared/types";
+import { StatusDot } from "@web/components/ui/StatusDot";
 
 /**
  * Group into the four triage sections, ordering each with the SHARED
@@ -32,39 +34,59 @@ export const SECTION_TITLES: Record<SectionKey, string> = {
   idle: "Idle",
 };
 
+/**
+ * The state whose dot stands for each section.
+ *
+ * A section's dot is the colour of the thing it collects, which is why this is
+ * a map rather than a per-row lookup: an empty "Needs you" still shows red, so
+ * the header means the same thing whether or not anything is under it.
+ */
+export const SECTION_DOT: Record<SectionKey, AgentState> = {
+  "needs-you": "blocked",
+  "ready-unseen": "done",
+  working: "working",
+  idle: "idle",
+};
+
 export { SECTION_ORDER };
 
 export function SectionHeader({
-  title, count, expandable, expanded, onToggle,
+  title, count, dotState, expandable, expanded, onToggle,
 }: {
   title: string;
   count: number;
+  /** The state this section collects, shown as a dot beside the label. */
+  dotState?: AgentState;
   expandable?: boolean;
   expanded?: boolean;
   onToggle?: () => void;
 }) {
   const label = (
     <>
+      {dotState ? <StatusDot state={dotState} /> : null}
       <span className="text-[9.5px] font-bold uppercase tracking-[0.09em]">{title}</span>
       <span className="text-[9.5px]"> · {count}</span>
     </>
   );
-  if (!expandable) {
-    return (
-      <div className="px-3 pt-3 pb-1.5" style={{ color: "var(--fg-dim)" }}>
-        {label}
-      </div>
-    );
-  }
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={expanded}
-      className="tap w-full px-3 pt-3 pb-1.5 text-left"
-      style={{ color: "var(--fg-dim)" }}
-    >
-      {label} <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
-    </button>
+    <div className="flex items-center gap-1.5 px-3 pt-3 pb-1.5" style={{ color: "var(--fg-dim)" }}>
+      {expandable ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="tap flex flex-1 items-center gap-1.5 text-left"
+          style={{ color: "inherit" }}
+        >
+          {label} <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
+        </button>
+      ) : (
+        <div className="flex flex-1 items-center gap-1.5">{label}</div>
+      )}
+      {/* Any control added at the end of this row must be a SIBLING of the
+          fold button above, never nested inside it: nested, pressing the
+          control would also fold the section, so a sort toggle would collapse
+          the very list it was sorting. */}
+    </div>
   );
 }

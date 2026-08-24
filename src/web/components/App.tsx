@@ -6,7 +6,7 @@ import { AgentTerminal } from "@web/components/AgentTerminal";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
-import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
+import { groupAgents, SECTION_DOT, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { Settings } from "@web/components/Settings";
 import { staleAttrs } from "@web/components/staleness";
 import { agentHash, useAgentRoute, useSettingsRoute } from "@web/route";
@@ -146,6 +146,7 @@ export function App() {
               <SectionHeader
                 title={SECTION_TITLES[key]}
                 count={list.length}
+                dotState={SECTION_DOT[key]}
                 expandable={collapsible}
                 expanded={open}
                 onToggle={() => setIdleOpen((v) => !v)}
