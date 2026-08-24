@@ -42,12 +42,19 @@
      that inherited the page surface would need a different value per theme
      and a contrast check for each. Six is enough to tell a handful of
      harnesses apart without inventing near-duplicates. */
-  --tile-0: #b8562f;
-  --tile-1: #2f5fb8;
-  --tile-2: #2f8f5f;
-  --tile-3: #7a3fb8;
-  --tile-4: #b8892f;
-  --tile-5: #2f8f9f;
+  /* Every hue clears WCAG AA (4.5:1) against --tile-fg at the 10px and 12px
+     sizes below, which are both well under the large-text threshold. The
+     first draft of this palette did not: a green, a gold and a teal came in
+     at 4.03, 3.15 and 3.78 because a high green channel carries 0.7152 of
+     the luminance weight and pulls a mid-tone far closer to white than its
+     RGB values suggest. Ratios are stated per line so a future edit that
+     lightens one has to notice what it is spending. */
+  --tile-0: #b4542e; /* 4.94:1 */
+  --tile-1: #2f5fb8; /* 6.09:1 */
+  --tile-2: #2a7f55; /* 4.92:1 */
+  --tile-3: #7a3fb8; /* 6.50:1 */
+  --tile-4: #8e6924; /* 5.00:1 */
+  --tile-5: #287b89; /* 4.90:1 */
   --tile-fg: #ffffff;
 }
 

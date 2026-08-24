@@ -28,6 +28,13 @@ test("an unknown harness is a tile, not a blank", () => {
   expect(initialsFor("some-future-harness")).toBe("SF");
 });
 
+test("a degenerate harness still renders something, never a blank tile", () => {
+  // The spec's "never blank" rule. Both of these reduce to zero segments after
+  // filtering, which is the branch a future edit is most likely to regress.
+  expect(initialsFor("")).toBe("?");
+  expect(initialsFor("--")).toBe("?");
+});
+
 test("hue is stable for the same harness across calls", () => {
   // A tile that changed colour between renders would read as a different
   // agent.
