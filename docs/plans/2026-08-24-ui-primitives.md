@@ -2298,9 +2298,14 @@ test("an ordinary public URL leaves the footer off entirely", async () => {
   expect(host.querySelector(".card-foot")).toBeNull();
 });
 
-test("the enable control is a switch", async () => {
+test("the master switch sits in the card header, not in the body", async () => {
+  // A master switch governs the whole card, so it belongs beside the title
+  // rather than being the first of several equal rows. This is `Card`'s
+  // `control` slot and the only consumer of it.
   const host = await render(<NotifySection {...props() as never} />);
-  expect(host.querySelector("[role='switch']")).not.toBeNull();
+  const head = host.querySelector(".card-head") as HTMLElement;
+  expect(head.querySelector("[role='switch'][aria-label='Notifications']")).not.toBeNull();
+  expect(host.querySelector(".card-body [role='switch'][aria-label='Notifications']")).toBeNull();
 });
 ```
 
@@ -2316,12 +2321,20 @@ Expected: FAIL — no `.card-title` (the component renders a bare fragment), and
 - [ ] **Step 3: Write minimal implementation**
 
 `NotifySection` — wrap the existing fragment in a `Card`, lift the quick-tunnel
-warning out of the `<label>` it currently sits inside, and pass it as `footer`.
+warning out of the `<label>` it currently sits inside and pass it as `footer`,
+and lift the **enable** checkbox out of the body to become the card's `control`.
+
+That last move is what `Card`'s `control` slot exists for, and this is its only
+consumer: `notifyEnabled` governs everything else in the card, so it belongs
+beside the title rather than as the first of several equal rows. The remaining
+controls — triggers, settle, cooldown, mute, public URL — stay in the body.
+
 Keep the warning's wording **verbatim**; it is reviewed user-facing copy:
 
 ```tsx
 import { BellIcon } from "@web/components/ui/icons";
 import { Card } from "@web/components/ui/Card";
+import { Toggle } from "@web/components/ui/Toggle";
 
 // …inside the component, replacing the outer <> …
   const quickTunnel = isQuickTunnelUrl(publicUrl);
@@ -2330,6 +2343,12 @@ import { Card } from "@web/components/ui/Card";
       icon={<BellIcon />}
       title="Notifications"
       subtitle="Telegram messages when an agent needs you or finishes."
+      control={(
+        <Toggle
+          label="Notifications" checked={notifyEnabled}
+          onChange={setNotifyEnabled}
+        />
+      )}
       footer={quickTunnel ? (
         <>
           That is a quick-tunnel URL, and it changes every time <code>paddock tunnel</code> runs
