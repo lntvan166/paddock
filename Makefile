@@ -22,6 +22,12 @@ export PADDOCK_BUILD_TIME
 TAG := $(firstword $(shell git tag --points-at HEAD))
 VERSION := $(if $(TAG),$(TAG:v%=%),0.0.0-dev)
 
+# `?=` so a caller can still override it, matching PADDOCK_COMMIT and
+# PADDOCK_BUILD_TIME above. Without this, `make build-web` stamps the commit
+# and build time but leaves the version at vite's own "0.0.0-dev" fallback.
+PADDOCK_VERSION ?= $(VERSION)
+export PADDOCK_VERSION
+
 .PHONY: dev types icons check check-clean embed build-web test build formula up down logs restart
 
 # A real directory target, deliberately NOT in .PHONY: make compares its mtime

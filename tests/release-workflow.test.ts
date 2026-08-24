@@ -52,6 +52,18 @@ test("the compiled artifact's version stamp is smoke-tested before it is publish
   expect(wf).toMatch(/if \[ "\$GOT" != "\$VERSION" \]; then/);
 });
 
+test("the dashboard's build stamp is fed from the tag, and proven to reach the bundle", () => {
+  // The web build calls `bun run build:web` directly, bypassing make — so the
+  // Makefile's exports do not reach it. Without these three, every release
+  // would ship a footer reading "v0.0.0-dev · dev · unknown" while the binary
+  // reported the right version, with the whole suite green.
+  expect(wf).toContain('export PADDOCK_VERSION="${GITHUB_REF_NAME#v}"');
+  expect(wf).toContain("export PADDOCK_COMMIT=");
+  expect(wf).toContain("export PADDOCK_BUILD_TIME=");
+  // And that the build is checked rather than trusted.
+  expect(wf).toContain("build stamp missing");
+});
+
 test("the Homebrew formula is rendered and pushed to the tap", () => {
   expect(wf).toContain("scripts/render-formula.ts");
   expect(wf).toContain("homebrew-paddock");

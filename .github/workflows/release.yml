@@ -26,7 +26,23 @@ jobs:
       # the release still embeds one.
       - name: Build the UI and the embed manifest
         run: |
+          set -eu
+          # vite reads these from the environment at config time, and this step
+          # calls `bun run build:web` directly rather than going through make —
+          # so the Makefile's exports never arrive here. Setting them in the
+          # Makefile alone is how the footer came to read
+          # "v0.0.0-dev · dev · unknown" in a release whose binary reported the
+          # right version.
+          export PADDOCK_VERSION="${GITHUB_REF_NAME#v}"
+          export PADDOCK_COMMIT="$(git rev-parse --short HEAD)"
+          export PADDOCK_BUILD_TIME="$(date -u +'%Y-%m-%d %H:%M UTC')"
           bun run build:web
+          # Prove the define reached the bundle rather than trusting it — the
+          # same reasoning as the binary's version smoke test further down.
+          if ! grep -q "$PADDOCK_VERSION" dist/assets/*.js; then
+            echo "build stamp missing: the vite define did not reach the bundle" >&2
+            exit 1
+          fi
           bun run scripts/gen-embedded.ts
 
       # One Linux runner builds every target. Bun cross-compiles: this was
