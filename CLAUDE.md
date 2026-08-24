@@ -104,6 +104,36 @@ Full detail in `docs/architecture.md`. The rules that must not be broken:
 - **No hover-only affordances** — invisible on touch.
 - **Respect `prefers-reduced-motion`** and `env(safe-area-inset-bottom)`.
 
+### shadcn/ui is installed, at a boundary
+
+The UI was entirely hand-rolled until `shadcn init` landed on the UI-release
+branch. What that means in practice:
+
+- **New surfaces may use shadcn.** It earns its weight on the primitives that
+  are genuinely hard to get right — Dialog/Sheet, Popover, Tooltip, Command,
+  DropdownMenu: focus traps, scroll locking, escape handling, typeahead.
+- **The six primitives in `src/web/components/ui/` are still ours** — `Card`,
+  `Toggle`, `Segmented`, `IconTile`, `StatusDot`, `icons`. Do not swap them out
+  for shadcn equivalents without a reason a user would notice.
+- **shadcn's tokens are ALIASES of paddock's**, in the bridge block in
+  `styles.css`. Never give them their own values. `init` wrote its own
+  `--border` and `--accent` over paddock's, which turned the interaction colour
+  near-white and made the Send button invisible — and all 1159 tests still
+  passed, because nothing asserts a computed colour.
+- **`--accent` belongs to paddock.** shadcn's "accent" means a subtle hover
+  ground and is mapped to `--surface` in `@theme`, not aliased.
+- **Never accept a shadcn preset's font.** `--preset nova` pulls
+  `@fontsource-variable/geist`: 76 KB of woff2, larger than the whole gzipped
+  JS bundle, into a project whose stylesheet says system fonts only because a
+  webfont is the biggest payload on a slow link. `tests/tokens.test.ts` now
+  guards both the `@import` and any font file reaching `dist/`.
+- **`lucide-react` is a dependency now**, because shadcn components import
+  icons internally and it tree-shakes per icon. paddock's own eight glyphs stay
+  hand-written in `ui/icons.tsx` — do not switch them to lucide.
+- **Components land in `src/web/components/shadcn/`.** `init` guessed an alias
+  and wrote them into `src/shared/` — the generated-contract directory — so
+  `components.json` is pinned deliberately.
+
 ## Commands
 
 ```bash

@@ -1,4 +1,12 @@
 @import "tailwindcss";
+@import "shadcn/tailwind.css";
+
+/* Re-pointed at paddock's own mechanism. shadcn ships this as `.dark *`, a
+   class this app never sets — so every `dark:` utility inside a shadcn
+   component would have been dead. The colour tokens are bridged and follow the
+   theme on their own, so this only matters for the odd non-colour `dark:`
+   utility, but a variant that can never match is worse than none. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* Light is the base palette. Every token is defined here — never only inside a
    media query, or the manual toggle has nothing to fall back to. */
@@ -85,6 +93,49 @@
      visible mismatch between two things an operator reads side by side. This
      is the longest of the three prior stacks. */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* ── shadcn bridge ──────────────────────────────────────────────────────
+     shadcn's semantic tokens, ALIASED onto paddock's rather than given their
+     own values. Three reasons, each one a bug this avoids:
+
+     `shadcn init` wrote its own --border and --accent straight over paddock's,
+     because the names collide. --accent went from #4a55c7 to a near-white
+     grey, which made the Send button white-on-white and the terminal header
+     controls invisible — and every one of the 1159 tests still passed, because
+     nothing asserts a computed colour.
+
+     shadcn themes with a `.dark` CLASS. paddock themes with [data-theme] and a
+     prefers-color-scheme query and never sets that class, so shadcn's entire
+     dark palette could never fire — its components would have stayed light on
+     a dark screen. Aliasing sidesteps it: these follow paddock's tokens, which
+     already respond to both mechanisms, so there is no second dark palette to
+     keep in sync.
+
+     And it means a shadcn component comes out looking like paddock instead of
+     like every other shadcn site.
+
+     `--accent` is deliberately NOT bridged here: paddock owns that name for
+     its interaction colour. shadcn's "accent" means a subtle hover ground, and
+     is mapped to --surface in the @theme block instead. */
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface);
+  --popover-foreground: var(--fg);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-fg);
+  --secondary: var(--surface);
+  --secondary-foreground: var(--fg);
+  --muted: var(--surface);
+  --muted-foreground: var(--fg-dim);
+  --accent-foreground: var(--fg);
+  --destructive: var(--danger);
+  --input: var(--border);
+  --ring: var(--accent);
+  /* Radius matches the card vocabulary the app already uses, not shadcn's
+     0.625rem — otherwise a shadcn dialog would round differently from every
+     card beside it. */
+  --radius: 0.75rem;
 }
 
 /* System dark, unless the user explicitly chose light. */
@@ -1232,3 +1283,55 @@ body {
 }
 
 .term-option-label { min-width: 0; }
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  /* The app's own system stack. shadcn's preset put 'Geist Variable' here and
+     pulled 76 KB of woff2 into dist — larger than the entire gzipped JS
+     bundle, in a project whose stylesheet says system fonts only because a
+     webfont is the biggest payload on a slow link. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--surface);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* shadcn's `.dark` palette was here. Deleted rather than kept: it keys on a
+   class paddock never sets, so it could never have applied — and the bridge
+   above makes it unnecessary, because those tokens now follow paddock's, which
+   already respond to both [data-theme] and prefers-color-scheme. Two dark
+   palettes to keep in sync was the alternative. */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

@@ -49,6 +49,28 @@ test("no webfont is loaded", async () => {
   const text = await css();
   expect(text).not.toContain("@font-face");
   expect(text).not.toContain("fonts.googleapis");
+  // Neither of the two above catches the way a webfont actually arrived here.
+  // `shadcn init --preset nova` added `@import "@fontsource-variable/geist"`,
+  // which is not a @font-face rule and not a Google URL — and pulled 76 KB of
+  // woff2 into dist/, larger than the whole gzipped JS bundle, past a test
+  // whose NAME forbids exactly that. An @import of a font package is the
+  // realistic vector, so it is the one that needs asserting.
+  expect(text).not.toMatch(/@import\s+["'][^"']*fontsource/i);
+  expect(text).not.toMatch(/@import\s+["'][^"']*\bfonts?\b[^"']*["']/i);
+});
+
+test("no font file is shipped in the built assets", async () => {
+  // The stylesheet check above can only see what is written in this file. A
+  // dependency that injects @font-face from inside node_modules would not
+  // appear there at all — but its woff2 lands in dist/ either way, which is
+  // the thing that actually costs an operator on a slow link.
+  //
+  // Skipped rather than failed when dist/ is absent: `bun test` alone does not
+  // build, and a test that demanded a build would fail for the wrong reason.
+  const { readdirSync, existsSync } = await import("node:fs");
+  if (!existsSync("dist/assets")) return;
+  const fonts = readdirSync("dist/assets").filter((f) => /\.(woff2?|ttf|otf|eot)$/i.test(f));
+  expect(fonts).toEqual([]);
 });
 
 test("the state palette is traffic-light, and never paints a state in the tap colour", async () => {

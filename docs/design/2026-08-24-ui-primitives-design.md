@@ -80,7 +80,14 @@ Three findings are load-bearing here:
 
 What is deliberately **not** taken: their icon library (lucide) and card
 primitives (shadcn/ui). paddock is hand-rolled Tailwind v4 plus CSS variables
-and stays that way — bringing the look must not smuggle in the stack. Real
+and stays that way — bringing the look must not smuggle in the stack.
+
+> **Superseded, later on the UI-release branch.** shadcn/ui was subsequently
+> adopted at a boundary — new surfaces may use it, the six primitives below
+> stay hand-rolled, and its tokens are aliased onto paddock's. See CLAUDE.md's
+> "shadcn/ui is installed, at a boundary". The paragraph above records why the
+> primitives were hand-rolled, which is still why they are not being replaced;
+> it is no longer a claim about the dependency list. Real
 third-party brand logos are also declined; see *Harness identity* below.
 
 ---
