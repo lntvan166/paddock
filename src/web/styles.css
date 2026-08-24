@@ -35,6 +35,20 @@
      the pane keeps the ground those colours were written for. */
   --term-bg: #0b0d10;
   --term-fg: #d6d9de;
+
+  /* Tile hues are defined ONCE rather than per theme, for the same reason
+     --term-bg is: the tile carries its own background and foreground, so the
+     mark on it does not change meaning when the page around it does. A tile
+     that inherited the page surface would need a different value per theme
+     and a contrast check for each. Six is enough to tell a handful of
+     harnesses apart without inventing near-duplicates. */
+  --tile-0: #b8562f;
+  --tile-1: #2f5fb8;
+  --tile-2: #2f8f5f;
+  --tile-3: #7a3fb8;
+  --tile-4: #b8892f;
+  --tile-5: #2f8f9f;
+  --tile-fg: #ffffff;
 }
 
 /* System dark, unless the user explicitly chose light. */
@@ -121,6 +135,30 @@ body {
    reduced-motion-safe media query above. */
 [data-stale="true"] {
   opacity: 0.55;
+}
+
+.tile {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  color: var(--tile-fg);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.tile[data-size="sm"] { width: 28px; height: 28px; font-size: 10px; }
+.tile[data-size="md"] { width: 36px; height: 36px; font-size: 12px; }
+
+/* Bottom-left rather than bottom-right: the tile's right edge is against the
+   agent's name, and a badge there collides with the first character. */
+.tile-badge {
+  position: absolute;
+  bottom: -1px;
+  left: -1px;
+  display: inline-flex;
 }
 
 /* Bottom sheet on a narrow screen, side panel on a wide one. A width media
