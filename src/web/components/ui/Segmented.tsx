@@ -1,16 +1,36 @@
-import { useRef } from "react";
+import { ToggleGroup, ToggleGroupItem } from "@web/components/shadcn/toggle-group";
 
 /**
  * A row of mutually exclusive options, all visible at once.
  *
- * Replaces a native `<select>` for the small fixed choices in settings. On iOS
- * a select opens a full-screen wheel to pick between three values, which is
- * more ceremony than the choice deserves and hides the alternatives while you
- * choose among them.
+ * Radix's ToggleGroup supplies the roving focus and the wrap-around, and this
+ * adds the one thing it does not: SELECTION FOLLOWS FOCUS.
  *
- * Selection is rendered as a filled high-contrast pill rather than a hue
- * change, so the chosen member survives greyscale like everything else in this
- * layer.
+ * Radix renders `role="radiogroup"` with `role="radio"` children, but its arrow
+ * keys move focus only — selecting then needs a second press of Space. Verified
+ * in a real browser: ArrowRight moved focus to "Light" while `aria-checked`
+ * stayed on "System". For a radiogroup that is wrong; ARIA's own pattern is
+ * that arrowing moves the selection. It is also the exact defect this component
+ * shipped in its first hand-rolled form — a role announced and its behaviour
+ * missing — so inheriting it from a library rather than writing it would have
+ * been no better.
+ *
+ * The `onFocus` below is the fix, and it is the pattern rather than a
+ * workaround. Focus arriving on a member selects it, which makes one arrow
+ * press do what a radiogroup promises. The other ways focus can arrive are all
+ * harmless: tabbing in lands on the already-selected member (a no-op), and a
+ * click fires focus and activation with the same value (idempotent).
+ *
+ * `type="single"` so exactly one member is ever selected. Radix will report
+ * `""` when a member is deselected by re-pressing it, which is NOT a valid
+ * state here — a theme must always be something — so that is filtered below.
+ *
+ * Replaces two native `<select>` elements. On iOS a select opens a full-screen
+ * wheel to pick between three values, which is more ceremony than the choice
+ * deserves and hides the alternatives while you choose among them.
+ *
+ * Selection reads as a filled high-contrast pill, never a hue change, so the
+ * chosen member survives greyscale like everything else in this layer.
  */
 export function Segmented<T extends string>({
   value, options, onChange, label,
@@ -20,68 +40,34 @@ export function Segmented<T extends string>({
   onChange: (next: T) => void;
   label: string;
 }) {
-  const refs = useRef<(HTMLButtonElement | null)[]>([]);
-  const idx = options.findIndex((o) => o.value === value);
-
-  /**
-   * Move the selection, wrapping at both ends.
-   *
-   * An unknown current value (idx < 0) is treated as sitting before the first
-   * option rather than throwing — a prefs file holding a value this build no
-   * longer offers must still leave the control operable.
-   */
-  function move(delta: number) {
-    if (options.length === 0) return;
-    const next = ((idx < 0 ? 0 : idx) + delta + options.length) % options.length;
-    onChange(options[next]!.value);
-    refs.current[next]?.focus();
-  }
-
-  function jump(to: number) {
-    onChange(options[to]!.value);
-    refs.current[to]?.focus();
-  }
-
   return (
-    <div
-      role="radiogroup"
+    <ToggleGroup
+      type="single"
+      value={value}
+      onValueChange={(next) => {
+        // Re-pressing the selected member makes Radix emit "". Ignored rather
+        // than forwarded: every consumer of this control has a required value,
+        // and clearing it would leave the theme or the refresh rate unset.
+        if (next) onChange(next as T);
+      }}
       aria-label={label}
       className="seg"
-      // A radiogroup that only carried the ROLE would be the "role added,
-      // behaviour not" anti-pattern: assistive tech announces a radiogroup, the
-      // user presses an arrow key by convention, and nothing moves. Both axes
-      // are handled because the control is horizontal on a phone and a screen
-      // reader user may try either.
-      onKeyDown={(e) => {
-        if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
-        else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
-        else if (e.key === "Home") { e.preventDefault(); jump(0); }
-        else if (e.key === "End") { e.preventDefault(); jump(options.length - 1); }
-      }}
     >
-      {options.map((o, i) => {
-        const selected = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            ref={(n) => { refs.current[i] = n; }}
-            /* Roving tabindex: the whole group is ONE tab stop, which is what a
-               radiogroup promises. One tab stop per option would cost three
-               presses to get past a three-option control, and the settings
-               screen has two of them. */
-            tabIndex={selected || (idx < 0 && i === 0) ? 0 : -1}
-            data-selected={selected ? "yes" : "no"}
-            className="seg-item"
-            onClick={() => onChange(o.value)}
-          >
-            {o.icon ? <span className="seg-icon">{o.icon}</span> : null}
-            <span>{o.label}</span>
-          </button>
-        );
-      })}
-    </div>
+      {options.map((o) => (
+        <ToggleGroupItem
+          key={o.value}
+          value={o.value}
+          aria-label={o.label}
+          data-selected={o.value === value ? "yes" : "no"}
+          className="seg-item"
+          // Selection follows focus — see the note above. This is what makes a
+          // single ArrowRight select rather than merely highlight.
+          onFocus={() => onChange(o.value)}
+        >
+          {o.icon ? <span className="seg-icon">{o.icon}</span> : null}
+          <span>{o.label}</span>
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }

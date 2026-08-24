@@ -344,45 +344,18 @@ body {
   color: var(--fg-dim);
 }
 
+/* The tappable area around Radix's switch, which is 18.4px tall on its own —
+   well under this app's 2.75rem floor. The switch is what you see; this is what
+   you hit. Motion is Radix's (a transform on the thumb) and is covered by the
+   global prefers-reduced-motion block above, which clamps every transition in
+   the document rather than needing a rule per component. */
 .toggle {
   min-height: 2.75rem;
   display: inline-flex;
   align-items: center;
-  background: none;
-  border: 0;
-  padding: 0 0 0 0.5rem;
-  cursor: pointer;
+  padding: 0 0.5rem;
 }
 
-.toggle:disabled { opacity: 0.45; cursor: default; }
-
-.toggle-track {
-  width: 44px;
-  height: 26px;
-  border-radius: 9999px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  box-sizing: border-box;
-}
-
-.toggle[data-on="yes"] .toggle-track { background: var(--accent); border-color: var(--accent); }
-
-.toggle-knob {
-  width: 20px;
-  height: 20px;
-  border-radius: 9999px;
-  background: var(--bg);
-  transition: transform 140ms ease;
-}
-
-.toggle[data-on="yes"] .toggle-knob { transform: translateX(18px); }
-
-@media (prefers-reduced-motion: reduce) {
-  .toggle-knob { transition: none; }
-}
 
 .seg {
   display: flex;

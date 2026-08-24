@@ -34,15 +34,27 @@ test("the switch is a full touch target", () => {
 });
 
 test("the switch's motion is opt-out", () => {
-  // A transition that ignores the preference is the one CLAUDE.md names.
-  expect(css).toContain("prefers-reduced-motion");
-  expect(ruleBody(".toggle-knob")).toContain("transition");
+  // The guarantee is unchanged; where it lives moved. The knob's transition was
+  // paddock's own rule until Radix took over the switch's internals — its thumb
+  // animates with a Tailwind `transition-transform`, which no rule in this file
+  // declares. What still has to hold is that the document-wide
+  // prefers-reduced-motion block clamps EVERY transition and animation, rather
+  // than each component opting in one at a time.
+  const reduced = css.slice(css.indexOf("prefers-reduced-motion"));
+  expect(reduced).toMatch(/\*,?\s*\n?\s*\*::before/);
+  expect(reduced).toContain("transition-duration");
+  expect(reduced).toContain("animation-duration");
 });
 
 test("a disabled switch is dimmed as well as inert", () => {
-  // Colour alone would leave the state invisible to anyone who cannot see the
-  // difference; opacity plus the cursor is the second channel.
-  expect(declaration(".toggle:disabled", "opacity")).toBeTruthy();
+  // Also moved rather than dropped: Radix marks its root `data-disabled`, and
+  // shadcn's switch carries `data-disabled:opacity-50` and
+  // `data-disabled:cursor-not-allowed`. Asserted against that component's
+  // source, because the rule is no longer in this stylesheet at all — inert
+  // without a visible change would leave a dead control looking live.
+  const sw = readFileSync("src/web/components/shadcn/switch.tsx", "utf8");
+  expect(sw).toContain("data-disabled:opacity-50");
+  expect(sw).toContain("data-disabled:cursor-not-allowed");
 });
 
 test("each segment is a full touch target", () => {
