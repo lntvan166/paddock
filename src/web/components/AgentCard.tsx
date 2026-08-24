@@ -14,7 +14,16 @@ export function showAcknowledge(agent: Agent): boolean {
   return agent.state === "done" && agent.acknowledgedAt === null;
 }
 
-/** Full card for anything in Needs you. Task text wraps — it must be readable. */
+/**
+ * Full card for anything in **Needs you** or **Ready** — both attention
+ * sections, not just the first. Task text wraps — it must be readable.
+ *
+ * `accent` below is `--danger` for a blocked agent and `--ok` for
+ * everything else this card renders (a `done`, unacknowledged agent in
+ * Ready), which is what keeps the two attention sections visually
+ * distinguishable from each other even though both use this same
+ * component.
+ */
 export function AgentCard({
   agent, now, onSelect,
 }: {

@@ -31,7 +31,14 @@ export function Card({
         <div className="card-head">
           {icon ? <span className="card-icon">{icon}</span> : null}
           <div className="card-heading">
-            {title ? <h2 className="card-title">{title}</h2> : null}
+            {/* `h3`, not `h2`: a card is nested content inside a settings
+                band, whose own label (`Settings.tsx`'s `.band-label`) is now
+                a real `h2`. A card title one level below its band lets a
+                screen-reader user navigating by heading tell "This device"
+                (writes immediately) from "All devices" (needs Save) apart
+                from the cards inside them — the reason the two-band split
+                exists in the first place. */}
+            {title ? <h3 className="card-title">{title}</h3> : null}
             {subtitle ? <p className="card-sub">{subtitle}</p> : null}
           </div>
           {control ? <div className="card-control">{control}</div> : null}

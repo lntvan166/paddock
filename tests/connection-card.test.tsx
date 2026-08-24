@@ -6,7 +6,7 @@ import { render, textsOf, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
-const LABELS = ["Endpoint", "Secure context", "herdr", "Last event", "Protocol", "Server build"];
+const LABELS = ["Endpoint", "Secure context", "herdr", "Last event", "Protocol", "Server version"];
 
 test("every diagnostics row is rendered before the data arrives", async () => {
   // A row that appears when its data lands GROWS the card and shoves

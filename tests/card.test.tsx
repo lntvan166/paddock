@@ -40,13 +40,19 @@ test("an absent slot renders no empty box", async () => {
   expect(host.querySelector(".card-foot")).toBeNull();
 });
 
-test("the title is a heading, so the page has a real outline", async () => {
+test("the title is a heading one level below its settings band, so the page outline distinguishes bands from cards", async () => {
+  // `h3`, not `h2`: `Settings.tsx`'s band label ("This device" / "All
+  // devices" / "Info") is the `h2` a card nests under. Two bands carry two
+  // different commit models — one band writes to localStorage immediately,
+  // the other is a form that does nothing until Save succeeds — and a card
+  // title competing at the same heading level as its band would erase that
+  // distinction for anyone navigating by heading.
   const host = await render(<Card title="Connection" subtitle="Diagnostics." />);
-  const h = host.querySelector("h2");
+  const h = host.querySelector("h3");
   expect(h?.textContent).toBe("Connection");
 });
 
 test("a card with no title renders no empty heading", async () => {
   const host = await render(<Card><span /></Card>);
-  expect(host.querySelector("h2")).toBeNull();
+  expect(host.querySelector("h3")).toBeNull();
 });

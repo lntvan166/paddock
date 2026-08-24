@@ -19,6 +19,20 @@ test("every token is defined on bare :root", async () => {
   for (const t of TOKENS) expect(root).toContain(`${t}:`);
 });
 
+// Deliberately NOT added to TOKENS above: that array (and its test's own
+// comment about "--fg" vs "--fg-dim" token boundaries) is about the colour
+// palette specifically, and --mono is a font stack, not a colour — it does
+// not redefine under prefers-color-scheme or [data-theme] the way every
+// TOKENS entry does, because a font stack does not change with the theme.
+// Asserted here instead, once, so the "one stack, not three spellings" fix
+// stays covered without blurring what TOKENS means.
+test("--mono is defined once on bare :root, not per theme", async () => {
+  const text = await css();
+  const root = text.slice(text.indexOf(":root {"), text.indexOf("}", text.indexOf(":root {")));
+  expect(root).toContain("--mono:");
+  expect([...text.matchAll(/--mono:/g)]).toHaveLength(1);
+});
+
 test("dark overrides are guarded so a manual light toggle wins", async () => {
   expect(await css()).toContain(':root:not([data-theme="light"])');
 });

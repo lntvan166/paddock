@@ -69,6 +69,24 @@ test("the global section says it affects every device", async () => {
   expect(host.textContent?.toLowerCase()).toContain("every device");
 });
 
+test("the three bands are real headings, not just styled paragraphs", async () => {
+  // "This device" writes to localStorage the instant a control is touched;
+  // "All devices" is a form that does nothing until Save succeeds. Cards
+  // inside each band carry their own `h3` title now (see Card.tsx), so if
+  // the band label were merely a styled `<p>` — as it was before this
+  // fix — a screen-reader user navigating by heading would meet every card
+  // title as a top-level peer, with nothing above them saying which commit
+  // model applies. Asserting `h2` here is what keeps that distinction
+  // available to more than just sighted readers of the CSS.
+  globalThis.fetch = (async () => new Response(JSON.stringify(view()), {
+    headers: { "content-type": "application/json" },
+  })) as unknown as typeof fetch;
+  const host = await render(<Settings onBack={() => {}} />);
+  await settle();
+  const headings = [...host.querySelectorAll("h2")].map((h) => h.textContent);
+  expect(headings).toEqual(["This device", "All devices", "Info"]);
+});
+
 function buttonByText(host: HTMLElement, text: string): HTMLButtonElement {
   const btn = [...host.querySelectorAll("button")].find((b) => b.textContent === text);
   if (!btn) throw new Error(`no button with text "${text}"`);

@@ -73,7 +73,18 @@ export function InfoSection({ health }: { health: HealthBody | null }) {
           value={health?.lastEventAt ? new Date(health.lastEventAt).toLocaleTimeString() : null}
         />
         <Row label="Protocol" value={health?.herdrProtocol ?? null} />
-        <Row label="Server build" value={health ? `${health.version}+${BUILD.commit}` : null} />
+        {/* Server-only, deliberately: `health.version` comes from
+            `/api/health` (the server); `BUILD.commit` is the vite `define`
+            baked into the RUNNING BUNDLE (the client). Concatenating them
+            reads as one fact but is two, and they agree only when the tab
+            is current — the one case this whole diagnostics card doesn't
+            need. A cached tab still running an old bundle after the host
+            is upgraded would correctly show `BuildStamp`'s own
+            `v0.8.5 · abc1234 · …`, while this row claimed the SERVER was on
+            a commit it has never run. The client bundle's own identity is
+            `BuildStamp`'s job; this row reports the server and nothing
+            else. */}
+        <Row label="Server version" value={health?.version ?? null} />
       </Card>
     </>
   );

@@ -1,8 +1,22 @@
 export UID := $(shell id -u)
 export GID := $(shell id -g)
 
-PADDOCK_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
-PADDOCK_BUILD_TIME ?= $(shell date -u +"%Y-%m-%d %H:%M UTC")
+# No `2>/dev/null`: CLAUDE.md forbids swallowing errors, and a source build
+# with no `.git` (or a broken git) should say on stderr that git was
+# consulted and failed, not silently stamp `dev` with no trace. `|| echo dev`
+# still supplies the fallback value on stdout either way.
+#
+# `:=` (not `?=`) so `git`/`date` are forked once, immediately, rather than
+# re-forked on every expansion of a recursive `?=` variable — the reason
+# PADDOCK_BUILD_TIME could previously differ between `make check` and
+# `make build-web` within one `make build`. Override-ability is preserved by
+# hand: `$(if $(PADDOCK_COMMIT),...)` reads the variable's current value
+# (from the environment) before overwriting it, so `PADDOCK_COMMIT=x` in the
+# environment still wins; a command-line `PADDOCK_COMMIT=x make build-web`
+# wins unconditionally, because make ignores plain (non-`override`)
+# assignments to a variable that was set on the command line.
+PADDOCK_COMMIT := $(if $(PADDOCK_COMMIT),$(PADDOCK_COMMIT),$(shell git rev-parse --short HEAD || echo dev))
+PADDOCK_BUILD_TIME := $(if $(PADDOCK_BUILD_TIME),$(PADDOCK_BUILD_TIME),$(shell date -u +"%Y-%m-%d %H:%M UTC"))
 export PADDOCK_COMMIT
 export PADDOCK_BUILD_TIME
 

@@ -304,33 +304,26 @@ export function Settings({ onBack }: SettingsProps) {
       {healthError && <p className="settings-banner">{healthError}</p>}
       <Toast message={savedAt === null ? null : "Settings saved"} />
 
-      <div className="band">
-        <p className="band-label">This device</p>
+      {/* A `<section>` per band, labelled by a real heading (not just a
+          styled `<p>`): before this branch the outline was `h1 Settings` →
+          `h2 This device` / `h2 All devices` / `h2 Info`, with no heading
+          inside a card. `Card`'s own title is now an `<h3>` precisely so it
+          nests under its band instead of competing with it — see the
+          comment there. Losing that nesting would leave a screen-reader
+          user navigating by heading unable to tell "This device" (writes to
+          localStorage immediately) from "All devices" (a form that does
+          nothing until Save succeeds), which is the exact confusion the
+          two-band split exists to prevent. */}
+      <section className="band" aria-labelledby="band-device">
+        <h2 className="band-label" id="band-device">This device</h2>
         <p className="band-hint">
           Stored in this browser only. Each device you open paddock on keeps its own copy.
         </p>
         <DeviceSection prefs={prefs} setPref={setPref} />
-      </div>
+      </section>
 
-      {/* Present only while a tunnel is running: `view.tunnel` is null for a
-          paddock served the ordinary way, which has nothing to pair. */}
-      {view?.tunnel != null && (
-        <TunnelSection
-          tunnel={view.tunnel}
-          onInvite={async () => {
-            const res = await fetch("/api/pair/invite", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: "{}",
-            });
-            if (!res.ok) throw new Error(`invite failed: ${res.status}`);
-            return (await res.json()) as { code: string; expiresAt: number };
-          }}
-        />
-      )}
-
-      <div className="band">
-        <p className="band-label">All devices</p>
+      <section className="band" aria-labelledby="band-server">
+        <h2 className="band-label" id="band-server">All devices</h2>
         <p className="band-hint">
           These are server settings and affect every device, not just this one.
         </p>
@@ -363,14 +356,35 @@ export function Settings({ onBack }: SettingsProps) {
           muting={muting}
         />
 
-        {saveError && <p className="settings-banner">{saveError}</p>}
-      </div>
+        {/* Present only while a tunnel is running: `view.tunnel` is null for
+            a paddock served the ordinary way, which has nothing to pair.
+            Lives inside "All devices" — the spec's own placement — rather
+            than between the two bands: it is a server setting like
+            Telegram and Notifications above it, so it gets that band's
+            padding, its `.card + .card` spacing, and its heading. */}
+        {view?.tunnel != null && (
+          <TunnelSection
+            tunnel={view.tunnel}
+            onInvite={async () => {
+              const res = await fetch("/api/pair/invite", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: "{}",
+              });
+              if (!res.ok) throw new Error(`invite failed: ${res.status}`);
+              return (await res.json()) as { code: string; expiresAt: number };
+            }}
+          />
+        )}
 
-      <div className="band">
-        <p className="band-label">Info</p>
+        {saveError && <p className="settings-banner">{saveError}</p>}
+      </section>
+
+      <section className="band" aria-labelledby="band-info">
+        <h2 className="band-label" id="band-info">Info</h2>
         <p className="band-hint">Read-only. What build is running, and what this device can see.</p>
         <InfoSection health={health} />
-      </div>
+      </section>
 
       {/* `dirty` is false while `baseline === null`, which is what used to be
           `disabled={saving || view === null}` on a Save button: every field

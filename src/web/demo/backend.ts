@@ -87,7 +87,7 @@ function demoSettings(mutedUntil: number | null = null): SettingsView {
 function demoHealth(): HealthBody {
   return {
     ok: true,
-    hostId: "demo-box",
+    hostId: HOST_ID,
     agents: agents.length,
     clients: 1,
     herdrConnected: true,
