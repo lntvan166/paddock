@@ -5,7 +5,7 @@ import "./support/dom";
 import { beforeEach, expect, test } from "bun:test";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
 import { dismissedRelease, dismissRelease } from "@web/release-notice";
-import { render } from "./support/render";
+import { click, render } from "./support/render";
 
 beforeEach(() => {
   try { localStorage.clear(); } catch { /* fails open, same as the module */ }
@@ -35,7 +35,7 @@ test("dismissing calls back", async () => {
   const host = await render(
     <ReleaseBanner version="9.9.9" managedBy={null} onDismiss={() => { calls.push("dismissed"); }} />,
   );
-  host.querySelector("button")!.click();
+  await click(host.querySelector("button"));
   expect(calls).toEqual(["dismissed"]);
 });
 

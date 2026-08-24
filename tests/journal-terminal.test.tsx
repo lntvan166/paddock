@@ -3,10 +3,11 @@
 import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
+import { act } from "react";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { digestOf } from "@shared/screen";
 import { journalFor, prunePanes, rememberHistory } from "@web/pane-cache";
-import { agent, render, settle, stubFetch, unmount } from "./support/render";
+import { agent, click, render, settle, stubFetch, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 
@@ -37,7 +38,7 @@ test("an agent with a journal fetches earlier lines instead of reading the cache
   );
   await settle();
 
-  (host.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await click(host.querySelector(".term-earlier"));
   await settle();
 
   expect(calls.some((c) => c.url.endsWith("/history"))).toBe(true);
@@ -61,7 +62,7 @@ test("an agent with no journal never calls the route", async () => {
   // "Show earlier" is not even offered — nothing to click, and nothing
   // fetched either way.
   const earlier = host.querySelector(".term-earlier");
-  if (earlier) (earlier as HTMLButtonElement).click();
+  if (earlier) await click(earlier);
   await settle();
 
   expect(calls.some((c) => c.url.endsWith("/history"))).toBe(false);
@@ -88,7 +89,7 @@ test("a journal line carrying a menu cannot render as a live option", async () =
   );
   await settle();
 
-  (host.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await click(host.querySelector(".term-earlier"));
   await settle();
 
   expect(host.querySelectorAll("button.term-option")).toHaveLength(0);
@@ -127,7 +128,7 @@ test("a journal-hinted agent whose /history answers reconstruction falls back, n
   );
   await settle();
 
-  (host.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await click(host.querySelector(".term-earlier"));
   await settle();
 
   // The reconstructed lines rendered — the operator got SOMETHING for this
@@ -164,7 +165,7 @@ test("a rejected /history request is surfaced, not swallowed, and the button sur
   );
   await settle();
 
-  (host.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await click(host.querySelector(".term-earlier"));
   await settle();
 
   expect(host.querySelector(".term-note.warn")?.textContent).toContain("herdr unreachable");
@@ -198,9 +199,12 @@ test("a double-tap on Show earlier fires exactly one request", async () => {
 
   const button = host.querySelector(".term-earlier") as HTMLButtonElement;
   // Both fire before React has re-rendered to reflect `disabled` — the
-  // synchronous ref guard, not the DOM attribute, is what this test pins.
-  button.click();
-  button.click();
+  // synchronous ref guard, not the DOM attribute, is what this test pins. So
+  // this is the one place that does NOT use the `click` helper: the helper
+  // settles after each dispatch, which lets React paint `disabled` in between,
+  // and the DOM then swallows the second tap before the guard is ever reached.
+  // The test would still pass, having stopped testing the guard.
+  await act(async () => { button.click(); button.click(); });
   await settle();
   await settle();
 
@@ -241,7 +245,7 @@ test("journal history survives leaving the pane and coming back", async () => {
     <AgentTerminal agent={agent({ agentId: "j7:p1", hasJournal: true })} onBack={() => {}} />,
   );
   await settle();
-  (first.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await click(first.querySelector(".term-earlier"));
   await settle();
   expect(first.textContent).toContain("page 1");
 
@@ -259,7 +263,7 @@ test("journal history survives leaving the pane and coming back", async () => {
 
   // And the cursor came back with it, so the next tap asks for the page AFTER
   // the one already held rather than re-fetching page one onto itself.
-  (second.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await click(second.querySelector(".term-earlier"));
   await settle();
   const asked = calls.filter((c) => c.url.endsWith("/history")).at(-1);
   expect((asked!.body as { before?: string }).before).toBe("900");
@@ -286,7 +290,7 @@ test("a pane that fell back does not re-ask the route on every reopen", async ()
     <AgentTerminal agent={agent({ agentId: "j8:p1", hasJournal: true })} onBack={() => {}} />,
   );
   await settle();
-  (first.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await click(first.querySelector(".term-earlier"));
   await settle();
   expect(journalFor("j8:p1")!.fellBack).toBe(true);
 
@@ -295,7 +299,7 @@ test("a pane that fell back does not re-ask the route on every reopen", async ()
     <AgentTerminal agent={agent({ agentId: "j8:p1", hasJournal: true })} onBack={() => {}} />,
   );
   await settle();
-  (second.querySelector(".term-earlier") as HTMLButtonElement).click();
+  await click(second.querySelector(".term-earlier"));
   await settle();
 
   // One request, ever: the reopened pane behaves like a journal-less one.

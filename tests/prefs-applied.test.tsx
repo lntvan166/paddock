@@ -8,7 +8,7 @@ import { RATE_MS, readPrefs, themeAttr, writePref } from "@web/prefs";
 import { AgentTerminal, floorFor } from "@web/components/AgentTerminal";
 import { Settings } from "@web/components/Settings";
 import { digestOf } from "@shared/screen";
-import { agent, render, settle, stubFetch, typeInto, unmount } from "./support/render";
+import { agent, click, render, settle, stubFetch, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 // Bun runs every test file in one process (tests/support/dom.ts documents
@@ -115,14 +115,14 @@ test("choosing a theme in Settings applies it immediately, with no remount", asy
   const dark = themeOption("Dark");
   expect(dark).not.toBeUndefined();
 
-  dark.click();
+  await click(dark);
   await settle();
 
   expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
 
   // "system" must DELETE the attribute, not set it to the literal string —
   // the same distinction `themeAttr` makes for App.tsx's mount-time apply.
-  themeOption("System").click();
+  await click(themeOption("System"));
   await settle();
 
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
@@ -169,7 +169,7 @@ test("clearing the font size in Settings returns the pane to the clamp", async (
   expect(input).not.toBeNull();
   expect(input!.value).toBe("18");
 
-  typeInto(input!, "");
+  await typeInto(input!, "");
   await settle();
 
   expect(localStorage.getItem("paddock.term.fontpx")).toBe(null);
@@ -201,7 +201,7 @@ test("the keypad-auto setting is a device pref, written to this browser only", a
     "[role='switch'][aria-label='Open the keypad when an agent needs you']",
   )!;
   expect(sw.getAttribute("aria-checked")).toBe("true");
-  sw.click();
+  await click(sw);
   await settle();
 
   expect(localStorage.getItem("paddock.term.keypad.auto")).toBe("0");

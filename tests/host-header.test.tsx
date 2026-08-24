@@ -4,7 +4,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { HostHeader } from "@web/components/HostHeader";
-import { agent, render, unmount } from "./support/render";
+import { agent, click, render, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
@@ -26,7 +26,7 @@ test("the settings button is the entry point to #/settings", async () => {
 
   const button = host.querySelector('button[aria-label="Settings"]') as HTMLButtonElement | null;
   expect(button).not.toBeNull();
-  button?.click();
+  await click(button);
   expect(calls).toEqual(["#/settings"]);
 });
 

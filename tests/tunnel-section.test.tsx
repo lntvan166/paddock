@@ -7,7 +7,7 @@ import type { NotifyTrigger } from "@shared/types";
 import { isQuickTunnelUrl } from "@shared/quick-tunnel";
 import { TunnelSection } from "@web/components/settings/TunnelSection";
 import { NotifySection } from "@web/components/settings/NotifySection";
-import { render, settle, unmount } from "./support/render";
+import { click, render, settle, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
@@ -32,7 +32,7 @@ test("the code is never rendered before it is asked for", async () => {
 
 test("add a device reveals a code from the server", async () => {
   const host = await render(<TunnelSection tunnel={tunnel} onInvite={ok} />);
-  buttonByText(host, /add a device/i).click();
+  await click(buttonByText(host, /add a device/i));
   await settle();
   await settle();
   expect(host.textContent).toContain("9T2H-BXQ4");
@@ -42,7 +42,7 @@ test("a failed invite says so rather than showing a stale code", async () => {
   const host = await render(
     <TunnelSection tunnel={tunnel} onInvite={async () => { throw new Error("nope"); }} />,
   );
-  buttonByText(host, /add a device/i).click();
+  await click(buttonByText(host, /add a device/i));
   await settle();
   await settle();
   const alert = host.querySelector('[role="alert"]');
@@ -62,13 +62,13 @@ test("a second failed invite clears a code shown by an earlier successful one", 
     return { code: "9T2H-BXQ4", expiresAt: 0 };
   };
   const host = await render(<TunnelSection tunnel={tunnel} onInvite={flaky} />);
-  buttonByText(host, /add a device/i).click();
+  await click(buttonByText(host, /add a device/i));
   await settle();
   await settle();
   expect(host.textContent).toContain("9T2H-BXQ4");
 
   fail = true;
-  buttonByText(host, /add a device/i).click();
+  await click(buttonByText(host, /add a device/i));
   await settle();
   await settle();
   expect(host.textContent).not.toContain("9T2H-BXQ4");

@@ -4,7 +4,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { Settings } from "@web/components/Settings";
-import { render, settle, typeInto, unmount } from "./support/render";
+import { click, render, settle, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 const PREF_KEYS = ["paddock.theme", "paddock.rate", "paddock.term.wrap", "paddock.term.fontpx"];
@@ -114,10 +114,10 @@ test("a failed save surfaces the server's rejection reason, never a silent failu
   // The save bar — and its Save button — only exists once something is
   // dirty, so an edit is required before there is a button to click at all.
   const chatId = host.querySelector<HTMLInputElement>('input[name="chatId"]')!;
-  typeInto(chatId, "556");
+  await typeInto(chatId, "556");
   await settle();
 
-  buttonByText(host, "Save").click();
+  await click(buttonByText(host, "Save"));
   await settle();
   await settle();
 
@@ -138,7 +138,7 @@ test("a failed test message surfaces Telegram's own description, never a silent 
   await settle();
   await settle();
 
-  buttonByText(host, "Send test message").click();
+  await click(buttonByText(host, "Send test message"));
   await settle();
   await settle();
 
@@ -197,11 +197,11 @@ test("publicUrl and cooldownMs have real inputs, and both reach the PUT body", a
   // limit and reintroduces the send-per-delta hot loop.
   expect(cooldown!.getAttribute("min")).toBe("1000");
 
-  typeInto(url!, "https://paddock.example.com");
-  typeInto(cooldown!, "90000");
+  await typeInto(url!, "https://paddock.example.com");
+  await typeInto(cooldown!, "90000");
   await settle();
 
-  buttonByText(host, "Save").click();
+  await click(buttonByText(host, "Save"));
   await settle();
   await settle();
 

@@ -6,7 +6,7 @@ import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { digestOf } from "@shared/screen";
-import { agent, render, settle, stubFetch, textsOf, unmount } from "./support/render";
+import { agent, click, render, settle, stubFetch, textsOf, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 /** Every pref this file writes. Cleared after each test for the reason
@@ -107,7 +107,7 @@ test("the Enter preview shows what is selected, and FOLLOWS the cursor", async (
 
   const down = [...host.querySelectorAll(".term-key")].find((b) => b.textContent?.trim() === "↓");
   expect(down).toBeTruthy();
-  (down as HTMLButtonElement).click();
+  await click(down);
   await settle();
   await settle();
 
@@ -305,7 +305,7 @@ test("after an arrow tap the border moves and the preview reappears", async () =
   expect(host.querySelectorAll(".term-selected").length).toBe(0);
 
   const down = [...host.querySelectorAll(".term-key")].find((b) => b.textContent?.trim() === "↓");
-  (down as HTMLButtonElement).click();
+  await click(down);
   await settle();
   await settle();
 

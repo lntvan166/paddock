@@ -2,7 +2,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { Toggle } from "@web/components/ui/Toggle";
-import { render, unmount } from "./support/render";
+import { click, render, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
@@ -21,7 +21,7 @@ test("aria-checked tracks the state, rather than being written once", async () =
 test("tapping reports the NEXT value, not the current one", async () => {
   const seen: boolean[] = [];
   const host = await render(<Toggle checked={false} label="Wrap" onChange={(v) => seen.push(v)} />);
-  (host.querySelector("button") as HTMLButtonElement).click();
+  await click(host.querySelector("button"));
   expect(seen).toEqual([true]);
 });
 
@@ -34,7 +34,7 @@ test("a disabled switch cannot be activated", async () => {
   );
   const btn = host.querySelector("button") as HTMLButtonElement;
   expect(btn.disabled).toBe(true);
-  btn.click();
+  await click(btn);
   expect(seen).toEqual([]);
 });
 

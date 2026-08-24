@@ -3,7 +3,7 @@ import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
 import { DeviceSection } from "@web/components/settings/DeviceSection";
 import { readPrefs } from "@web/prefs";
-import { render, textsOf, unmount } from "./support/render";
+import { click, render, textsOf, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
@@ -34,7 +34,7 @@ test("choosing a theme writes the preference immediately", async () => {
   const host = await render(<DeviceSection prefs={h.prefs} setPref={h.setPref as never} />);
   const dark = [...host.querySelectorAll("[aria-label='Theme'] [role='radio']")]
     .find((n) => (n.textContent ?? "").includes("Dark")) as HTMLButtonElement;
-  dark.click();
+  await click(dark);
   expect(h.written).toEqual([["theme", "dark"]]);
 });
 
@@ -45,7 +45,7 @@ test("wrap is a switch, and reports the next value", async () => {
   );
   const sw = host.querySelector("[role='switch'][aria-label='Wrap long lines']") as HTMLButtonElement;
   expect(sw).not.toBeNull();
-  sw.click();
+  await click(sw);
   expect(h.written).toEqual([["wrap", true]]);
 });
 

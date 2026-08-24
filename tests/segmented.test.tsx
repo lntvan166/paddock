@@ -2,7 +2,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { Segmented } from "@web/components/ui/Segmented";
-import { render, textsOf, unmount } from "./support/render";
+import { click, fire, render, textsOf, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
@@ -47,7 +47,7 @@ test("tapping a member reports its value", async () => {
   );
   const dark = [...host.querySelectorAll("[role='radio']")]
     .find((n) => (n.textContent ?? "").includes("Dark")) as HTMLButtonElement;
-  dark.click();
+  await click(dark);
   expect(seen).toEqual(["dark"]);
 });
 
@@ -89,7 +89,7 @@ test("selection follows focus, so one arrow press selects", async () => {
   // and `focus` does not bubble so it never reaches React's root listener. The
   // `typeInto` helper in tests/support/render.tsx dispatches focusin for the
   // same reason.
-  dark.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  await fire(dark, new FocusEvent("focusin", { bubbles: true }));
   expect(seen).toEqual(["dark"]);
 });
 

@@ -11,6 +11,22 @@ import type { Agent } from "@shared/types";
 let root: Root | null = null;
 let host: HTMLElement | null = null;
 
+/**
+ * Let queued promises and effects settle.
+ *
+ * A MACROTASK, not just a microtask, so a `Response` and the `.json()` after it
+ * have both resolved when this returns. That makes a mount deterministic to
+ * observe, and it means a caller usually needs ONE settle rather than two
+ * hopeful ones.
+ *
+ * This is for observing async work the test did not itself trigger. It is NOT
+ * what wraps an event — see `click` and `typeInto`, which have to wrap the
+ * DISPATCH, not the settling after it.
+ */
+export async function settle(): Promise<void> {
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+}
+
 export async function render(node: React.ReactNode): Promise<HTMLElement> {
   host = document.createElement("div");
   document.body.append(host);
@@ -19,6 +35,9 @@ export async function render(node: React.ReactNode): Promise<HTMLElement> {
   // which is where every defect these tests exist to catch actually lived —
   // have not run yet.
   await act(async () => { root!.render(node); });
+  // Then let the mount's async work finish, so a caller reaches for `settle()`
+  // only when it is driving something itself rather than to observe a mount.
+  await settle();
   return host;
 }
 
@@ -27,11 +46,6 @@ export async function unmount(): Promise<void> {
   host?.remove();
   root = null;
   host = null;
-}
-
-/** Let queued promises and effects settle, optionally advancing fake time. */
-export async function settle(): Promise<void> {
-  await act(async () => { await Promise.resolve(); });
 }
 
 export function agent(over: Partial<Agent> = {}): Agent {
@@ -74,6 +88,38 @@ export function stubFetch(routes: Record<string, () => unknown>) {
 }
 
 /**
+ * Click, inside `act`.
+ *
+ * The wrapping is the whole point, and it has to be around the DISPATCH. A
+ * bare `node.click()` runs React's handler synchronously outside `act`, so the
+ * `setState` inside that handler is an unwrapped update and React warns — the
+ * suite carried 58 of those, which is the volume at which a real warning goes
+ * unread. Settling AFTER the click does not help: by then the unwrapped update
+ * has already been scheduled. That mistake cost three wrong hypotheses, all of
+ * them about mount, before a stack trace showed `executeDispatch` as the
+ * caller.
+ *
+ * Throws on a missing element rather than no-opping the way `?.click()` does.
+ * A selector that stops matching should fail its test, not quietly assert
+ * against an untouched component.
+ */
+export async function click(node: Element | null | undefined): Promise<void> {
+  if (!node) throw new Error("click(): no element — the selector matched nothing");
+  await act(async () => {
+    (node as HTMLElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+/** Dispatch an arbitrary event inside `act`, for the cases `click` does not cover. */
+export async function fire(node: Element, event: Event): Promise<void> {
+  await act(async () => {
+    node.dispatchEvent(event);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+/**
  * Type into a controlled input the way a person does, so React's `onChange`
  * actually fires.
  *
@@ -98,12 +144,19 @@ export function stubFetch(routes: Record<string, () => unknown>) {
  *
  * All three events are dispatched so this keeps working if that decision ever
  * flips the other way.
+ *
+ * Async and `act`-wrapped for the reason given on `click`: the dispatch is what
+ * has to be inside `act`, because that is when the controlled input's
+ * `onChange` runs.
  */
-export function typeInto(node: HTMLInputElement, value: string): void {
+export async function typeInto(node: HTMLInputElement, value: string): Promise<void> {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   if (!setter) throw new Error("no native value setter on HTMLInputElement.prototype");
-  node.dispatchEvent(new Event("focusin", { bubbles: true }));
-  setter.call(node, value);
-  node.dispatchEvent(new Event("input", { bubbles: true }));
-  node.dispatchEvent(new Event("keyup", { bubbles: true }));
+  await act(async () => {
+    node.dispatchEvent(new Event("focusin", { bubbles: true }));
+    setter.call(node, value);
+    node.dispatchEvent(new Event("input", { bubbles: true }));
+    node.dispatchEvent(new Event("keyup", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }

@@ -3,7 +3,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { Settings } from "@web/components/Settings";
-import { render, settle, stubFetch, typeInto, unmount } from "./support/render";
+import { click, render, settle, stubFetch, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 afterEach(async () => { await unmount(); globalThis.fetch = realFetch; });
@@ -77,7 +77,7 @@ test("editing a field raises the save bar", async () => {
   // event — both failures are SILENT, so the test would assert against the
   // component's original state and read as coverage while providing none.
   // tests/support/render.tsx documents the measurement.
-  typeInto(chatId, "999");
+  await typeInto(chatId, "999");
   await settle();
   const bar = host.querySelector(".settings-save-bar");
   expect(bar).not.toBeNull();
@@ -89,7 +89,7 @@ test("typing a token counts as dirty even though the field starts empty", async 
   // anything typed IS a change.
   const { host } = await mounted();
   const token = host.querySelector<HTMLInputElement>('input[name="token"]')!;
-  typeInto(token, "999:BBtyped");
+  await typeInto(token, "999:BBtyped");
   await settle();
   expect(host.querySelector(".settings-save-bar")).not.toBeNull();
 });
@@ -105,9 +105,9 @@ test("a successful save clears the bar and announces itself in a live region", a
   expect(before).not.toBeNull();
   expect(before!.textContent).toBe("");
   const chatId = host.querySelector<HTMLInputElement>('input[name="chatId"]')!;
-  typeInto(chatId, "999");
+  await typeInto(chatId, "999");
   await settle();
-  host.querySelector<HTMLButtonElement>(".settings-save-bar button")!.click();
+  await click(host.querySelector(".settings-save-bar button"));
   await settle();
   await settle();
   const toast = host.querySelector(".settings-toast");
@@ -133,9 +133,9 @@ test("a failed save keeps the bar and uses the persistent banner, not the toast"
   await settle();
   await settle();
   const chatId = host.querySelector<HTMLInputElement>('input[name="chatId"]')!;
-  typeInto(chatId, "nope");
+  await typeInto(chatId, "nope");
   await settle();
-  host.querySelector<HTMLButtonElement>(".settings-save-bar button")!.click();
+  await click(host.querySelector(".settings-save-bar button"));
   await settle();
   await settle();
   // The region is present (it always is) and SILENT — a failure must never
@@ -155,10 +155,10 @@ test("the test button posts the on-screen token, not an empty body", async () =>
   await settle();
   await settle();
   const token = host.querySelector<HTMLInputElement>('input[name="token"]')!;
-  typeInto(token, "999:BBtyped");
+  await typeInto(token, "999:BBtyped");
   await settle();
   const buttons = [...host.querySelectorAll("button")];
-  buttons.find((b) => (b.textContent ?? "").includes("test"))!.click();
+  await click(buttons.find((b) => (b.textContent ?? "").includes("test")));
   await settle();
   await settle();
   const call = stub.calls.find((c) => c.url.includes("/telegram/test"))!;
@@ -176,7 +176,7 @@ test("mute applies immediately and does not go through Save", async () => {
   const host = await render(<Settings onBack={() => {}} />);
   await settle();
   await settle();
-  host.querySelector<HTMLButtonElement>('button[name="mute-1h"]')!.click();
+  await click(host.querySelector('button[name="mute-1h"]'));
   await settle();
   await settle();
   const call = stub.calls.find((c) => c.url.includes("/api/settings/mute"))!;
@@ -205,7 +205,7 @@ test("mute never establishes a baseline the operator never confirmed", async () 
   await settle();
   await settle();
   expect(host.textContent).toContain("network down");
-  host.querySelector<HTMLButtonElement>('button[name="mute-1h"]')!.click();
+  await click(host.querySelector('button[name="mute-1h"]'));
   await settle();
   await settle();
   expect(host.querySelector(".settings-save-bar")).toBeNull();
@@ -242,7 +242,7 @@ test("unmute posts a zero duration", async () => {
   const host = await render(<Settings onBack={() => {}} />);
   await settle();
   await settle();
-  host.querySelector<HTMLButtonElement>('button[name="unmute"]')!.click();
+  await click(host.querySelector('button[name="unmute"]'));
   await settle();
   await settle();
   expect(stub.calls.find((c) => c.url.includes("/mute"))!.body).toEqual({ forMs: 0 });
@@ -256,9 +256,9 @@ test("a settle window is edited in seconds and saved in milliseconds", async () 
   await settle();
   const done = host.querySelector<HTMLInputElement>('input[name="settle-done"]')!;
   expect(done.value).toBe("10");
-  typeInto(done, "30");
+  await typeInto(done, "30");
   await settle();
-  host.querySelector<HTMLButtonElement>(".settings-save-bar button")!.click();
+  await click(host.querySelector(".settings-save-bar button"));
   await settle();
   await settle();
   // The LAST match, not the first: the mount's own GET also hits
