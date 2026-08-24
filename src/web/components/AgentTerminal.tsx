@@ -620,37 +620,6 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               not look current. */}
           {stalled && <span className="term-stalled" role="status">not updating</span>}
         </div>
-        <button
-          type="button"
-          className="term-wrap-toggle"
-          aria-pressed={wrap}
-          onClick={() => { const v = !wrap; setWrap(v); writePref("wrap", v); }}
-        >
-          {wrap ? "Wrap" : "Exact"}
-        </button>
-        {/* Beside Wrap because both are view controls, and because a collapse
-            button INSIDE the pad would spend the height it exists to reclaim.
-            Its OWN class: sharing `.term-wrap-toggle` made a selector written
-            for the wrap control match this one too, by DOM order rather than
-            by intent. Text rather than a keyboard glyph because this file
-            already records that a symbol renders as tofu in several mobile
-            system fonts — the pressed state is carried by `aria-pressed`,
-            which the stylesheet dims. */}
-        <button
-          type="button"
-          className="term-keys-toggle"
-          aria-pressed={keypad === "full"}
-          onClick={() => {
-            const v: KeypadPref = keypad === "full" ? "compact" : "full";
-            setKeypad(v);
-            writePref("keypad", v);
-          }}
-        >
-          Keys
-        </button>
-        <button type="button" onClick={() => void load()} disabled={busy} aria-label="Refresh">
-          ↻
-        </button>
       </header>
 
       {/* Only offered when there is something to show. Revealing PREPENDS
@@ -871,6 +840,45 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           what an option means, which is why they work on prompt shapes the
           parser cannot read. A pad that appeared and vanished as the agent's
           state changed would move under the operator's thumb. */}
+      {/* The view controls live HERE, not in the header. In the header they
+          competed with the agent's name for a 390px row that also carries a
+          back link and a state pill — and the name is the only flexible item,
+          so the name lost: it rendered as `sche…`, which is the one thing a
+          header exists to tell you. Down here they are also next to the keypad
+          that `Keys` collapses, which is where a control for a thing belongs. */}
+      <div className="term-controls" role="group" aria-label="View">
+        <button
+          type="button"
+          className="term-wrap-toggle"
+          aria-pressed={wrap}
+          onClick={() => { const v = !wrap; setWrap(v); writePref("wrap", v); }}
+        >
+          {wrap ? "Wrap" : "Exact"}
+        </button>
+        {/* Beside Wrap because both are view controls, and because a collapse
+            button INSIDE the pad would spend the height it exists to reclaim.
+            Its OWN class: sharing `.term-wrap-toggle` made a selector written
+            for the wrap control match this one too, by DOM order rather than
+            by intent. Text rather than a keyboard glyph because this file
+            already records that a symbol renders as tofu in several mobile
+            system fonts — the pressed state is carried by `aria-pressed`,
+            which the stylesheet dims. */}
+        <button
+          type="button"
+          className="term-keys-toggle"
+          aria-pressed={keypad === "full"}
+          onClick={() => {
+            const v: KeypadPref = keypad === "full" ? "compact" : "full";
+            setKeypad(v);
+            writePref("keypad", v);
+          }}
+        >
+          Keys
+        </button>
+        <button type="button" onClick={() => void load()} disabled={busy} aria-label="Refresh">
+          ↻
+        </button>
+      </div>
       <div className="term-keys" role="group" aria-label="Send key">
         <div className="term-keys-primary">
           {PRIMARY_KEYS.map((k) => (

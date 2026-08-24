@@ -199,6 +199,24 @@ body {
   }
 }
 
+/* One focus ring, for paddock's own controls.
+   This stylesheet had NO :focus or :focus-visible rule at all — every control
+   relied on whatever the browser drew. That was survivable while everything was
+   hand-rolled and equally undefined. It stopped being survivable when six of
+   the seven shadcn components arrived carrying `focus-visible:ring`, because
+   keyboard focus then looked deliberate on a Toggle and undefined on the
+   terminal's back link two taps away.
+
+   `:focus-visible`, not `:focus`, so a tap does not draw a ring a touch user
+   never asked for — which is also why this is additive and no rule anywhere
+   sets `outline: none`. --ring is shadcn's token, aliased to --accent by the
+   bridge, so both vocabularies draw the same ring. */
+:where(a, button, [role="button"], input, select, textarea):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -607,12 +625,30 @@ body {
    the panel you drive it from. The pane itself stays full-bleed: it is a
    document and wants the columns, and insetting it to match the cards exactly
    would cost 5 of 63 at 390px on output that already scrolls sideways. */
+/* The view controls — Wrap, Keys, refresh — as the first row of the controls
+   panel. They were in the header until the agent's name measured 54px there and
+   rendered as `sche…`; the header's job is identity and it has 390px to do it
+   in. This row carries the border that separates the pane from the panel, since
+   it is now the panel's top edge. */
+.term-controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* Pushes the refresh glyph to the far end, away from the two toggles it has
+   nothing to do with. */
+.term-controls button:last-child { margin-left: auto; }
+
 .term-keys {
   flex: none;
   display: grid;
   gap: 0.35rem;
   padding: 0.5rem 0.6rem;
-  border-top: 1px solid var(--border);
   background: var(--surface);
 }
 

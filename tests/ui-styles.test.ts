@@ -81,3 +81,20 @@ test("the pulse is opt-out, not merely fast", () => {
   expect(reduced).toContain('.dot[data-pulse="yes"]');
   expect(reduced).toMatch(/\.dot\[data-pulse="yes"\][^}]*\{[^}]*animation:\s*none/);
 });
+
+test("paddock's own controls have a focus ring, like the shadcn ones do", () => {
+  // There was no :focus or :focus-visible rule in this stylesheet at all. That
+  // was survivable while every control was equally undefined; it stopped being
+  // survivable when the shadcn components arrived with focus-visible:ring and
+  // keyboard focus started looking deliberate on some controls and absent on
+  // others two taps away.
+  expect(css).toContain(":focus-visible");
+  expect(css).toContain("var(--ring)");
+});
+
+test("nothing removes an outline without replacing it", () => {
+  // The reason the ring can be additive: no rule here strips the browser's own.
+  // `outline: none` with no replacement is the classic way a keyboard user
+  // loses track of where they are.
+  expect(css).not.toMatch(/outline:\s*(none|0)\b/);
+});
