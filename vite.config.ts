@@ -23,8 +23,6 @@ export default defineConfig({
     // identifier. This is the same quoting hazard tests/version-stamp.test.ts
     // exists to catch on the server side.
     __PADDOCK_VERSION__: JSON.stringify(process.env.PADDOCK_VERSION ?? "0.0.0-dev"),
-    __PADDOCK_COMMIT__: JSON.stringify(process.env.PADDOCK_COMMIT ?? "dev"),
-    __PADDOCK_BUILD_TIME__: JSON.stringify(process.env.PADDOCK_BUILD_TIME ?? "unknown"),
   },
   server: {
     proxy: {

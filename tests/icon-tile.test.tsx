@@ -63,11 +63,17 @@ test("the tile is round", async () => {
 });
 
 test("the initials are hidden from assistive tech and the harness is named instead", async () => {
-  // "CL" read aloud is noise; the harness name is the information.
-  const host = await render(<IconTile harness="claude" />);
+  // "SF" read aloud is noise; the harness name is the information.
+  //
+  // Deliberately an UNMARKED harness. This used to use `claude`, which now
+  // renders a brand mark instead of initials — so the fixture moved to a
+  // harness that still takes the initials path. The guarantee is unchanged,
+  // and `tests/icon-tile-mark.test.tsx` asserts the same naming rule for a
+  // tile that does render a mark.
+  const host = await render(<IconTile harness="some-future-harness" />);
   const tile = host.querySelector(".tile") as HTMLElement;
-  expect(tile.getAttribute("aria-label")).toBe("claude");
-  expect(tile.querySelector("[aria-hidden='true']")?.textContent).toBe("CL");
+  expect(tile.getAttribute("aria-label")).toBe("some-future-harness");
+  expect(tile.querySelector("[aria-hidden='true']")?.textContent).toBe("SF");
 });
 
 test("a badge is overlaid rather than placed beside the tile", async () => {

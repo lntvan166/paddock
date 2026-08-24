@@ -54,13 +54,13 @@ test("the compiled artifact's version stamp is smoke-tested before it is publish
 
 test("the dashboard's build stamp is fed from the tag, and proven to reach the bundle", () => {
   // The web build calls `bun run build:web` directly, bypassing make — so the
-  // Makefile's exports do not reach it. Without these three, every release
-  // would ship a footer reading "v0.0.0-dev · dev · unknown" while the binary
-  // reported the right version, with the whole suite green.
+  // Makefile's export does not reach it. Without this, every release would
+  // ship a footer reading "v0.0.0-dev" while the binary reported the right
+  // version, with the whole suite green.
   expect(wf).toContain('export PADDOCK_VERSION="${GITHUB_REF_NAME#v}"');
-  expect(wf).toContain("export PADDOCK_COMMIT=");
-  expect(wf).toContain("export PADDOCK_BUILD_TIME=");
-  // And that the build is checked rather than trusted.
+  // And that the build is CHECKED rather than trusted. This half is what makes
+  // the export above provable: a define that silently stopped reaching the
+  // bundle would otherwise look identical to one that worked.
   expect(wf).toContain("build stamp missing");
 });
 

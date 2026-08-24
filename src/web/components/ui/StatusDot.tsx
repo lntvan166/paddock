@@ -42,6 +42,21 @@ const RESTING: Record<AgentState, boolean> = {
 };
 
 /**
+ * Which states pulse.
+ *
+ * `working` only. It is the state that is actually in motion, so motion says
+ * what it means. `blocked` has STOPPED — animating it would claim the opposite,
+ * and a blocked agent already has a red border and a tinted fill asking for a
+ * person. `done` and `idle` are settled.
+ */
+const PULSE: Record<AgentState, boolean> = {
+  blocked: false,
+  done: false,
+  working: true,
+  idle: false,
+};
+
+/**
  * `surfaceVar` names the CSS variable the ring's interior is painted with.
  *
  * A ring MUST be filled, never left transparent. Overlaid on an `IconTile`
@@ -56,16 +71,23 @@ export function StatusDot({
   surfaceVar?: string;
 }) {
   const resting = RESTING[state];
+  // `--dot-hue` feeds the pulse keyframe, so the halo is the state's own colour
+  // rather than a second copy of it in the stylesheet. Set for every state, not
+  // just the pulsing one: a state that starts pulsing later should not also
+  // have to learn to publish its colour.
+  const style = {
+    ...(resting
+      ? { borderColor: DOT[state], background: `var(${surfaceVar})` }
+      : { background: DOT[state], borderColor: DOT[state] }),
+    "--dot-hue": DOT[state],
+  } as React.CSSProperties;
   return (
     <span
       aria-hidden="true"
       data-fill={resting ? "ring" : "solid"}
+      data-pulse={PULSE[state] ? "yes" : "no"}
       className="dot"
-      style={
-        resting
-          ? { borderColor: DOT[state], background: `var(${surfaceVar})` }
-          : { background: DOT[state], borderColor: DOT[state] }
-      }
+      style={style}
     />
   );
 }

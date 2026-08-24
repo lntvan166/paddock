@@ -22,15 +22,17 @@ export function TelegramSection({
           name="token"
           value={token}
           autoComplete="off"
-          placeholder={tokenPlaceholder}
           onChange={(e) => setToken(e.target.value)}
         />
       </label>
-      {/* The placeholder attribute alone is not enough: it never shows
-          while the field has focus, and a placeholder is not something
-          an operator can screenshot-search or a test can rely on being
-          painted. This status line is the same string, rendered as
-          actual text. */}
+      {/* The status is rendered as real text and NOT also as the input's
+          placeholder. It was both, which showed "not set" twice — once greyed
+          inside the field, once on the line below. The text is the half worth
+          keeping, for the reason it was added: a placeholder never shows while
+          the field has focus, and is not something an operator can
+          screenshot-search or a test can rely on being painted. The field is
+          left genuinely empty, which is honest — the server never sends the
+          token, so there is nothing to show in it. */}
       <span className="settings-token-status">{tokenPlaceholder}</span>
 
       <label className="card-row">

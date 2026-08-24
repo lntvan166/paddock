@@ -1089,10 +1089,56 @@ body {
 .dl-value.ok { color: var(--ok); }
 .dl-value.warn { color: var(--warn); }
 
+/* The dashboard shell. A flex column at viewport height so `.build-stamp`'s
+   `margin-top: auto` has something to push against — see BuildStamp.tsx. */
+.dash {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
 .build-stamp {
-  margin: 1.25rem 0 0;
+  /* Pushed to the bottom of the VIEWPORT when the list is short, and still
+     flowing below the content when the list is long. `position: fixed` would
+     have sat on top of rows instead. */
+  margin: auto 0 0;
+  padding-block: 0.75rem;
   text-align: center;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--fg-dim);
+}
+
+/* The brand mark inside a tile. Inset to ~58% so a mark and a pair of initials
+   carry the same optical weight in the same circle — a mark drawn to the tile's
+   full width reads as heavier than the letters it replaced. `currentColor`
+   picks up `--tile-fg`, so the mark follows the tile's own foreground rather
+   than needing a value per theme. */
+.tile-mark {
+  width: 58%;
+  height: 58%;
+}
+
+/* A halo on the one state that is in motion. `box-shadow`, not `transform:
+   scale` and not a pseudo-element: scaling would move the dot, and the ring and
+   the disc must occupy the same box (see `.dot`). The colour comes from
+   `--dot-hue`, published inline by StatusDot, so the halo is the state's own
+   colour rather than a second copy of the palette here. */
+@keyframes dot-pulse {
+  from { box-shadow: 0 0 0 0 var(--dot-hue); }
+  to   { box-shadow: 0 0 0 5px transparent; }
+}
+
+.dot[data-pulse="yes"] {
+  animation: dot-pulse 1.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* `animation: none`, not a shorter duration. The global block above clamps
+     animation-duration to 0.01ms, which for a LOOPING animation means it runs
+     thousands of times a second instead of stopping — worse than the animation
+     it was meant to suppress. */
+  .dot[data-pulse="yes"] {
+    animation: none;
+  }
 }

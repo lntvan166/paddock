@@ -106,7 +106,7 @@ export function App() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl safe-bottom">
+    <main className="dash mx-auto max-w-2xl safe-bottom">
       {/* Shown ABOVE the staleness banner and outside the dimming wrapper: this
           is the one message that explains why everything else might be wrong,
           so it must never be dimmed as "possibly stale data". */}
@@ -186,8 +186,11 @@ export function App() {
           </p>
         )}
 
-        <BuildStamp />
       </div>
+      {/* OUTSIDE the dimming wrapper, like UpdateBar: which version this
+          bundle is stays true when the herdr link goes quiet, so dimming it
+          would claim otherwise. */}
+      <BuildStamp />
     </main>
   );
 }
