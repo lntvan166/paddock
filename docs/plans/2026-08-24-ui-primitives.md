@@ -2986,9 +2986,15 @@ Expected: all clean. `make test` builds the UI first and runs the suite — a ba
 
 ```bash
 git diff --stat main -- src/web/components/AgentTerminal.tsx
+git diff main -- src/web/components/AgentTerminal.tsx
 ```
 
-Expected: no output. The terminal view was explicitly out of scope.
+Expected: **rename-only changes.** Task 2 renames the exported `StateDot` to
+`StatusDot`, and this file imports it — so a fully empty diff here is not
+achievable without keeping a deprecated alias, which would leave two names for
+one component. What must be absent is any change to this file's *logic*: no
+altered rendering, state, effects, or fetch behaviour. Read the diff and
+confirm it is the import line, the call site, and comment text.
 
 - [ ] **Confirm no dependency was added**
 
