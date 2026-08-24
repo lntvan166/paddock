@@ -1,0 +1,98 @@
+/* The demo, in a phone.
+ *
+ * The demo is the same app an operator runs, so on a 1440px laptop it rendered
+ * a phone-first interface across a desktop window: a 390px-wide dashboard
+ * centred in an ocean of page ground, and a terminal stretched to the full
+ * width. Framing it says "this is a phone app" without a word of explanation.
+ *
+ * Loaded ONLY by the demo entry (see demo/frame.ts), so none of this reaches
+ * the bundle an operator runs — the same rule the demo backend follows.
+ *
+ * NO device detection: the frame is keyed on a width media query and a
+ * build-time flag, never on a user agent. A real phone opening the demo is
+ * below the breakpoint and gets the real thing, full-bleed, which is the whole
+ * point of the demo being the actual app.
+ */
+
+:root {
+  --demo-ground: #dfe1e7;
+  --demo-bezel: #16181d;
+}
+
+/* Defined in all three blocks rather than only under the media query, which is
+ * this project's rule for every colour: a manual [data-theme] toggle has to win
+ * in both directions. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --demo-ground: #000000;
+    --demo-bezel: #26282f;
+  }
+}
+
+:root[data-theme="dark"] {
+  --demo-ground: #000000;
+  --demo-bezel: #26282f;
+}
+
+@media (min-width: 760px) {
+  html[data-demo-frame="on"] body {
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 2rem 0;
+    background: var(--demo-ground);
+  }
+
+  html[data-demo-frame="on"] #root {
+    /* content-box, so the bezel sits OUTSIDE the screen. Under the global
+       border-box the 0.7rem border ate into the width and the app rendered at
+       368px — narrower than the phone every measurement in this project is
+       taken against, which makes the demo a slightly wrong phone rather than
+       the right one. */
+    box-sizing: content-box;
+    width: 390px;
+    /* Shrinks with a short window rather than overflowing it. 844 is the CSS
+       height of the phone the rest of this project is measured against. */
+    height: min(844px, calc(100dvh - 6rem));
+    background: var(--bg);
+    border: 0.7rem solid var(--demo-bezel);
+    border-radius: 2.75rem;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.4),
+      0 1.5rem 3.5rem rgb(0 0 0 / 0.35);
+    /* The dashboard and settings scroll INSIDE the frame. Without this they are
+       clipped by the frame's own height with no way to reach the bottom. */
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Load-bearing, and the reason a frame is possible at all: `.term` is
+       `position: fixed; inset: 0`, which resolves against the viewport and would
+       cover the whole browser window, frame and all. A transform makes this
+       element the containing block for fixed descendants, so the terminal fills
+       the phone instead of escaping it. `translate(0)` is the cheapest way to
+       ask for that and paints nothing. */
+    transform: translate(0);
+  }
+
+  /* The app sizes its shells to the viewport. Inside the frame, the frame IS
+     the viewport, and 100dvh of the real window is taller than the phone. */
+  html[data-demo-frame="on"] .dash,
+  html[data-demo-frame="on"] .settings {
+    min-height: 100%;
+  }
+
+  /* The frame's own scrollbar, thin and out of the way — a platform-width bar
+     down the inside edge of a phone bezel reads as part of the page rather than
+     part of the device. */
+  html[data-demo-frame="on"] #root {
+    scrollbar-width: thin;
+  }
+
+  html[data-demo-frame="on"] #root::-webkit-scrollbar {
+    width: 0.4rem;
+  }
+
+  html[data-demo-frame="on"] #root::-webkit-scrollbar-thumb {
+    border-radius: 0.2rem;
+    background: var(--border);
+  }
+}

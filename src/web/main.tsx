@@ -22,6 +22,12 @@ async function boot(): Promise<void> {
     // entirely in a normal build.
     const { installDemoBackend } = await import("@web/demo/backend");
     installDemoBackend();
+    // The phone frame, for the same reason and by the same mechanism: a demo
+    // opened on a laptop is a phone-first interface stretched across a desktop
+    // window. Below the frame's breakpoint — a real phone reading the README
+    // link — this changes nothing.
+    const { installDemoFrame } = await import("@web/demo/frame");
+    installDemoFrame();
   }
   createRoot(el!).render(<App />);
 }

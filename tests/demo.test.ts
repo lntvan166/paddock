@@ -222,3 +222,34 @@ test("the demo journal uses invented content, and other demo agents are unaffect
     (globalThis as { WebSocket?: unknown }).WebSocket = savedWebSocket;
   }
 });
+
+test("the phone frame is demo-only, and reaches no bundle an operator runs", async () => {
+  // The same rule the demo backend follows, applied to the frame's stylesheet:
+  // an operator serving paddock from their own machine downloads none of it.
+  // The mechanism is a dynamic import in main.tsx, so the frame is a separate
+  // chunk that a normal build never emits — but nothing about that is obvious
+  // from reading either file, and a future edit moving the import to the top of
+  // main.tsx would ship it silently.
+  const { existsSync, readdirSync } = await import("node:fs");
+
+  // The import has to stay dynamic, and has to stay inside the demo branch.
+  const main = await Bun.file("src/web/main.tsx").text();
+  expect(main).toContain('await import("@web/demo/frame")');
+  expect(main).not.toMatch(/^import .*demo\/frame/m);
+
+  // And nothing sets the attribute outside the demo entry, or the CSS would
+  // apply to a real install if it ever did ship.
+  const frame = await Bun.file("src/web/demo/frame.ts").text();
+  expect(frame).toContain("demoFrame");
+
+  // Skipped rather than failed when dist/ is absent: `bun test` alone does not
+  // build, and a test that demanded a build would fail for the wrong reason.
+  if (!existsSync("dist/assets")) return;
+  const leaked = readdirSync("dist/assets").filter((f) => /frame/i.test(f));
+  expect(leaked, "the frame chunk is in the operator build").toEqual([]);
+  for (const f of readdirSync("dist/assets")) {
+    if (!/\.(js|css)$/.test(f)) continue;
+    expect(await Bun.file(`dist/assets/${f}`).text(), `${f} carries the frame`)
+      .not.toContain("data-demo-frame");
+  }
+});
