@@ -18,6 +18,12 @@
      link and button uses for "you can tap this", so a state competed with the
      interaction colour. */
   --danger: #cf222e;
+  /* The tint behind a row that needs a person. Hand-picked per theme rather
+     than color-mix(--danger, --bg): every other colour here is spelled out in
+     all three blocks, and a computed token would be the one value an operator
+     cannot read off the file. Kept far enough from --bg to register as a
+     wash and close enough not to compete with the border. */
+  --danger-wash: #fdf0f0;
 
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
@@ -43,6 +49,7 @@
     --warn: #e0a838;
     --ok: #3fb950;
     --danger: #f85149;
+    --danger-wash: #2a1416;
   }
 }
 
@@ -57,6 +64,7 @@
   --warn: #e0a838;
   --ok: #3fb950;
   --danger: #f85149;
+  --danger-wash: #2a1416;
 }
 
 /* System fonts only. A webfont would be the single largest payload on a slow

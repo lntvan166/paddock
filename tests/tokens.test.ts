@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 const TOKENS = [
-  "--bg", "--surface", "--border", "--fg", "--fg-dim", "--accent", "--warn", "--ok", "--danger",
+  "--bg", "--surface", "--border", "--fg", "--fg-dim", "--accent", "--warn", "--ok", "--danger", "--danger-wash",
 ];
 
 async function css(): Promise<string> {
@@ -65,4 +65,16 @@ test("red is defined in every theme route, not only the light one", async () => 
   expect(bare).toContain("--danger:");
   // Once for the guarded media query, once for the explicit dark toggle.
   expect([...text.matchAll(/--danger:/g)]).toHaveLength(3);
+});
+
+test("the alert wash is defined in every theme route", async () => {
+  // Same rule as --danger directly above: a colour defined only inside a media
+  // query leaves a manual theme toggle painting with a value nobody chose.
+  // Hand-picked per theme rather than color-mix(), so the value can be read
+  // off the file.
+  const text = await css();
+  const bare = text.slice(text.indexOf(":root {"), text.indexOf("}", text.indexOf(":root {")));
+  expect(bare).toContain("--danger-wash:");
+  // Once bare, once for the guarded media query, once for the explicit toggle.
+  expect([...text.matchAll(/--danger-wash:/g)]).toHaveLength(3);
 });
