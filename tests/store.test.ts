@@ -104,7 +104,7 @@ test("snapshot orders needs-you by most recent state change first", () => {
   store.replaceAll(
     [
       agent({ agentId: "a", name: "older", state: "blocked", stateSince: NOW }),
-      agent({ agentId: "b", name: "newer", state: "done", stateSince: NOW + 5000 }),
+      agent({ agentId: "b", name: "newer", state: "blocked", stateSince: NOW + 5000 }),
     ],
     NOW,
   );

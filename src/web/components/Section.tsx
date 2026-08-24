@@ -7,7 +7,7 @@ import {
 } from "@shared/types";
 
 /**
- * Group into the three triage sections, ordering each with the SHARED
+ * Group into the four triage sections, ordering each with the SHARED
  * comparator — the same one the server sorts its snapshot with.
  *
  * Sorting here is load-bearing, not belt-and-braces. The client merges deltas
@@ -18,13 +18,16 @@ import {
  * hold only until the first delta arrived.
  */
 export function groupAgents(agents: Agent[]): Record<SectionKey, Agent[]> {
-  const out = { "needs-you": [], working: [], idle: [] } as Record<SectionKey, Agent[]>;
+  const out = {
+    "needs-you": [], "ready-unseen": [], working: [], idle: [],
+  } as Record<SectionKey, Agent[]>;
   for (const a of [...agents].sort(compareAgents)) out[sectionFor(a)].push(a);
   return out;
 }
 
 export const SECTION_TITLES: Record<SectionKey, string> = {
   "needs-you": "Needs you",
+  "ready-unseen": "Ready",
   working: "Working",
   idle: "Idle",
 };

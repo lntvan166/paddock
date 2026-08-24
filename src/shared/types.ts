@@ -322,14 +322,17 @@ export type ServerMessage =
  */
 export type ManagedBy = "homebrew";
 
-export const SECTION_ORDER = ["needs-you", "working", "idle"] as const;
+export const SECTION_ORDER = ["needs-you", "ready-unseen", "working", "idle"] as const;
 export type Section = (typeof SECTION_ORDER)[number];
 
 export function sectionFor(agent: Agent): Section {
   if (agent.state === "blocked") return "needs-you";
-  // An acknowledged finish has been dealt with; it stops competing for
-  // attention with agents that still need some.
-  if (agent.state === "done") return agent.acknowledgedAt === null ? "needs-you" : "idle";
+  // A finish and a block are different urgencies: one wants a decision before
+  // work continues, the other is news nobody has read. They shared `needs-you`
+  // until now, which let unread news compete with a decision. Once
+  // acknowledged, a finish has been dealt with and stops competing with
+  // either.
+  if (agent.state === "done") return agent.acknowledgedAt === null ? "ready-unseen" : "idle";
   if (agent.state === "working") return "working";
   return "idle";
 }

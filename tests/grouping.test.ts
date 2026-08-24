@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { groupAgents } from "@web/components/Section";
+import { groupAgents, SECTION_TITLES } from "@web/components/Section";
 import { applyMessage, type ClientState } from "@web/store";
 import { SECTION_ORDER, type Agent } from "@shared/types";
 
@@ -13,9 +13,20 @@ function agent(name: string, state: Agent["state"], stateSince = NOW): Agent {
   };
 }
 
-test("blocked and done both land in needs-you", () => {
+test("a stuck agent and a finished one no longer share a section", () => {
+  // They are different urgencies. One wants a decision before work continues;
+  // the other is news you have not read. Sharing a section made the unread
+  // news compete with the decision.
   const g = groupAgents([agent("a", "blocked"), agent("b", "done")]);
-  expect(g["needs-you"].map((x) => x.name)).toEqual(["a", "b"]);
+  expect(g["needs-you"].map((x) => x.name)).toEqual(["a"]);
+  expect(g["ready-unseen"].map((x) => x.name)).toEqual(["b"]);
+});
+
+test("an acknowledged finish drops to idle", () => {
+  const acked = { ...agent("c", "done"), acknowledgedAt: NOW };
+  const g = groupAgents([acked]);
+  expect(g["ready-unseen"]).toEqual([]);
+  expect(g.idle.map((x) => x.name)).toEqual(["c"]);
 });
 
 test("working and idle are separated", () => {
@@ -29,11 +40,18 @@ test("every section key exists even when empty, in fixed triage order", () => {
   // Not sorted: this pins the real key order groupAgents produces, so a
   // reorder (or a switch to alphabetical) breaks the test instead of passing
   // silently.
-  expect(Object.keys(g)).toEqual(["needs-you", "working", "idle"]);
+  expect(Object.keys(g)).toEqual(["needs-you", "ready-unseen", "working", "idle"]);
 });
 
 test("SECTION_ORDER is pinned — the operator always knows where to look", () => {
-  expect(SECTION_ORDER).toEqual(["needs-you", "working", "idle"]);
+  expect(SECTION_ORDER).toEqual(["needs-you", "ready-unseen", "working", "idle"]);
+});
+
+test("the ready section is titled in paddock's plainer register", () => {
+  // "Done" is rejected: `done` is also a STATE, and an acknowledged done
+  // renders under Idle — a label that contradicted the state name in one of
+  // its two cases would be worse than a new word.
+  expect(SECTION_TITLES["ready-unseen"]).toBe("Ready");
 });
 
 test("within Needs you, most-recently-changed first (spec §6)", () => {
