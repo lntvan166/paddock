@@ -326,11 +326,16 @@ body {
   min-height: 2.75rem;
   min-width: 7rem;
   padding: 0 0.6rem;
+  /* 16px is not a taste decision. iOS Safari zooms the viewport when a focused
+     input's font-size is below 16px, and leaves you zoomed afterwards — which
+     is what an operator hits every time they tap the Telegram token or the
+     public URL. The label beside the field keeps its own smaller size; only the
+     thing you type into has to clear the threshold. */
+  font-size: 16px;
   border: 1px solid var(--border);
   border-radius: 0.4rem;
   background: var(--bg);
   color: var(--fg);
-  font-size: 0.8rem;
 }
 
 /* A one-line explanation below a `.card-row`. Replaces both `.settings-hint`
@@ -358,6 +363,13 @@ body {
 
 
 .seg {
+  /* Full width, deliberately. shadcn's ToggleGroup root shrink-wraps to its
+     content, which left a three-option control 172px wide in a 356px card —
+     the items were flexing correctly inside a container that was not
+     stretching. Before the migration `.seg` was the flex container itself and
+     filled the row, and a segmented control that does not span its group reads
+     as three loose buttons. */
+  width: 100%;
   display: flex;
   gap: 0.25rem;
   background: var(--bg);
@@ -381,11 +393,18 @@ body {
   cursor: pointer;
 }
 
-/* Contrast, not hue: the selected member inverts rather than tinting, so it
-   is still obviously selected in greyscale. */
+/* The selected member fills with --accent, the same colour every other "on" in
+   the app uses: a checked Checkbox, a switched-on Toggle, the Send button. It
+   inverted to --fg before, which was defensible on its own — contrast rather
+   than hue, so it survived greyscale — but beside an indigo switch it read as
+   two different systems answering the same question.
+
+   The greyscale property is not given up to get there: --accent-fg on --accent
+   is 6.15:1 in light and 4.70:1 in dark, so the selected member is still
+   obviously selected without relying on colour vision. */
 .seg-item[data-selected="yes"] {
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-fg);
   font-weight: 600;
 }
 
@@ -633,6 +652,10 @@ body {
   min-width: 0;
   min-height: 2.75rem;
   padding: 0 0.6rem;
+  /* 16px for the same reason as `.card-row input`: below it, iOS zooms on
+     focus. This is the field an operator types a reply to a blocked agent
+     into, so a zoom here lands mid-conversation. */
+  font-size: 16px;
   border: 1px solid var(--border);
   /* 0.4rem to match `.card-row input`: this is the same kind of thing — a text
      field you type into — and two radii that close together read as two
@@ -983,13 +1006,16 @@ body {
 /* Shares the checkbox size with the trigger rows above — a 1.35rem box is a
    ~22px target; the row itself (`.settings-triggers label`, 2.75rem) is what
    actually clears the touch-target floor. */
-.settings-triggers input[type="checkbox"] {
+/* The trigger boxes, sized to what the native checkboxes they replaced were.
+   `.settings-triggers input[type="checkbox"]` used to live here at 1.35rem;
+   there is no native checkbox in the app any more, so that rule matched nothing
+   and its guard in tests/settings-styles.test.ts passed against a selector with
+   no element behind it. shadcn's Checkbox defaults to 16px, which is smaller
+   than what was there before, and the row's own 2.75rem min-height is still
+   what makes it tappable — this is only about being able to SEE the tick. */
+.trigger-box {
   width: 1.35rem;
   height: 1.35rem;
-  /* Undoes the UA's default margin so the enlarged box does not shove the
-     label off the row on narrow screens. */
-  margin: 0;
-  flex: none;
 }
 
 /* Explicit font-size, because this sits directly in a `.card-body` (no
@@ -1042,9 +1068,13 @@ body {
    `.card-row input`; `width` and `min-height` are kept EXACTLY as they were —
    `min-height: 2.75rem` is this field's own touch-target guarantee. */
 .settings-settle input {
-  width: 4rem;
+  /* 4.5rem, not 4rem: the 16px below needs a touch more room for a two-digit
+     value plus padding. */
+  width: 4.5rem;
   min-height: 2.75rem;
   padding: 0 0.6rem;
+  /* 16px: iOS zooms a focused input below it, same as `.card-row input`. */
+  font-size: 16px;
   border: 1px solid var(--border);
   border-radius: 0.4rem;
   background: var(--bg);

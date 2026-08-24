@@ -37,6 +37,17 @@ function declaration(selector: string, prop: string): string {
 // (`.tap`, `.term-keys`, `.detail header .controls button`) is 44px / 2.75rem.
 const TOUCH_TARGET = "2.75rem";
 
+test("the trigger box is still visible at the size the native one was", () => {
+  // The native checkbox this replaced was sized here at 1.35rem. shadcn's
+  // Checkbox defaults to 16px, which is smaller — and the rule that used to
+  // hold the old size, `.settings-triggers input[type="checkbox"]`, now matches
+  // no element at all, so guarding it would pass against nothing. This guards
+  // the replacement instead. Tappability is the ROW's job and is asserted
+  // below; this is only about seeing the tick.
+  expect(declaration(".trigger-box", "width")).toBe("1.35rem");
+  expect(declaration(".trigger-box", "height")).toBe("1.35rem");
+});
+
 test("the trigger checkboxes sit in a 44px row, not a bare 22px box", () => {
   // "Notify on: Blocked / Done" is the control this whole feature exists to
   // configure, on a dashboard whose premise is a phone. A 1.35rem checkbox is

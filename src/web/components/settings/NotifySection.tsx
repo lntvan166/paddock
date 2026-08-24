@@ -3,6 +3,7 @@ import { isQuickTunnelUrl } from "@shared/quick-tunnel";
 import { BellIcon } from "@web/components/ui/icons";
 import { Card } from "@web/components/ui/Card";
 import { Toggle } from "@web/components/ui/Toggle";
+import { Checkbox } from "@web/components/shadcn/checkbox";
 
 export interface NotifySectionProps {
   notifyEnabled: boolean; setNotifyEnabled: (v: boolean) => void;
@@ -97,11 +98,17 @@ export function NotifySection({
       <fieldset className="settings-triggers">
         <legend>Notify on</legend>
         <label>
-          <input
-            type="checkbox"
+          {/* shadcn's Checkbox, not a native one. The native input paints
+              itself with the browser's own accent — a different blue from
+              --accent — so the trigger boxes and the Notifications switch two
+              rows above disagreed about what "on" looks like inside one card.
+              This draws from --primary, which the bridge points at --accent, so
+              every "on" in the app is now one colour. */}
+          <Checkbox
+            className="trigger-box"
             name="trigger-blocked"
             checked={triggers.includes("blocked")}
-            onChange={() => toggleTrigger("blocked")}
+            onCheckedChange={() => toggleTrigger("blocked")}
           />
           Blocked
         </label>
@@ -118,11 +125,17 @@ export function NotifySection({
           s before sending
         </label>
         <label>
-          <input
-            type="checkbox"
+          {/* shadcn's Checkbox, not a native one. The native input paints
+              itself with the browser's own accent — a different blue from
+              --accent — so the trigger boxes and the Notifications switch two
+              rows above disagreed about what "on" looks like inside one card.
+              This draws from --primary, which the bridge points at --accent, so
+              every "on" in the app is now one colour. */}
+          <Checkbox
+            className="trigger-box"
             name="trigger-done"
             checked={triggers.includes("done")}
-            onChange={() => toggleTrigger("done")}
+            onCheckedChange={() => toggleTrigger("done")}
           />
           Done
         </label>
