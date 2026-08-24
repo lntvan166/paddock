@@ -1,4 +1,4 @@
-import type { Agent, Section } from "@shared/types";
+import type { Agent } from "@shared/types";
 import { formatElapsed } from "@web/components/elapsed";
 import { IconTile } from "@web/components/ui/IconTile";
 import { StatusDot } from "@web/components/ui/StatusDot";
@@ -7,33 +7,16 @@ import { StatusDot } from "@web/components/ui/StatusDot";
  *  here before the primitive layer existed. */
 export { StatusDot };
 
-export type RowEmphasis = "alert" | "card" | "bare";
-
-/**
- * How loud a row is, by SECTION rather than by state.
+/** Dense row. Task text truncates to keep the list scannable.
  *
- * The ladder answers "how much of your attention does this group deserve",
- * which is a property of the group. Deriving it from state would put the same
- * decision in two places, and they would disagree the first time a state maps
- * somewhere new — which is exactly what just happened to `done`.
- *
- * This is the second channel the palette comment has always claimed: a bordered
- * tinted card versus a bare row survives greyscale, where two hues of dot do
- * not.
- */
-export function emphasisFor(section: Section): RowEmphasis {
-  if (section === "needs-you") return "alert";
-  if (section === "ready-unseen") return "card";
-  return "bare";
-}
-
-/** Dense row. Task text truncates to keep the list scannable. */
+ * Every row is bare: the two sections that need attention (`needs-you`,
+ * `ready-unseen`) render `AgentCard` instead, which carries its own border
+ * and accent — a row never needs to escalate itself. */
 export function AgentRow({
-  agent, now, emphasis = "bare", onSelect,
+  agent, now, onSelect,
 }: {
   agent: Agent;
   now: number;
-  emphasis?: RowEmphasis;
   /** Opens the detail sheet for this agent. Optional so the row still
    * renders standalone. */
   onSelect?: () => void;
@@ -41,7 +24,6 @@ export function AgentRow({
   return (
     <div
       className="tap row flex items-center gap-2.5 px-3 py-2.5"
-      data-emphasis={emphasis}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}

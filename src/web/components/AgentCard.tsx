@@ -26,6 +26,10 @@ export function AgentCard({
 }) {
   // Same palette as `StatusDot`: red for the one state that needs a person.
   const accent = agent.state === "blocked" ? "var(--danger)" : "var(--ok)";
+  // Border AND fill for a blocked agent. The border alone is a thin signal on
+  // a phone held at arm's length, and this is the only card that means "work
+  // has stopped until you answer".
+  const surface = agent.state === "blocked" ? "var(--danger-wash)" : "var(--surface)";
   const [busy, setBusy] = useState(false);
   // acknowledge() never throws — a failed dismissal (e.g. a 409 because the
   // agent stopped being done in the meantime) must stay visible on the card,
@@ -55,7 +59,7 @@ export function AgentCard({
   return (
     <article
       className="tap mx-2 mb-1.5 rounded-lg p-3"
-      style={{ background: "var(--surface)", border: `1px solid ${accent}` }}
+      style={{ background: surface, border: `1px solid ${accent}` }}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}

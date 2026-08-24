@@ -168,23 +168,9 @@ body {
   display: inline-flex;
 }
 
-/* Bare is the resting form and keeps the hairline the list has always had. */
-.row[data-emphasis="bare"] { border-top: 1px solid var(--border); }
-
-.row[data-emphasis="card"],
-.row[data-emphasis="alert"] {
-  margin: 0.4rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 0.7rem;
-  background: var(--surface);
-}
-
-/* The loudest row in the app. Border AND fill, so it is not relying on the
-   dot's hue to say that something has stopped and needs a person. */
-.row[data-emphasis="alert"] {
-  border-color: var(--danger);
-  background: var(--danger-wash);
-}
+/* Every row is bare: the two sections that need attention render AgentCard
+   instead, which carries its own border and accent. */
+.row { border-top: 1px solid var(--border); }
 
 .card {
   background: var(--surface);
