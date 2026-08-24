@@ -19,74 +19,14 @@ import { EMBEDDED } from "@server/embedded";
 import { allowWrite, hostOf, refusalReason } from "@server/origin";
 import { warn } from "@server/term";
 import type { JournalReader } from "@server/journal/read";
-import { isNavKey, type ManagedBy, type NotifyTrigger, type SettingsPatch } from "@shared/types";
+import { isNavKey, type HealthBody, type NotifyTrigger, type SettingsPatch } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 import type { HerdrAgentSession } from "@shared/herdr-api";
 
-export interface HealthBody {
-  ok: boolean;
-  hostId: string;
-  agents: number;
-  clients: number;
-  herdrConnected: boolean;
-  /**
-   * Epoch ms of the last herdr event. Exposed deliberately: a stuck event stream
-   * is otherwise invisible, which is how a comparable system dropped every
-   * event while reporting success.
-   */
-  lastEventAt: number | null;
-  /**
-   * The notifier's last send failure (a bad token, an unreachable API), or
-   * `null` if the most recent attempt succeeded or none has been made yet.
-   * Required, not optional: a broken token must be visible within seconds via
-   * `/api/health`, and an optional field lets a future edit to `health()`
-   * silently drop it with nothing — neither the type checker nor a test —
-   * to notice.
-   */
-  lastNotifyError: string | null;
-  /**
-   * The running build's own version string (see `@server/version`).
-   * Required for the same reason as `lastNotifyError`: an operator debugging
-   * a report against "whatever paddock happened to be running" should never
-   * have to guess it from a binary that may since have been replaced.
-   */
-  version: string;
-  /**
-   * The newest version `checkForUpdate` has seen on GitHub, or `null` if none
-   * is known yet or none is newer than `version`. Required, not optional —
-   * the same reasoning as `lastNotifyError`: a future edit that drops this
-   * field from `health()` must be a type error, not a silently missing key.
-   */
-  latestKnown: string | null;
-  /**
-   * The package manager that owns this install, or null for the ordinary case.
-   *
-   * Exposed because the UPGRADE COMMAND depends on it: `paddock update`
-   * refuses inside a Homebrew keg, so anything telling an operator to run it
-   * there is wrong. Required rather than optional, for the same reason as
-   * `latestKnown` above — a future edit to `health()` that drops it must be a
-   * type error, not a silently missing key a phone then reads as "unmanaged".
-   */
-  managedBy: ManagedBy | null;
-  /**
-   * The protocol the LIVE herdr reports, or null before it has answered.
-   *
-   * A fact, not a warning — paddock now accepts a herdr newer than the one it
-   * was built against (see `herdr/socket.ts`), so drift is normal and this is
-   * how an operator sees it without reading a log. Required for the same reason
-   * as `lastNotifyError`: an optional field lets a future edit to `health()`
-   * drop it silently, with neither the type checker nor a test to notice.
-   */
-  herdrProtocol: number | null;
-  /**
-   * Set when herdr's `agent.list` stopped carrying a field paddock reads — the
-   * failure a protocol number never caught, and the one this exists for.
-   *
-   * `null` is the healthy answer AND the answer when no panes are open, because
-   * you cannot conclude a field is gone from zero rows. See `herdr/shape.ts`.
-   */
-  schemaWarning: string | null;
-}
+// Re-exported for call sites that imported this from here before the
+// contract moved to `@shared/types` — see `src/shared/types.ts` for the
+// interface itself, comments intact.
+export type { HealthBody } from "@shared/types";
 
 // Vite's content hash is base64url (letters, digits, "_", "-"), joined to the
 // basename with a dash, e.g. "index-BRl8nQbG.js" or "index-Cj_7W-bH.css" — not

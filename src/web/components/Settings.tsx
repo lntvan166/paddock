@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
+import type { HealthBody, NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 import {
   readPrefs, themeAttr, writePref,
   type Prefs, type ThemePref,
@@ -8,6 +8,7 @@ import { DeviceSection } from "@web/components/settings/DeviceSection";
 import { TunnelSection } from "@web/components/settings/TunnelSection";
 import { TelegramSection } from "@web/components/settings/TelegramSection";
 import { NotifySection } from "@web/components/settings/NotifySection";
+import { InfoSection } from "@web/components/settings/InfoSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
 
@@ -29,6 +30,12 @@ export function Settings({ onBack }: SettingsProps) {
 
   const [view, setView] = useState<SettingsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Read-only, for the Info band's Updates and Connection cards. `null` while
+  // loading — `InfoSection` renders every row regardless, with an em dash for
+  // whatever has not arrived yet.
+  const [health, setHealth] = useState<HealthBody | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
 
   // The token field always starts empty and is never seeded from the
   // response — the server never sends it (SettingsView has no token member),
@@ -126,6 +133,25 @@ export function Settings({ onBack }: SettingsProps) {
         setServerNow(body.serverNow);
       } catch (e) {
         if (live) setLoadError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => { live = false; };
+  }, []);
+
+  // Same fetch idiom as `/api/settings` above, including the `res.ok` check:
+  // a failure here must be visible rather than leaving the Connection card
+  // showing em dashes forever with nothing to explain why.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/health");
+        if (!res.ok) throw new Error(`health load failed: ${res.status}`);
+        const body = (await res.json()) as HealthBody;
+        if (!live) return;
+        setHealth(body);
+      } catch (e) {
+        if (live) setHealthError(e instanceof Error ? e.message : String(e));
       }
     })();
     return () => { live = false; };
@@ -275,6 +301,7 @@ export function Settings({ onBack }: SettingsProps) {
 
       {view?.error && <p className="settings-banner">{view.error}</p>}
       {loadError && <p className="settings-banner">{loadError}</p>}
+      {healthError && <p className="settings-banner">{healthError}</p>}
       <Toast message={savedAt === null ? null : "Settings saved"} />
 
       <div className="band">
@@ -337,6 +364,12 @@ export function Settings({ onBack }: SettingsProps) {
         />
 
         {saveError && <p className="settings-banner">{saveError}</p>}
+      </div>
+
+      <div className="band">
+        <p className="band-label">Info</p>
+        <p className="band-hint">Read-only. What build is running, and what this device can see.</p>
+        <InfoSection health={health} />
       </div>
 
       {/* `dirty` is false while `baseline === null`, which is what used to be

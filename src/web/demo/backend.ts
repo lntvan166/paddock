@@ -1,4 +1,4 @@
-import type { Agent, AgentState, ServerMessage, SettingsView } from "@shared/types";
+import type { Agent, AgentState, HealthBody, ServerMessage, SettingsView } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 import { DEMO_JOURNAL_AGENT_ID, DEMO_JOURNAL_LINES } from "@shared/demo-history";
 import {
@@ -84,7 +84,7 @@ function demoSettings(mutedUntil: number | null = null): SettingsView {
 }
 
 /** Health for the diagnostics card. Invented, and named like the demo host. */
-function demoHealth() {
+function demoHealth(): HealthBody {
   return {
     ok: true,
     hostId: "demo-box",

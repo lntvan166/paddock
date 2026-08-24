@@ -1031,6 +1031,36 @@ body {
   border: 0;
 }
 
+/* A labelled row in the Connection diagnostics card. Not `.card-row`: nothing
+   here is interactive, so it does not need that rule's 44px touch floor. */
+.dl-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.25rem;
+  font-size: 0.75rem;
+}
+
+.dl-row + .dl-row { border-top: 1px solid var(--border); }
+
+.dl-label { color: var(--fg-dim); }
+
+/* Monospace and right-aligned: a build id, a host and a protocol number are
+   values to compare, not prose to read. */
+.dl-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: right;
+  word-break: break-all;
+}
+
+/* A verdict's colour, always ADDED to its text ("Connected", "Yes") — never
+   the only signal, the same rule `.detail .ok` / `.detail .warn` already
+   follow. Both tokens are already defined on bare :root and redefined under
+   `prefers-color-scheme` and `[data-theme]`, so nothing new needs adding here. */
+.dl-value.ok { color: var(--ok); }
+.dl-value.warn { color: var(--warn); }
+
 .build-stamp {
   margin: 1.25rem 0 0;
   text-align: center;
