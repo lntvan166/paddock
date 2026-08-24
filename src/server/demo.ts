@@ -8,13 +8,16 @@ export const DEMO_HOST_ID = "demo-box";
  * Synthetic agents for `--demo`. Names are INVENTED — this is the only mode used
  * for screenshots and README media, so it must never resemble real data.
  */
-const SEED: Array<{ id: string; name: string; task: string; state: AgentState; ageMs: number }> = [
-  { id: "d1:p1", name: "schema-migration", task: "Apply migration to staging", state: "blocked", ageMs: 120_000 },
-  { id: "d2:p1", name: "lint-config", task: "Align eslint with the style guide", state: "done", ageMs: 300_000 },
-  { id: "d3:p1", name: "api-refactor", task: "Extract auth middleware", state: "working", ageMs: 15_000 },
-  { id: "d4:p1", name: "perf-audit", task: "Profile the request path", state: "working", ageMs: 45_000 },
-  { id: "d5:p1", name: "docs-cleanup", task: "Rewrite the getting-started guide", state: "idle", ageMs: 900_000 },
-  { id: "d6:p1", name: "flaky-test-fix", task: "Stabilise the upload suite", state: "idle", ageMs: 3_600_000 },
+const SEED: Array<{ id: string; name: string; task: string; state: AgentState; ageMs: number; harness: string }> = [
+  // A mix of harnesses, not all "claude" — this seed is what README
+  // screenshots come from, and a mix is what exercises the tile's
+  // per-harness colouring.
+  { id: "d1:p1", name: "schema-migration", task: "Apply migration to staging", state: "blocked", ageMs: 120_000, harness: "claude" },
+  { id: "d2:p1", name: "lint-config", task: "Align eslint with the style guide", state: "done", ageMs: 300_000, harness: "codex" },
+  { id: "d3:p1", name: "api-refactor", task: "Extract auth middleware", state: "working", ageMs: 15_000, harness: "claude" },
+  { id: "d4:p1", name: "perf-audit", task: "Profile the request path", state: "working", ageMs: 45_000, harness: "codex" },
+  { id: "d5:p1", name: "docs-cleanup", task: "Rewrite the getting-started guide", state: "idle", ageMs: 900_000, harness: "claude" },
+  { id: "d6:p1", name: "flaky-test-fix", task: "Stabilise the upload suite", state: "idle", ageMs: 3_600_000, harness: "codex" },
 ];
 
 export function demoAgents(now: number): Agent[] {
@@ -27,6 +30,7 @@ export function demoAgents(now: number): Agent[] {
     workspaceId: s.id.split(":")[0]!,
     workspaceLabel: s.name.replace(/-/g, " "),
     cwd: "/srv/demo-project",
+    harness: s.harness,
     stateSince: now - s.ageMs,
     updatedAt: now,
     acknowledgedAt: null,

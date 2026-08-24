@@ -8,7 +8,7 @@ function agent(over: Partial<Agent> = {}): Agent {
   return {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state: "working", workspaceId: "w1",
-    workspaceLabel: null, cwd: "/srv/project", stateSince: NOW, updatedAt: NOW,
+    workspaceLabel: null, cwd: "/srv/project", harness: "claude", stateSince: NOW, updatedAt: NOW,
     acknowledgedAt: null, hasJournal: false, ...over,
   };
 }

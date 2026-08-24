@@ -14,6 +14,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     workspaceId: "w1",
     workspaceLabel: null,
     cwd: "/srv/project",
+    harness: "claude",
     stateSince: NOW,
     updatedAt: NOW,
     acknowledgedAt: null,

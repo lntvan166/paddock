@@ -13,7 +13,7 @@ const SAVED = "https://paddock.example.com";
 const agent = (over: Partial<Agent> = {}): Agent => ({
   hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
   task: "Extract auth middleware", state: "working", workspaceId: "w1",
-  workspaceLabel: "api work", cwd: "/srv/project",
+  workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
   stateSince: NOW, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
 });
 

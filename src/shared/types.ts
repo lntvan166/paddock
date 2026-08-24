@@ -61,6 +61,20 @@ export interface Agent {
   workspaceId: string;
   workspaceLabel: string | null;
   cwd: string;
+  /**
+   * The harness running in this pane — "claude", "codex" — as herdr reports it
+   * in `HerdrAgentRaw.agent`.
+   *
+   * It was always on the wire. `toAgent` used it as a truthiness gate and threw
+   * the value away, so the UI had no way to tell one harness from another.
+   *
+   * Required, not optional, on the same reasoning as `hasJournal`: an optional
+   * field lets a future edit drop it silently, and every tile would fall back
+   * to a placeholder with nothing to notice. Safe to require because `toAgent`
+   * returns null for any raw agent whose `agent` is falsy — a surviving Agent
+   * always had one.
+   */
+  harness: string;
   /** Epoch ms when this state was first observed. Stamped by paddock. */
   stateSince: number;
   updatedAt: number;
