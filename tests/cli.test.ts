@@ -135,14 +135,21 @@ test("a trailing --for with no value is refused, not read as 'no deadline'", () 
 const CONFIG = mkdtempSync(join(tmpdir(), "paddock-cli-"));
 
 function runServer(args: string[], extraEnv: Record<string, string> = {}) {
+  const env = {
+    ...process.env,
+    // No network, and never the operator's real config directory.
+    PADDOCK_NO_UPDATE_CHECK: "1",
+    PADDOCK_CONFIG_DIR: CONFIG,
+    ...extraEnv,
+  } as Record<string, string>;
+  // Dropped unless a caller asked for it. The Makefile exports a
+  // `git describe` version (Makefile:23-24), so at a TAGGED checkout this
+  // process inherits one — and the `--version` test below asserts the unstamped
+  // default. It passed on every branch and failed inside the release pipeline,
+  // which is the one place the checkout is ever at a tag.
+  if (!("PADDOCK_VERSION" in extraEnv)) delete env.PADDOCK_VERSION;
   const r = Bun.spawnSync(["bun", "src/server/index.ts", ...args], {
-    env: {
-      ...process.env,
-      // No network, and never the operator's real config directory.
-      PADDOCK_NO_UPDATE_CHECK: "1",
-      PADDOCK_CONFIG_DIR: CONFIG,
-      ...extraEnv,
-    },
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -342,4 +349,23 @@ test("a bare --for refuses too, instead of silently publishing an unbounded URL"
   // The refusal must come BEFORE anything is published or bound.
   expect(r.out).not.toContain("paddock listening");
   expect(r.err).not.toContain("trycloudflare");
+});
+
+test("an ambient PADDOCK_VERSION does not leak into the unstamped assertions", () => {
+  // The regression guard for a failed release. `make test` exports a
+  // `git describe` version (Makefile:23-24), so at a tagged checkout every test
+  // subprocess inherits one — and a tagged checkout happens exactly once in the
+  // project's life cycle: inside the release pipeline. The suite was green on
+  // every branch and every PR, and the release died on `make test`.
+  //
+  // This puts a version in the parent's environment on purpose, on every run, so
+  // the condition that only exists at a tag is exercised everywhere.
+  const saved = process.env.PADDOCK_VERSION;
+  process.env.PADDOCK_VERSION = "9.9.9-ambient";
+  try {
+    expect(runServer(["--version"]).out.trim()).toBe("0.0.0-dev");
+  } finally {
+    if (saved === undefined) delete process.env.PADDOCK_VERSION;
+    else process.env.PADDOCK_VERSION = saved;
+  }
 });

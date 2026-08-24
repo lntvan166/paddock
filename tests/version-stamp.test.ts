@@ -21,12 +21,28 @@ import { join } from "node:path";
  * smoke step in release.yml (see tests/release-workflow.test.ts).
  */
 
-/** Compiled binaries never need the network or the operator's real config. */
+/**
+ * Compiled binaries never need the network or the operator's real config.
+ *
+ * And they must never inherit `PADDOCK_VERSION`. The Makefile derives it from
+ * `git describe` and EXPORTS it (Makefile:23-24), so at a tagged checkout every
+ * child process sees a real version — and a tagged checkout is precisely what a
+ * release is. The unstamped test below then read 0.9.0 where it asserted
+ * 0.0.0-dev, and `make test` failed inside the release pipeline while passing
+ * on every branch and every PR. It cost a failed release to find, because
+ * nothing else in the suite runs only at a tag.
+ *
+ * A test about the absence of a stamp has to construct that absence rather than
+ * hope the environment lacks it.
+ */
 function isolatedEnv(configDir: string): Record<string, string> {
-  return { ...process.env, PADDOCK_NO_UPDATE_CHECK: "1", PADDOCK_CONFIG_DIR: configDir } as Record<
-    string,
-    string
-  >;
+  const env = {
+    ...process.env,
+    PADDOCK_NO_UPDATE_CHECK: "1",
+    PADDOCK_CONFIG_DIR: configDir,
+  } as Record<string, string>;
+  delete env.PADDOCK_VERSION;
+  return env;
 }
 
 function compile(define: string | null): { out: string; work: string } {
