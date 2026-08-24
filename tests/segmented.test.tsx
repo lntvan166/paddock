@@ -51,6 +51,37 @@ test("tapping a member reports its value", async () => {
   expect(seen).toEqual(["dark"]);
 });
 
+test("the group is one tab stop, not one per option", async () => {
+  // A radiogroup promises one tab stop with arrow keys between members. Three
+  // tab stops for a three-option control is the "role added, behaviour not"
+  // anti-pattern, and the settings screen has two of these controls.
+  const host = await render(
+    <Segmented label="Theme" value="light" options={[...THEMES]} onChange={() => {}} />,
+  );
+  const radios = [...host.querySelectorAll("[role='radio']")] as HTMLButtonElement[];
+  expect(radios.map((r) => r.tabIndex)).toEqual([-1, 0, -1]);
+});
+
+test("an arrow key moves the selection", async () => {
+  const seen: string[] = [];
+  const host = await render(
+    <Segmented label="Theme" value="system" options={[...THEMES]} onChange={(v) => seen.push(v)} />,
+  );
+  const group = host.querySelector("[role='radiogroup']") as HTMLElement;
+  group.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  expect(seen).toEqual(["light"]);
+});
+
+test("arrow keys wrap rather than dead-ending", async () => {
+  const seen: string[] = [];
+  const host = await render(
+    <Segmented label="Theme" value="system" options={[...THEMES]} onChange={(v) => seen.push(v)} />,
+  );
+  const group = host.querySelector("[role='radiogroup']") as HTMLElement;
+  group.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+  expect(seen).toEqual(["dark"]);
+});
+
 test("every option is visible at once, unlike the select it replaces", async () => {
   // A native select on iOS opens a full-screen wheel and hides the other
   // options while you pick between three of them.
