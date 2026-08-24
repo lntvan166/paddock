@@ -1735,9 +1735,9 @@ and replace the leading `<StatusDot …/>` with the tile carrying the dot:
       <IconTile harness={agent.harness} badge={<StatusDot state={agent.state} />} />
 ```
 
-Add a visually-hidden state word so the text channel survives — check whether
-`styles.css` already has a `.sr-only`-style utility and reuse it if so;
-otherwise add one:
+Add a visually-hidden state word so the text channel survives. **`.sr-only`
+already exists at `src/web/styles.css:343` — reuse it, do not add a second
+copy:**
 
 ```tsx
       <span className="sr-only">{agent.state}</span>
@@ -1762,18 +1762,6 @@ Add to `src/web/styles.css`:
 .row[data-emphasis="alert"] {
   border-color: var(--danger);
   background: var(--danger-wash);
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
 }
 ```
 
@@ -2560,13 +2548,14 @@ test("an unstamped build says dev rather than inventing a hash", async () => {
   // build-id.ts's own rule: "Null rather than a placeholder … inventing an id
   // there would make every client believe a new build had just landed". A
   // fabricated commit is the same trap.
+  //
+  // `bun test` applies no vite define, so this asserts the fallback path
+  // unconditionally — there is no branch and nothing to guard.
   const { BUILD } = await import("@web/build");
-  if (BUILD.commit === "dev") {
-    const host = await render(<BuildStamp />);
-    expect(host.textContent).toContain("dev");
-  }
-  // Under `bun test` there is no vite define, so this is the branch that runs.
-  expect(["dev", BUILD.commit]).toContain(BUILD.commit);
+  expect(BUILD.commit).toBe("dev");
+  expect(BUILD.version).toBe("0.0.0-dev");
+  const host = await render(<BuildStamp />);
+  expect(host.textContent).toContain("dev");
 });
 
 test("the stamp is monospace, so a hash is readable", async () => {
@@ -2646,8 +2635,9 @@ In `vite.config.ts`, add to the config object:
   },
 ```
 
-In the `Makefile`, export the two new values to the web build. Find the
-`build:web` / `build-web` target and prefix it:
+In the `Makefile`, export the two new values to the web build. The target is
+`build-web` (Makefile:70, which runs `bun run build:web`). Add these at the top
+level of the Makefile so the exports are in the environment `vite` inherits:
 
 ```make
 PADDOCK_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
@@ -2658,7 +2648,11 @@ export PADDOCK_BUILD_TIME
 
 `git rev-parse` is allowed a fallback here — this is not error-swallowing but
 the documented "no git checkout" case, and it produces the literal `dev` the
-tests assert on. Confirm the existing target's exact name before editing.
+tests assert on.
+
+Note `package.json`'s `test` script also runs `bun run build:web` directly,
+bypassing make. That path gets the fallbacks, which is correct: a test run is
+not a release.
 
 Create `src/web/components/BuildStamp.tsx`:
 
@@ -2708,7 +2702,7 @@ Expected: green.
 
 - [ ] **Step 5: Verify the define actually reaches the bundle**
 
-Run: `PADDOCK_VERSION=9.9.9-stamped make build-web` (use the real target name)
+Run: `PADDOCK_VERSION=9.9.9-stamped make build-web`
 Then: `grep -o "9.9.9-stamped" dist/assets/*.js | head -1`
 Expected: a hit. No hit means the `define` is not wired and the stamp will read
 `0.0.0-dev` in every release — the exact failure `tests/version-stamp.test.ts`
