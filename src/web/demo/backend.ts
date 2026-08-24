@@ -1,4 +1,4 @@
-import type { Agent, AgentState, ServerMessage } from "@shared/types";
+import type { Agent, AgentState, ServerMessage, SettingsView } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 import { DEMO_JOURNAL_AGENT_ID, DEMO_JOURNAL_LINES } from "@shared/demo-history";
 import {
@@ -57,6 +57,50 @@ const agents: Agent[] = SEED.map((s) => ({
   hasJournal: s.id === DEMO_JOURNAL_AGENT_ID,
 }));
 
+/**
+ * A settings view with nothing configured.
+ *
+ * Deliberately unconfigured: `configured: false` and a null hint keep any
+ * token-shaped string out of the demo bundle, and out of every screenshot taken
+ * from it. `scripts/check-private.sh` scans for that shape.
+ */
+function demoSettings(): SettingsView {
+  return {
+    telegram: { configured: false, hint: null, chatId: null },
+    notify: {
+      enabled: false,
+      triggers: ["blocked"],
+      settleMs: { blocked: 5_000, done: 10_000 },
+      mutedUntil: null,
+      cooldownMs: 60_000,
+    },
+    publicUrl: null,
+    // No tunnel: a paddock served the ordinary way has none, and the demo must
+    // not offer to pair a device it cannot pair.
+    tunnel: null,
+    serverNow: Date.now(),
+    error: null,
+  };
+}
+
+/** Health for the diagnostics card. Invented, and named like the demo host. */
+function demoHealth() {
+  return {
+    ok: true,
+    hostId: "demo-box",
+    agents: agents.length,
+    clients: 1,
+    herdrConnected: true,
+    lastEventAt: Date.now(),
+    lastNotifyError: null,
+    version: "0.0.0-demo",
+    latestKnown: null,
+    managedBy: null,
+    herdrProtocol: 20,
+    schemaWarning: null,
+  };
+}
+
 /** Cursor position on the blocked agent's menu, moved by the arrow keys. */
 let cursor = 0;
 /** Screens keyed by agent, so a key press can change what the pane shows. */
@@ -98,6 +142,17 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 function handle(url: string, body: Record<string, unknown>): Response {
+  // The demo is the only sanctioned source of screenshots, so every screen the
+  // product has must render here — including settings, which needs a whole
+  // SettingsView before it will paint at all.
+  if (url.includes("/api/settings")) {
+    // A PUT echoes the patch back as an accepted view rather than storing it:
+    // the demo has no server to persist to, and a Save that appeared to fail
+    // would read as a bug in the product rather than an absence in the demo.
+    return json(demoSettings());
+  }
+  if (url.includes("/api/health")) return json(demoHealth());
+
   const m = /\/api\/agents\/([^/]+)\/(\w+)/.exec(url);
   if (!m) return json({ ok: false, detail: "not found" }, 404);
   const id = decodeURIComponent(m[1]!);

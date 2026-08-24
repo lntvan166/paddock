@@ -106,6 +106,12 @@ export function Settings({ onBack }: SettingsProps) {
     (async () => {
       try {
         const res = await fetch("/api/settings");
+        // Checked BEFORE the cast. Without this a non-2xx body — a 404 from a
+        // demo backend, a 500 from a broken server — was cast to SettingsView
+        // anyway, and the first render to read `baseline.telegram.chatId` threw,
+        // blanking the whole screen. The catch below already knows how to show
+        // this; it was never reached.
+        if (!res.ok) throw new Error(`settings load failed: ${res.status}`);
         const body = (await res.json()) as SettingsView;
         if (!live) return;
         setView(body);
