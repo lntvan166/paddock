@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Agent, ServerMessage } from "@shared/types";
+import type { Agent, ManagedBy, ServerMessage } from "@shared/types";
 
 export interface ClientState {
   agents: Agent[];
@@ -23,6 +23,13 @@ export interface ClientState {
    * who updates sees the notice clear on the next heartbeat.
    */
   latestKnown: string | null;
+  /**
+   * The package manager owning the SERVER's install, or null. Decides which
+   * upgrade command `ReleaseBanner` names: `paddock update` refuses inside a
+   * Homebrew keg, so naming it there would label a control with an action that
+   * declines.
+   */
+  managedBy: ManagedBy | null;
 }
 
 /**
@@ -63,6 +70,18 @@ function trackLatestKnown(
   return { latestKnown };
 }
 
+/**
+ * Same undefined-means-silence rule as `trackLatestKnown`: a frame that omits
+ * the field is not asserting "nothing owns this install", and flipping the
+ * banner's command between frames would be worse than either answer.
+ */
+function trackManagedBy(
+  state: ClientState, managedBy: ManagedBy | null | undefined,
+): Partial<ClientState> {
+  if (managedBy === undefined) return {};
+  return { managedBy };
+}
+
 const STALE_AFTER_MS = 60_000;
 
 export function wsUrlFrom(loc: { protocol: string; host: string }): string {
@@ -81,6 +100,7 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
       ...state,
       ...trackBuild(state, msg.build),
       ...trackLatestKnown(state, msg.latestKnown),
+      ...trackManagedBy(state, msg.managedBy),
       hostId: msg.hostId,
       agents: msg.agents,
       lastMessageAt: msg.serverTime,
@@ -94,6 +114,7 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
       ...state,
       ...trackBuild(state, msg.build),
       ...trackLatestKnown(state, msg.latestKnown),
+      ...trackManagedBy(state, msg.managedBy),
       lastMessageAt: msg.serverTime,
     };
   }
@@ -198,6 +219,7 @@ export const useStore = create<Store>((set, get) => {
     build: null,
     updateAvailable: false,
     latestKnown: null,
+    managedBy: null,
     connect,
   };
 });

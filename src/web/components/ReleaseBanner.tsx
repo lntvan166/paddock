@@ -14,12 +14,20 @@
  * what it is — and the dismiss control is a real button, not a hover-revealed
  * affordance, because on a phone there is no hover.
  */
+import type { ManagedBy } from "@shared/types";
+
 export function ReleaseBanner({
-  version, onDismiss,
+  version, managedBy, onDismiss,
 }: {
   version: string;
+  managedBy: ManagedBy | null;
   onDismiss: () => void;
 }) {
+  // Named from what actually owns the install, never guessed. `paddock update`
+  // refuses inside a Homebrew keg (src/server/update.ts), so printing it there
+  // labels the notice with an action that declines — the same defect as a
+  // mislabelled Approve button, which CLAUDE.md rules out for the same reason.
+  const command = managedBy === "homebrew" ? "brew upgrade paddock" : "paddock update";
   return (
     <div
       role="status"
@@ -32,7 +40,7 @@ export function ReleaseBanner({
     >
       <span className="min-w-0 flex-1">
         paddock <strong>{version}</strong> is available — run{" "}
-        <code>paddock update</code> on the machine running it
+        <code>{command}</code> on the machine running it
       </span>
       <button
         type="button"

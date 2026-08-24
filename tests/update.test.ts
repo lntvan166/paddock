@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assetName, isBrewManaged, isNewer, runUpdate } from "@server/update";
+import { assetName, detectManagedBy, isBrewManaged, isNewer, runUpdate } from "@server/update";
 
 test("the asset table matches install.sh exactly, so the two cannot disagree", () => {
   expect(assetName("linux", "x64")).toBe("paddock-linux-x86_64");
@@ -416,4 +416,24 @@ test("the brew guard does not download the binary before refusing", async () => 
   });
   expect(asked.some((u) => u.includes("releases/latest"))).toBe(true);
   expect(asked.some((u) => u.endsWith("paddock-linux-x86_64"))).toBe(false);
+});
+
+test("detectManagedBy reports homebrew for a keg reached through its symlink", async () => {
+  // What index.ts calls at boot with process.execPath. The realpath hop is the
+  // part worth testing: brew leaves a symlink in <prefix>/bin, and execPath may
+  // hand back either that or the keg.
+  const h = await brewHarness("unused", "unused");
+  expect(await detectManagedBy(h.link)).toBe("homebrew");
+  expect(await detectManagedBy(h.kegBin)).toBe("homebrew");
+});
+
+test("detectManagedBy reports null for an ordinary install", async () => {
+  const h = await harness("unused", "unused");
+  expect(await detectManagedBy(h.self)).toBeNull();
+});
+
+test("detectManagedBy does not throw on a path that cannot be resolved", async () => {
+  // A dev checkout's execPath points at bun, and an operator can always delete
+  // things underneath a running process. Boot must not die for this.
+  expect(await detectManagedBy("/nonexistent/paddock")).toBeNull();
 });

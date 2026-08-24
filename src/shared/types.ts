@@ -262,6 +262,18 @@ export type ServerMessage =
        * riding it gives eventual consistency for free.
        */
       latestKnown?: string | null;
+      /**
+       * The package manager that owns this install, or null for the ordinary
+       * case (the installer's `~/.local/bin`, a container, a source build).
+       *
+       * On the wire because the UPGRADE COMMAND differs and the client cannot
+       * know which one applies: `paddock update` refuses inside a Homebrew keg
+       * (see `update.ts`), so a banner naming it would be telling the operator
+       * to run something that declines. Absent and null are different claims —
+       * "this frame does not say" versus "nothing owns it" — and the store
+       * distinguishes them.
+       */
+      managedBy?: ManagedBy | null;
     }
   | { type: "delta"; upserted: Agent[]; removedIds: string[]; serverTime: number }
   /**
@@ -280,7 +292,21 @@ export type ServerMessage =
    * is running stale JavaScript. `index.html` is `no-cache`, which fixes fresh
    * loads and does nothing for a tab left open on a phone for days.
    */
-  | { type: "heartbeat"; serverTime: number; build?: string | null; latestKnown?: string | null };
+  | {
+      type: "heartbeat";
+      serverTime: number;
+      build?: string | null;
+      latestKnown?: string | null;
+      managedBy?: ManagedBy | null;
+    };
+
+/**
+ * A package manager that owns a paddock install and therefore owns its
+ * upgrades. One member today; a union rather than a boolean because the
+ * command to print differs per manager, so a second entry adds a case rather
+ * than a second field.
+ */
+export type ManagedBy = "homebrew";
 
 export const SECTION_ORDER = ["needs-you", "working", "idle"] as const;
 export type Section = (typeof SECTION_ORDER)[number];

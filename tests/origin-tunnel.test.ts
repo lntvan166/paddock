@@ -28,7 +28,7 @@ const NAMED_HOST = "paddock.example.com";
 
 const health = () => ({
   ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true,
-  lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null,
+  lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null,
   herdrProtocol: null, schemaWarning: null,
 });
 

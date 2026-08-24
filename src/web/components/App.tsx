@@ -18,7 +18,7 @@ import { readPrefs, themeAttr } from "@web/prefs";
 
 export function App() {
   const {
-    agents, hostId, connected, lastMessageAt, updateAvailable, latestKnown, connect,
+    agents, hostId, connected, lastMessageAt, updateAvailable, latestKnown, managedBy, connect,
   } = useStore();
   const [now, setNow] = useState(() => Date.now());
   // Expanded by default. Collapsed, idle agents render as chips that carry a
@@ -123,6 +123,7 @@ export function App() {
         {shouldShowRelease(latestKnown, dismissedVersion) && (
           <ReleaseBanner
             version={latestKnown!}
+            managedBy={managedBy}
             onDismiss={() => {
               dismissRelease(latestKnown!);
               setDismissedVersion(latestKnown);

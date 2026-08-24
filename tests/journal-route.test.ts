@@ -8,7 +8,7 @@ import type { JournalPage } from "@server/journal/read";
 const NOW = 1_700_000_000_000;
 const health = () => ({
   ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true,
-  lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null,
+  lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null,
   herdrProtocol: null, schemaWarning: null,
 });
 

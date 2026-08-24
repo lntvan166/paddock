@@ -32,7 +32,7 @@ import { preflight, tunnelHint } from "@server/tunnel/preflight";
 import { runTunnel } from "@server/tunnel/run";
 import { VERSION } from "@server/version";
 import { runDoctor } from "@server/doctor";
-import { runUpdate } from "@server/update";
+import { detectManagedBy, runUpdate } from "@server/update";
 import { noUpdateCheckRequested, scheduleUpdateChecks } from "@server/update-check";
 import { say, warn } from "@server/term";
 import { BootLog } from "@server/boot-log";
@@ -293,7 +293,19 @@ const updateChecks = scheduleUpdateChecks(
   },
 );
 
-const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown });
+/**
+ * Which package manager owns this binary, resolved ONCE at boot.
+ *
+ * A constant, unlike `latestKnown`: the path of a running executable does not
+ * change, and `update` refuses inside a keg so it will not be swapped
+ * underneath either. It rides the WS envelope because the client cannot know
+ * which upgrade command applies — `paddock update` declines under Homebrew,
+ * so a banner naming it there would label the notice with an action that
+ * refuses.
+ */
+const managedBy = await detectManagedBy(process.execPath);
+
+const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown, managedBy });
 
 const settings = new SettingsStore(defaultConfigDir());
 await settings.load();
@@ -576,6 +588,7 @@ const appDeps = {
     lastNotifyError: notifier.lastError,
     version: VERSION,
     latestKnown,
+    managedBy,
     herdrProtocol: DEMO ? HERDR_PROTOCOL : herdrProtocol,
     // Read from the supervisor rather than cached here, for the same reason
     // herdrConnected reads the stream: a copy can go stale and then lie.

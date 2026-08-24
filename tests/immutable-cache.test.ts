@@ -53,7 +53,7 @@ test("index.html is revalidated, so a hashed bundle can never be pinned forever"
     store: new AgentStore("dev-box"),
     hub: new Hub({ now: () => 0 }),
     staticDir: "dist",
-    health: () => ({ ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: false, lastEventAt: null, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: false, lastEventAt: null, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
   });
 
   const html = await app.request("/");

@@ -1,8 +1,37 @@
 import { chmod, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { ManagedBy } from "@shared/types";
 import { say } from "@server/term";
 
 const REPO = "lntvan166/paddock";
+
+/**
+ * Which package manager owns the binary at `execPath`, if any.
+ *
+ * Called once at boot rather than per request: the path of a running
+ * executable does not change, and `update` refuses inside a keg so it will not
+ * be swapped underneath either.
+ *
+ * Resolves the symlink first — Homebrew leaves one in `<prefix>/bin` pointing
+ * at the keg, and `process.execPath` may hand back either. A path that cannot
+ * be resolved is reported as unmanaged rather than thrown: a source checkout's
+ * execPath is the operator's `bun`, and boot must not die because a binary was
+ * moved underneath a running process.
+ */
+export async function detectManagedBy(execPath: string): Promise<ManagedBy | null> {
+  let resolved = execPath;
+  try {
+    resolved = await realpath(execPath);
+  } catch (e) {
+    // Said out loud, not swallowed. This only fires when the executable cannot
+    // be resolved at all — a binary moved or deleted underneath a running
+    // process — which is worth one line at boot. `console.info` rather than a
+    // thrown error, and the literal path is still checked below, because
+    // failing to classify the install must not stop the server starting.
+    console.info(`paddock: could not resolve ${execPath}: ${(e as Error).message}`);
+  }
+  return isBrewManaged(resolved) ? "homebrew" : null;
+}
 
 /**
  * The same mapping `install.sh` uses, so the installer and the updater cannot

@@ -30,7 +30,7 @@ async function harness(
     store: new AgentStore("dev-box"), hub: new Hub({ build: () => "test" }),
     health: () => ({
       ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: true,
-      lastEventAt: null, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, herdrProtocol: null, schemaWarning: null,
+      lastEventAt: null, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null,
     }),
     settings,
     sendTest: sendTest ?? (async () => ({ ok: true, detail: null })),
