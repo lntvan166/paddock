@@ -1244,6 +1244,37 @@ test("tapping a member reports its value", async () => {
   expect(seen).toEqual(["dark"]);
 });
 
+test("the group is one tab stop, not one per option", async () => {
+  // A radiogroup promises one tab stop with arrow keys between members. Three
+  // tab stops for a three-option control is the "role added, behaviour not"
+  // anti-pattern, and the settings screen has two of these controls.
+  const host = await render(
+    <Segmented label="Theme" value="light" options={[...THEMES]} onChange={() => {}} />,
+  );
+  const radios = [...host.querySelectorAll("[role='radio']")] as HTMLButtonElement[];
+  expect(radios.map((r) => r.tabIndex)).toEqual([-1, 0, -1]);
+});
+
+test("an arrow key moves the selection", async () => {
+  const seen: string[] = [];
+  const host = await render(
+    <Segmented label="Theme" value="system" options={[...THEMES]} onChange={(v) => seen.push(v)} />,
+  );
+  const group = host.querySelector("[role='radiogroup']") as HTMLElement;
+  group.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  expect(seen).toEqual(["light"]);
+});
+
+test("arrow keys wrap rather than dead-ending", async () => {
+  const seen: string[] = [];
+  const host = await render(
+    <Segmented label="Theme" value="system" options={[...THEMES]} onChange={(v) => seen.push(v)} />,
+  );
+  const group = host.querySelector("[role='radiogroup']") as HTMLElement;
+  group.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+  expect(seen).toEqual(["dark"]);
+});
+
 test("every option is visible at once, unlike the select it replaces", async () => {
   // A native select on iOS opens a full-screen wheel and hides the other
   // options while you pick between three of them.
@@ -1262,9 +1293,12 @@ Expected: FAIL — cannot resolve module `@web/components/ui/Segmented`.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `src/web/components/ui/Segmented.tsx`:
+Create `src/web/components/ui/Segmented.tsx` (note the `useRef` import — the
+roving tabindex needs to move focus, not just selection):
 
 ```tsx
+import { useRef } from "react";
+
 /**
  * A row of mutually exclusive options, all visible at once.
  *
@@ -1285,9 +1319,46 @@ export function Segmented<T extends string>({
   onChange: (next: T) => void;
   label: string;
 }) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const idx = options.findIndex((o) => o.value === value);
+
+  /**
+   * Move the selection, wrapping at both ends.
+   *
+   * An unknown current value (idx < 0) is treated as sitting before the first
+   * option rather than throwing — a prefs file holding a value this build no
+   * longer offers must still leave the control operable.
+   */
+  function move(delta: number) {
+    if (options.length === 0) return;
+    const next = ((idx < 0 ? 0 : idx) + delta + options.length) % options.length;
+    onChange(options[next]!.value);
+    refs.current[next]?.focus();
+  }
+
+  function jump(to: number) {
+    onChange(options[to]!.value);
+    refs.current[to]?.focus();
+  }
+
   return (
-    <div role="radiogroup" aria-label={label} className="seg">
-      {options.map((o) => {
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="seg"
+      // A radiogroup that only carried the ROLE would be the "role added,
+      // behaviour not" anti-pattern: assistive tech announces a radiogroup, the
+      // user presses an arrow key by convention, and nothing moves. Both axes
+      // are handled because the control is horizontal on a phone and a screen
+      // reader user may try either.
+      onKeyDown={(e) => {
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); move(1); }
+        else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+        else if (e.key === "Home") { e.preventDefault(); jump(0); }
+        else if (e.key === "End") { e.preventDefault(); jump(options.length - 1); }
+      }}
+    >
+      {options.map((o, i) => {
         const selected = o.value === value;
         return (
           <button
@@ -1295,6 +1366,12 @@ export function Segmented<T extends string>({
             type="button"
             role="radio"
             aria-checked={selected}
+            ref={(n) => { refs.current[i] = n; }}
+            /* Roving tabindex: the whole group is ONE tab stop, which is what a
+               radiogroup promises. One tab stop per option would cost three
+               presses to get past a three-option control, and the settings
+               screen has two of them. */
+            tabIndex={selected || (idx < 0 && i === 0) ? 0 : -1}
             data-selected={selected ? "yes" : "no"}
             className="seg-item"
             onClick={() => onChange(o.value)}
