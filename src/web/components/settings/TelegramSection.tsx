@@ -1,3 +1,6 @@
+import { Card } from "@web/components/ui/Card";
+import { SendIcon } from "@web/components/ui/icons";
+
 interface TelegramSectionProps {
   token: string; setToken: (v: string) => void;
   chatId: string; setChatId: (v: string) => void;
@@ -11,7 +14,7 @@ export function TelegramSection({
   token, setToken, chatId, setChatId, tokenPlaceholder, testing, testResult, onTest,
 }: TelegramSectionProps) {
   return (
-    <>
+    <Card icon={<SendIcon />} title="Telegram" subtitle="The bot that delivers them.">
       <label className="settings-field">
         <span>Telegram token</span>
         <input
@@ -51,6 +54,6 @@ export function TelegramSection({
           {testResult.ok ? "Test message sent." : testResult.detail}
         </p>
       )}
-    </>
+    </Card>
   );
 }

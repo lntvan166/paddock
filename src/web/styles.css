@@ -783,6 +783,19 @@ body {
   font-weight: 600;
 }
 
+.band { padding: 0.9rem 0.9rem 0.4rem; }
+
+.band-label {
+  margin: 0 0 0.15rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--fg-dim);
+}
+
+.band-hint { margin: 0 0 0.6rem; font-size: 0.72rem; color: var(--fg-dim); }
+
 .settings-section {
   padding: 0.9rem 0.9rem 1.2rem;
   border-bottom: 1px solid var(--border);

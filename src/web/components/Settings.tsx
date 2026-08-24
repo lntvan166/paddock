@@ -277,7 +277,13 @@ export function Settings({ onBack }: SettingsProps) {
       {loadError && <p className="settings-banner">{loadError}</p>}
       <Toast message={savedAt === null ? null : "Settings saved"} />
 
-      <DeviceSection prefs={prefs} setPref={setPref} />
+      <div className="band">
+        <p className="band-label">This device</p>
+        <p className="band-hint">
+          Stored in this browser only. Each device you open paddock on keeps its own copy.
+        </p>
+        <DeviceSection prefs={prefs} setPref={setPref} />
+      </div>
 
       {/* Present only while a tunnel is running: `view.tunnel` is null for a
           paddock served the ordinary way, which has nothing to pair. */}
@@ -296,9 +302,9 @@ export function Settings({ onBack }: SettingsProps) {
         />
       )}
 
-      <section className="settings-section">
-        <h2>All devices</h2>
-        <p className="settings-hint">
+      <div className="band">
+        <p className="band-label">All devices</p>
+        <p className="band-hint">
           These are server settings and affect every device, not just this one.
         </p>
 
@@ -331,7 +337,7 @@ export function Settings({ onBack }: SettingsProps) {
         />
 
         {saveError && <p className="settings-banner">{saveError}</p>}
-      </section>
+      </div>
 
       {/* `dirty` is false while `baseline === null`, which is what used to be
           `disabled={saving || view === null}` on a Save button: every field

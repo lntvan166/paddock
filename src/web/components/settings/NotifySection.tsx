@@ -1,5 +1,8 @@
 import type { NotifyTrigger } from "@shared/types";
 import { isQuickTunnelUrl } from "@shared/quick-tunnel";
+import { BellIcon } from "@web/components/ui/icons";
+import { Card } from "@web/components/ui/Card";
+import { Toggle } from "@web/components/ui/Toggle";
 
 interface NotifySectionProps {
   notifyEnabled: boolean; setNotifyEnabled: (v: boolean) => void;
@@ -40,18 +43,27 @@ export function NotifySection({
   notifyEnabled, setNotifyEnabled, triggers, toggleTrigger, cooldownMs, setCooldownMs,
   publicUrl, setPublicUrl, settleMs, setSettleMs, mutedUntil, serverNow, onMute, muting,
 }: NotifySectionProps) {
+  const quickTunnel = isQuickTunnelUrl(publicUrl);
   return (
-    <>
-      <label className="settings-field settings-field-row">
-        <span>Notifications</span>
-        <input
-          type="checkbox"
-          name="notifyEnabled"
-          checked={notifyEnabled}
-          onChange={(e) => setNotifyEnabled(e.target.checked)}
+    <Card
+      icon={<BellIcon />}
+      title="Notifications"
+      subtitle="Telegram messages when an agent needs you or finishes."
+      control={(
+        <Toggle
+          label="Notifications" checked={notifyEnabled}
+          onChange={setNotifyEnabled}
         />
-      </label>
-
+      )}
+      footer={quickTunnel ? (
+        <>
+          That is a quick-tunnel URL, and it changes every time <code>paddock tunnel</code> runs
+          — so saving it here will point notification links at a hostname that has stopped
+          resolving. Leave this empty while using <code>paddock tunnel</code>: it fills the link
+          in automatically for the life of each run.
+        </>
+      ) : undefined}
+    >
       {/* Only 1h / 4h / 8h, plus Unmute while muted — deliberately no
           "mute indefinitely" button. `notifyEnabled` above is already that
           control, and two controls for one state is how an operator ends up
@@ -153,23 +165,11 @@ export function NotifySection({
         <span className="settings-hint-inline">
           Where you reach paddock from your phone. Used to build the link in each message.
         </span>
-        {/* Shown whether or not a tunnel is running right now: the staleness
-            is a property of the SAVED value, not of the current session. A
-            quick tunnel's hostname is thrown away and re-minted on every run
-            of `paddock tunnel`, so a value saved here goes dead the moment
-            that run ends — and every Telegram link built from it points
-            nowhere from then on. The fix is to leave the field empty: Task 8
-            already has the server fill this in from the live tunnel, in
-            memory, for the life of each run, so a saved value here only ever
-            fights that instead of helping it. */}
-        {isQuickTunnelUrl(publicUrl) && (
-          <p className="settings-banner">
-            That is a quick-tunnel URL, and it changes every time <code>paddock tunnel</code> runs
-            — so saving it here will point notification links at a hostname that has stopped
-            resolving. Leave this empty while using <code>paddock tunnel</code>: it fills the link
-            in automatically for the life of each run.
-          </p>
-        )}
+        {/* The staleness warning for this field, shown whether or not a
+            tunnel is running right now, now lives in the card's `footer`
+            (above) rather than floated here — it explains why the field
+            should be left alone, which is a fact about the setting rather
+            than a validation error on this one input. */}
       </label>
 
       <label className="settings-field">
@@ -192,6 +192,6 @@ export function NotifySection({
           Shortest gap between two messages about the same agent.
         </span>
       </label>
-    </>
+    </Card>
   );
 }
