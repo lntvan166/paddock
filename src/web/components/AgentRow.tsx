@@ -1,5 +1,5 @@
 import type { Agent } from "@shared/types";
-import { formatElapsed } from "@web/components/elapsed";
+import { elapsedLabel } from "@web/components/elapsed";
 import { IconTile } from "@web/components/ui/IconTile";
 import { StatusDot } from "@web/components/ui/StatusDot";
 
@@ -46,7 +46,7 @@ export function AgentRow({
         <div className="ident row-name truncate">{agent.name}</div>
         <div className="row-task truncate">{agent.task}</div>
       </div>
-      <span className="ident row-meta shrink-0">{formatElapsed(now - agent.stateSince)}</span>
+      <span className="ident row-meta shrink-0">{elapsedLabel(now - agent.stateSince, agent.stateSinceExact)}</span>
     </div>
   );
 }

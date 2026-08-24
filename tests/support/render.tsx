@@ -53,7 +53,7 @@ export function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state: "working", workspaceId: "w1",
     workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
-    stateSince: 0, updatedAt: 0, acknowledgedAt: null, hasJournal: false, ...over,
+    stateSince: 0, stateSinceExact: true, updatedAt: 0, acknowledgedAt: null, hasJournal: false, ...over,
   };
 }
 

@@ -56,7 +56,11 @@ export function toAgent(rawAgent: HerdrAgentRaw, ctx: AdaptContext): Agent | nul
     workspaceLabel: ctx.labels.get(rawAgent.workspace_id) ?? null,
     cwd: rawAgent.cwd ?? "",
     harness: rawAgent.agent,
+    // The only defensible floor: herdr gives no timestamp, so first sight is
+    // all paddock knows. `stateSinceExact: false` is what stops this being
+    // rendered as a fact — see the field's note in @shared/types.
     stateSince: ctx.now,
+    stateSinceExact: false,
     updatedAt: ctx.now,
     acknowledgedAt: null,
     hasJournal: ctx.hasJournal?.(rawAgent.agent_session) ?? false,
@@ -85,6 +89,10 @@ export function applyStatusEvent(prev: Agent, data: HerdrStatusChanged, now: num
     state,
     task: title,
     stateSince: state === prev.state ? prev.stateSince : now,
+    // A transition paddock WATCHED, so the stamp is the real one. Carried
+    // unchanged when the state did not move, or an event storm on a settled
+    // agent would promote a guessed floor to a fact.
+    stateSinceExact: state === prev.state ? prev.stateSinceExact : true,
     updatedAt: now,
     acknowledgedAt: carryAcknowledged(prev, state),
   };

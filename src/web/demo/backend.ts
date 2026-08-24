@@ -45,7 +45,7 @@ const agents: Agent[] = SEED.map((s) => ({
   workspaceLabel: null,
   cwd: "/work/demo",
   harness: s.harness,
-  stateSince: Date.now() - s.ageMs,
+  stateSince: Date.now() - s.ageMs, stateSinceExact: true,
   updatedAt: Date.now(),
   acknowledgedAt: null,
   // Only ONE seeded agent claims a journal. The point of this fixture is to

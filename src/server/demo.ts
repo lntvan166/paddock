@@ -31,7 +31,7 @@ export function demoAgents(now: number): Agent[] {
     workspaceLabel: s.name.replace(/-/g, " "),
     cwd: "/srv/demo-project",
     harness: s.harness,
-    stateSince: now - s.ageMs,
+    stateSince: now - s.ageMs, stateSinceExact: true,
     updatedAt: now,
     acknowledgedAt: null,
     // Only ONE seeded agent claims a journal, matching `web/demo/backend.ts`
@@ -181,7 +181,7 @@ export class DemoSource {
     // feeds it through `store.replaceAll`, which applies carryAcknowledged
     // independently on the real Agent it commits. Do not "fix" it here — that
     // would duplicate the rule instead of the store owning it once.
-    const next: Agent = { ...target, state, stateSince: now, updatedAt: now };
+    const next: Agent = { ...target, state, stateSince: now, stateSinceExact: true, updatedAt: now };
     this.agents = this.agents.map((a) => (a.agentId === next.agentId ? next : a));
     this.cursor += 1;
     this.opts.onDelta({ upserted: [next], removedIds: [] });

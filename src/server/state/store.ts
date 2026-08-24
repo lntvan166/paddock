@@ -74,6 +74,12 @@ export class AgentStore {
       const merged: Agent = {
         ...next,
         stateSince: next.state === prev.state ? prev.stateSince : now,
+        // A change the reconcile caught is still a change paddock observed —
+        // accurate to the reconcile interval rather than to the millisecond,
+        // which is far better than the alternative of a floor stamped at
+        // startup. Carried when the state held, so a settled agent keeps
+        // whatever confidence it already had.
+        stateSinceExact: next.state === prev.state ? prev.stateSinceExact : true,
         updatedAt: now,
         // Same carry rule as the push path (applyStatusEvent) — see
         // carryAcknowledged in @shared/types for why there is only one copy.

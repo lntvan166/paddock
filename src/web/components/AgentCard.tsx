@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { ActionResult, Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
-import { formatElapsed } from "@web/components/elapsed";
+import { elapsedLabel } from "@web/components/elapsed";
 import { StatusDot } from "@web/components/AgentRow";
 import { IconTile } from "@web/components/ui/IconTile";
 import { StateIcon } from "@web/components/ui/StateIcon";
@@ -97,7 +97,7 @@ export function AgentCard({
         <IconTile harness={agent.harness} badge={<StatusDot state={agent.state} />} />
         <h3 className="ident row-name min-w-0 flex-1 truncate">{agent.name}</h3>
         <span className="ident row-meta shrink-0">
-          {formatElapsed(now - agent.stateSince)}
+          {elapsedLabel(now - agent.stateSince, agent.stateSinceExact)}
         </span>
       </header>
       <p className="row-task mt-2">{agent.task}</p>

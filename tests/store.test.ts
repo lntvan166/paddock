@@ -16,6 +16,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     cwd: "/srv/project",
     harness: "claude",
     stateSince: NOW,
+    stateSinceExact: true,
     updatedAt: NOW,
     acknowledgedAt: null,
     hasJournal: false,
@@ -109,4 +110,30 @@ test("snapshot orders needs-you by most recent state change first", () => {
     NOW,
   );
   expect(store.snapshot().map((a) => a.name)).toEqual(["newer", "older"]);
+});
+
+test("an age paddock never witnessed stays marked as a bound, and a real one is promoted", () => {
+  // The defect this pins, from a live instance: five agents idle for days all
+  // read "1h", every one sharing the same stateSince to the millisecond, because
+  // that was how long paddock had been up. herdr's agent.list carries no
+  // timestamp, so first sight is the only floor available — the fix is not a
+  // better guess, it is admitting which of the two it is.
+  const store = new AgentStore("dev-box");
+
+  // First sight, straight off agent.list: a floor, not a fact.
+  const fresh = { ...agent({ state: "idle" }), stateSince: NOW, stateSinceExact: false };
+  store.replaceAll([fresh], NOW);
+  expect(store.snapshot()[0]!.stateSinceExact).toBe(false);
+
+  // A reconcile that sees the SAME state must not promote it — nothing was
+  // witnessed, and a repeated listing is not evidence of a transition.
+  store.replaceAll([{ ...fresh, stateSince: NOW + 60_000 }], NOW + 60_000);
+  expect(store.snapshot()[0]!.stateSinceExact, "a repeated listing is not a transition").toBe(false);
+  expect(store.snapshot()[0]!.stateSince, "and it does not reset the floor either").toBe(NOW);
+
+  // A reconcile that catches a real change is an observation, so the stamp
+  // becomes the real one.
+  store.replaceAll([{ ...fresh, state: "blocked" }], NOW + 120_000);
+  expect(store.snapshot()[0]!.stateSinceExact).toBe(true);
+  expect(store.snapshot()[0]!.stateSince).toBe(NOW + 120_000);
 });

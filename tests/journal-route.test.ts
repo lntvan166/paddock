@@ -16,7 +16,7 @@ function agent(over: Partial<Agent> = {}): Agent {
   return {
     hostId: "dev-box", agentId: "w1:p1", name: "docs-cleanup",
     task: "Tidy the README", state: "working", workspaceId: "w1",
-    workspaceLabel: "docs", cwd: "/srv/project", harness: "claude", stateSince: NOW, updatedAt: NOW,
+    workspaceLabel: "docs", cwd: "/srv/project", harness: "claude", stateSince: NOW, stateSinceExact: true, updatedAt: NOW,
     acknowledgedAt: null, hasJournal: true, ...over,
   };
 }

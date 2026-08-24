@@ -224,3 +224,30 @@ test("the session id is NOT on the wire type", () => {
   const [a] = toAgents([raw({ pane_id: "w1:p1", agent_session: session })], ctx);
   expect(JSON.stringify(a)).not.toContain("secret-uuid");
 });
+
+
+test("an agent off agent.list is stamped as a bound, not as a fact", () => {
+  // herdr gives no timestamp here — `state_change_seq` and `revision` are
+  // sequence numbers, not clocks — so the age of an agent paddock has just met
+  // is unknowable and `ctx.now` is a floor. The flag is what stops the UI
+  // rendering that floor as an age: on a live instance five agents idle for days
+  // all read "1h", sharing one stateSince to the millisecond, because that was
+  // how long paddock had been up.
+  expect(toAgent(raw({ agent_status: "idle" }), ctx)!.stateSinceExact).toBe(false);
+});
+
+test("a watched status change promotes the stamp, and a repeat does not", () => {
+  const prev = toAgent(raw({ agent_status: "idle" }), ctx)!;
+
+  const moved = applyStatusEvent(
+    prev, { pane_id: "w1:p1", workspace_id: "w1", agent_status: "blocked" }, NOW + 5000,
+  );
+  expect(moved.stateSinceExact, "paddock saw this one happen").toBe(true);
+  expect(moved.stateSince).toBe(NOW + 5000);
+
+  const same = applyStatusEvent(
+    prev, { pane_id: "w1:p1", workspace_id: "w1", agent_status: "idle" }, NOW + 9000,
+  );
+  expect(same.stateSinceExact, "same state, so still only a bound").toBe(false);
+  expect(same.stateSince, "and the floor is untouched").toBe(NOW);
+});

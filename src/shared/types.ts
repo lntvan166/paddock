@@ -75,8 +75,29 @@ export interface Agent {
    * always had one.
    */
   harness: string;
-  /** Epoch ms when this state was first observed. Stamped by paddock. */
+  /** Epoch ms of the earliest moment paddock can vouch for this state. */
   stateSince: number;
+  /**
+   * Whether `stateSince` is the real transition, or only the moment paddock
+   * started watching.
+   *
+   * herdr's `agent.list` row carries NO timestamp — `state_change_seq` and
+   * `revision` are sequence numbers, not clocks — so an agent paddock meets for
+   * the first time has an age paddock cannot know. `toAgent` stamps `ctx.now`
+   * because that is the only defensible floor, and the consequence was a screen
+   * that lied: five agents idle for days all read `1h` because that is how long
+   * paddock had been up, and every one of them shared the identical
+   * `stateSince` to the millisecond.
+   *
+   * False means "at least this long", and the UI says so with a `+`. True means
+   * paddock saw the transition, via `pane.agent_status_changed` or a reconcile
+   * that caught the change, and the number is the real one.
+   *
+   * Required, not optional, for the reason `harness` gives: optional lets a
+   * future edit drop it silently, and the failure mode is a number that reads
+   * as fact when it is a floor.
+   */
+  stateSinceExact: boolean;
   updatedAt: number;
   /**
    * Epoch ms when the operator dismissed this agent's `done` from paddock,

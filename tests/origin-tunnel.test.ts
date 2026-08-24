@@ -37,7 +37,7 @@ function agent(): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "docs-cleanup",
     task: "Tidy the README", state: "done", workspaceId: "w1",
     workspaceLabel: "docs", cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, updatedAt: NOW, acknowledgedAt: null, hasJournal: false,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false,
   };
 }
 

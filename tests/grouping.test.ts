@@ -9,7 +9,7 @@ function agent(name: string, state: Agent["state"], stateSince = NOW): Agent {
   return {
     hostId: "dev-box", agentId: name, name, task: `task for ${name}`, state,
     workspaceId: "w1", workspaceLabel: null, cwd: "/srv/project", harness: "claude",
-    stateSince, updatedAt: stateSince, acknowledgedAt: null, hasJournal: false,
+    stateSince, stateSinceExact: true, updatedAt: stateSince, acknowledgedAt: null, hasJournal: false,
   };
 }
 

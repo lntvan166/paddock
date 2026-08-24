@@ -7,7 +7,7 @@ const NOW = 1_700_000_000_000;
 const agent = (over: Partial<Agent> = {}): Agent => ({
   hostId: "dev-box", agentId: "w1:p1", name: "flaky-test-fix",
   task: "Re-running the suite", state: "working", workspaceId: "w1",
-  workspaceLabel: null, cwd: "/srv/project", harness: "claude", stateSince: NOW,
+  workspaceLabel: null, cwd: "/srv/project", harness: "claude", stateSince: NOW, stateSinceExact: true,
   updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
 });
 
