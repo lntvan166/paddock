@@ -34,8 +34,13 @@ test("every block kind has a CSS rule, or it renders unstyled", () => {
 test("structure and rule pin the properties that make them work", () => {
   const css = readFileSync("src/web/styles.css", "utf8");
   const ruleFor = (sel: string) => {
-    const at = css.indexOf(`${sel} {`);
-    expect(at).toBeGreaterThan(-1);
+    // Anchored at a line start. `indexOf(".term-structure {")` also matches
+    // inside a grouped selector like `.term-pane, .term-structure {`, and if
+    // such a group appears earlier in the file this reads THAT rule's body and
+    // asserts against the wrong declarations — which is exactly what happened
+    // when the pane and the strip briefly shared a scrollbar rule.
+    const at = css.indexOf(`\n${sel} {`);
+    expect(at, `no rule begins a line with \`${sel} {\``).toBeGreaterThan(-1);
     return css.slice(at, css.indexOf("}", at));
   };
   // Structure must never reflow, and must scroll on its own.
@@ -79,8 +84,13 @@ test("the prompt controls give an unbreakable run somewhere to break", () => {
   // which had no such treatment.
   const css = readFileSync("src/web/styles.css", "utf8");
   const ruleFor = (sel: string) => {
-    const at = css.indexOf(`${sel} {`);
-    expect(at).toBeGreaterThan(-1);
+    // Anchored at a line start. `indexOf(".term-structure {")` also matches
+    // inside a grouped selector like `.term-pane, .term-structure {`, and if
+    // such a group appears earlier in the file this reads THAT rule's body and
+    // asserts against the wrong declarations — which is exactly what happened
+    // when the pane and the strip briefly shared a scrollbar rule.
+    const at = css.indexOf(`\n${sel} {`);
+    expect(at, `no rule begins a line with \`${sel} {\``).toBeGreaterThan(-1);
     return css.slice(at, css.indexOf("}", at));
   };
   for (const sel of [".term-option", ".term-selected", ".term-question"]) {

@@ -32,6 +32,14 @@
      cannot read off the file. Kept far enough from --bg to register as a
      wash and close enough not to compete with the border. */
   --danger-wash: #fdf0f0;
+  /* The same idea as --danger-wash, for the interaction colour: a ground
+     tinted far enough from --bg to register and not far enough to compete with
+     the accent border on top of it. Spelled out in all three theme blocks for
+     the reason given above — a color-mix() here would be the one value an
+     operator cannot read off the file. Used by the prompt option Enter would
+     commit, which is the only place in the app that needs to say "this one"
+     without saying "danger" or "done". */
+  --accent-wash: #eef0fb;
 
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
@@ -93,6 +101,37 @@
      visible mismatch between two things an operator reads side by side. This
      is the longest of the three prior stacks. */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ── Type scale ─────────────────────────────────────────────────────────
+     Four steps, and every piece of type in the app picks one of them.
+
+     What this replaces: the dashboard's type was `text-[9.5px]`,
+     `text-[10px]`, `text-[11px]`, `text-[12.5px]` and `text-[13px]` — five
+     sizes inside a 3.5px range, two of them half-pixel. Half-pixel sizes are
+     the tell that nothing was scaled, things were nudged until they fit. The
+     effect on a phone was that hierarchy could not be carried by size at all,
+     so it was all carried by weight and colour, and the agent name — the one
+     string you scan for while walking — was 12.5px, half a pixel SMALLER than
+     the word "paddock" above it. iOS sets its own list rows at 17px.
+
+     In rem, not px, so these follow the reader's own browser text size. The
+     old arbitrary px values ignored it completely.
+
+     The steps are far enough apart to read as different roles at arm's
+     length. Anything that wants a size between two steps wants one of the
+     two steps. */
+  --t-xs: 0.6875rem;  /* 11px — eyebrows, ages, counts, badges: metadata */
+  --t-md: 0.8125rem;  /* 13px — anything you read: prose, labels, controls */
+  --t-lg: 0.9375rem;  /* 15px — agent names, the wordmark: the scan target */
+  --t-xl: 1.0625rem;  /* 17px — a screen's own title, and nothing else */
+
+  /* There is no `--t-sm`. It was 12px, one pixel from --t-xs, which is a step
+     nobody can see and therefore not a step — the same huddle this scale
+     replaced, reintroduced inside the scale itself. `tests/tokens.test.ts`
+     fails on any two steps closer than 1.5px, which is what caught it. Four
+     steps turned out to be all the app has roles for: metadata, things you
+     read, the thing you scan for, and the screen's name. */
+
   /* ── shadcn bridge ──────────────────────────────────────────────────────
      shadcn's semantic tokens, ALIASED onto paddock's rather than given their
      own values. Three reasons, each one a bug this avoids:
@@ -151,6 +190,7 @@
     --ok: #3fb950;
     --danger: #f85149;
     --danger-wash: #2a1416;
+    --accent-wash: #1b1f3a;
   }
 }
 
@@ -166,6 +206,7 @@
   --ok: #3fb950;
   --danger: #f85149;
   --danger-wash: #2a1416;
+  --accent-wash: #1b1f3a;
 }
 
 /* System fonts only. A webfont would be the single largest payload on a slow
@@ -270,6 +311,68 @@ body {
    instead, which carries its own border and accent. */
 .row { border-top: 1px solid var(--border); }
 
+/* ── Two voices ───────────────────────────────────────────────────────────
+   The one idea the dashboard's typography carries: mono is what the MACHINE
+   said, sans is what paddock says.
+
+   `schema-migration`, `flaky-test-fix`, `demo-box`, `6m`, `v0.8.5` are
+   identifiers and machine readings — you do not read them as words, you match
+   them against something you already know. Prose like "Waiting for input" or
+   "Apply migration to staging" is paddock talking to a person.
+
+   Splitting them is free (both faces are already loaded — the stylesheet
+   commits to system fonts because a webfont is the biggest payload on a slow
+   link, and `tests/tokens.test.ts` guards that), it is specific to a tool
+   whose subject IS terminal output, and it gives the list a face that is hard
+   to mistake for a generic admin panel. It also does real work: a name in mono
+   is scannable down a column in a way a proportional face is not, because the
+   glyphs line up.
+
+   Applied to identifiers ONLY. Extending it to paddock's own sentences would
+   spend the distinction and leave the page shouting in one voice again. */
+.ident {
+  font-family: var(--mono);
+  /* Mono runs wide. Pulling it back keeps a long agent name on one line at a
+     step size that would otherwise start truncating names that used to fit. */
+  letter-spacing: -0.02em;
+}
+
+/* The scan target: the largest type on the dashboard, and the only reason the
+   screen exists. */
+.row-name {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  /* Mono's own weight jump is subtler than the sans one, so 600 here reads
+     closer to 500 — which is why this does not need to go higher. */
+}
+
+.row-task {
+  font-size: var(--t-md);
+  line-height: 1.35;
+  color: var(--fg-dim);
+}
+
+/* Ages, counts, host id: read as data, set as data. */
+.row-meta {
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The state word beside its icon. Paddock's voice, so sans. */
+.row-state {
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
+
+.sec-label {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -291,9 +394,9 @@ body {
 
 .card-heading { min-width: 0; flex: 1; }
 
-.card-title { margin: 0; font-size: 0.85rem; font-weight: 600; }
+.card-title { margin: 0; font-size: var(--t-md); font-weight: 600; }
 
-.card-sub { margin: 0.1rem 0 0; font-size: 0.75rem; color: var(--fg-dim); }
+.card-sub { margin: 0.1rem 0 0; font-size: var(--t-md); color: var(--fg-dim); }
 
 /* Centred against a two-line heading rather than top-aligned: the switch is
    about the whole setting, not about its first line. */
@@ -304,7 +407,7 @@ body {
 .card-foot {
   border-top: 1px solid var(--border);
   padding: 0.6rem 0.9rem;
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   color: var(--fg-dim);
 }
 
@@ -316,7 +419,7 @@ body {
   justify-content: space-between;
   gap: 0.75rem;
   min-height: 2.75rem;
-  font-size: 0.8rem;
+  font-size: var(--t-md);
 }
 
 .card-row + .card-row { border-top: 1px solid var(--border); }
@@ -362,7 +465,7 @@ body {
    different styling from the other. */
 .card-hint {
   margin: 0 0 0.6rem;
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   line-height: 1.35;
   color: var(--fg-dim);
 }
@@ -407,7 +510,7 @@ body {
   border-radius: 0.45rem;
   background: none;
   color: var(--fg-dim);
-  font-size: 0.78rem;
+  font-size: var(--t-md);
   cursor: pointer;
 }
 
@@ -491,7 +594,10 @@ body {
   font-family: var(--mono);
   /* Fluid, because the useful measure here is COLUMNS VISIBLE, not points. A
      fixed size shows ~40 columns on a small phone and wastes half a tablet.
-     Floor and ceiling are both legibility bounds. */
+     Floor and ceiling are both legibility bounds.
+     DELIBERATELY off the --t-* scale, like `.term-pane`: this is the agent's
+     own output, and it is sized to fit the columns the agent drew rather than
+     to sit in paddock's type hierarchy. */
   font-size: clamp(0.7rem, 2.6vw, 0.8rem);
   line-height: 1.4;
   background: var(--bg);
@@ -564,7 +670,16 @@ body {
    name's baseline, sitting the dot low. Nothing here depends on baseline
    alignment; the name is ellipsised and the stalled marker carries its own. */
 .term-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.5rem; }
-.term-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Mono, for the same reason the dashboard sets agent names in mono: this is an
+   identifier you match against the row you tapped, not prose. It also keeps
+   the two screens' idea of "which agent is this" looking like one idea. */
+.term-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+}
 /* Only ever rendered for `blocked` (see AgentTerminal), so the danger colours
    are unconditional. It was --fg-dim, which said the loudest state in the app
    in the same grey as everything incidental — the dashboard says it with red on
@@ -579,7 +694,7 @@ body {
   border-radius: 0.3rem;
   background: var(--danger-wash);
   color: var(--danger);
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -610,9 +725,38 @@ body {
   line-height: 1.35;
   background: var(--term-bg);
   color: var(--term-fg);
+  /* Own scrollbars, because the pane is dark in BOTH themes. The platform
+     default is a chunky light-grey bar, and on output wide enough to scroll it
+     sat across the transcript looking like part of the page rather than part of
+     the pane. Declared here rather than in a `.term-pane, .term-structure`
+     group: `tests/block-styles.test.ts` finds a rule with
+     `indexOf(".term-structure {")`, and a grouped selector containing that
+     substring shadows the real rule and gets asserted against instead. */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.22) transparent;
 }
 
-.term-error, .term-note { flex: none; margin: 0; padding: 0.5rem 0.75rem; font-size: 0.8rem; }
+/* The pane is dark in both themes, so it gets its own scrollbars. The platform
+   default is a chunky light-grey bar, and on a table wide enough to scroll it
+   sat across the middle of the transcript looking like part of the page rather
+   than part of the pane. Thin, translucent, and drawn from the pane's own
+   foreground. Firefox takes the two-value `scrollbar-color`; WebKit needs the
+   pseudo-elements, so both are here rather than one being enough. */
+.term-pane::-webkit-scrollbar, .term-structure::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+.term-pane::-webkit-scrollbar-track, .term-structure::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.term-pane::-webkit-scrollbar-thumb, .term-structure::-webkit-scrollbar-thumb {
+  border-radius: 0.25rem;
+  background: rgb(255 255 255 / 0.22);
+}
+
+.term-error, .term-note { flex: none; margin: 0; padding: 0.5rem 0.75rem; font-size: var(--t-md); }
 
 /* Three columns: the two wide keys on the last row span the leftover space.
    Every key clears 44px because this is the primary control surface, and a
@@ -657,6 +801,9 @@ body {
 .term-keys-primary { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 0.35rem; }
 .term-keys-secondary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; }
 
+/* Quieter than the prompt options above, by design. A key is a fallback for
+   output paddock could not turn into a labelled choice, so it should be
+   findable and not attention-seeking. Same shape, one rung down in weight. */
 .term-key {
   min-height: 2.75rem;
   border: 1px solid var(--border);
@@ -664,16 +811,27 @@ body {
      small bordered thing you tap in a row of siblings. */
   border-radius: 0.4rem;
   background: var(--bg);
-  color: var(--fg);
+  color: var(--fg-dim);
   font: inherit;
   font-weight: 500;
   cursor: pointer;
 }
 
+/* Enter is the committing key, and the only one here that changes anything on
+   its own — the arrows just move a highlight. It was distinguished by WIDTH
+   alone, which is not a distinction you notice under pressure. Bordered rather
+   than filled: the filled accent belongs to Send, and two solid accent blocks
+   in one panel is the boldness spent twice. */
+.term-key-enter {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Still a 40px target. Below the 44px guideline for the PRIMARY row only
    because these five are secondary by design, and buying back a row of
    transcript on a phone is worth more than four extra pixels on Tab. */
-.term-key-sm { min-height: 2.5rem; font-size: 0.8rem; }
+.term-key-sm { min-height: 2.5rem; font-size: var(--t-md); }
 
 .term-key:active { background: var(--border); }
 .term-key:disabled { opacity: 0.5; }
@@ -720,7 +878,18 @@ body {
   cursor: pointer;
 }
 
-.term-reply button:disabled { opacity: 0.5; }
+/* Empty field: the button is a real disabled control, not the accent at half
+   strength. At `opacity: 0.5` a saturated fill goes pale-violet with white text
+   on it, which reads as broken rather than as waiting for you to type — and it
+   was the primary action on the screen, so "broken" was the wrong first
+   impression. This says unavailable-for-now in the vocabulary the rest of the
+   app already uses for that. */
+.term-reply button:disabled {
+  opacity: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+}
 
 /* Label kept for screen readers; the placeholder carries it visually. */
 .sr-only {
@@ -734,7 +903,7 @@ body {
 
 /* A pane whose polling has failed. Warn-coloured and always visible: the
    alternative is a frozen transcript that looks live. */
-.term-stalled { font-size: 0.65rem; color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; }
+.term-stalled { font-size: var(--t-xs); color: var(--warn); text-transform: uppercase; letter-spacing: 0.04em; }
 
 /* Wrap mode: the PANE itself never scrolls sideways. Prose reflows to the
    viewport, and anything that must keep its columns gets its own strip below.
@@ -770,6 +939,9 @@ body {
 .term-structure {
   white-space: pre;
   overflow-x: auto;
+  /* Same thin scrollbar as the pane it sits in — see `.term-pane`. */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.22) transparent;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
 }
@@ -800,7 +972,7 @@ body {
 /* A mode indicator, not an icon — the label says which mode is ACTIVE. */
 .term-wrap-toggle,
 .term-keys-toggle {
-  font-size: 0.7rem;
+  font-size: var(--t-md);
   font-weight: 600;
   letter-spacing: 0.02em;
   padding: 0 0.5rem;
@@ -820,7 +992,7 @@ body {
   background: var(--surface);
   color: var(--accent);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--t-md);
   font-weight: 600;
   cursor: pointer;
 }
@@ -855,7 +1027,7 @@ body {
 
 .term-question {
   margin: 0 0 0.15rem;
-  font-size: 0.8rem;
+  font-size: var(--t-md);
   color: var(--fg-dim);
   overflow-wrap: anywhere;
 }
@@ -880,7 +1052,12 @@ body {
   background: var(--bg);
   color: var(--fg);
   font: inherit;
-  font-size: 0.85rem;
+  /* Larger than the keypad below it, deliberately. This is the text a person
+     READS before committing something to a real agent; the keypad is a
+     fallback for a TUI paddock could not parse. They were the same size, in
+     the same weight, in nine near-identical rounded boxes stacked down the
+     bottom half of the screen — "Yes" looked like "Space". */
+  font-size: var(--t-md);
   /* An option label is copied from the agent's screen verbatim, and a TUI that
      draws its options beside a preview panel puts that panel's box-drawing in
      the same line — so a label can carry a run like `────────────` with no
@@ -894,7 +1071,17 @@ body {
   cursor: pointer;
 }
 
-.term-option[aria-pressed="true"] { border-color: var(--accent); }
+/* What Enter would commit, said on the option ITSELF and not only in the line
+   below it. A border-colour change alone was the entire signal, which on a
+   phone at arm's length is a hairline: three options of identical weight, one
+   of them a slightly different shade of grey at the edge. The fill is what
+   makes it findable without reading. */
+.term-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  font-weight: 600;
+}
+
 .term-option:disabled { opacity: 0.5; }
 
 /* What Enter would commit. Warn-coloured because the thing it prevents is
@@ -903,7 +1090,7 @@ body {
   flex: none;
   margin: 0;
   padding: 0.4rem 0.7rem;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   color: var(--fg);
   overflow-wrap: anywhere;
   border-top: 1px solid var(--border);
@@ -911,7 +1098,7 @@ body {
 
 .term-selected-label {
   display: block;
-  font-size: 0.65rem;
+  font-size: var(--t-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -929,7 +1116,7 @@ body {
   padding: 0.5rem 0.75rem;
   background: var(--accent);
   color: var(--accent-fg);
-  font-size: 0.8rem;
+  font-size: var(--t-md);
 }
 
 .update-bar button {
@@ -957,6 +1144,9 @@ body {
   border-radius: 0.4rem;
   background: var(--surface);
   color: var(--fg);
+  /* Off the --t-* scale on purpose: this sizes the ⚙ GLYPH, not text. Putting
+     it on the text scale would shrink the only icon in the header to the size
+     of a caption. */
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
@@ -990,25 +1180,28 @@ body {
 
 .settings-title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--t-xl);
   font-weight: 600;
 }
 
 .band { padding: 0.9rem 0.9rem 0.4rem; }
 
+/* The same device as `.sec-label` on the dashboard, so the same size and the
+   same tracking. They were 0.62rem/0.09em here and 9.5px/0.09em there, which
+   is two eyebrows that look alike without being alike. */
 .band-label {
   margin: 0 0 0.15rem;
-  font-size: 0.62rem;
+  font-size: var(--t-xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   color: var(--fg-dim);
 }
 
-.band-hint { margin: 0 0 0.6rem; font-size: 0.72rem; color: var(--fg-dim); }
+.band-hint { margin: 0 0 0.6rem; font-size: var(--t-md); color: var(--fg-dim); }
 
 .settings-token-status {
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   color: var(--fg-dim);
 }
 
@@ -1028,13 +1221,13 @@ body {
   margin: 0 0 0.6rem;
   padding: 0;
   border: 0;
-  font-size: 0.8rem;
+  font-size: var(--t-md);
 }
 
 .settings-triggers legend {
   flex: 0 0 100%;
   width: 100%;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--fg-dim);
   padding: 0 0 0.3rem;
 }
@@ -1073,7 +1266,7 @@ body {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-block: 0.6rem;
-  font-size: 0.8rem;
+  font-size: var(--t-md);
   color: var(--fg);
 }
 
@@ -1099,7 +1292,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.8rem;
+  font-size: var(--t-md);
   color: var(--fg-dim);
 }
 
@@ -1118,13 +1311,17 @@ body {
   width: 4.5rem;
   min-height: 2.75rem;
   padding: 0 0.6rem;
-  /* 16px: iOS zooms a focused input below it, same as `.card-row input`. */
+  /* 16px: iOS zooms a focused input below it, same as `.card-row input`.
+     This rule declared `font-size: 16px` here AND `font-size: 0.8rem` as its
+     last property, so the second one won and the field zoomed on every tap —
+     with a comment two lines above claiming it did not. `tests/tokens.test.ts`
+     now fails on any rule that declares font-size twice, because a stylesheet
+     that contradicts itself cannot be read to find out what it does. */
   font-size: 16px;
   border: 1px solid var(--border);
   border-radius: 0.4rem;
   background: var(--bg);
   color: var(--fg);
-  font-size: 0.8rem;
 }
 
 .settings-banner {
@@ -1134,12 +1331,12 @@ body {
   background: var(--surface);
   border: 1px solid var(--warn);
   color: var(--warn);
-  font-size: 0.78rem;
+  font-size: var(--t-md);
 }
 
 .settings-ok {
   margin: 0.5rem 0 0;
-  font-size: 0.78rem;
+  font-size: var(--t-md);
   color: var(--ok);
 }
 
@@ -1173,12 +1370,15 @@ body {
    nothing new needs redefining under the dark media query or [data-theme]. */
 .pair-code {
   margin: 0 0 0.85rem;
-  font-size: 0.85rem;
+  font-size: var(--t-md);
   color: var(--fg);
 }
 
 .pair-code code {
   font-family: var(--mono);
+  /* Off the --t-* scale on purpose, and the largest type in the app: a pairing
+     code is read off this screen and typed into another device, character by
+     character. Legibility beats hierarchy for exactly this one string. */
   font-size: 1.1rem;
   letter-spacing: 0.12em;
   padding: 0.15rem 0.4rem;
@@ -1234,7 +1434,7 @@ body {
   justify-content: space-between;
   gap: 0.75rem;
   min-height: 2.25rem;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .dl-row + .dl-row { border-top: 1px solid var(--border); }
@@ -1272,7 +1472,7 @@ body {
   padding-block: 0.75rem;
   text-align: center;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-xs);
   color: var(--fg-dim);
 }
 
@@ -1327,7 +1527,7 @@ body {
   border: 1px solid var(--border);
   color: var(--fg-dim);
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
 }
 
 .term-option-label { min-width: 0; }

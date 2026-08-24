@@ -3,6 +3,7 @@ import type { ActionResult, Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
 import { formatElapsed } from "@web/components/elapsed";
 import { StatusDot } from "@web/components/AgentRow";
+import { IconTile } from "@web/components/ui/IconTile";
 import { StateIcon } from "@web/components/ui/StateIcon";
 
 /**
@@ -84,21 +85,27 @@ export function AgentCard({
           : undefined
       }
     >
-      <header className="flex items-center gap-2">
-        <StatusDot state={agent.state} />
-        <h3 className="text-[12.5px] font-semibold">{agent.name}</h3>
-        <span className="ml-auto text-[10px]" style={{ color: "var(--fg-dim)" }}>
+      <header className="flex items-center gap-2.5">
+        {/* The harness tile, which this card did NOT carry.
+            `AgentRow` had it and `AgentCard` did not, so the claude mark and
+            the `CO` initials appeared on the working and idle rows — the ones
+            you are not being asked to do anything about — and were absent from
+            Needs you and Ready. Which runtime is asking is part of deciding
+            how to answer it, and these are the two sections where a person
+            actually decides. The StatusDot rides on the tile here exactly as it
+            does in a row, so the two representations of an agent agree. */}
+        <IconTile harness={agent.harness} badge={<StatusDot state={agent.state} />} />
+        <h3 className="ident row-name min-w-0 flex-1 truncate">{agent.name}</h3>
+        <span className="ident row-meta shrink-0">
           {formatElapsed(now - agent.stateSince)}
         </span>
       </header>
-      <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--fg-dim)" }}>
-        {agent.task}
-      </p>
+      <p className="row-task mt-2">{agent.task}</p>
       {/* Shape, colour and word together. The card is already red or green and
           already says which — the icon is the channel that survives when the
           other two do not, and red-and-green is the pair this palette spends on
           exactly these two states. */}
-      <p className="mt-2 flex items-center gap-1 text-[10px]" style={{ color: "var(--fg-dim)" }}>
+      <p className="row-state mt-2 flex items-center gap-1">
         <StateIcon state={agent.state} />
         {agent.state === "blocked" ? "Waiting for input" : "Finished"}
       </p>
@@ -106,8 +113,11 @@ export function AgentCard({
         <>
           <button
             type="button"
-            className="tap mt-2 rounded px-2 py-1 text-[10px] font-semibold"
-            style={{ border: "1px solid var(--fg-dim)", color: "var(--fg-dim)" }}
+            className="tap mt-2.5 rounded px-2.5 py-1.5 font-semibold"
+            style={{
+              fontSize: "var(--t-md)",
+              border: "1px solid var(--fg-dim)", color: "var(--fg-dim)",
+            }}
             disabled={busy}
             onClick={(e) => void dismiss(e)}
             onKeyDown={stopKeyBubble}
@@ -115,7 +125,7 @@ export function AgentCard({
             Dismiss
           </button>
           {result && !result.ok && (
-            <p className="mt-1 text-[10px]" style={{ color: "var(--danger)" }} role="alert">
+            <p className="mt-1" style={{ fontSize: "var(--t-md)", color: "var(--danger)" }} role="alert">
               {result.detail ?? "Could not dismiss."}
             </p>
           )}

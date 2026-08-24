@@ -67,8 +67,10 @@ export function SectionHeader({
   const label = (
     <>
       {dotState ? <StatusDot state={dotState} /> : null}
-      <span className="text-[9.5px] font-bold uppercase tracking-[0.09em]">{title}</span>
-      <span className="text-[9.5px]"> · {count}</span>
+      <span className="sec-label">{title}</span>
+      {/* The count is a reading off the list, so it takes the machine voice —
+          which also stops it from reading as part of the label. */}
+      <span className="ident row-meta"> · {count}</span>
     </>
   );
   return (

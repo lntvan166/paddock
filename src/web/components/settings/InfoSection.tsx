@@ -46,7 +46,7 @@ export function InfoSection({ health }: { health: HealthBody | null }) {
         icon={<RefreshIcon />}
         title="Updates"
         // Where collie puts it, and it keeps the card body free for the action.
-        subtitle={`Running v${health?.version ?? BUILD.version}`}
+        subtitle={<>Running <span className="ident">v{health?.version ?? BUILD.version}</span></>}
       >
         <div className="card-row">
           <span>{health?.latestKnown ? `v${health.latestKnown} is available` : "Up to date"}</span>

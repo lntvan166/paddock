@@ -36,7 +36,10 @@ export function Card({
 }: {
   icon?: React.ReactNode;
   title?: string;
-  subtitle?: string;
+  /** A node, not a string: a subtitle that quotes a version or a hostname needs
+   *  to set that part in the machine voice (`.ident`) while the sentence around
+   *  it stays sans. See `InfoSection`. */
+  subtitle?: React.ReactNode;
   control?: React.ReactNode;
   footer?: React.ReactNode;
   children?: React.ReactNode;

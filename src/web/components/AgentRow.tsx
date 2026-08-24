@@ -41,14 +41,12 @@ export function AgentRow({
       <IconTile harness={agent.harness} badge={<StatusDot state={agent.state} />} />
       <span className="sr-only">{agent.state}</span>
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-semibold">{agent.name}</div>
-        <div className="truncate text-[11px]" style={{ color: "var(--fg-dim)" }}>
-          {agent.task}
-        </div>
+        {/* `ident` because an agent name is an identifier you match, not prose
+            you read — see the two-voices block in styles.css. */}
+        <div className="ident row-name truncate">{agent.name}</div>
+        <div className="row-task truncate">{agent.task}</div>
       </div>
-      <span className="shrink-0 text-[10px]" style={{ color: "var(--fg-dim)" }}>
-        {formatElapsed(now - agent.stateSince)}
-      </span>
+      <span className="ident row-meta shrink-0">{formatElapsed(now - agent.stateSince)}</span>
     </div>
   );
 }
@@ -69,8 +67,11 @@ export function AgentChip({ agent, onSelect }: { agent: Agent; onSelect?: () => 
   return (
     <button
       type="button"
-      className="tap rounded-full px-2.5 py-1 text-[10px]"
-      style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--fg-dim)" }}
+      className="ident tap rounded-full px-2.5 py-1"
+      style={{
+        fontSize: "var(--t-md)", background: "var(--surface)",
+        border: "1px solid var(--border)", color: "var(--fg-dim)",
+      }}
       onClick={onSelect}
     >
       {agent.name}

@@ -50,26 +50,32 @@ export function HostHeader({
   ].filter(Boolean);
   return (
     <header
-      className="flex items-center justify-between px-3 py-3"
+      className="px-3 py-2.5"
       style={{ borderBottom: "1px solid var(--border)" }}
     >
-      <h1 className="flex items-center gap-1.5 text-[13px] font-semibold">
-        <Mark size={16} />
-        paddock
-      </h1>
-      <div className="flex items-center gap-2">
-        {/* The host label, demoted from the title but not dropped — see
-            DEFAULT_HOST_ID above. `connecting…` still has to appear somewhere:
-            the title is now a constant, so it can no longer carry the "we have
-            not heard from the server yet" signal it used to. */}
-        {hostId === null ? (
-          <span className="text-[10px]" style={{ color: "var(--fg-dim)" }}>connecting…</span>
-        ) : hostId !== DEFAULT_HOST_ID ? (
-          <span className="text-[10px]" style={{ color: "var(--fg-dim)" }}>{hostId}</span>
-        ) : null}
-        <span className="text-[10px]" style={{ color: "var(--fg-dim)" }}>
-          {parts.length ? parts.join(" · ") : "no agents"}
-        </span>
+      {/* Two rows, not one.
+          Everything used to sit on a single line: wordmark, host id, the whole
+          section summary, and the gear. At the type sizes this file now uses
+          that line overflowed at 390px — `demo-box` hyphenated into "demo-" /
+          "box", which is the one thing an identifier must never do, and the
+          summary wrapped under itself. Identity and the way out belong on the
+          top line; the summary is a sentence and gets its own. */}
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="flex min-w-0 items-center gap-1.5 font-semibold" style={{ fontSize: "var(--t-lg)" }}>
+          <Mark size={16} />
+          paddock
+          {/* The host label, demoted from the title but not dropped — see
+              DEFAULT_HOST_ID above. `connecting…` still has to appear
+              somewhere: the title is now a constant, so it can no longer carry
+              the "we have not heard from the server yet" signal it used to.
+              `whitespace-nowrap` because a hostname that breaks across a
+              hyphen reads as a different hostname. */}
+          {hostId === null ? (
+            <span className="row-state ml-1 whitespace-nowrap">connecting…</span>
+          ) : hostId !== DEFAULT_HOST_ID ? (
+            <span className="ident row-meta ml-1 truncate whitespace-nowrap">{hostId}</span>
+          ) : null}
+        </h1>
         {/* The new-release notice USED to live here, as one dim line among the
             other dim metadata. The reasoning was sound — `paddock update` is
             not an alarm — but a 10px line the colour of its neighbours is not
@@ -81,13 +87,18 @@ export function HostHeader({
             tap, not discoverable only with a mouse. */}
         <button
           type="button"
-          className="host-settings-btn tap"
+          className="host-settings-btn tap shrink-0"
           aria-label="Settings"
           onClick={onOpenSettings}
         >
           ⚙
         </button>
       </div>
+      {/* paddock's own sentence about the list, so sans — the counts inside it
+          are part of the sentence, not a data readout. */}
+      <p className="row-state mt-1">
+        {parts.length ? parts.join(" · ") : "no agents"}
+      </p>
     </header>
   );
 }

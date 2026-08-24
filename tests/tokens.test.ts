@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 const TOKENS = [
   "--bg", "--surface", "--border", "--fg", "--fg-dim", "--accent", "--warn", "--ok", "--danger", "--danger-wash",
+  "--accent-wash",
 ];
 
 async function css(): Promise<string> {
@@ -113,4 +114,118 @@ test("the alert wash is defined in every theme route", async () => {
   expect(bare).toContain("--danger-wash:");
   // Once bare, once for the guarded media query, once for the explicit toggle.
   expect([...text.matchAll(/--danger-wash:/g)]).toHaveLength(3);
+});
+
+
+/**
+ * The type scale, and the two ways it goes wrong.
+ *
+ * Before it existed the app carried 34 hand-picked font sizes between 0.62rem
+ * and 1.1rem — eleven distinct values inside a half-rem band, two of them
+ * half-pixel (`text-[9.5px]`, `text-[12.5px]`). The effect on a phone was that
+ * size could not carry hierarchy at all, so the agent name, the one string you
+ * scan for while walking, was half a pixel SMALLER than the word "paddock"
+ * above it.
+ */
+const T_STEPS = ["--t-xs", "--t-md", "--t-lg", "--t-xl"];
+
+/**
+ * Every selector allowed to size type off the scale, with the reason.
+ *
+ * Not a way to opt out of the scale: each of these sizes something that is not
+ * paddock's own prose, and each carries a comment in the stylesheet saying so.
+ * Adding a row here without such a comment is how a scale stops being one.
+ */
+const OFF_SCALE = [
+  ".term-pane",         // agent output, sized by columns visible
+  ".detail .output",    // ditto
+  ".host-settings-btn", // sizes the gear GLYPH, not text
+  ".pair-code code",    // read off one screen and typed into another
+  '.tile[data-size="sm"]', // initials scale with the circle, not the page
+  '.tile[data-size="md"]',
+];
+
+interface Rule { sel: string; body: string }
+
+function rules(text: string): Rule[] {
+  // Comments stripped FIRST. Without this the duplicate-declaration check
+  // below reported three offenders where there was one: the comment explaining
+  // the bug quotes the string `font-size:` twice, so the rule that documents
+  // the trap looked like the trap. A guard that counts its own prose is not
+  // measuring the stylesheet.
+  text = text.replace(/\/\*[\s\S]*?\*\//g, "");
+  const out: Rule[] = [];
+  // Innermost blocks only — `[^{}]*` cannot span a nested rule, so an @media
+  // wrapper contributes its inner rules and never itself. The selector is the
+  // last line of the capture for the same reason: inside @media the match
+  // picks up the query text ahead of the selector.
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    out.push({ sel: m[1]!.trim().split("\n").pop()!.trim(), body: m[2]! });
+  }
+  return out;
+}
+
+test("no rule declares font-size twice", async () => {
+  // This is not hygiene, it is a bug that already shipped. `.settings-settle
+  // input` declared `font-size: 16px` with a comment explaining that iOS zooms
+  // any focused input below 16px, and then declared `font-size: 0.8rem` five
+  // lines later — so the field zoomed on every tap while the stylesheet said,
+  // in writing, that it did not. Nothing failed: no test asserts a computed
+  // size, and the comment reads correct right up to the line that cancels it.
+  const offenders = rules(await css())
+    .filter((r) => (r.body.match(/font-size:/g) ?? []).length > 1)
+    .map((r) => r.sel);
+  expect(offenders, "the last declaration wins, whatever the comments say").toEqual([]);
+});
+
+test("every font-size comes from the scale, or is a documented exception", async () => {
+  const offenders = rules(await css())
+    .filter((r) => /font-size:/.test(r.body))
+    .filter((r) => !OFF_SCALE.includes(r.sel))
+    .filter((r) => {
+      const decl = r.body.match(/font-size:\s*([^;]+)/)?.[1] ?? "";
+      // 16px is its own rule, not a scale step: it is the iOS zoom floor for
+      // anything you can focus and type into, and it must not follow the
+      // reader's text-size preference downward.
+      return !T_STEPS.some((t) => decl.includes(t)) && !decl.includes("16px");
+    })
+    .map((r) => `${r.sel} → ${r.body.match(/font-size:\s*([^;]+)/)?.[1]?.trim()}`);
+  expect(offenders, "use a --t-* step, or add the selector to OFF_SCALE with a reason").toEqual([]);
+});
+
+test("the scale's steps are far enough apart to read as different roles", async () => {
+  // The failure this prevents is the one the app started from: steps close
+  // enough together that no reader can tell two of them apart, which is a
+  // scale on paper and a huddle on screen. 1px apart is not a step.
+  const text = await css();
+  const px = T_STEPS.map((t) => {
+    const rem = Number(new RegExp(`${t}:\\s*([\\d.]+)rem`).exec(text)?.[1]);
+    expect(rem, `${t} is not defined in rem on :root`).toBeGreaterThan(0);
+    return rem * 16;
+  });
+  for (let i = 1; i < px.length; i++) {
+    expect(px[i]! - px[i - 1]!, `${T_STEPS[i]} is too close to ${T_STEPS[i - 1]}`).toBeGreaterThanOrEqual(1.5);
+  }
+});
+
+
+test("nothing references a scale step that does not exist", async () => {
+  // The step this catches: `--t-sm` was removed from the scale for being one
+  // pixel from `--t-xs`, and two `style={{ fontSize: "var(--t-sm)" }}` props in
+  // AgentCard kept referencing it. An undefined custom property does not warn
+  // or error — the declaration is simply invalid and the element silently
+  // inherits its parent's size. tsc cannot see inside a string, so this is the
+  // only place it can be caught.
+  const text = await css();
+  const defined = new Set([...text.matchAll(/(--t-[a-z]+):/g)].map((m) => m[1]!));
+  const used = new Map<string, string[]>();
+  const glob = new Bun.Glob("src/web/**/*.{ts,tsx,css}");
+  for await (const file of glob.scan(".")) {
+    for (const m of (await Bun.file(file).text()).matchAll(/var\((--t-[a-z]+)\)/g)) {
+      if (!defined.has(m[1]!)) used.set(m[1]!, [...(used.get(m[1]!) ?? []), file]);
+    }
+  }
+  expect([...used.entries()].map(([t, f]) => `${t} in ${[...new Set(f)].join(", ")}`)).toEqual([]);
 });
