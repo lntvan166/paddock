@@ -1,25 +1,47 @@
-import type { Agent } from "@shared/types";
+import type { Agent, Section } from "@shared/types";
 import { formatElapsed } from "@web/components/elapsed";
+import { IconTile } from "@web/components/ui/IconTile";
 import { StatusDot } from "@web/components/ui/StatusDot";
 
 /** Re-exported for the card and the terminal header, which imported it from
  *  here before the primitive layer existed. */
 export { StatusDot };
 
+export type RowEmphasis = "alert" | "card" | "bare";
+
+/**
+ * How loud a row is, by SECTION rather than by state.
+ *
+ * The ladder answers "how much of your attention does this group deserve",
+ * which is a property of the group. Deriving it from state would put the same
+ * decision in two places, and they would disagree the first time a state maps
+ * somewhere new — which is exactly what just happened to `done`.
+ *
+ * This is the second channel the palette comment has always claimed: a bordered
+ * tinted card versus a bare row survives greyscale, where two hues of dot do
+ * not.
+ */
+export function emphasisFor(section: Section): RowEmphasis {
+  if (section === "needs-you") return "alert";
+  if (section === "ready-unseen") return "card";
+  return "bare";
+}
+
 /** Dense row. Task text truncates to keep the list scannable. */
 export function AgentRow({
-  agent, now, onSelect,
+  agent, now, emphasis = "bare", onSelect,
 }: {
   agent: Agent;
   now: number;
+  emphasis?: RowEmphasis;
   /** Opens the detail sheet for this agent. Optional so the row still
    * renders standalone. */
   onSelect?: () => void;
 }) {
   return (
     <div
-      className="tap flex items-center gap-2.5 px-3 py-2.5"
-      style={{ borderTop: "1px solid var(--border)" }}
+      className="tap row flex items-center gap-2.5 px-3 py-2.5"
+      data-emphasis={emphasis}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}
@@ -34,7 +56,8 @@ export function AgentRow({
           : undefined
       }
     >
-      <StatusDot state={agent.state} />
+      <IconTile harness={agent.harness} badge={<StatusDot state={agent.state} />} />
+      <span className="sr-only">{agent.state}</span>
       <div className="min-w-0 flex-1">
         <div className="text-[12.5px] font-semibold">{agent.name}</div>
         <div className="truncate text-[11px]" style={{ color: "var(--fg-dim)" }}>

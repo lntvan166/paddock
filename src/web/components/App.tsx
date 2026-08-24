@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { isStale, useStore } from "@web/store";
 import { AgentCard } from "@web/components/AgentCard";
-import { AgentChip, AgentRow } from "@web/components/AgentRow";
+import { AgentChip, AgentRow, emphasisFor } from "@web/components/AgentRow";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
@@ -161,6 +161,7 @@ export function App() {
                   ? list.map((a) => (
                       <AgentRow
                         key={a.agentId} agent={a} now={now}
+                        emphasis={emphasisFor(key)}
                         onSelect={() => { location.hash = agentHash(a.agentId); }}
                       />
                     ))
