@@ -583,7 +583,7 @@ And the rules:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/icon-tile.test.tsx`
-Expected: PASS, all eleven tests.
+Expected: PASS, all ten tests.
 
 Run: `make check`
 Expected: clean.
