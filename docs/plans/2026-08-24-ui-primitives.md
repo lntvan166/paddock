@@ -2072,6 +2072,229 @@ git commit -m "feat: a dot on each section header, because an empty Needs you sh
 
 ---
 
+## Phase 3.5 — Unblock settings verification
+
+### Task 17: The demo backend answers settings and health
+
+**Inserted after Task 12, ruled in mid-execution.** Numbered 17 so the existing
+task numbers keep pointing at the same work.
+
+**Files:**
+- Modify: `src/web/demo/backend.ts`
+- Modify: `src/web/components/Settings.tsx` (guard the initial GET)
+- Test: `tests/demo-settings.test.ts`, `tests/settings-load-failure.test.tsx`
+
+**Interfaces:**
+- Consumes: `SettingsView` and `HealthBody` from `@shared/types` (the latter moves there in Task 16 — if it has not moved yet, stub health with an inline object and let Task 16 tighten the type).
+- Produces: a demo backend that answers `GET /api/settings`, `PUT /api/settings` and `GET /api/health`.
+
+**Why this task exists.** `#/settings` crashes to a blank white screen in demo
+mode, and always has — this is a pre-existing bug on `main`, not something this
+branch introduced. Two independent causes:
+
+1. `src/web/demo/backend.ts`'s `handle()` matches only
+   `/api/agents/:id/:route` and 404s everything else, so `/api/settings`
+   returns `{ ok: false, detail: "not found" }`.
+2. `Settings.tsx`'s initial GET calls `res.json()` and casts to `SettingsView`
+   **without checking `res.ok`**. `baseline.telegram.chatId` is then read during
+   render, `baseline.telegram` is `undefined`, and the component throws.
+
+It blocks this plan specifically. CLAUDE.md requires every screenshot to come
+from demo mode, and the settings screen is the thing Phase 4 rebuilds — so its
+new cards cannot be photographed for the README at all. Tasks 14 and 16 both
+carry an "open `#/settings`" verification step that cannot be performed.
+
+- [ ] **Step 1: Write the failing test for the load guard**
+
+Create `tests/settings-load-failure.test.tsx`:
+
+```tsx
+import "./support/dom";
+
+import { afterEach, expect, test } from "bun:test";
+import { Settings } from "@web/components/Settings";
+import { render, stubFetch, unmount } from "./support/render";
+
+afterEach(async () => { await unmount(); });
+
+test("a settings load that fails shows the error, not a blank screen", async () => {
+  // The pre-existing bug: the initial GET cast its body to SettingsView with no
+  // res.ok check, so a 404 or 500 left `telegram` undefined and the render read
+  // `baseline.telegram.chatId` — throwing, and taking the whole screen with it.
+  // An operator then sees white. The component already HAS a loadError banner;
+  // it was simply never reached.
+  const { fn } = stubFetch({});               // every route 500s with no stub
+  const original = globalThis.fetch;
+  globalThis.fetch = fn as typeof fetch;
+  try {
+    const host = await render(<Settings onBack={() => {}} />);
+    expect(host.textContent ?? "").not.toBe("");
+    expect((host.textContent ?? "").toLowerCase()).toContain("settings");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+```
+
+`stubFetch` is in `tests/support/render.tsx` and returns a 500 for any route it
+has no stub for, which is exactly the shape being guarded against.
+
+- [ ] **Step 2: Run it to watch it fail**
+
+Run: `bun test tests/settings-load-failure.test.tsx`
+Expected: FAIL — the component throws while rendering and the host is empty.
+
+- [ ] **Step 3: Guard the initial GET**
+
+In `src/web/components/Settings.tsx`, inside the load effect, before the body is
+used:
+
+```ts
+        const res = await fetch("/api/settings");
+        // Checked BEFORE the cast. Without this a non-2xx body — a 404 from a
+        // demo backend, a 500 from a broken server — was cast to SettingsView
+        // anyway, and the first render to read `baseline.telegram.chatId` threw,
+        // blanking the whole screen. The catch below already knows how to show
+        // this; it was never reached.
+        if (!res.ok) throw new Error(`settings load failed: ${res.status}`);
+        const body = (await res.json()) as SettingsView;
+```
+
+- [ ] **Step 4: Write the failing test for the demo stubs**
+
+Create `tests/demo-settings.test.ts`:
+
+```ts
+import { expect, test } from "bun:test";
+import { installDemoBackend } from "@web/demo/backend";
+
+// The demo is the ONLY sanctioned source of screenshots (CLAUDE.md), so any
+// screen it cannot render is a screen that can never appear in the README.
+test("the demo answers the settings screen's own requests", async () => {
+  installDemoBackend();
+
+  const settings = await fetch("/api/settings");
+  expect(settings.ok).toBe(true);
+  const view = await settings.json();
+  // The fields Settings.tsx reads on load. A stub missing any one of them
+  // reproduces the blank screen this task exists to fix.
+  expect(view.telegram).toBeDefined();
+  expect(view.notify).toBeDefined();
+  expect(view.notify.settleMs).toBeDefined();
+  expect(typeof view.serverNow).toBe("number");
+
+  const health = await fetch("/api/health");
+  expect(health.ok).toBe(true);
+  const body = await health.json();
+  expect(typeof body.version).toBe("string");
+  expect(typeof body.herdrConnected).toBe("boolean");
+});
+
+test("the demo never invents a Telegram token", async () => {
+  // A demo that shipped a token-shaped string would put one in every
+  // screenshot, and check-private.sh scans for exactly that shape.
+  installDemoBackend();
+  const view = await (await fetch("/api/settings")).json();
+  expect(view.telegram.configured).toBe(false);
+  expect(view.telegram.hint).toBeNull();
+  expect(JSON.stringify(view)).not.toMatch(/\d{8,}:[A-Za-z0-9_-]{30,}/);
+});
+```
+
+- [ ] **Step 5: Run it to watch it fail**
+
+Run: `bun test tests/demo-settings.test.ts`
+Expected: FAIL — `settings.ok` is `false`, since `handle()` 404s the route.
+
+- [ ] **Step 6: Stub the three routes in the demo backend**
+
+In `src/web/demo/backend.ts`, add to `handle()` **before** the
+`/api/agents/:id/:route` matcher, so the agent regex is unaffected:
+
+```ts
+  // The demo is the only sanctioned source of screenshots, so every screen the
+  // product has must render here — including settings, which needs a whole
+  // SettingsView before it will paint at all.
+  if (url.includes("/api/settings")) {
+    // A PUT echoes the patch back as an accepted view rather than storing it:
+    // the demo has no server to persist to, and a Save that appeared to fail
+    // would read as a bug in the product rather than an absence in the demo.
+    return json(demoSettings());
+  }
+  if (url.includes("/api/health")) return json(demoHealth());
+```
+
+and define the two builders near the seed data:
+
+```ts
+/**
+ * A settings view with nothing configured.
+ *
+ * Deliberately unconfigured: `configured: false` and a null hint keep any
+ * token-shaped string out of the demo bundle, and out of every screenshot taken
+ * from it. `scripts/check-private.sh` scans for that shape.
+ */
+function demoSettings(): SettingsView {
+  return {
+    telegram: { configured: false, hint: null, chatId: null },
+    notify: {
+      enabled: false,
+      triggers: ["blocked"],
+      settleMs: { blocked: 5_000, done: 10_000 },
+      mutedUntil: null,
+      cooldownMs: 60_000,
+    },
+    publicUrl: null,
+    // No tunnel: a paddock served the ordinary way has none, and the demo must
+    // not offer to pair a device it cannot pair.
+    tunnel: null,
+    serverNow: Date.now(),
+    error: null,
+  };
+}
+
+/** Health for the diagnostics card. Invented, and named like the demo host. */
+function demoHealth() {
+  return {
+    ok: true,
+    hostId: "demo-box",
+    agents: agents.length,
+    clients: 1,
+    herdrConnected: true,
+    lastEventAt: Date.now(),
+    lastNotifyError: null,
+    version: "0.0.0-demo",
+    latestKnown: null,
+    managedBy: null,
+    herdrProtocol: 20,
+    schemaWarning: null,
+  };
+}
+```
+
+Import `SettingsView` from `@shared/types` if it is not already imported. Check
+`HealthBody`'s real field list in `src/server/routes.ts` (or
+`src/shared/types.ts` if Task 16 has already moved it) and match it exactly —
+a stub missing a required field is a type error, which is the point.
+
+- [ ] **Step 7: Run both tests, then the suite**
+
+Run: `bun test tests/demo-settings.test.ts tests/settings-load-failure.test.tsx`
+Expected: PASS.
+
+Run: `make check && bun test`
+Expected: green.
+
+- [ ] **Step 8: Commit**
+
+```bash
+make check-clean
+git add src/web/demo/backend.ts src/web/components/Settings.tsx tests/demo-settings.test.ts tests/settings-load-failure.test.tsx
+git commit -m "fix: let the demo answer settings and health, because the screen it cannot render is the screen we rebuilt"
+```
+
+---
+
 ## Phase 4 — Settings
 
 ### Task 12: The "This device" band
