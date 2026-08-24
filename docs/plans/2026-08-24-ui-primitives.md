@@ -2066,7 +2066,7 @@ Expected: one hit. No hit means the primitive gained a prop nobody passes.
 
 ```bash
 make check-clean
-git add src/web/components/Section.tsx tests/section-header.test.tsx
+git add src/web/components/Section.tsx src/web/components/App.tsx tests/section-header.test.tsx
 git commit -m "feat: a dot on each section header, because an empty Needs you should still read as red"
 ```
 
