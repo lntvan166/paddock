@@ -679,10 +679,14 @@ Create `src/web/components/ui/icons.tsx`:
 /**
  * Eight hand-written glyphs, one per settings card.
  *
- * An icon library is not added for eight of them: lucide-react is tens of
- * kilobytes of tree-shaken JavaScript for what is a few hundred bytes of path
- * data here, on a project whose bundle is deliberately ONE chunk because at
- * high RTT an extra round trip costs more than the bytes it saves.
+ * An icon library is not added for eight of them: one is tens of kilobytes of
+ * tree-shaken JavaScript for what is a few hundred bytes of path data here, on
+ * a project whose bundle is deliberately ONE chunk because at high RTT an extra
+ * round trip costs more than the bytes it saves.
+ *
+ * (Deliberately unnamed: the test below asserts this file does not contain the
+ * string, which is a crude but effective guard against the import arriving
+ * later. Naming the library in a comment would trip its own guard.)
  *
  * `currentColor` throughout, so a glyph is never a colour that has to be
  * redefined per theme, and `aria-hidden` throughout, because every one of them
