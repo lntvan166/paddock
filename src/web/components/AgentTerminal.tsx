@@ -87,6 +87,18 @@ const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
 const STICK_THRESHOLD_PX = 48;
 
 /**
+ * Distance from the top, in px, still counted as "at the top" — the state that
+ * offers "Show earlier".
+ *
+ * Deliberately generous. A thumb-flick to the top of a scroller rarely lands on
+ * exactly 0, and a control that appears only at a pixel-perfect position reads
+ * as broken rather than as conditional. Smaller than STICK_THRESHOLD_PX because
+ * the tail is a place you MEAN to be while output keeps arriving, whereas the
+ * top is a place you arrive at once and then act.
+ */
+const TOP_THRESHOLD_PX = 24;
+
+/**
  * Adaptive refresh bounds.
  *
  * A fixed interval is wrong in both directions, because the AGENT STATE DOES
@@ -272,6 +284,21 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // and applied after, so replacing the screen does not yank someone who has
   // deliberately scrolled up to read earlier output.
   const stick = useRef(true);
+  /**
+   * Whether the operator has scrolled to the top of the transcript.
+   *
+   * Gates "Show earlier", which used to be rendered whenever more history
+   * existed — so on a long-running agent it was permanently on screen, costing
+   * a row of transcript on every pane for an action nobody takes until they
+   * have read back that far.
+   *
+   * State, not a ref: this one has to re-render, which is the whole point.
+   *
+   * Starts `true` for the case where the output is shorter than the pane. There
+   * is no scrollbar then, no scroll event ever fires, and top and bottom are the
+   * same place — a short pane with earlier history to fetch must still offer it.
+   */
+  const [atTop, setAtTop] = useState(true);
 
   // Mirrors `busy` for the polling interval, which must read the CURRENT value
   // without being torn down and rebuilt every time a key press flips it.
@@ -477,12 +504,28 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   useEffect(() => {
     const el = paneRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
+    // Recomputed here as well as on scroll: sticking to the bottom by ASSIGNING
+    // scrollTop does fire a scroll event, but output that is shorter than the
+    // pane never scrolls at all, so nothing would ever correct the initial
+    // value. Reading it on every output change covers both.
+    readScroll();
   }, [output]);
 
-  const rememberScroll = () => {
+  /**
+   * The pane's scroll position, reduced to the two facts anything here needs:
+   * are we following the tail, and are we at the top.
+   *
+   * `atTop` uses a generous threshold and no hysteresis, which is safe because
+   * showing the button cannot move the scroll position that decides whether to
+   * show it: the button occupies layout above the pane, so the pane loses
+   * height at its BOTTOM edge while scrollTop and scrollHeight both stay put.
+   * There is no feedback loop to oscillate.
+   */
+  const readScroll = () => {
     const el = paneRef.current;
     if (!el) return;
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
+    setAtTop(el.scrollTop <= TOP_THRESHOLD_PX);
   };
 
   /**
@@ -622,11 +665,23 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
         </div>
       </header>
 
-      {/* Only offered when there is something to show. Revealing PREPENDS
-          content, which would otherwise shove the screen down and lose the
-          operator's place, so the scroll position is pinned across the growth
-          in the handler below. */}
-      {!error && (useJournal ? !journal.done : history.settled.length > revealed.length) && (
+      {/* Offered when there is something to show AND the operator has scrolled
+          to the top — which is the moment they have run out of transcript and
+          the only moment the button answers a question they are asking. It used
+          to render on the strength of "more history exists", so on any
+          long-running agent it never went away: a permanent row of chrome above
+          a pane whose entire job is showing as many lines as possible.
+
+          Revealing PREPENDS content, which would otherwise shove the screen
+          down and lose the operator's place, so the scroll position is pinned
+          across the growth in the handler below. A consequence worth stating:
+          pinning means one tap leaves you no longer at the top, so the button
+          hides itself and you scroll up through what you just loaded to ask for
+          more. That is the same shape as every message app's back-scroll, and
+          it beats the alternative of holding you at the top while content
+          appears under you. */}
+      {!error && atTop
+        && (useJournal ? !journal.done : history.settled.length > revealed.length) && (
         <button
           type="button"
           className="term-earlier"
@@ -717,7 +772,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           ref={paneRef}
           className="term-pane"
           data-wrap={wrap ? "on" : "off"}
-          onScroll={rememberScroll}
+          onScroll={readScroll}
           // `--term-font-px` is read by styles.css's `.term-pane` rule. Set
           // as a custom property rather than a `fontSize` style so
           // `.term-exact`'s `font: inherit` picks it up in both wrap modes

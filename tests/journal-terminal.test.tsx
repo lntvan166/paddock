@@ -7,7 +7,7 @@ import { act } from "react";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { digestOf } from "@shared/screen";
 import { journalFor, prunePanes, rememberHistory } from "@web/pane-cache";
-import { agent, click, render, settle, stubFetch, unmount } from "./support/render";
+import { agent, click, fire, render, settle, stubFetch, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 
@@ -305,4 +305,74 @@ test("a pane that fell back does not re-ask the route on every reopen", async ()
   // One request, ever: the reopened pane behaves like a journal-less one.
   expect(calls.filter((c) => c.url.endsWith("/history"))).toHaveLength(1);
   expect(second.textContent).toContain("reconstructed line");
+});
+
+test("Show earlier is offered at the top of the transcript and nowhere else", async () => {
+  // The button used to render on the strength of "more history exists", which
+  // on any long-running agent means always: a permanent row of chrome above a
+  // pane whose whole job is showing as many lines as it can. It is an answer to
+  // a question the operator only asks once they have read back to the top.
+  //
+  // happy-dom reports every scroll offset as 0, so a test that only mounts and
+  // asserts the button is present would pass with the gate removed. The scroll
+  // position has to be moved and the event dispatched by hand.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/history": () => ({
+      ok: true, lines: ["earlier"], source: "journal",
+      hasMore: true, cursor: "c1", detail: null,
+    }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(
+    <AgentTerminal agent={agent({ agentId: "j9:p1", hasJournal: true })} onBack={() => {}} />,
+  );
+  await settle();
+
+  // At the top on mount: the output is shorter than the pane, so top and bottom
+  // are the same place and there is history to fetch.
+  expect(host.querySelector(".term-earlier")).not.toBeNull();
+
+  const pane = host.querySelector(".term-pane") as HTMLElement;
+  // A scroller taller than its box, scrolled well clear of the top.
+  Object.defineProperty(pane, "scrollHeight", { value: 4000, configurable: true });
+  Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+  pane.scrollTop = 1200;
+  await fire(pane, new Event("scroll", { bubbles: false }));
+  expect(host.querySelector(".term-earlier"), "still offered away from the top").toBeNull();
+
+  // Back to the top and it returns.
+  pane.scrollTop = 0;
+  await fire(pane, new Event("scroll", { bubbles: false }));
+  expect(host.querySelector(".term-earlier")).not.toBeNull();
+});
+
+test("a thumb-flick that lands near the top still counts as the top", async () => {
+  // Exact-zero would make the control read as broken rather than conditional:
+  // a flick to the top of a scroller rarely stops on the pixel.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/history": () => ({
+      ok: true, lines: ["earlier"], source: "journal",
+      hasMore: true, cursor: "c1", detail: null,
+    }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(
+    <AgentTerminal agent={agent({ agentId: "j10:p1", hasJournal: true })} onBack={() => {}} />,
+  );
+  await settle();
+  const pane = host.querySelector(".term-pane") as HTMLElement;
+  Object.defineProperty(pane, "scrollHeight", { value: 4000, configurable: true });
+  Object.defineProperty(pane, "clientHeight", { value: 400, configurable: true });
+
+  pane.scrollTop = 12;
+  await fire(pane, new Event("scroll", { bubbles: false }));
+  expect(host.querySelector(".term-earlier"), "12px from the top is the top").not.toBeNull();
+
+  pane.scrollTop = 200;
+  await fire(pane, new Event("scroll", { bubbles: false }));
+  expect(host.querySelector(".term-earlier")).toBeNull();
 });
