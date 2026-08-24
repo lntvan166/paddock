@@ -53,7 +53,7 @@ export function TunnelSection({ tunnel, onInvite }: TunnelSectionProps) {
       title="Remote access"
       subtitle="This dashboard is published on a temporary tunnel for this run only."
     >
-      <div className="settings-field-row">
+      <div className="card-row">
         <span>Paired devices</span>
         <strong>{tunnel.pairedDevices}</strong>
       </div>

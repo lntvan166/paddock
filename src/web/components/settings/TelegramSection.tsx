@@ -15,7 +15,7 @@ export function TelegramSection({
 }: TelegramSectionProps) {
   return (
     <Card icon={<SendIcon />} title="Telegram" subtitle="The bot that delivers them.">
-      <label className="settings-field">
+      <label className="card-row">
         <span>Telegram token</span>
         <input
           type="password"
@@ -25,15 +25,15 @@ export function TelegramSection({
           placeholder={tokenPlaceholder}
           onChange={(e) => setToken(e.target.value)}
         />
-        {/* The placeholder attribute alone is not enough: it never shows
-            while the field has focus, and a placeholder is not something
-            an operator can screenshot-search or a test can rely on being
-            painted. This status line is the same string, rendered as
-            actual text. */}
-        <span className="settings-token-status">{tokenPlaceholder}</span>
       </label>
+      {/* The placeholder attribute alone is not enough: it never shows
+          while the field has focus, and a placeholder is not something
+          an operator can screenshot-search or a test can rely on being
+          painted. This status line is the same string, rendered as
+          actual text. */}
+      <span className="settings-token-status">{tokenPlaceholder}</span>
 
-      <label className="settings-field">
+      <label className="card-row">
         <span>Chat id</span>
         <input
           type="text"

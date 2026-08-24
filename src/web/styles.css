@@ -223,6 +223,26 @@ body {
 
 .card-row + .card-row { border-top: 1px solid var(--border); }
 
+/* Wide enough to show "Automatic" in full. Without this, an `<input
+   type="number">` with no explicit width shrinks to whatever the row's free
+   space leaves it, which truncated that placeholder to "Auto" — the one word
+   that tells an operator leaving Font size blank keeps responsive sizing.
+   Scoped to every `.card-row` input rather than just that one field, so
+   Chat id / Cooldown / Public URL (also plain inputs in a `.card-row`) get
+   the same breathing room instead of each needing its own rule. */
+.card-row input { min-width: 7rem; }
+
+/* A one-line explanation below a `.card-row`. Replaces both `.settings-hint`
+   (a fieldset-level note) and `.settings-hint-inline` (a per-field one) —
+   once both live in a card body instead of a bare section, neither needs
+   different styling from the other. */
+.card-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--fg-dim);
+}
+
 .toggle {
   min-height: 2.75rem;
   display: inline-flex;
@@ -796,79 +816,6 @@ body {
 
 .band-hint { margin: 0 0 0.6rem; font-size: 0.72rem; color: var(--fg-dim); }
 
-.settings-section {
-  padding: 0.9rem 0.9rem 1.2rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.settings-section h2 {
-  margin: 0 0 0.25rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.settings-hint {
-  margin: 0 0 0.85rem;
-  font-size: 0.75rem;
-  color: var(--fg-dim);
-}
-
-.settings-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  margin-bottom: 0.85rem;
-  font-size: 0.8rem;
-}
-
-.settings-field input,
-.settings-field select {
-  min-height: 2.5rem;
-  padding: 0 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  background: var(--surface);
-  color: var(--fg);
-  font: inherit;
-}
-
-/* The one-line explanations under a field. Not a colour defined only inside
-   a media query — `--fg-dim` is a token on bare :root. */
-.settings-hint-inline {
-  font-size: 0.7rem;
-  line-height: 1.35;
-  color: var(--fg-dim);
-}
-
-/* A checkbox rendered inline with its label, not stacked like a text field —
-   this is the shape of a switch, even though it is a plain checkbox input:
-   touch devices get the same 44px+ target via .tap conventions elsewhere, and
-   no hover-only affordance is introduced. */
-.settings-field-row {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-/* 44px of ROW, not just a bigger box. A 1.35rem checkbox is a ~22px target;
-   the guideline is 44px, and these are the primary controls of a
-   mobile-first feature. The whole label row is the tap target — the input is
-   its child, so a tap anywhere on the row toggles it. */
-.settings-field-row {
-  min-height: 2.75rem;
-}
-
-.settings-field-row input[type="checkbox"],
-.settings-triggers input[type="checkbox"] {
-  width: 1.35rem;
-  height: 1.35rem;
-  /* Undoes the UA's default margin so the enlarged box does not shove the
-     label off the row on narrow screens. */
-  margin: 0;
-  flex: none;
-}
-
 .settings-token-status {
   font-size: 0.72rem;
   color: var(--fg-dim);
@@ -878,12 +825,16 @@ body {
    `display: flex` makes its `<legend>` a flex item, which laid "Notify on"
    INLINE with the two checkboxes instead of above them — it read as a third
    option. Wrapping, with the legend claiming the whole first line, puts it
-   back where a legend belongs without needing a wrapper element. */
+   back where a legend belongs without needing a wrapper element.
+
+   Margin trimmed to match the tighter rhythm of the `.card-row`s around it —
+   this fieldset now sits inside a card body rather than a bare section, and
+   the old 0.85rem gap read as a second, looser design next to them. */
 .settings-triggers {
   display: flex;
   flex-wrap: wrap;
   gap: 0 1rem;
-  margin: 0 0 0.85rem;
+  margin: 0 0 0.6rem;
   padding: 0;
   border: 0;
   font-size: 0.8rem;
@@ -897,8 +848,8 @@ body {
   padding: 0 0 0.3rem;
 }
 
-/* The label, not the 22px box, is the tap target — 44px tall, matching
-   .settings-field-row above and the .tap convention used across the app. */
+/* The label, not the 22px box, is the tap target — 44px tall, matching the
+   .card-row convention used across the app. */
 .settings-triggers label {
   display: flex;
   align-items: center;
@@ -906,16 +857,49 @@ body {
   min-height: 2.75rem;
 }
 
+/* Shares the checkbox size with the trigger rows above — a 1.35rem box is a
+   ~22px target; the row itself (`.settings-triggers label`, 2.75rem) is what
+   actually clears the touch-target floor. */
+.settings-triggers input[type="checkbox"] {
+  width: 1.35rem;
+  height: 1.35rem;
+  /* Undoes the UA's default margin so the enlarged box does not shove the
+     label off the row on narrow screens. */
+  margin: 0;
+  flex: none;
+}
+
+/* Explicit font-size, because this sits directly in a `.card-body` (no
+   ambient size of its own) rather than inside a `.card-row` — without this it
+   inherited the page default and read noticeably larger than the rows above
+   it. Margin trimmed for the same reason as `.settings-triggers` above. */
 .settings-mute {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-block: 0.75rem;
+  margin-block: 0.6rem;
+  font-size: 0.8rem;
   color: var(--fg);
 }
 
-.settings-mute button { min-height: 2.75rem; padding-inline: 1rem; }
+/* Same bordered-flat treatment as `.settings-actions button`, so "Mute for 1h
+   4h 8h" reads as the same design as the rest of the card rather than bare
+   UA button chrome. `min-height` and `padding-inline` are unchanged — the
+   44px floor here is guarded by tests/settings-styles.test.ts. */
+.settings-mute button {
+  min-height: 2.75rem;
+  padding-inline: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-mute button:disabled { opacity: 0.5; }
 
 .settings-settle {
   display: flex;

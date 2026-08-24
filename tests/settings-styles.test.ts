@@ -44,8 +44,10 @@ test("the trigger checkboxes sit in a 44px row, not a bare 22px box", () => {
   expect(declaration(".settings-triggers label", "min-height")).toBe(TOUCH_TARGET);
 });
 
-test("the checkbox rows themselves clear the touch target", () => {
-  expect(declaration(".settings-field-row", "min-height")).toBe(TOUCH_TARGET);
+test("a labelled row inside a card clears the touch target", () => {
+  // Was `.settings-field-row`. The vocabulary changed; the 44px floor it
+  // existed to guarantee did not.
+  expect(declaration(".card-row", "min-height")).toBe(TOUCH_TARGET);
 });
 
 test("the triggers legend is not laid out inline with its options", () => {
