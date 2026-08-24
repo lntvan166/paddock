@@ -143,6 +143,9 @@ const OFF_SCALE = [
   ".pair-code code",    // read off one screen and typed into another
   '.tile[data-size="sm"]', // initials scale with the circle, not the page
   '.tile[data-size="md"]',
+  // Arrow keys size a SYMBOL, not text. On the text scale a 16px arrow sat in
+  // the middle of an 80px target and read as an empty button.
+  '.term-key[data-key="right"]',
 ];
 
 interface Rule { sel: string; body: string }

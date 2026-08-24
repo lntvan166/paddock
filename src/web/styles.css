@@ -833,6 +833,21 @@ body {
    transcript on a phone is worth more than four extra pixels on Tab. */
 .term-key-sm { min-height: 2.5rem; font-size: var(--t-md); }
 
+/* A glyph key gets a glyph-sized glyph.
+   These are 44px-tall targets that were drawing a 16px arrow in the middle of
+   ~80px of nothing, which reads as a big empty button rather than as an arrow.
+   Deliberately off the --t-* scale, like `.host-settings-btn`: this sizes a
+   SYMBOL, not text, and putting it on the text scale is what made it look
+   lost. Listed in tokens.test.ts's OFF_SCALE
+   with that reason. */
+.term-key[data-key="up"],
+.term-key[data-key="down"],
+.term-key[data-key="left"],
+.term-key[data-key="right"] {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
 .term-key:active { background: var(--border); }
 .term-key:disabled { opacity: 0.5; }
 

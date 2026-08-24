@@ -1001,6 +1001,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               /* Enter carries the commit — see .term-key-enter. The other two
                  only move a highlight, so they stay quiet. */
               className={k.key === "enter" ? "term-key term-key-enter" : "term-key"}
+              data-key={k.key}
               disabled={busy} onClick={() => void press(k.key)}
             >
               {k.label}
@@ -1012,6 +1013,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
           {SECONDARY_KEYS.map((k) => (
             <Button
               key={k.key} type="button" variant="outline" className="term-key term-key-sm"
+              data-key={k.key}
               disabled={busy} onClick={() => void press(k.key)}
               aria-label={k.key}
             >
