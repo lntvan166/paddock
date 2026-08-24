@@ -48,3 +48,10 @@ src/server/embedded.ts
 # Isolated workspaces for subagent-driven execution.
 .worktrees/
 .superpowers/
+
+# Playwright MCP scratch output. Ignored for a privacy reason, not tidiness:
+# it lands in the repo root, and a screenshot taken while driving a LIVE
+# paddock contains real agent names and a real hostname. Un-ignored, one
+# `git add -A` puts that in a public repo. Screenshots for docs are taken from
+# `--demo` and copied into docs/images deliberately.
+.playwright-mcp/
