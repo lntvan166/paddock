@@ -1,6 +1,6 @@
 import { chmod, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { ManagedBy } from "@shared/types";
+import { upgradeCommand, type ManagedBy } from "@shared/types";
 import { say } from "@server/term";
 
 const REPO = "lntvan166/paddock";
@@ -201,11 +201,7 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
     // update banner reads this signal. It must name the command that actually
     // works for this install, though: telling a brew user to run `paddock
     // update` sends them to the command the next branch refuses.
-    log(
-      brewed
-        ? "paddock: run `brew upgrade paddock` to install it"
-        : "paddock: run `paddock update` to install it",
-    );
+    log(`paddock: run \`${upgradeCommand(brewed ? "homebrew" : null)}\` to install it`);
     return 0;
   }
 
@@ -220,7 +216,7 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
   // it does not.
   if (brewed) {
     log(`paddock: this binary is managed by Homebrew (${resolved})`);
-    log("paddock: run `brew upgrade paddock` instead");
+    log(`paddock: run \`${upgradeCommand("homebrew")}\` instead`);
     return 1;
   }
 
