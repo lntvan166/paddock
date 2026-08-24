@@ -4,7 +4,7 @@ import { BellIcon } from "@web/components/ui/icons";
 import { Card } from "@web/components/ui/Card";
 import { Toggle } from "@web/components/ui/Toggle";
 
-interface NotifySectionProps {
+export interface NotifySectionProps {
   notifyEnabled: boolean; setNotifyEnabled: (v: boolean) => void;
   triggers: NotifyTrigger[]; toggleTrigger: (t: NotifyTrigger) => void;
   cooldownMs: number; setCooldownMs: (v: number) => void;
