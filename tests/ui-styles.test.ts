@@ -44,3 +44,7 @@ test("a disabled switch is dimmed as well as inert", () => {
   // difference; opacity plus the cursor is the second channel.
   expect(declaration(".toggle:disabled", "opacity")).toBeTruthy();
 });
+
+test("each segment is a full touch target", () => {
+  expect(declaration(".seg-item", "min-height")).toBe(TOUCH_TARGET);
+});
