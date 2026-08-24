@@ -51,3 +51,34 @@ test("the compiled artifact's version stamp is smoke-tested before it is publish
   expect(wf).toContain("out/paddock-linux-x86_64 --version");
   expect(wf).toMatch(/if \[ "\$GOT" != "\$VERSION" \]; then/);
 });
+
+test("the Homebrew formula is rendered and pushed to the tap", () => {
+  expect(wf).toContain("scripts/render-formula.ts");
+  expect(wf).toContain("homebrew-paddock");
+});
+
+test("the formula is pushed AFTER the release exists, not before", () => {
+  // The formula's urls point at release assets. Pushing it first publishes a
+  // tap that 404s for every install until the upload finishes -- and if the
+  // upload then fails, the tap advertises a release that does not exist.
+  const attachAt = wf.indexOf("- name: Attach to the release");
+  const formulaAt = wf.indexOf("scripts/render-formula.ts");
+  expect(attachAt).toBeGreaterThan(-1);
+  expect(formulaAt).toBeGreaterThan(attachAt);
+});
+
+test("the tap push uses its own token, because github.token cannot reach another repo", () => {
+  // GITHUB_TOKEN is scoped to this repository. A push to the tap with it fails
+  // 403 at the end of an otherwise successful release.
+  expect(wf).toContain("HOMEBREW_TAP_TOKEN");
+});
+
+test("a failed tap push does not silently pass", () => {
+  // CLAUDE.md forbids swallowed errors, and a release whose tap step failed
+  // quietly is exactly the silent break that rule exists for: every binary
+  // published, brew still serving the previous version, nothing red.
+  const formulaAt = wf.indexOf("scripts/render-formula.ts");
+  const tail = wf.slice(formulaAt);
+  expect(tail).not.toContain("|| true");
+  expect(tail).not.toContain("continue-on-error");
+});

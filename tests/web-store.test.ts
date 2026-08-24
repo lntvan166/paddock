@@ -4,7 +4,7 @@ import type { Agent, ServerMessage } from "@shared/types";
 import { wsUrlFrom } from "@web/store";
 
 const NOW = 1_700_000_000_000;
-const EMPTY: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null };
+const EMPTY: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null, managedBy: null };
 
 function agent(over: Partial<Agent> = {}): Agent {
   return {
@@ -196,4 +196,18 @@ test("connect() is not re-entrant: a second call opens no additional socket", ()
       delete (globalThis as { location?: unknown }).location;
     }
   }
+});
+
+test("a heartbeat's managedBy reaches state", () => {
+  const next = applyMessage(EMPTY, { type: "heartbeat", serverTime: NOW, managedBy: "homebrew" });
+  expect(next.managedBy).toBe("homebrew");
+});
+
+test("a message with no managedBy field at all leaves the prior value alone", () => {
+  // Mirrors latestKnown: `undefined` means "this frame does not say", which is
+  // not the same as "not managed" -- and flipping the banner's command back and
+  // forth between frames would be worse than either answer.
+  let s = applyMessage(EMPTY, { type: "heartbeat", serverTime: NOW, managedBy: "homebrew" });
+  s = applyMessage(s, { type: "heartbeat", serverTime: NOW + 1 });
+  expect(s.managedBy).toBe("homebrew");
 });

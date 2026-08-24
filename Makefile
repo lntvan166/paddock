@@ -17,7 +17,7 @@ export GID := $(shell id -g)
 TAG := $(firstword $(shell git tag --points-at HEAD))
 VERSION := $(if $(TAG),$(TAG:v%=%),0.0.0-dev)
 
-.PHONY: dev types icons check check-clean embed build-web test build up down logs restart
+.PHONY: dev types icons check check-clean embed build-web test build formula up down logs restart
 
 # A real directory target, deliberately NOT in .PHONY: make compares its mtime
 # against package.json and bun.lock, so this installs on a fresh clone or after
@@ -90,6 +90,14 @@ build: check check-clean test
 	bun build --compile --target=bun \
 	  --define 'process.env.PADDOCK_VERSION="$(VERSION)"' \
 	  src/server/index.ts --outfile paddock
+
+# Renders the tap formula so it can be eyeballed without cutting a release.
+# The release workflow runs the same script against the real SHA256SUMS; point
+# this at any sums file:  make formula SUMS=/tmp/SHA256SUMS
+SUMS ?= out/SHA256SUMS
+FORMULA_OUT ?= out/paddock.rb
+formula:
+	bun run scripts/render-formula.ts $(VERSION) $(SUMS) $(FORMULA_OUT)
 
 up:
 	docker compose up -d --build

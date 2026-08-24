@@ -534,3 +534,37 @@ session does not silently re-litigate them.
     way a failed key press or reply already is, the affordance is left in
     place for a retry, and the cursor is left exactly where it was so the
     retry asks for the same page rather than skipping ahead.
+
+19. **Homebrew ships from a personal tap, not `homebrew/core`, and `paddock
+    update` refuses under it.** Core is closed to paddock on two independent
+    counts, and neither is a matter of effort. Notability: a self-submission
+    by the repository owner needs 90 forks, 90 watchers or 225 stars
+    (`Package-Acceptance-Policy.md`). Self-update: *"Software that updates
+    itself conflicts with Homebrew's version and upgrade management"*
+    (`Acceptable-Formulae.md`) — which is `paddock update`, exactly. The
+    obvious escape hatch is closed by name: casks are for pre-built
+    distributions, and *"Open-source command-line-only software normally
+    belongs in homebrew/core as a formula built from source… A rejection from
+    homebrew/core does not by itself make the software eligible for
+    homebrew/cask."*
+
+    herdr, by contrast, IS a core formula — built from a source tarball with
+    `rust` and `zig` as build deps, bottled by Homebrew's own CI, at ~32k
+    stars. That is the template if paddock ever qualifies: source build, no
+    self-update. It is also why the tap formula carries `depends_on "herdr"` —
+    a tap formula may depend on a core one, so brew can guarantee the thing
+    paddock is useless without. No version constraint, because paddock's herdr
+    check is directional and core never moves backwards.
+
+    The bare name `paddock` is free in both core and cask and is deliberately
+    left unclaimed elsewhere, so a future core submission can still have it.
+    Until then the install is `brew install lntvan166/paddock/paddock`: since
+    Homebrew 6.0.0 a non-official tap needs explicit trust, and the
+    fully-qualified form grants it for that one formula in a single command.
+
+    Under brew, `paddock update` refuses rather than warning-and-proceeding.
+    Warning and proceeding would leave `brew info` lying about what is
+    installed and let the next `brew upgrade` silently revert the operator —
+    and disabling self-update is a precondition for core anyway, so a clean
+    refusal is the same direction the project would have to move regardless.
+

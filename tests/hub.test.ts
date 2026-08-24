@@ -239,3 +239,26 @@ test("a burst merges an upsert of one agent with a removal of a different agent"
   expect(msg.upserted.map((a) => a.agentId)).toEqual(["w1:p1"]);
   expect(msg.removedIds).toEqual(["w1:p2"]);
 });
+
+test("a snapshot and a heartbeat both carry managedBy, so the banner names the right command", () => {
+  // A VALUE, not a getter like build/latestKnown: the path of the running
+  // executable cannot change while the process runs, and `paddock update`
+  // refuses under a keg so it will not be swapped underneath either.
+  const hub = new Hub({ now: () => NOW, managedBy: "homebrew" });
+  const { client, sent } = fakeClient();
+  hub.sendSnapshot(client, "dev-box", []);
+  hub.add(client);
+  hub.sendHeartbeat();
+  expect((sent[0] as Record<string, unknown>).managedBy).toBe("homebrew");
+  expect((sent[1] as Record<string, unknown>).managedBy).toBe("homebrew");
+});
+
+test("with nothing injected, managedBy is null rather than undefined", () => {
+  // Same reasoning as latestKnown above: an absent key and an explicit null
+  // are different claims on the wire, and the client distinguishes them.
+  const hub = new Hub({ now: () => NOW });
+  const { client, sent } = fakeClient();
+  hub.add(client);
+  hub.sendHeartbeat();
+  expect((sent[0] as Record<string, unknown>).managedBy).toBeNull();
+});

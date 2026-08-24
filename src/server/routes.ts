@@ -19,7 +19,7 @@ import { EMBEDDED } from "@server/embedded";
 import { allowWrite, hostOf, refusalReason } from "@server/origin";
 import { warn } from "@server/term";
 import type { JournalReader } from "@server/journal/read";
-import { isNavKey, type NotifyTrigger, type SettingsPatch } from "@shared/types";
+import { isNavKey, type ManagedBy, type NotifyTrigger, type SettingsPatch } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 import type { HerdrAgentSession } from "@shared/herdr-api";
 
@@ -58,6 +58,16 @@ export interface HealthBody {
    * field from `health()` must be a type error, not a silently missing key.
    */
   latestKnown: string | null;
+  /**
+   * The package manager that owns this install, or null for the ordinary case.
+   *
+   * Exposed because the UPGRADE COMMAND depends on it: `paddock update`
+   * refuses inside a Homebrew keg, so anything telling an operator to run it
+   * there is wrong. Required rather than optional, for the same reason as
+   * `latestKnown` above — a future edit to `health()` that drops it must be a
+   * type error, not a silently missing key a phone then reads as "unmanaged".
+   */
+  managedBy: ManagedBy | null;
   /**
    * The protocol the LIVE herdr reports, or null before it has answered.
    *

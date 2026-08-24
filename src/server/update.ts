@@ -1,14 +1,62 @@
-import { chmod, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { ManagedBy } from "@shared/types";
 import { say } from "@server/term";
 
 const REPO = "lntvan166/paddock";
+
+/**
+ * Which package manager owns the binary at `execPath`, if any.
+ *
+ * Called once at boot rather than per request: the path of a running
+ * executable does not change, and `update` refuses inside a keg so it will not
+ * be swapped underneath either.
+ *
+ * Resolves the symlink first — Homebrew leaves one in `<prefix>/bin` pointing
+ * at the keg, and `process.execPath` may hand back either. A path that cannot
+ * be resolved is reported as unmanaged rather than thrown: a source checkout's
+ * execPath is the operator's `bun`, and boot must not die because a binary was
+ * moved underneath a running process.
+ */
+export async function detectManagedBy(execPath: string): Promise<ManagedBy | null> {
+  let resolved = execPath;
+  try {
+    resolved = await realpath(execPath);
+  } catch (e) {
+    // Said out loud, not swallowed. This only fires when the executable cannot
+    // be resolved at all — a binary moved or deleted underneath a running
+    // process — which is worth one line at boot. `console.info` rather than a
+    // thrown error, and the literal path is still checked below, because
+    // failing to classify the install must not stop the server starting.
+    console.info(`paddock: could not resolve ${execPath}: ${(e as Error).message}`);
+  }
+  return isBrewManaged(resolved) ? "homebrew" : null;
+}
 
 /**
  * The same mapping `install.sh` uses, so the installer and the updater cannot
  * disagree about which asset to fetch. Windows returns null deliberately:
  * herdr publishes no Windows build, so there is nothing to connect to.
  */
+/**
+ * Whether this binary lives inside a Homebrew keg.
+ *
+ * A tap installs the SAME released asset this updater downloads, so the two
+ * are byte-identical and there is no build-time flag to tell them apart. The
+ * install path is the only signal, and `/Cellar/` is the one invariant worth
+ * matching: EVERY Homebrew prefix — /opt/homebrew, /usr/local, Linuxbrew's
+ * default (a `.linuxbrew` directory inside a home directory), or a custom one
+ * — puts kegs under <prefix>/Cellar/<name>/<version>/. Enumerating the known
+ * prefixes instead would silently stop recognising a custom one.
+ *
+ * Matched as a whole path SEGMENT, not a substring: `~/Cellars/paddock` and
+ * `~/wine-cellar/bin/paddock` are ordinary paths and must not be mistaken for
+ * kegs, which is what `includes("/Cellar")` would do.
+ */
+export function isBrewManaged(path: string): boolean {
+  return path.split("/").includes("Cellar");
+}
+
 export function assetName(platform: string, arch: string): string | null {
   const os = platform === "darwin" ? "macos" : platform === "linux" ? "linux" : null;
   const cpu = arch === "arm64" ? "aarch64" : arch === "x64" ? "x86_64" : null;
@@ -128,7 +176,53 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
     return 0;
   }
   log(`paddock: ${o.current} -> ${latest}`);
-  if (o.checkOnly) { log("paddock: run `paddock update` to install it"); return 0; }
+
+  // Where the binary REALLY is, before anything decides whether to write it.
+  //
+  // process.execPath may hand back the symlink Homebrew leaves in
+  // <prefix>/bin rather than the keg it points at, and a guard that inspected
+  // only the literal string would miss that and overwrite the keg THROUGH the
+  // link. Resolved here rather than at the top so the common "already current"
+  // path above costs no syscall.
+  let resolved = o.selfPath;
+  try {
+    resolved = await realpath(o.selfPath);
+  } catch (e) {
+    // Not silenced, and not fatal. A path that cannot be resolved is still
+    // the path a write would target, so the check below remains meaningful
+    // for the literal — but an operator whose binary path just failed to
+    // resolve should hear about it rather than find out via a later error.
+    log(`paddock: could not resolve ${o.selfPath}: ${(e as Error).message}`);
+  }
+  const brewed = isBrewManaged(resolved);
+
+  if (o.checkOnly) {
+    // --check writes nothing, so brew is no reason to refuse it — the in-app
+    // update banner reads this signal. It must name the command that actually
+    // works for this install, though: telling a brew user to run `paddock
+    // update` sends them to the command the next branch refuses.
+    log(
+      brewed
+        ? "paddock: run `brew upgrade paddock` to install it"
+        : "paddock: run `paddock update` to install it",
+    );
+    return 0;
+  }
+
+  // Refused BEFORE the download: pulling 83MB to then say no would be a silly
+  // way to say it.
+  //
+  // The Homebrew prefix is user-owned, so the rename(2) below would SUCCEED
+  // here — leaving `brew info paddock` reporting a version that is no longer
+  // the bytes on disk, and `brew upgrade` later reverting the operator's
+  // update without either side saying anything. The "installed by a package
+  // manager" hint further down only fires when rename FAILS, which under brew
+  // it does not.
+  if (brewed) {
+    log(`paddock: this binary is managed by Homebrew (${resolved})`);
+    log("paddock: run `brew upgrade paddock` instead");
+    return 1;
+  }
 
   const base = `https://github.com/${REPO}/releases/download/v${latest}`;
   let bytes: Uint8Array;

@@ -1,4 +1,4 @@
-import type { Agent, ServerMessage } from "@shared/types";
+import type { Agent, ManagedBy, ServerMessage } from "@shared/types";
 
 export interface HubClient {
   send(data: string): void;
@@ -18,6 +18,12 @@ export interface HubOptions {
    *  value is produced (a GitHub release check, cached on disk), only that
    *  it is read fresh on every snapshot/heartbeat. */
   latestKnown?: () => string | null;
+  /** The package manager owning this install, if any.
+   *
+   *  A VALUE, not a getter like `build` and `latestKnown`: the path of the
+   *  running executable cannot change while the process runs, and `update`
+   *  refuses inside a keg, so there is nothing to re-read. */
+  managedBy?: ManagedBy | null;
 }
 
 /**
@@ -41,6 +47,7 @@ export class Hub {
    */
   private readonly build: () => string | null;
   private readonly latestKnown: () => string | null;
+  private readonly managedBy: ManagedBy | null;
 
   constructor(opts: HubOptions = {}) {
     this.coalesceMs = opts.coalesceMs ?? 100;
@@ -48,6 +55,7 @@ export class Hub {
     this.now = opts.now ?? Date.now;
     this.build = opts.build ?? (() => null);
     this.latestKnown = opts.latestKnown ?? (() => null);
+    this.managedBy = opts.managedBy ?? null;
   }
 
   get clientCount(): number {
@@ -82,6 +90,7 @@ export class Hub {
   sendHeartbeat(): void {
     const msg: ServerMessage = {
       type: "heartbeat", serverTime: this.now(), build: this.build(), latestKnown: this.latestKnown(),
+      managedBy: this.managedBy,
     };
     for (const client of [...this.clients]) this.sendTo(client, msg);
   }
@@ -97,7 +106,7 @@ export class Hub {
   sendSnapshot(client: HubClient, hostId: string, agents: Agent[]): void {
     this.sendTo(client, {
       type: "snapshot", hostId, agents, serverTime: this.now(),
-      build: this.build(), latestKnown: this.latestKnown(),
+      build: this.build(), latestKnown: this.latestKnown(), managedBy: this.managedBy,
     });
   }
 
