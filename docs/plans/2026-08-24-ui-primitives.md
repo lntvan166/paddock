@@ -1882,10 +1882,14 @@ Expected: whole suite green.
 
 - [ ] **Step 5: Verify in a browser**
 
-Run: `make dev`
+Demo mode is a **build-time** flag, not a query parameter: `src/web/main.tsx`
+gates it on `import.meta.env.VITE_PADDOCK_DEMO` so the demo backend is
+tree-shaken out of a normal build entirely. So the dev server must be started
+with it set:
 
-Open the dashboard with `?demo=1` (check `src/web/demo/backend.ts` for the exact
-flag) at a 390px viewport and confirm: the needs-you row is a tinted bordered
+Run: `VITE_PADDOCK_DEMO=1 bun run dev`
+
+Open the dashboard at a 390px viewport and confirm: the needs-you row is a tinted bordered
 card, ready rows are plain cards, working rows are bare, idle is still a chip
 cloud, and every tile shows its harness initials with the dot overlaid at the
 bottom-left. Then switch the theme both ways and confirm the wash and the tiles
@@ -2597,7 +2601,8 @@ Expected: clean.
 
 - [ ] **Step 6: Verify in a browser**
 
-Run: `make dev`
+Run: `VITE_PADDOCK_DEMO=1 bun run dev` (demo mode is a build-time flag on
+`import.meta.env.VITE_PADDOCK_DEMO`, not a query parameter)
 
 Open `#/settings` at 390px. Confirm: three bands, cards with icon headers,
 theme and rate as segmented controls, toggles right-aligned in their rows,
@@ -3058,7 +3063,8 @@ Expected: green.
 
 - [ ] **Step 6: Verify in a browser**
 
-Run: `make dev`
+Run: `VITE_PADDOCK_DEMO=1 bun run dev` (demo mode is a build-time flag on
+`import.meta.env.VITE_PADDOCK_DEMO`, not a query parameter)
 
 Open `#/settings`. Confirm every diagnostics row is present on first paint with
 em dashes, then fills in without the card changing height. Confirm the Updates
