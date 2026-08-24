@@ -102,6 +102,19 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* The dot is 7px of meaning, so its geometry lives here rather than being
+   restated at three call sites. A ring is the same size as a disc — hollowing
+   a state must not also move it. */
+.dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border-width: 1.5px;
+  border-style: solid;
+  box-sizing: border-box;
+}
+
 /* Staleness is shown, never hidden: the banner announces it, this dims the
    data underneath so "this might be old" is legible at a glance. An instant
    change is preferred over adding motion for a state that already has a

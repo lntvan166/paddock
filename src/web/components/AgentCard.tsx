@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { ActionResult, Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
 import { formatElapsed } from "@web/components/elapsed";
-import { StateDot } from "@web/components/AgentRow";
+import { StatusDot } from "@web/components/AgentRow";
 
 /**
  * Only a finished agent can be dismissed, and only once.
@@ -24,7 +24,7 @@ export function AgentCard({
    * renders standalone (e.g. in a future context with no sheet to open). */
   onSelect?: () => void;
 }) {
-  // Same palette as `StateDot`: red for the one state that needs a person.
+  // Same palette as `StatusDot`: red for the one state that needs a person.
   const accent = agent.state === "blocked" ? "var(--danger)" : "var(--ok)";
   const [busy, setBusy] = useState(false);
   // acknowledge() never throws — a failed dismissal (e.g. a 409 because the
@@ -71,7 +71,7 @@ export function AgentCard({
       }
     >
       <header className="flex items-center gap-2">
-        <StateDot state={agent.state} />
+        <StatusDot state={agent.state} />
         <h3 className="text-[12.5px] font-semibold">{agent.name}</h3>
         <span className="ml-auto text-[10px]" style={{ color: "var(--fg-dim)" }}>
           {formatElapsed(now - agent.stateSince)}

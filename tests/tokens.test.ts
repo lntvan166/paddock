@@ -47,7 +47,7 @@ test("the state palette is traffic-light, and never paints a state in the tap co
   // painted with it — so a state competed with the affordances around it. A
   // future edit reaching for `--accent` because it looks nice on a dot would
   // reintroduce exactly that.
-  const row = await Bun.file("src/web/components/AgentRow.tsx").text();
+  const row = await Bun.file("src/web/components/ui/StatusDot.tsx").text();
   const map = row.slice(row.indexOf("const DOT"), row.indexOf("};", row.indexOf("const DOT")));
   expect(map).toContain('blocked: "var(--danger)"');
   expect(map).toContain('working: "var(--warn)"');
