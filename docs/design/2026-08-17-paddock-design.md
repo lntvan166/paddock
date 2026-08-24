@@ -202,10 +202,18 @@ Five values, from the schema's `AgentStatus` enum:
 | State | Meaning | Section |
 |---|---|---|
 | `blocked` | Waiting for operator input | **Needs you** |
-| `done` | Finished | **Needs you** |
+| `done`, unacknowledged (`acknowledgedAt === null`) | Finished, not yet seen | **Ready** |
+| `done`, acknowledged | Finished, already dealt with | Idle |
 | `working` | Actively running | Working |
 | `idle` | Attached, not working | Idle |
 | `unknown` | Not a recognised agent | **Filtered out** |
+
+<!-- The split above post-dates this document: a finish and a block are
+different urgencies — one wants a decision before work continues, the other
+is news nobody has read — so `done` now routes to its own "Ready" section
+until dismissed, rather than sharing "Needs you" with `blocked`. Four
+sections in triage order: `needs-you`, `ready-unseen`, `working`, `idle`. See
+`docs/design/2026-08-24-ui-primitives-design.md` for the detail. -->
 
 Panes with `agent_status: unknown` **or no `agent` field** are excluded entirely —
 that is how ordinary shell panes appear, and they are not agents.
@@ -315,7 +323,11 @@ IDLE · 3                                            ▾
 ( docs-cleanup ) ( flaky-test-fix ) ( lint-config )
 ```
 
-- **Needs you** — full card. Amber for `blocked`, green for `done`. Task text wraps.
+- **Needs you** — full card, `AgentCard`, red for `blocked`. `done` (unacknowledged)
+  now gets its own **Ready** section below Needs you, using the same `AgentCard`,
+  green. Task text wraps in both. See
+  `docs/design/2026-08-24-ui-primitives-design.md` for the detail; this passage
+  predates that split and the amber/red correction.
 - **Working** — dense rows with separators, right-aligned elapsed time, task text
   truncated to one line.
 - **Idle** — collapsed to chips; expands into the same dense rows.

@@ -254,23 +254,34 @@ one value an operator cannot read off the file.
 
 ## Dashboard refit
 
-`AgentRow` gains `emphasis: "alert" | "card" | "bare"`:
+**Superseded by what shipped — see below.** This section originally specified an
+`AgentRow` emphasis ladder (`"alert" | "card" | "bare"`, one step per section) so
+that a row's own container escalated with its section. It was designed, built in
+Task 10 of the implementation plan, and then **deleted as dead code** in commit
+`b505a06`: this section's own premise — that `needs-you` and `ready-unseen` render
+`AgentRow` — turned out to be wrong. `App.tsx` renders `AgentCard`, a full card
+with its own border and fill, for BOTH attention sections; `AgentRow` is used only
+for `working`, where every row is bare by construction. With no section left that
+renders an `AgentRow` at anything other than the bare rung, the ladder had nothing
+left to climb, so `type RowEmphasis`, `emphasisFor(section)`, the `emphasis` prop,
+`data-emphasis`, and `.row[data-emphasis="…"]` were removed rather than kept as
+unreachable code.
 
-| emphasis | treatment | section |
-|---|---|---|
-| `alert` | `--danger` border, `--danger-wash` fill, rounded, inset | `needs-you` |
-| `card` | `--border`, `--surface`, rounded, inset | `ready-unseen` |
-| `bare` | hairline `borderTop` only — today's look | `working` |
+`--danger-wash` did not disappear with the ladder — it moved to `AgentCard`'s own
+`surface` for a blocked agent (border AND fill, the same reasoning this section
+originally gave for `alert`).
 
-`idle` is absent from the table because it renders no `AgentRow` at all — see the
-chip cloud below.
+What survived, unchanged in spirit: `AgentRow` still carries the round `IconTile`
+with the `StatusDot` overlaid at the bottom-left, plus a `.sr-only` element
+holding the state word as text — the second channel this section always argued
+for, just attached to `AgentCard` for the two sections that need it and to the
+bare `AgentRow` for the rest.
 
-Derived from **section, not state**. The ladder is a property of the section: it
-is the answer to "how much of your attention does this group deserve", and
-deriving it from state would put the decision in two places the first time a
-state maps somewhere new.
-
-Rows gain the round `IconTile` with the status dot overlaid.
+The shipped shape is the better one — the point of this note is only that the
+implementer who searches this document for `AgentRow`'s `emphasis` prop should
+find this paragraph instead of a described feature that grep will never turn up
+in the code. See `docs/plans/2026-08-24-ui-primitives.md`, Task 10, for the
+delete's own note.
 
 **Idle keeps its `AgentChip` cloud.** A wrapped cloud of name-only pills is the
 densest form available on a phone whose idle section is routinely five of six
@@ -433,7 +444,7 @@ commit.
 | `StatusDot` | ring for `idle`, fill for the other three |
 | `Toggle` | `role="switch"`, `aria-checked` tracks state, `disabled` blocks activation |
 | `Segmented` | `role="radiogroup"`, keyboard selection, one checked member |
-| `AgentRow` | emphasis derived from section, not state |
+| `AgentCard` | rendered for both `needs-you` and `ready-unseen`; accent by state, not section |
 
 `grouping.test.ts` and any fixture carrying an `Agent` need the new `harness`
 field — required fields break fixtures at compile time, which is the point.

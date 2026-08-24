@@ -1696,13 +1696,40 @@ git commit -m "feat: a section for a finish nobody has read, because it was comp
 
 ### Task 10: Row emphasis and tiles
 
-**Files:**
+**Built, then deleted as dead code — see below before following the steps.**
+This task's steps are kept verbatim as a historical record of what was
+implemented and reviewed, but none of it exists at HEAD. Commit `b505a06`
+removed `type RowEmphasis`, `emphasisFor(section)`, the `emphasis` prop,
+`data-emphasis`, and `.row[data-emphasis="…"]` in their entirety, because
+this task's own premise — that `needs-you` and `ready-unseen` render
+`AgentRow` — was wrong: `App.tsx` renders `AgentCard` (a full card with its
+own border and fill) for both attention sections, not `AgentRow`. With no
+section left rendering an `AgentRow` at anything above the bare rung, the
+ladder had nothing left to climb, and a `type` plus a function plus a CSS
+rule that can never produce any value but `"bare"` is unreachable code, not
+a feature with one remaining use.
+
+`--danger-wash` (Task 1) did not go with it — it moved to `AgentCard`'s own
+`surface` for a blocked agent, the same border-AND-fill reasoning this task
+gave for `alert`. What survived from this task, attached to `AgentRow`
+rather than removed: the round `IconTile` with the `StatusDot` overlaid at
+the bottom-left, and the `.sr-only` element carrying the state word as
+text — the second channel this task's own header comment argues for.
+
+Only Task 11 recorded this kind of abandonment with a "Deviation from the
+spec, deliberate" paragraph when it happened to `SectionHeader`'s `trailing`
+slot. This note is the equivalent one for this task, added after the fact —
+without it, the next implementer greps `AgentRow` for `emphasis` and finds
+nothing, with no pointer to why. See `docs/design/2026-08-24-ui-primitives-design.md`'s
+"Dashboard refit" section for the corresponding correction there.
+
+**Files (as originally planned; none of it landed):**
 - Modify: `src/web/components/AgentRow.tsx`
 - Modify: `src/web/components/App.tsx:146-177`
 - Modify: `src/web/styles.css`
 - Test: `tests/agent-row-emphasis.test.tsx`
 
-**Interfaces:**
+**Interfaces (as originally planned):**
 - Consumes: `IconTile` (Task 3), `StatusDot` (Task 2), `Agent.harness` (Task 8), `Section` (Task 9).
 - Produces:
   - `type RowEmphasis = "alert" | "card" | "bare"`
