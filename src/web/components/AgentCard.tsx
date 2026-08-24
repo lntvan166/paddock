@@ -3,6 +3,7 @@ import type { ActionResult, Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
 import { formatElapsed } from "@web/components/elapsed";
 import { StatusDot } from "@web/components/AgentRow";
+import { StateIcon } from "@web/components/ui/StateIcon";
 
 /**
  * Only a finished agent can be dismissed, and only once.
@@ -93,7 +94,12 @@ export function AgentCard({
       <p className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--fg-dim)" }}>
         {agent.task}
       </p>
-      <p className="mt-2 text-[10px]" style={{ color: "var(--fg-dim)" }}>
+      {/* Shape, colour and word together. The card is already red or green and
+          already says which — the icon is the channel that survives when the
+          other two do not, and red-and-green is the pair this palette spends on
+          exactly these two states. */}
+      <p className="mt-2 flex items-center gap-1 text-[10px]" style={{ color: "var(--fg-dim)" }}>
+        <StateIcon state={agent.state} />
         {agent.state === "blocked" ? "Waiting for input" : "Finished"}
       </p>
       {showAcknowledge(agent) && (

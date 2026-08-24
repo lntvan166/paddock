@@ -554,6 +554,9 @@ body {
    because this header is width-starved: the agent's name is already truncated,
    and every pixel here comes out of it. */
 .term-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
   padding: 0.1rem 0.3rem;
   border-radius: 0.3rem;
   background: var(--danger-wash);

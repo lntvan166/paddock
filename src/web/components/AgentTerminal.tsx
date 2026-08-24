@@ -4,6 +4,7 @@ import { answerWithKey, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendTex
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
 import { StatusDot } from "@web/components/AgentRow";
+import { StateIcon } from "@web/components/ui/StateIcon";
 import { mergeSnapshot } from "@web/history";
 import {
   emptyJournal, historyFor, journalFor, rememberHistory, rememberScreen, screenFor,
@@ -603,7 +604,12 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               context. So the one state where a missed distinction has a
               consequence pays for the width, and the other three do not. */}
           {agent.state === "blocked"
-            ? <span className="term-state">blocked</span>
+            ? (
+                <span className="term-state">
+                  <StateIcon state="blocked" size={11} />
+                  blocked
+                </span>
+              )
             : <>
                 <StatusDot state={agent.state} />
                 <span className="sr-only">{agent.state}</span>
