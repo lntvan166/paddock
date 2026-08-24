@@ -5,6 +5,8 @@ import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
 import { StatusDot } from "@web/components/AgentRow";
 import { StateIcon } from "@web/components/ui/StateIcon";
+import { Button } from "@web/components/shadcn/button";
+import { Input } from "@web/components/shadcn/input";
 import { mergeSnapshot } from "@web/history";
 import {
   emptyJournal, historyFor, journalFor, rememberHistory, rememberScreen, screenFor,
@@ -817,9 +819,10 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
         <div className="term-options" role="group" aria-label="Answer">
           {prompt.question && <p className="term-question">{prompt.question}</p>}
           {prompt.options.map((o) => (
-            <button
+            <Button
               key={o.key}
               type="button"
+              variant="outline"
               className="term-option"
               disabled={busy}
               aria-pressed={isSelected(o)}
@@ -837,7 +840,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
                   length instead of three similar sentences. */}
               <span aria-hidden="true" className="term-option-key">{o.key}</span>
               <span className="term-option-label">{o.label}</span>
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -871,24 +874,24 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
       <div className="term-keys" role="group" aria-label="Send key">
         <div className="term-keys-primary">
           {PRIMARY_KEYS.map((k) => (
-            <button
-              key={k.key} type="button" className="term-key"
+            <Button
+              key={k.key} type="button" variant="outline" className="term-key"
               disabled={busy} onClick={() => void press(k.key)}
             >
               {k.label}
-            </button>
+            </Button>
           ))}
         </div>
         {keypad === "full" && (
         <div className="term-keys-secondary">
           {SECONDARY_KEYS.map((k) => (
-            <button
-              key={k.key} type="button" className="term-key term-key-sm"
+            <Button
+              key={k.key} type="button" variant="outline" className="term-key term-key-sm"
               disabled={busy} onClick={() => void press(k.key)}
               aria-label={k.key}
             >
               {k.label}
-            </button>
+            </Button>
           ))}
         </div>
         )}
@@ -902,14 +905,17 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
         }}
       >
         <label className="sr-only" htmlFor="term-reply-input">Reply</label>
-        <input
+        <Input
           id="term-reply-input"
           value={reply}
           disabled={busy}
           onChange={(e) => setReply(e.target.value)}
           placeholder="Type a reply…"
         />
-        <button type="submit" disabled={busy || !reply.trim()}>Send</button>
+        {/* Filled, not outline: this is the committing action. The keys above
+            are `outline` because pressing one is cheap and reversible; sending a
+            reply to an agent is neither. */}
+        <Button type="submit" disabled={busy || !reply.trim()}>Send</Button>
       </form>
     </section>
   );

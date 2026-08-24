@@ -834,6 +834,12 @@ body {
   border-radius: 0.4rem;
   display: flex;
   align-items: center;
+  /* Left-aligned, explicitly. shadcn's Button centres its content, which
+     centred each option and broke the badge column — and a fixed-width badge
+     exists precisely so the labels start on the same column, because a ragged
+     left edge is what makes three similar options hard to tell apart at a
+     glance. */
+  justify-content: flex-start;
   gap: 0.6rem;
   background: var(--bg);
   color: var(--fg);
