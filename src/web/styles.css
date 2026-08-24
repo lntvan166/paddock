@@ -1030,3 +1030,11 @@ body {
   padding: 0;
   border: 0;
 }
+
+.build-stamp {
+  margin: 1.25rem 0 0;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--fg-dim);
+}

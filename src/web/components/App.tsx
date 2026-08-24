@@ -3,6 +3,7 @@ import { isStale, useStore } from "@web/store";
 import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
 import { AgentTerminal } from "@web/components/AgentTerminal";
+import { BuildStamp } from "@web/components/BuildStamp";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
@@ -184,6 +185,8 @@ export function App() {
             No agents detected.
           </p>
         )}
+
+        <BuildStamp />
       </div>
     </main>
   );

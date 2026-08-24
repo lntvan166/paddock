@@ -8,3 +8,7 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+declare const __PADDOCK_VERSION__: string;
+declare const __PADDOCK_COMMIT__: string;
+declare const __PADDOCK_BUILD_TIME__: string;

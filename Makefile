@@ -1,6 +1,11 @@
 export UID := $(shell id -u)
 export GID := $(shell id -g)
 
+PADDOCK_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+PADDOCK_BUILD_TIME ?= $(shell date -u +"%Y-%m-%d %H:%M UTC")
+export PADDOCK_COMMIT
+export PADDOCK_BUILD_TIME
+
 # No `2>/dev/null`. CLAUDE.md forbids it, this branch's own
 # tests/install-script.test.ts enforces against it in install.sh, and a
 # Makefile that breaks the rule while the tests enforce it is the repo
