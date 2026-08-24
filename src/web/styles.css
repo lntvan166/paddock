@@ -496,6 +496,19 @@ body {
   cursor: pointer;
 }
 
+/* Every control here is the same KIND of thing, so it gets the same treatment:
+   bordered, on --surface, at the 0.4rem the whole app uses. They were three
+   different things before — two borderless text links and a bare glyph — which
+   is most of why this header read as a toolbar from another app.
+
+   `.term-back` is excluded by the selector: it is navigation, not a control,
+   and the settings screen's back link is plain text too. */
+.term-header button:not(.term-back) {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+}
+
 .term-back { font-weight: 600; }
 
 /* `center`, not `baseline`: the state is a DOT now, and an empty flex item has
@@ -504,7 +517,22 @@ body {
    alignment; the name is ellipsised and the stalled marker carries its own. */
 .term-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.5rem; }
 .term-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.term-state { font-size: 0.7rem; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+/* Only ever rendered for `blocked` (see AgentTerminal), so the danger colours
+   are unconditional. It was --fg-dim, which said the loudest state in the app
+   in the same grey as everything incidental — the dashboard says it with red on
+   a --danger-wash fill, and this is the same sentence. Padding kept tight
+   because this header is width-starved: the agent's name is already truncated,
+   and every pixel here comes out of it. */
+.term-state {
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.3rem;
+  background: var(--danger-wash);
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
 /* Same reasoning as .detail .output: terminal output is fixed-width, so it
    scrolls sideways rather than reflowing. Wrapping it folds an 80-column

@@ -584,12 +584,15 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
         </button>
         <div className="term-title">
           <strong>{agent.name}</strong>
-          {/* The same `StatusDot` the list renders, not a second convention:
-              blocked red, done green, working amber, idle grey, defined once
-              in the ui/ primitive layer. The word cost more width than the
-              agent's own name had left. It stays for assistive tech, which
-              cannot read a colour — the dot itself is aria-hidden. */}
-          <StatusDot state={agent.state} />
+          {/* Blocked renders a PILL instead of the dot; every other state keeps
+              the same `StatusDot` the list renders. That is the dashboard's own
+              escalation — needs-you gets a tinted, bordered treatment and the
+              rest get a bare dot — and it costs nothing here: the pill's
+              padding is paid for by the dot and gap it replaces, which matters
+              because this header is width-starved and the agent's name is
+              already truncated. Measured: the name holds at 65px either way,
+              where a pill BESIDE the dot took it to 50px. */}
+
           {/* Blocked keeps its WORD, visibly. Everywhere else the dot is enough
               and the word is only for assistive tech.
 
@@ -601,7 +604,10 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               consequence pays for the width, and the other three do not. */}
           {agent.state === "blocked"
             ? <span className="term-state">blocked</span>
-            : <span className="sr-only">{agent.state}</span>}
+            : <>
+                <StatusDot state={agent.state} />
+                <span className="sr-only">{agent.state}</span>
+              </>}
           {/* Shown rather than hidden: a pane that has stopped updating must
               not look current. */}
           {stalled && <span className="term-stalled" role="status">not updating</span>}
