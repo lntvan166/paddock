@@ -9,13 +9,13 @@ function agent(over: Partial<Agent> = {}): Agent {
   return {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state: "done", workspaceId: "w1",
-    workspaceLabel: "api work", cwd: "/srv/project",
+    workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
     stateSince: NOW, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
   };
 }
 
-test("a done agent is in needs-you until acknowledged", () => {
-  expect(sectionFor(agent())).toBe("needs-you");
+test("a done agent is in ready-unseen until acknowledged", () => {
+  expect(sectionFor(agent())).toBe("ready-unseen");
   expect(sectionFor(agent({ acknowledgedAt: NOW }))).toBe("idle");
 });
 
@@ -46,7 +46,7 @@ test("acknowledging an unknown agent returns null", () => {
 });
 
 // The reconcile re-sends every agent every 30s. If it dropped the flag, an
-// acknowledged card would reappear in Needs you within half a minute.
+// acknowledged card would reappear in Ready within half a minute.
 test("a reconcile preserves the acknowledge flag", () => {
   const store = new AgentStore("dev-box");
   store.replaceAll([agent()], NOW);
@@ -67,9 +67,9 @@ test("leaving done clears the acknowledge flag", () => {
 // THE user-visible bug: push (applyStatusEvent) is the PRIMARY path that
 // moves an agent's state, not just the 30s reconcile. Acknowledge, then let
 // the agent leave and re-enter `done` entirely via events — no reconcile in
-// between — and the new finish must still surface in Needs you, not be
-// silently suppressed by the stale flag.
-test("acknowledge, then off-done and back to done via push events, resurfaces in needs-you", () => {
+// between — and the new finish must still surface in Ready, not be silently
+// suppressed by the stale flag.
+test("acknowledge, then off-done and back to done via push events, resurfaces in ready-unseen", () => {
   const store = new AgentStore("dev-box");
   store.replaceAll([agent()], NOW);
   store.acknowledge("w1:p1", NOW + 5);
@@ -83,5 +83,5 @@ test("acknowledge, then off-done and back to done via push events, resurfaces in
 
   const finished = store.snapshot()[0]!;
   expect(finished.acknowledgedAt).toBeNull();
-  expect(sectionFor(finished)).toBe("needs-you");
+  expect(sectionFor(finished)).toBe("ready-unseen");
 });

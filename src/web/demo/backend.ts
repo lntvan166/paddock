@@ -1,4 +1,4 @@
-import type { Agent, AgentState, ServerMessage } from "@shared/types";
+import type { Agent, AgentState, HealthBody, ServerMessage, SettingsView } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 import { DEMO_JOURNAL_AGENT_ID, DEMO_JOURNAL_LINES } from "@shared/demo-history";
 import {
@@ -23,13 +23,16 @@ import {
 
 const HOST_ID = "demo-box";
 
-const SEED: Array<{ id: string; name: string; task: string; state: AgentState; ageMs: number }> = [
-  { id: "d1:p1", name: "schema-migration", task: "Apply migration to staging", state: "blocked", ageMs: 120_000 },
-  { id: "d2:p1", name: "lint-config", task: "Align eslint with the style guide", state: "done", ageMs: 300_000 },
-  { id: "d3:p1", name: "api-refactor", task: "Extract auth middleware", state: "working", ageMs: 15_000 },
-  { id: "d4:p1", name: "perf-audit", task: "Profile the request path", state: "working", ageMs: 45_000 },
-  { id: "d5:p1", name: "docs-cleanup", task: "Rewrite the getting-started guide", state: "idle", ageMs: 900_000 },
-  { id: "d6:p1", name: "flaky-test-fix", task: "Stabilise the upload suite", state: "idle", ageMs: 3_600_000 },
+const SEED: Array<{ id: string; name: string; task: string; state: AgentState; ageMs: number; harness: string }> = [
+  // A mix of harnesses, not all "claude" — this seed is what README
+  // screenshots come from, and a mix is what exercises the tile's
+  // per-harness colouring.
+  { id: "d1:p1", name: "schema-migration", task: "Apply migration to staging", state: "blocked", ageMs: 120_000, harness: "claude" },
+  { id: "d2:p1", name: "lint-config", task: "Align eslint with the style guide", state: "done", ageMs: 300_000, harness: "codex" },
+  { id: "d3:p1", name: "api-refactor", task: "Extract auth middleware", state: "working", ageMs: 15_000, harness: "claude" },
+  { id: "d4:p1", name: "perf-audit", task: "Profile the request path", state: "working", ageMs: 45_000, harness: "codex" },
+  { id: "d5:p1", name: "docs-cleanup", task: "Rewrite the getting-started guide", state: "idle", ageMs: 900_000, harness: "claude" },
+  { id: "d6:p1", name: "flaky-test-fix", task: "Stabilise the upload suite", state: "idle", ageMs: 3_600_000, harness: "codex" },
 ];
 
 const agents: Agent[] = SEED.map((s) => ({
@@ -41,6 +44,7 @@ const agents: Agent[] = SEED.map((s) => ({
   workspaceId: s.id.split(":")[0]!,
   workspaceLabel: null,
   cwd: "/work/demo",
+  harness: s.harness,
   stateSince: Date.now() - s.ageMs,
   updatedAt: Date.now(),
   acknowledgedAt: null,
@@ -52,6 +56,50 @@ const agents: Agent[] = SEED.map((s) => ({
   // tell the same invented story rather than two that could drift.
   hasJournal: s.id === DEMO_JOURNAL_AGENT_ID,
 }));
+
+/**
+ * A settings view with nothing configured.
+ *
+ * Deliberately unconfigured: `configured: false` and a null hint keep any
+ * token-shaped string out of the demo bundle, and out of every screenshot taken
+ * from it. `scripts/check-private.sh` scans for that shape.
+ */
+function demoSettings(mutedUntil: number | null = null): SettingsView {
+  return {
+    telegram: { configured: false, hint: null, chatId: null },
+    notify: {
+      enabled: false,
+      triggers: ["blocked"],
+      settleMs: { blocked: 5_000, done: 10_000 },
+      mutedUntil,
+      cooldownMs: 60_000,
+    },
+    publicUrl: null,
+    // No tunnel: a paddock served the ordinary way has none, and the demo must
+    // not offer to pair a device it cannot pair.
+    tunnel: null,
+    serverNow: Date.now(),
+    error: null,
+  };
+}
+
+/** Health for the diagnostics card. Invented, and named like the demo host. */
+function demoHealth(): HealthBody {
+  return {
+    ok: true,
+    hostId: HOST_ID,
+    agents: agents.length,
+    clients: 1,
+    herdrConnected: true,
+    lastEventAt: Date.now(),
+    lastNotifyError: null,
+    version: "0.0.0-demo",
+    latestKnown: null,
+    managedBy: null,
+    herdrProtocol: 20,
+    schemaWarning: null,
+  };
+}
 
 /** Cursor position on the blocked agent's menu, moved by the arrow keys. */
 let cursor = 0;
@@ -94,6 +142,37 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 function handle(url: string, body: Record<string, unknown>): Response {
+  // The demo is the only sanctioned source of screenshots, so every screen the
+  // product has must render here — including settings, which needs a whole
+  // SettingsView before it will paint at all.
+  //
+  // Path, not substring: "/api/settings" is a prefix of
+  // "/api/settings/telegram/test" and "/api/settings/mute", so a substring
+  // match answered both of those with a settings view — which made the test
+  // button render an empty error banner and Mute silently do nothing.
+  const path = url.split("?")[0] ?? url;
+
+  if (path.endsWith("/api/settings/telegram/test")) {
+    // The real route reports whether the token and chat id actually work.
+    // The demo has no bot, and saying so is more honest than claiming success.
+    return json({ ok: false, detail: "The demo has no Telegram bot configured." });
+  }
+  if (path.endsWith("/api/settings/mute")) {
+    // The real route stamps the instant server-side from a client-supplied
+    // duration and returns the updated view, so the countdown has something to
+    // render. Computed, not persisted: the demo has no store, and a mute that
+    // appeared to fail would read as a product bug rather than a demo's limit.
+    const forMs = typeof body.forMs === "number" ? body.forMs : 0;
+    return json(demoSettings(forMs > 0 ? Date.now() + forMs : null));
+  }
+  if (path.endsWith("/api/settings")) {
+    // A PUT returns the same unconfigured view rather than the patch: the demo
+    // has no store, and keeping it unconfigured regardless of what anyone types
+    // is what keeps a token-shaped string out of every screenshot taken here.
+    return json(demoSettings());
+  }
+  if (path.endsWith("/api/health")) return json(demoHealth());
+
   const m = /\/api\/agents\/([^/]+)\/(\w+)/.exec(url);
   if (!m) return json({ ok: false, detail: "not found" }, 404);
   const id = decodeURIComponent(m[1]!);

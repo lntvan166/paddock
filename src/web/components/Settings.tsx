@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
+import type { HealthBody, NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 import {
   readPrefs, themeAttr, writePref,
   type Prefs, type ThemePref,
@@ -8,6 +8,7 @@ import { DeviceSection } from "@web/components/settings/DeviceSection";
 import { TunnelSection } from "@web/components/settings/TunnelSection";
 import { TelegramSection } from "@web/components/settings/TelegramSection";
 import { NotifySection } from "@web/components/settings/NotifySection";
+import { InfoSection } from "@web/components/settings/InfoSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
 
@@ -29,6 +30,12 @@ export function Settings({ onBack }: SettingsProps) {
 
   const [view, setView] = useState<SettingsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Read-only, for the Info band's Updates and Connection cards. `null` while
+  // loading — `InfoSection` renders every row regardless, with an em dash for
+  // whatever has not arrived yet.
+  const [health, setHealth] = useState<HealthBody | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
 
   // The token field always starts empty and is never seeded from the
   // response — the server never sends it (SettingsView has no token member),
@@ -106,6 +113,12 @@ export function Settings({ onBack }: SettingsProps) {
     (async () => {
       try {
         const res = await fetch("/api/settings");
+        // Checked BEFORE the cast. Without this a non-2xx body — a 404 from a
+        // demo backend, a 500 from a broken server — was cast to SettingsView
+        // anyway, and the first render to read `baseline.telegram.chatId` threw,
+        // blanking the whole screen. The catch below already knows how to show
+        // this; it was never reached.
+        if (!res.ok) throw new Error(`settings load failed: ${res.status}`);
         const body = (await res.json()) as SettingsView;
         if (!live) return;
         setView(body);
@@ -120,6 +133,25 @@ export function Settings({ onBack }: SettingsProps) {
         setServerNow(body.serverNow);
       } catch (e) {
         if (live) setLoadError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => { live = false; };
+  }, []);
+
+  // Same fetch idiom as `/api/settings` above, including the `res.ok` check:
+  // a failure here must be visible rather than leaving the Connection card
+  // showing em dashes forever with nothing to explain why.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/health");
+        if (!res.ok) throw new Error(`health load failed: ${res.status}`);
+        const body = (await res.json()) as HealthBody;
+        if (!live) return;
+        setHealth(body);
+      } catch (e) {
+        if (live) setHealthError(e instanceof Error ? e.message : String(e));
       }
     })();
     return () => { live = false; };
@@ -269,30 +301,30 @@ export function Settings({ onBack }: SettingsProps) {
 
       {view?.error && <p className="settings-banner">{view.error}</p>}
       {loadError && <p className="settings-banner">{loadError}</p>}
+      {healthError && <p className="settings-banner">{healthError}</p>}
       <Toast message={savedAt === null ? null : "Settings saved"} />
 
-      <DeviceSection prefs={prefs} setPref={setPref} />
+      {/* A `<section>` per band, labelled by a real heading (not just a
+          styled `<p>`): before this branch the outline was `h1 Settings` →
+          `h2 This device` / `h2 All devices` / `h2 Info`, with no heading
+          inside a card. `Card`'s own title is now an `<h3>` precisely so it
+          nests under its band instead of competing with it — see the
+          comment there. Losing that nesting would leave a screen-reader
+          user navigating by heading unable to tell "This device" (writes to
+          localStorage immediately) from "All devices" (a form that does
+          nothing until Save succeeds), which is the exact confusion the
+          two-band split exists to prevent. */}
+      <section className="band" aria-labelledby="band-device">
+        <h2 className="band-label" id="band-device">This device</h2>
+        <p className="band-hint">
+          Stored in this browser only. Each device you open paddock on keeps its own copy.
+        </p>
+        <DeviceSection prefs={prefs} setPref={setPref} />
+      </section>
 
-      {/* Present only while a tunnel is running: `view.tunnel` is null for a
-          paddock served the ordinary way, which has nothing to pair. */}
-      {view?.tunnel != null && (
-        <TunnelSection
-          tunnel={view.tunnel}
-          onInvite={async () => {
-            const res = await fetch("/api/pair/invite", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: "{}",
-            });
-            if (!res.ok) throw new Error(`invite failed: ${res.status}`);
-            return (await res.json()) as { code: string; expiresAt: number };
-          }}
-        />
-      )}
-
-      <section className="settings-section">
-        <h2>All devices</h2>
-        <p className="settings-hint">
+      <section className="band" aria-labelledby="band-server">
+        <h2 className="band-label" id="band-server">All devices</h2>
+        <p className="band-hint">
           These are server settings and affect every device, not just this one.
         </p>
 
@@ -324,7 +356,34 @@ export function Settings({ onBack }: SettingsProps) {
           muting={muting}
         />
 
+        {/* Present only while a tunnel is running: `view.tunnel` is null for
+            a paddock served the ordinary way, which has nothing to pair.
+            Lives inside "All devices" — the spec's own placement — rather
+            than between the two bands: it is a server setting like
+            Telegram and Notifications above it, so it gets that band's
+            padding, its `.card + .card` spacing, and its heading. */}
+        {view?.tunnel != null && (
+          <TunnelSection
+            tunnel={view.tunnel}
+            onInvite={async () => {
+              const res = await fetch("/api/pair/invite", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: "{}",
+              });
+              if (!res.ok) throw new Error(`invite failed: ${res.status}`);
+              return (await res.json()) as { code: string; expiresAt: number };
+            }}
+          />
+        )}
+
         {saveError && <p className="settings-banner">{saveError}</p>}
+      </section>
+
+      <section className="band" aria-labelledby="band-info">
+        <h2 className="band-label" id="band-info">Info</h2>
+        <p className="band-hint">Read-only. What build is running, and what this device can see.</p>
+        <InfoSection health={health} />
       </section>
 
       {/* `dirty` is false while `baseline === null`, which is what used to be

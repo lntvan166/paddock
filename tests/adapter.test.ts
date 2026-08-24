@@ -53,6 +53,20 @@ test("filters out panes with no agent field", () => {
   expect(toAgent(raw({ agent: null }), ctx)).toBeNull();
 });
 
+test("the harness name is carried through, not just used as a gate", () => {
+  // HerdrAgentRaw.agent has always been on the wire. toAgent used it as a
+  // truthiness check and then threw the value away, so the UI could not tell a
+  // claude pane from a codex one.
+  const a = toAgent(raw({ agent: "codex" }), ctx);
+  expect(a?.harness).toBe("codex");
+});
+
+test("an agent with no harness is still dropped entirely", () => {
+  // The gate is the reason `harness` can be a required, non-empty string
+  // everywhere downstream: a raw agent without one never becomes an Agent.
+  expect(toAgent(raw({ agent: null }), ctx)).toBeNull();
+});
+
 test("joins the workspace label by workspace_id", () => {
   expect(toAgent(raw(), ctx)!.workspaceLabel).toBe("api work");
   expect(toAgent(raw({ workspace_id: "w9" }), ctx)!.workspaceLabel).toBeNull();

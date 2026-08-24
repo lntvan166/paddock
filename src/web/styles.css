@@ -18,6 +18,12 @@
      link and button uses for "you can tap this", so a state competed with the
      interaction colour. */
   --danger: #cf222e;
+  /* The tint behind a row that needs a person. Hand-picked per theme rather
+     than color-mix(--danger, --bg): every other colour here is spelled out in
+     all three blocks, and a computed token would be the one value an operator
+     cannot read off the file. Kept far enough from --bg to register as a
+     wash and close enough not to compete with the border. */
+  --danger-wash: #fdf0f0;
 
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
@@ -29,6 +35,48 @@
      the pane keeps the ground those colours were written for. */
   --term-bg: #0b0d10;
   --term-fg: #d6d9de;
+
+  /* Tile hues are defined ONCE rather than per theme, for the same reason
+     --term-bg is: the tile carries its own background and foreground, so the
+     mark on it does not change meaning when the page around it does. A tile
+     that inherited the page surface would need a different value per theme
+     and a contrast check for each. Six is enough to tell a handful of
+     harnesses apart without inventing near-duplicates. */
+  /* Every hue clears WCAG AA (4.5:1) against --tile-fg at the 10px and 12px
+     sizes below, which are both well under the large-text threshold. The
+     first draft of this palette did not: a green, a gold and a teal came in
+     at 4.03, 3.15 and 3.78 because a high green channel carries 0.7152 of
+     the luminance weight and pulls a mid-tone far closer to white than its
+     RGB values suggest. Ratios are stated per line so a future edit that
+     lightens one has to notice what it is spending. */
+  --tile-0: #b4542e; /* 4.94:1 */
+  --tile-1: #2f5fb8; /* 6.09:1 */
+  --tile-2: #2a7f55; /* 4.92:1 */
+  --tile-3: #7a3fb8; /* 6.50:1 */
+  --tile-4: #8e6924; /* 5.00:1 */
+  --tile-5: #287b89; /* 4.90:1 */
+  --tile-fg: #ffffff;
+
+  /* Anthropic's brand orange, for a tile whose brand paddock actually knows.
+     Defined here with the other tile colours, and once rather than per theme,
+     for the same reason they are: the tile carries its own background, so it
+     does not change meaning when the page around it does.
+
+     3.12:1 against --tile-fg. That clears WCAG 1.4.11's 3:1 bar for a
+     GRAPHIC, which a mark is — and deliberately not the 4.5:1 the --tile-N
+     hues above are held to, because those carry INITIALS, which are text. Two
+     thresholds, correctly applied, rather than one number copied across. */
+  --tile-claude: #D97757;
+
+  /* Defined ONCE, not per theme, for the same reason --term-bg and --tile-*
+     are: a font stack is not a colour and does not change with the theme.
+     Before this token existed the codebase had six monospace declarations in
+     three different spellings, so on Windows the diagnostics values and the
+     build stamp fell through to generic `monospace` while the terminal — the
+     one spelling that included Consolas — got a real monospace face, a
+     visible mismatch between two things an operator reads side by side. This
+     is the longest of the three prior stacks. */
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 /* System dark, unless the user explicitly chose light. */
@@ -43,6 +91,7 @@
     --warn: #e0a838;
     --ok: #3fb950;
     --danger: #f85149;
+    --danger-wash: #2a1416;
   }
 }
 
@@ -57,6 +106,7 @@
   --warn: #e0a838;
   --ok: #3fb950;
   --danger: #f85149;
+  --danger-wash: #2a1416;
 }
 
 /* System fonts only. A webfont would be the single largest payload on a slow
@@ -94,6 +144,19 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* The dot is 7px of meaning, so its geometry lives here rather than being
+   restated at three call sites. A ring is the same size as a disc — hollowing
+   a state must not also move it. */
+.dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border-width: 1.5px;
+  border-style: solid;
+  box-sizing: border-box;
+}
+
 /* Staleness is shown, never hidden: the banner announces it, this dims the
    data underneath so "this might be old" is legible at a glance. An instant
    change is preferred over adding motion for a state that already has a
@@ -101,6 +164,201 @@ body {
 [data-stale="true"] {
   opacity: 0.55;
 }
+
+.tile {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  color: var(--tile-fg);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.tile[data-size="sm"] { width: 28px; height: 28px; font-size: 10px; }
+.tile[data-size="md"] { width: 36px; height: 36px; font-size: 12px; }
+
+/* Bottom-left rather than bottom-right: the tile's right edge is against the
+   agent's name, and a badge there collides with the first character. */
+.tile-badge {
+  position: absolute;
+  bottom: -1px;
+  left: -1px;
+  display: inline-flex;
+}
+
+/* Every row is bare: the two sections that need attention render AgentCard
+   instead, which carries its own border and accent. */
+.row { border-top: 1px solid var(--border); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.card + .card { margin-top: 0.75rem; }
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem;
+}
+
+.card-icon { color: var(--fg-dim); display: inline-flex; flex-shrink: 0; }
+.card-icon svg { width: 18px; height: 18px; }
+
+.card-heading { min-width: 0; flex: 1; }
+
+.card-title { margin: 0; font-size: 0.85rem; font-weight: 600; }
+
+.card-sub { margin: 0.1rem 0 0; font-size: 0.75rem; color: var(--fg-dim); }
+
+/* Centred against a two-line heading rather than top-aligned: the switch is
+   about the whole setting, not about its first line. */
+.card-control { flex-shrink: 0; display: inline-flex; align-items: center; }
+
+.card-body { border-top: 1px solid var(--border); padding: 0.8rem 0.9rem; }
+
+.card-foot {
+  border-top: 1px solid var(--border);
+  padding: 0.6rem 0.9rem;
+  font-size: 0.72rem;
+  color: var(--fg-dim);
+}
+
+/* A labelled row inside a card body. Replaces `.settings-field-row`, and keeps
+   the 44px floor that rule existed to guarantee. */
+.card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  font-size: 0.8rem;
+}
+
+.card-row + .card-row { border-top: 1px solid var(--border); }
+
+/* Text and number fields inside a card. Replaces `.settings-field input`,
+   whose deletion left every settings field borderless, transparent and 19px
+   tall — rendering as right-aligned static text, so an operator could not
+   tell the Telegram token field was editable at all. The border IS the
+   affordance here; there is no hover state to fall back on on a phone.
+
+   2.75rem rather than the 2.5rem the old rule used: 44px is the app's stated
+   touch floor (`.tap`, `.term-keys`, `.settings-save-bar button`) and the old
+   value predated it. Checkboxes are excluded — they draw their own sizing
+   from `.settings-triggers`.
+
+   `min-width` is wide enough to show "Automatic" in full: without it, an
+   `<input type="number">` with no explicit width shrinks to whatever the
+   row's free space leaves it, which truncated that placeholder to "Auto" —
+   the one word that tells an operator leaving Font size blank keeps
+   responsive sizing. Scoped to every `.card-row` input rather than just that
+   one field, so Chat id / Cooldown / Public URL get the same breathing
+   room instead of each needing its own rule. */
+.card-row input:not([type="checkbox"]),
+.card-row select {
+  min-height: 2.75rem;
+  min-width: 7rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.8rem;
+}
+
+/* A one-line explanation below a `.card-row`. Replaces both `.settings-hint`
+   (a fieldset-level note) and `.settings-hint-inline` (a per-field one) —
+   once both live in a card body instead of a bare section, neither needs
+   different styling from the other. */
+.card-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--fg-dim);
+}
+
+.toggle {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0 0 0 0.5rem;
+  cursor: pointer;
+}
+
+.toggle:disabled { opacity: 0.45; cursor: default; }
+
+.toggle-track {
+  width: 44px;
+  height: 26px;
+  border-radius: 9999px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.toggle[data-on="yes"] .toggle-track { background: var(--accent); border-color: var(--accent); }
+
+.toggle-knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--bg);
+  transition: transform 140ms ease;
+}
+
+.toggle[data-on="yes"] .toggle-knob { transform: translateX(18px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle-knob { transition: none; }
+}
+
+.seg {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 0.2rem;
+}
+
+.seg-item {
+  flex: 1;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 0;
+  border-radius: 0.45rem;
+  background: none;
+  color: var(--fg-dim);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+/* Contrast, not hue: the selected member inverts rather than tinting, so it
+   is still obviously selected in greyscale. */
+.seg-item[data-selected="yes"] {
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.seg-icon { display: inline-flex; }
+.seg-icon svg { width: 15px; height: 15px; }
 
 /* Bottom sheet on a narrow screen, side panel on a wide one. A width media
    query only — no device detection anywhere in this project. */
@@ -161,7 +419,7 @@ body {
   -webkit-overflow-scrolling: touch;
   white-space: pre;
   tab-size: 4;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--mono);
   /* Fluid, because the useful measure here is COLUMNS VISIBLE, not points. A
      fixed size shows ~40 columns on a small phone and wastes half a tablet.
      Floor and ceiling are both legibility bounds. */
@@ -254,7 +512,7 @@ body {
   -webkit-overflow-scrolling: touch;
   white-space: pre;
   tab-size: 4;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--mono);
   /* Sized by COLUMNS VISIBLE, not by points. The previous floor of 0.7rem
      showed ~46 columns on a 390px phone, so an 80-column TUI was clipped
      mid-word on every line and had to be scrolled sideways to be read at all.
@@ -290,7 +548,9 @@ body {
 .term-key {
   min-height: 2.75rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  /* Matches `.settings-mute button`, which is the same shape of control: a
+     small bordered thing you tap in a row of siblings. */
+  border-radius: 0.4rem;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -319,7 +579,10 @@ body {
   min-height: 2.75rem;
   padding: 0 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  /* 0.4rem to match `.card-row input`: this is the same kind of thing — a text
+     field you type into — and two radii that close together read as two
+     designs rather than one. */
+  border-radius: 0.4rem;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -451,11 +714,21 @@ body {
    agent's own and must never be truncated — a clipped
    "Yes, and always allow acce…" is unreadable as a choice, which is the exact
    ambiguity rendering real labels exists to remove. */
+/* The prompt block reads as one grouped thing, like every other group in the
+   app: its own surface, one border, the card radius. It was a bare region on
+   the page ground, which left the one block you act on under pressure looking
+   less deliberate than the settings screen. Kept as a grid rather than folded
+   into `.card` because it also has to scroll — a long prompt must not push the
+   reply bar off-screen, which is what `max-height` is for. */
 .term-options {
   flex: none;
   display: grid;
   gap: 0.4rem;
-  padding: 0.5rem 0.6rem 0;
+  margin: 0.5rem 0.6rem 0;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
   max-height: 40vh;
   overflow-y: auto;
 }
@@ -471,7 +744,13 @@ body {
   min-height: 2.75rem;
   padding: 0.5rem 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  /* 0.4rem to match `.card-row input` and the rest of the card vocabulary.
+     0.5rem here was the terminal's own radius, from before that vocabulary
+     existed — two radii a thumb's width apart read as two designs. */
+  border-radius: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -587,78 +866,18 @@ body {
   font-weight: 600;
 }
 
-.settings-section {
-  padding: 0.9rem 0.9rem 1.2rem;
-  border-bottom: 1px solid var(--border);
-}
+.band { padding: 0.9rem 0.9rem 0.4rem; }
 
-.settings-section h2 {
-  margin: 0 0 0.25rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.settings-hint {
-  margin: 0 0 0.85rem;
-  font-size: 0.75rem;
+.band-label {
+  margin: 0 0 0.15rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
   color: var(--fg-dim);
 }
 
-.settings-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  margin-bottom: 0.85rem;
-  font-size: 0.8rem;
-}
-
-.settings-field input,
-.settings-field select {
-  min-height: 2.5rem;
-  padding: 0 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  background: var(--surface);
-  color: var(--fg);
-  font: inherit;
-}
-
-/* The one-line explanations under a field. Not a colour defined only inside
-   a media query — `--fg-dim` is a token on bare :root. */
-.settings-hint-inline {
-  font-size: 0.7rem;
-  line-height: 1.35;
-  color: var(--fg-dim);
-}
-
-/* A checkbox rendered inline with its label, not stacked like a text field —
-   this is the shape of a switch, even though it is a plain checkbox input:
-   touch devices get the same 44px+ target via .tap conventions elsewhere, and
-   no hover-only affordance is introduced. */
-.settings-field-row {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-/* 44px of ROW, not just a bigger box. A 1.35rem checkbox is a ~22px target;
-   the guideline is 44px, and these are the primary controls of a
-   mobile-first feature. The whole label row is the tap target — the input is
-   its child, so a tap anywhere on the row toggles it. */
-.settings-field-row {
-  min-height: 2.75rem;
-}
-
-.settings-field-row input[type="checkbox"],
-.settings-triggers input[type="checkbox"] {
-  width: 1.35rem;
-  height: 1.35rem;
-  /* Undoes the UA's default margin so the enlarged box does not shove the
-     label off the row on narrow screens. */
-  margin: 0;
-  flex: none;
-}
+.band-hint { margin: 0 0 0.6rem; font-size: 0.72rem; color: var(--fg-dim); }
 
 .settings-token-status {
   font-size: 0.72rem;
@@ -669,12 +888,16 @@ body {
    `display: flex` makes its `<legend>` a flex item, which laid "Notify on"
    INLINE with the two checkboxes instead of above them — it read as a third
    option. Wrapping, with the legend claiming the whole first line, puts it
-   back where a legend belongs without needing a wrapper element. */
+   back where a legend belongs without needing a wrapper element.
+
+   Margin trimmed to match the tighter rhythm of the `.card-row`s around it —
+   this fieldset now sits inside a card body rather than a bare section, and
+   the old 0.85rem gap read as a second, looser design next to them. */
 .settings-triggers {
   display: flex;
   flex-wrap: wrap;
   gap: 0 1rem;
-  margin: 0 0 0.85rem;
+  margin: 0 0 0.6rem;
   padding: 0;
   border: 0;
   font-size: 0.8rem;
@@ -688,8 +911,8 @@ body {
   padding: 0 0 0.3rem;
 }
 
-/* The label, not the 22px box, is the tap target — 44px tall, matching
-   .settings-field-row above and the .tap convention used across the app. */
+/* The label, not the 22px box, is the tap target — 44px tall, matching the
+   .card-row convention used across the app. */
 .settings-triggers label {
   display: flex;
   align-items: center;
@@ -697,16 +920,49 @@ body {
   min-height: 2.75rem;
 }
 
+/* Shares the checkbox size with the trigger rows above — a 1.35rem box is a
+   ~22px target; the row itself (`.settings-triggers label`, 2.75rem) is what
+   actually clears the touch-target floor. */
+.settings-triggers input[type="checkbox"] {
+  width: 1.35rem;
+  height: 1.35rem;
+  /* Undoes the UA's default margin so the enlarged box does not shove the
+     label off the row on narrow screens. */
+  margin: 0;
+  flex: none;
+}
+
+/* Explicit font-size, because this sits directly in a `.card-body` (no
+   ambient size of its own) rather than inside a `.card-row` — without this it
+   inherited the page default and read noticeably larger than the rows above
+   it. Margin trimmed for the same reason as `.settings-triggers` above. */
 .settings-mute {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-block: 0.75rem;
+  margin-block: 0.6rem;
+  font-size: 0.8rem;
   color: var(--fg);
 }
 
-.settings-mute button { min-height: 2.75rem; padding-inline: 1rem; }
+/* Same bordered-flat treatment as `.settings-actions button`, so "Mute for 1h
+   4h 8h" reads as the same design as the rest of the card rather than bare
+   UA button chrome. `min-height` and `padding-inline` are unchanged — the
+   44px floor here is guarded by tests/settings-styles.test.ts. */
+.settings-mute button {
+  min-height: 2.75rem;
+  padding-inline: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-mute button:disabled { opacity: 0.5; }
 
 .settings-settle {
   display: flex;
@@ -716,7 +972,25 @@ body {
   color: var(--fg-dim);
 }
 
-.settings-settle input { width: 4rem; min-height: 2.75rem; }
+/* Not a regression: these two "wait N s before sending" fields live in
+   `.settings-triggers`, never in the deleted `.settings-field`, so they never
+   matched the old borderless-field rule and were never affected by its
+   removal. But they sit in the one card (Notifications) where `.card-row
+   input` above draws a border specifically to stop a field from rendering as
+   static text, so leaving these two out of that treatment defeats the point
+   of having it in that card. Same border/background/radius/padding as
+   `.card-row input`; `width` and `min-height` are kept EXACTLY as they were —
+   `min-height: 2.75rem` is this field's own touch-target guarantee. */
+.settings-settle input {
+  width: 4rem;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.8rem;
+}
 
 .settings-banner {
   margin: 0 0 0.85rem;
@@ -769,7 +1043,7 @@ body {
 }
 
 .pair-code code {
-  font-family: ui-monospace, monospace;
+  font-family: var(--mono);
   font-size: 1.1rem;
   letter-spacing: 0.12em;
   padding: 0.15rem 0.4rem;
@@ -816,3 +1090,109 @@ body {
   padding: 0;
   border: 0;
 }
+
+/* A labelled row in the Connection diagnostics card. Not `.card-row`: nothing
+   here is interactive, so it does not need that rule's 44px touch floor. */
+.dl-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.25rem;
+  font-size: 0.75rem;
+}
+
+.dl-row + .dl-row { border-top: 1px solid var(--border); }
+
+.dl-label { color: var(--fg-dim); }
+
+/* Monospace and right-aligned: a build id, a host and a protocol number are
+   values to compare, not prose to read. */
+.dl-value {
+  font-family: var(--mono);
+  text-align: right;
+  word-break: break-all;
+}
+
+/* A verdict's colour, always ADDED to its text ("Connected", "Yes") — never
+   the only signal, the same rule `.detail .ok` / `.detail .warn` already
+   follow. Both tokens are already defined on bare :root and redefined under
+   `prefers-color-scheme` and `[data-theme]`, so nothing new needs adding here. */
+.dl-value.ok { color: var(--ok); }
+.dl-value.warn { color: var(--warn); }
+
+/* The dashboard shell. A flex column at viewport height so `.build-stamp`'s
+   `margin-top: auto` has something to push against — see BuildStamp.tsx. */
+.dash {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.build-stamp {
+  /* Pushed to the bottom of the VIEWPORT when the list is short, and still
+     flowing below the content when the list is long. `position: fixed` would
+     have sat on top of rows instead. */
+  margin: auto 0 0;
+  padding-block: 0.75rem;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+/* The brand mark inside a tile. Inset to ~58% so a mark and a pair of initials
+   carry the same optical weight in the same circle — a mark drawn to the tile's
+   full width reads as heavier than the letters it replaced. `currentColor`
+   picks up `--tile-fg`, so the mark follows the tile's own foreground rather
+   than needing a value per theme. */
+.tile-mark {
+  width: 58%;
+  height: 58%;
+}
+
+/* A halo on the one state that is in motion. `box-shadow`, not `transform:
+   scale` and not a pseudo-element: scaling would move the dot, and the ring and
+   the disc must occupy the same box (see `.dot`). The colour comes from
+   `--dot-hue`, published inline by StatusDot, so the halo is the state's own
+   colour rather than a second copy of the palette here. */
+@keyframes dot-pulse {
+  from { box-shadow: 0 0 0 0 var(--dot-hue); }
+  to   { box-shadow: 0 0 0 5px transparent; }
+}
+
+.dot[data-pulse="yes"] {
+  animation: dot-pulse 1.6s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* `animation: none`, not a shorter duration. The global block above clamps
+     animation-duration to 0.01ms, which for a LOOPING animation means it runs
+     thousands of times a second instead of stopping — worse than the animation
+     it was meant to suppress. */
+  .dot[data-pulse="yes"] {
+    animation: none;
+  }
+}
+
+/* The digit herdr read off the agent's screen, as a badge. Fixed width so
+   labels of different lengths still start on the same column — a ragged left
+   edge is what makes three similar options hard to tell apart at a glance. Its
+   own surface rather than the option's, so it reads as a key cap and not as the
+   first character of the label. */
+.term-option-key {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  min-height: 1.4rem;
+  border-radius: 0.35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.term-option-label { min-width: 0; }

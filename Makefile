@@ -17,6 +17,12 @@ export GID := $(shell id -g)
 TAG := $(firstword $(shell git tag --points-at HEAD))
 VERSION := $(if $(TAG),$(TAG:v%=%),0.0.0-dev)
 
+# The version the dashboard footer shows. `?=` so a caller can still override
+# it. Without this, `make build-web` leaves the version at vite's own
+# "0.0.0-dev" fallback even when the tag says otherwise.
+PADDOCK_VERSION ?= $(VERSION)
+export PADDOCK_VERSION
+
 .PHONY: dev types icons check check-clean embed build-web test build formula up down logs restart
 
 # A real directory target, deliberately NOT in .PHONY: make compares its mtime

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 const TOKENS = [
-  "--bg", "--surface", "--border", "--fg", "--fg-dim", "--accent", "--warn", "--ok", "--danger",
+  "--bg", "--surface", "--border", "--fg", "--fg-dim", "--accent", "--warn", "--ok", "--danger", "--danger-wash",
 ];
 
 async function css(): Promise<string> {
@@ -17,6 +17,20 @@ test("every token is defined on bare :root", async () => {
   // of the bare :root block as long as `--fg-dim` remained — exactly the
   // regression this test exists to catch.
   for (const t of TOKENS) expect(root).toContain(`${t}:`);
+});
+
+// Deliberately NOT added to TOKENS above: that array (and its test's own
+// comment about "--fg" vs "--fg-dim" token boundaries) is about the colour
+// palette specifically, and --mono is a font stack, not a colour — it does
+// not redefine under prefers-color-scheme or [data-theme] the way every
+// TOKENS entry does, because a font stack does not change with the theme.
+// Asserted here instead, once, so the "one stack, not three spellings" fix
+// stays covered without blurring what TOKENS means.
+test("--mono is defined once on bare :root, not per theme", async () => {
+  const text = await css();
+  const root = text.slice(text.indexOf(":root {"), text.indexOf("}", text.indexOf(":root {")));
+  expect(root).toContain("--mono:");
+  expect([...text.matchAll(/--mono:/g)]).toHaveLength(1);
 });
 
 test("dark overrides are guarded so a manual light toggle wins", async () => {
@@ -47,7 +61,7 @@ test("the state palette is traffic-light, and never paints a state in the tap co
   // painted with it — so a state competed with the affordances around it. A
   // future edit reaching for `--accent` because it looks nice on a dot would
   // reintroduce exactly that.
-  const row = await Bun.file("src/web/components/AgentRow.tsx").text();
+  const row = await Bun.file("src/web/components/ui/StatusDot.tsx").text();
   const map = row.slice(row.indexOf("const DOT"), row.indexOf("};", row.indexOf("const DOT")));
   expect(map).toContain('blocked: "var(--danger)"');
   expect(map).toContain('working: "var(--warn)"');
@@ -65,4 +79,16 @@ test("red is defined in every theme route, not only the light one", async () => 
   expect(bare).toContain("--danger:");
   // Once for the guarded media query, once for the explicit dark toggle.
   expect([...text.matchAll(/--danger:/g)]).toHaveLength(3);
+});
+
+test("the alert wash is defined in every theme route", async () => {
+  // Same rule as --danger directly above: a colour defined only inside a media
+  // query leaves a manual theme toggle painting with a value nobody chose.
+  // Hand-picked per theme rather than color-mix(), so the value can be read
+  // off the file.
+  const text = await css();
+  const bare = text.slice(text.indexOf(":root {"), text.indexOf("}", text.indexOf(":root {")));
+  expect(bare).toContain("--danger-wash:");
+  // Once bare, once for the guarded media query, once for the explicit toggle.
+  expect([...text.matchAll(/--danger-wash:/g)]).toHaveLength(3);
 });

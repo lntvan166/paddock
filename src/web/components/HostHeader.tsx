@@ -1,4 +1,4 @@
-import type { Agent } from "@shared/types";
+import { sectionFor, type Agent, type Section } from "@shared/types";
 import { Mark } from "@web/components/Mark";
 
 /**
@@ -37,9 +37,14 @@ export function HostHeader({
    * caller that has the value.
    */
 }) {
-  const n = (s: Agent["state"]) => agents.filter((a) => a.state === s).length;
+  // Counted by SECTION, never by raw state. Deriving these from `state` was how
+  // the header came to read "2 needs you" over sections reading "NEEDS YOU · 1"
+  // and "READY · 1" — and why an acknowledged finish, which renders under Idle,
+  // was still tallied as needing attention. sectionFor is the one rule.
+  const n = (s: Section) => agents.filter((a) => sectionFor(a) === s).length;
   const parts = [
-    n("blocked") + n("done") > 0 ? `${n("blocked") + n("done")} needs you` : null,
+    n("needs-you") > 0 ? `${n("needs-you")} needs you` : null,
+    n("ready-unseen") > 0 ? `${n("ready-unseen")} ready` : null,
     n("working") > 0 ? `${n("working")} working` : null,
     n("idle") > 0 ? `${n("idle")} idle` : null,
   ].filter(Boolean);

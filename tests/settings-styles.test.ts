@@ -44,8 +44,20 @@ test("the trigger checkboxes sit in a 44px row, not a bare 22px box", () => {
   expect(declaration(".settings-triggers label", "min-height")).toBe(TOUCH_TARGET);
 });
 
-test("the checkbox rows themselves clear the touch target", () => {
-  expect(declaration(".settings-field-row", "min-height")).toBe(TOUCH_TARGET);
+test("a labelled row inside a card clears the touch target", () => {
+  // Was `.settings-field-row`. The vocabulary changed; the 44px floor it
+  // existed to guarantee did not.
+  expect(declaration(".card-row", "min-height")).toBe(TOUCH_TARGET);
+});
+
+test("a text field inside a card looks like a field, and is a full touch target", () => {
+  // Deleting `.settings-field input` left every settings field borderless,
+  // transparent and 19px tall — indistinguishable from static text. The old
+  // rule's border and height were never guarded, only its sibling row's,
+  // which is why nothing failed when they went.
+  const sel = '.card-row input:not([type="checkbox"])';
+  expect(declaration(sel, "min-height")).toBe(TOUCH_TARGET);
+  expect(declaration(sel, "border")).toContain("var(--border)");
 });
 
 test("the triggers legend is not laid out inline with its options", () => {

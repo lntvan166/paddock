@@ -55,6 +55,7 @@ export function toAgent(rawAgent: HerdrAgentRaw, ctx: AdaptContext): Agent | nul
     workspaceId: rawAgent.workspace_id,
     workspaceLabel: ctx.labels.get(rawAgent.workspace_id) ?? null,
     cwd: rawAgent.cwd ?? "",
+    harness: rawAgent.agent,
     stateSince: ctx.now,
     updatedAt: ctx.now,
     acknowledgedAt: null,

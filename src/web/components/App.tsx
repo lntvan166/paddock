@@ -3,10 +3,11 @@ import { isStale, useStore } from "@web/store";
 import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
 import { AgentTerminal } from "@web/components/AgentTerminal";
+import { BuildStamp } from "@web/components/BuildStamp";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
-import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
+import { groupAgents, SECTION_DOT, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { Settings } from "@web/components/Settings";
 import { staleAttrs } from "@web/components/staleness";
 import { agentHash, useAgentRoute, useSettingsRoute } from "@web/route";
@@ -105,7 +106,7 @@ export function App() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl safe-bottom">
+    <main className="dash mx-auto max-w-2xl safe-bottom">
       {/* Shown ABOVE the staleness banner and outside the dimming wrapper: this
           is the one message that explains why everything else might be wrong,
           so it must never be dimmed as "possibly stale data". */}
@@ -146,11 +147,12 @@ export function App() {
               <SectionHeader
                 title={SECTION_TITLES[key]}
                 count={list.length}
+                dotState={SECTION_DOT[key]}
                 expandable={collapsible}
                 expanded={open}
                 onToggle={() => setIdleOpen((v) => !v)}
               />
-              {key === "needs-you"
+              {key === "needs-you" || key === "ready-unseen"
                 ? list.map((a) => (
                     <AgentCard
                       key={a.agentId} agent={a} now={now}
@@ -183,7 +185,12 @@ export function App() {
             No agents detected.
           </p>
         )}
+
       </div>
+      {/* OUTSIDE the dimming wrapper, like UpdateBar: which version this
+          bundle is stays true when the herdr link goes quiet, so dimming it
+          would claim otherwise. */}
+      <BuildStamp />
     </main>
   );
 }

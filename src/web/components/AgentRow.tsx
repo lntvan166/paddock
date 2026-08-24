@@ -1,42 +1,17 @@
 import type { Agent } from "@shared/types";
 import { formatElapsed } from "@web/components/elapsed";
+import { IconTile } from "@web/components/ui/IconTile";
+import { StatusDot } from "@web/components/ui/StatusDot";
 
-/**
- * The one definition of what a state looks like, read by the list, the card and
- * the terminal header.
- *
- * Traffic-light semantics, matching herdr so an operator moving between the two
- * does not relearn a palette: red has stopped and needs a person, amber is in
- * motion, green is finished, grey is nothing to say.
- *
- * `working` was `--accent` — the token every link and button uses for "you can
- * tap this" — so a state was painted in the interaction colour and competed
- * with the affordances around it. And `blocked` borrowed amber, which left the
- * only state that actually needs a human sharing a colour with the one that
- * needs nothing.
- *
- * Colour is never the only channel: `StateDot` is `aria-hidden` and the state
- * is carried as text beside it, because red-and-green is the classic
- * indistinguishable pair and this palette now uses both.
- */
-const DOT: Record<Agent["state"], string> = {
-  blocked: "var(--danger)",
-  done: "var(--ok)",
-  working: "var(--warn)",
-  idle: "var(--fg-dim)",
-};
+/** Re-exported for the card and the terminal header, which imported it from
+ *  here before the primitive layer existed. */
+export { StatusDot };
 
-export function StateDot({ state }: { state: Agent["state"] }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="h-[7px] w-[7px] shrink-0 rounded-full"
-      style={{ background: DOT[state] }}
-    />
-  );
-}
-
-/** Dense row. Task text truncates to keep the list scannable. */
+/** Dense row. Task text truncates to keep the list scannable.
+ *
+ * Every row is bare: the two sections that need attention (`needs-you`,
+ * `ready-unseen`) render `AgentCard` instead, which carries its own border
+ * and accent — a row never needs to escalate itself. */
 export function AgentRow({
   agent, now, onSelect,
 }: {
@@ -48,8 +23,7 @@ export function AgentRow({
 }) {
   return (
     <div
-      className="tap flex items-center gap-2.5 px-3 py-2.5"
-      style={{ borderTop: "1px solid var(--border)" }}
+      className="tap row flex items-center gap-2.5 px-3 py-2.5"
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}
@@ -64,7 +38,8 @@ export function AgentRow({
           : undefined
       }
     >
-      <StateDot state={agent.state} />
+      <IconTile harness={agent.harness} badge={<StatusDot state={agent.state} />} />
+      <span className="sr-only">{agent.state}</span>
       <div className="min-w-0 flex-1">
         <div className="text-[12.5px] font-semibold">{agent.name}</div>
         <div className="truncate text-[11px]" style={{ color: "var(--fg-dim)" }}>

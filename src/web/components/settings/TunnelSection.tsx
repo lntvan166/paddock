@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { SettingsView } from "@shared/types";
+import { Card } from "@web/components/ui/Card";
+import { LinkIcon } from "@web/components/ui/icons";
 
 interface TunnelSectionProps {
   tunnel: NonNullable<SettingsView["tunnel"]>;
@@ -46,13 +48,12 @@ export function TunnelSection({ tunnel, onInvite }: TunnelSectionProps) {
   }
 
   return (
-    <section className="settings-section">
-      <h2>Tunnel</h2>
-      <p className="settings-hint">
-        This dashboard is published on a temporary tunnel for this run only.
-      </p>
-
-      <div className="settings-field-row">
+    <Card
+      icon={<LinkIcon />}
+      title="Remote access"
+      subtitle="This dashboard is published on a temporary tunnel for this run only."
+    >
+      <div className="card-row">
         <span>Paired devices</span>
         <strong>{tunnel.pairedDevices}</strong>
       </div>
@@ -72,6 +73,6 @@ export function TunnelSection({ tunnel, onInvite }: TunnelSectionProps) {
       {error !== null && (
         <p className="settings-banner" role="alert">Could not get a code: {error}</p>
       )}
-    </section>
+    </Card>
   );
 }

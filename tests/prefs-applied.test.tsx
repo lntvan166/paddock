@@ -108,19 +108,21 @@ test("choosing a theme in Settings applies it immediately, with no remount", asy
   await settle();
   await settle();
 
-  const select = host.querySelector('select[name="theme"]') as HTMLSelectElement | null;
-  expect(select).not.toBeNull();
+  const themeOption = (label: string) =>
+    [...host.querySelectorAll("[aria-label='Theme'] [role='radio']")]
+      .find((n) => (n.textContent ?? "").includes(label)) as HTMLButtonElement;
 
-  select!.value = "dark";
-  select!.dispatchEvent(new Event("change", { bubbles: true }));
+  const dark = themeOption("Dark");
+  expect(dark).not.toBeUndefined();
+
+  dark.click();
   await settle();
 
   expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
 
   // "system" must DELETE the attribute, not set it to the literal string —
   // the same distinction `themeAttr` makes for App.tsx's mount-time apply.
-  select!.value = "system";
-  select!.dispatchEvent(new Event("change", { bubbles: true }));
+  themeOption("System").click();
   await settle();
 
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
@@ -195,9 +197,11 @@ test("the keypad-auto setting is a device pref, written to this browser only", a
   await settle();
   await settle();
 
-  const box = host.querySelector<HTMLInputElement>('input[name="keypadAuto"]')!;
-  expect(box.checked).toBe(true);
-  box.click();
+  const sw = host.querySelector<HTMLButtonElement>(
+    "[role='switch'][aria-label='Open the keypad when an agent needs you']",
+  )!;
+  expect(sw.getAttribute("aria-checked")).toBe("true");
+  sw.click();
   await settle();
 
   expect(localStorage.getItem("paddock.term.keypad.auto")).toBe("0");

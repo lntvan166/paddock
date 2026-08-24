@@ -3,7 +3,7 @@ import type { ActionResult, Agent, NavKey, OutputResult, ParsedPrompt } from "@s
 import { answerWithKey, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
-import { StateDot } from "@web/components/AgentRow";
+import { StatusDot } from "@web/components/AgentRow";
 import { mergeSnapshot } from "@web/history";
 import {
   emptyJournal, historyFor, journalFor, rememberHistory, rememberScreen, screenFor,
@@ -584,12 +584,12 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
         </button>
         <div className="term-title">
           <strong>{agent.name}</strong>
-          {/* The same `StateDot` the list renders, not a second convention:
-              blocked amber, done green, working blue, idle grey, defined once
-              in AgentRow. The word cost more width than the agent's own name
-              had left. It stays for assistive tech, which cannot read a
-              colour — the dot itself is aria-hidden. */}
-          <StateDot state={agent.state} />
+          {/* The same `StatusDot` the list renders, not a second convention:
+              blocked red, done green, working amber, idle grey, defined once
+              in the ui/ primitive layer. The word cost more width than the
+              agent's own name had left. It stays for assistive tech, which
+              cannot read a colour — the dot itself is aria-hidden. */}
+          <StatusDot state={agent.state} />
           {/* Blocked keeps its WORD, visibly. Everywhere else the dot is enough
               and the word is only for assistive tech.
 
@@ -818,7 +818,13 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
                   .finally(() => setBusy(false));
               }}
             >
-              {o.label}
+              {/* The agent's OWN digit, not a guessed keystroke: `o.key` is what
+                  herdr read off the screen and what `answerWithKey` sends
+                  below, so the badge shows the key pressing this will send.
+                  Rendering it makes a three-option prompt scannable at arm's
+                  length instead of three similar sentences. */}
+              <span aria-hidden="true" className="term-option-key">{o.key}</span>
+              <span className="term-option-label">{o.label}</span>
             </button>
           ))}
         </div>

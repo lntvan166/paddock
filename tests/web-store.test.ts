@@ -11,7 +11,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state: "working", workspaceId: "w1",
     workspaceLabel: null, cwd: "/srv/project", stateSince: NOW, updatedAt: NOW,
-    acknowledgedAt: null, hasJournal: false, ...over,
+    acknowledgedAt: null, hasJournal: false, harness: "claude", ...over,
   };
 }
 

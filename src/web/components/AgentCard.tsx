@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { ActionResult, Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
 import { formatElapsed } from "@web/components/elapsed";
-import { StateDot } from "@web/components/AgentRow";
+import { StatusDot } from "@web/components/AgentRow";
 
 /**
  * Only a finished agent can be dismissed, and only once.
@@ -14,7 +14,16 @@ export function showAcknowledge(agent: Agent): boolean {
   return agent.state === "done" && agent.acknowledgedAt === null;
 }
 
-/** Full card for anything in Needs you. Task text wraps — it must be readable. */
+/**
+ * Full card for anything in **Needs you** or **Ready** — both attention
+ * sections, not just the first. Task text wraps — it must be readable.
+ *
+ * `accent` below is `--danger` for a blocked agent and `--ok` for
+ * everything else this card renders (a `done`, unacknowledged agent in
+ * Ready), which is what keeps the two attention sections visually
+ * distinguishable from each other even though both use this same
+ * component.
+ */
 export function AgentCard({
   agent, now, onSelect,
 }: {
@@ -24,8 +33,12 @@ export function AgentCard({
    * renders standalone (e.g. in a future context with no sheet to open). */
   onSelect?: () => void;
 }) {
-  // Same palette as `StateDot`: red for the one state that needs a person.
+  // Same palette as `StatusDot`: red for the one state that needs a person.
   const accent = agent.state === "blocked" ? "var(--danger)" : "var(--ok)";
+  // Border AND fill for a blocked agent. The border alone is a thin signal on
+  // a phone held at arm's length, and this is the only card that means "work
+  // has stopped until you answer".
+  const surface = agent.state === "blocked" ? "var(--danger-wash)" : "var(--surface)";
   const [busy, setBusy] = useState(false);
   // acknowledge() never throws — a failed dismissal (e.g. a 409 because the
   // agent stopped being done in the meantime) must stay visible on the card,
@@ -55,7 +68,7 @@ export function AgentCard({
   return (
     <article
       className="tap mx-2 mb-1.5 rounded-lg p-3"
-      style={{ background: "var(--surface)", border: `1px solid ${accent}` }}
+      style={{ background: surface, border: `1px solid ${accent}` }}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}
@@ -71,7 +84,7 @@ export function AgentCard({
       }
     >
       <header className="flex items-center gap-2">
-        <StateDot state={agent.state} />
+        <StatusDot state={agent.state} />
         <h3 className="text-[12.5px] font-semibold">{agent.name}</h3>
         <span className="ml-auto text-[10px]" style={{ color: "var(--fg-dim)" }}>
           {formatElapsed(now - agent.stateSince)}

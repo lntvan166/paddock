@@ -12,6 +12,7 @@ const agent = (state: Agent["state"]): Agent => ({
   workspaceId: "w1",
   workspaceLabel: null,
   cwd: "/path/to/project",
+  harness: "claude",
   stateSince: 0,
   updatedAt: 0,
   acknowledgedAt: null,
