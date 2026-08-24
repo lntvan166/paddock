@@ -818,7 +818,13 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
                   .finally(() => setBusy(false));
               }}
             >
-              {o.label}
+              {/* The agent's OWN digit, not a guessed keystroke: `o.key` is what
+                  herdr read off the screen and what `answerWithKey` sends
+                  below, so the badge shows the key pressing this will send.
+                  Rendering it makes a three-option prompt scannable at arm's
+                  length instead of three similar sentences. */}
+              <span aria-hidden="true" className="term-option-key">{o.key}</span>
+              <span className="term-option-label">{o.label}</span>
             </button>
           ))}
         </div>

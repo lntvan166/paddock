@@ -57,6 +57,17 @@
   --tile-5: #287b89; /* 4.90:1 */
   --tile-fg: #ffffff;
 
+  /* Anthropic's brand orange, for a tile whose brand paddock actually knows.
+     Defined here with the other tile colours, and once rather than per theme,
+     for the same reason they are: the tile carries its own background, so it
+     does not change meaning when the page around it does.
+
+     3.12:1 against --tile-fg. That clears WCAG 1.4.11's 3:1 bar for a
+     GRAPHIC, which a mark is — and deliberately not the 4.5:1 the --tile-N
+     hues above are held to, because those carry INITIALS, which are text. Two
+     thresholds, correctly applied, rather than one number copied across. */
+  --tile-claude: #D97757;
+
   /* Defined ONCE, not per theme, for the same reason --term-bg and --tile-*
      are: a font stack is not a colour and does not change with the theme.
      Before this token existed the codebase had six monospace declarations in
@@ -537,7 +548,9 @@ body {
 .term-key {
   min-height: 2.75rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  /* Matches `.settings-mute button`, which is the same shape of control: a
+     small bordered thing you tap in a row of siblings. */
+  border-radius: 0.4rem;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -566,7 +579,10 @@ body {
   min-height: 2.75rem;
   padding: 0 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  /* 0.4rem to match `.card-row input`: this is the same kind of thing — a text
+     field you type into — and two radii that close together read as two
+     designs rather than one. */
+  border-radius: 0.4rem;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -698,11 +714,21 @@ body {
    agent's own and must never be truncated — a clipped
    "Yes, and always allow acce…" is unreadable as a choice, which is the exact
    ambiguity rendering real labels exists to remove. */
+/* The prompt block reads as one grouped thing, like every other group in the
+   app: its own surface, one border, the card radius. It was a bare region on
+   the page ground, which left the one block you act on under pressure looking
+   less deliberate than the settings screen. Kept as a grid rather than folded
+   into `.card` because it also has to scroll — a long prompt must not push the
+   reply bar off-screen, which is what `max-height` is for. */
 .term-options {
   flex: none;
   display: grid;
   gap: 0.4rem;
-  padding: 0.5rem 0.6rem 0;
+  margin: 0.5rem 0.6rem 0;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
   max-height: 40vh;
   overflow-y: auto;
 }
@@ -718,7 +744,13 @@ body {
   min-height: 2.75rem;
   padding: 0.5rem 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  /* 0.4rem to match `.card-row input` and the rest of the card vocabulary.
+     0.5rem here was the terminal's own radius, from before that vocabulary
+     existed — two radii a thumb's width apart read as two designs. */
+  border-radius: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -1142,3 +1174,25 @@ body {
     animation: none;
   }
 }
+
+/* The digit herdr read off the agent's screen, as a badge. Fixed width so
+   labels of different lengths still start on the same column — a ragged left
+   edge is what makes three similar options hard to tell apart at a glance. Its
+   own surface rather than the option's, so it reads as a key cap and not as the
+   first character of the label. */
+.term-option-key {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  min-height: 1.4rem;
+  border-radius: 0.35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.term-option-label { min-width: 0; }

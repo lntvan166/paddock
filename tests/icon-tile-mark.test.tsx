@@ -53,3 +53,28 @@ test("a marked tile keeps its own background, so it reads on both themes", async
   const tile = host.querySelector(".tile") as HTMLElement;
   expect(tile.style.background).not.toBe("");
 });
+
+test("a known brand gets the brand's colour, not a hash hue", async () => {
+  // A brand paddock recognises should not have its colour assigned by
+  // accident. The hash is for harnesses we know nothing about.
+  const host = await render(<IconTile harness="claude" />);
+  const tile = host.querySelector(".tile") as HTMLElement;
+  expect(tile.style.background).toBe("var(--tile-claude)");
+});
+
+test("an unknown harness still gets a hash hue", async () => {
+  const host = await render(<IconTile harness="some-future-harness" />);
+  const tile = host.querySelector(".tile") as HTMLElement;
+  expect(tile.style.background).toMatch(/var\(--tile-[0-5]\)/);
+});
+
+test("the mark's path came from the published SVG, not a retype", async () => {
+  // A hand-copied path renders as a smudge and no assertion catches it. This
+  // pins the length and both endpoints of the extracted string, which is
+  // enough to notice a truncation or a stray edit.
+  const { markFor } = await import("@web/components/ui/IconTile");
+  const mark = markFor("claude")!;
+  expect(mark.path.length).toBe(1499);
+  expect(mark.path.startsWith("M4.709 15.955")).toBe(true);
+  expect(mark.path.endsWith("z")).toBe(true);
+});

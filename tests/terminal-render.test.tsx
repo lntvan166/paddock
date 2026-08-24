@@ -78,7 +78,7 @@ test("option buttons carry the agent's own labels, verbatim", async () => {
   const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
   await settle();
 
-  expect(textsOf(host, ".term-option")).toEqual([
+  expect(textsOf(host, ".term-option-label")).toEqual([
     "Yes",
     "Yes, and don't ask again for: curl *",
     "No",
@@ -171,8 +171,8 @@ test("the Enter preview is not repeated when a button already shows the selectio
   await settle();
 
   // The buttons are there, and the selected one is marked.
-  expect(textsOf(host, ".term-option")).toEqual(["Yes", "No"]);
-  expect(host.querySelector('.term-option[aria-pressed="true"]')?.textContent).toBe("Yes");
+  expect(textsOf(host, ".term-option-label")).toEqual(["Yes", "No"]);
+  expect(host.querySelector('.term-option[aria-pressed="true"] .term-option-label')?.textContent).toBe("Yes");
   // And the preview is not also there saying it again.
   //
   // Counted rather than `expect(el).toBeNull()`: on failure Bun serialises the
@@ -314,7 +314,7 @@ test("after an arrow tap the border moves and the preview reappears", async () =
   // ...and because it did, the preview stays a duplicate rather than becoming
   // the only correct signal. Either behaviour is safe; a stale border with no
   // preview is not.
-  expect(host.querySelector(".term-option[aria-pressed='true']")?.textContent).toBe("No");
+  expect(host.querySelector(".term-option[aria-pressed='true'] .term-option-label")?.textContent).toBe("No");
 });
 
 test("a blocked agent keeps its state word visible, not only its colour", async () => {
