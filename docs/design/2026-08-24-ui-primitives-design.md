@@ -328,8 +328,23 @@ The font-size field keeps its comment about why an empty string must write
 `null` rather than `Number("")`. That is a live bug fix, not documentation of
 the obvious.
 
-`NotifySection`'s blocked-permission text moves from an inline banner into its
-card's `footer`, which is the case the slot exists for.
+### What the `footer` slot is actually for here
+
+The reference implementation's example is a browser push permission being
+denied. **paddock has no such case:** it has no web-push and never calls
+`Notification.requestPermission` — notifications are Telegram, sent server-side.
+CLAUDE.md's rule against an application auth token is the related reason the
+service worker stays ungated; browser push was never part of this.
+
+The slot is still justified, by two cases paddock does have, both currently
+rendered as inline `.settings-banner` paragraphs:
+
+- **`NotifySection`'s quick-tunnel warning.** `isQuickTunnelUrl(publicUrl)`
+  explains that a quick-tunnel hostname changes every run, so saving it points
+  notification links at a name that has stopped resolving. That is an
+  explanation of why a field should be left alone — exactly a footer.
+- **`saveError`**, which belongs to the card whose Save failed rather than
+  floating at the bottom of the band.
 
 ---
 
