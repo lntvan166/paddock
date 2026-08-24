@@ -37,9 +37,12 @@ export const SECTION_TITLES: Record<SectionKey, string> = {
 /**
  * The state whose dot stands for each section.
  *
- * A section's dot is the colour of the thing it collects, which is why this is
- * a map rather than a per-row lookup: an empty "Needs you" still shows red, so
- * the header means the same thing whether or not anything is under it.
+ * A static map rather than a lookup over the agents in the section, because a
+ * section's members do not all share one state: `idle` holds both genuinely
+ * idle agents and finished ones the operator has already dismissed (`done`
+ * with a non-null `acknowledgedAt`). Deriving the dot from any single member
+ * would paint the Idle header green whenever a dismissed agent happened to
+ * sort first.
  */
 export const SECTION_DOT: Record<SectionKey, AgentState> = {
   "needs-you": "blocked",
