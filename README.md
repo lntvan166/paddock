@@ -56,6 +56,19 @@ Installs to `~/.local/bin/paddock`, no `sudo`, checksum verified before
 anything is written · [read it first](https://lntvan166.github.io/paddock/install.sh)
 · [binaries](https://github.com/lntvan166/paddock/releases)
 
+Or with Homebrew, which pulls in herdr as a dependency:
+
+```bash
+brew install lntvan166/paddock/paddock
+```
+
+One command — the fully-qualified name taps and trusts this single formula.
+Homebrew 6.0.0 requires explicit trust for a non-official tap, so a bare
+`brew install paddock` cannot reach a tap; that name belongs to
+`homebrew/core`, which paddock does not qualify for (`docs/decisions.md`).
+Homebrew then owns the install, so upgrade with `brew upgrade paddock` —
+`paddock update` detects the keg and declines rather than desyncing it.
+
 ### herdr version
 
 paddock talks to herdr over herdr's own socket protocol. This release is built

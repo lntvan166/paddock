@@ -78,3 +78,42 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag out/*
           fi
+
+      # The tap comes LAST. The formula's urls point at the assets attached
+      # above, so a tap published any earlier serves a formula whose downloads
+      # 404 — and had that upload then failed, one advertising a release that
+      # never existed.
+      - name: Check out the Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: lntvan166/homebrew-paddock
+          # github.token is scoped to THIS repository. Pushing to the tap with
+          # it fails 403 at the very end of an otherwise green release, so the
+          # tap gets its own fine-grained token, contents:write on that repo
+          # and nothing else.
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Render and push the formula
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p tap/Formula
+          bun run scripts/render-formula.ts "$VERSION" out/SHA256SUMS tap/Formula/paddock.rb
+          cd tap
+          git add Formula/paddock.rb
+          # Re-running a tag renders byte-identical output. That is not a
+          # failure, but `git commit` with nothing staged exits 1 and would
+          # fail the job on a legitimate re-run — so the no-op is named
+          # explicitly. Suppressing the exit code instead would hide a real
+          # failure here too, which is the thing CLAUDE.md forbids.
+          if git diff --cached --quiet; then
+            echo "formula already current for $VERSION — nothing to push"
+          else
+            # A literal identity, not an address: this repository is public and
+            # CLAUDE.md forbids committing email addresses. git does not
+            # require user.email to be one.
+            git -c user.name=paddock-release -c user.email=paddock-release \
+              commit -m "paddock $VERSION"
+            git push
+          fi

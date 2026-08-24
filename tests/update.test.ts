@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assetName, isNewer, runUpdate } from "@server/update";
+import { assetName, isBrewManaged, isNewer, runUpdate } from "@server/update";
 
 test("the asset table matches install.sh exactly, so the two cannot disagree", () => {
   expect(assetName("linux", "x64")).toBe("paddock-linux-x86_64");
@@ -303,4 +303,117 @@ test("update says nothing about restarting when nothing is running", async () =>
     running: async () => null,
   });
   expect(said.join("\n")).not.toContain("restart");
+});
+
+// --- Homebrew-managed installs ------------------------------------------
+//
+// A tap installs the SAME released binary this updater downloads, so there is
+// no build-time flag to distinguish the two — the artifact is byte-identical.
+// The install PATH is the only signal, and `/Cellar/` is the one invariant:
+// every Homebrew prefix (/opt/homebrew, /usr/local, Linuxbrew's default under
+// a home directory, or a custom one) puts kegs under
+// <prefix>/Cellar/<name>/<version>/. Home paths are written as /path/to/ here
+// because this repository is public and CLAUDE.md forbids absolute home paths;
+// what the check actually reads is the segment, not the prefix.
+
+test("a Cellar path is recognised under every Homebrew prefix", () => {
+  expect(isBrewManaged("/opt/homebrew/Cellar/paddock/0.8.4/bin/paddock")).toBe(true);
+  expect(isBrewManaged("/usr/local/Cellar/paddock/0.8.4/bin/paddock")).toBe(true);
+  expect(isBrewManaged("/path/to/linuxbrew/.linuxbrew/Cellar/paddock/0.8.4/bin/paddock")).toBe(true);
+  expect(isBrewManaged("/opt/custom-brew/Cellar/paddock/0.8.4/bin/paddock")).toBe(true);
+});
+
+test("an ordinary install path is not mistaken for a Homebrew keg", () => {
+  // The installer's default, and the two paths most likely to be a false
+  // positive: a directory merely NAMED Cellar-something, and a project that
+  // happens to have the word in it.
+  expect(isBrewManaged("/path/to/.local/bin/paddock")).toBe(false);
+  expect(isBrewManaged("/usr/local/bin/paddock")).toBe(false);
+  expect(isBrewManaged("/path/to/Cellars/paddock")).toBe(false);
+  expect(isBrewManaged("/path/to/wine-cellar/bin/paddock")).toBe(false);
+});
+
+/** The real brew layout: a keg under Cellar, symlinked into <prefix>/bin. */
+async function brewHarness(body: string, sum: string) {
+  const dir = await mkdtemp(join(tmpdir(), "paddock-brew-"));
+  const keg = join(dir, "opt", "homebrew", "Cellar", "paddock", "0.8.4", "bin");
+  await mkdir(keg, { recursive: true });
+  const kegBin = join(keg, "paddock");
+  await writeFile(kegBin, "BREW BINARY");
+  await chmod(kegBin, 0o755);
+  const linkDir = join(dir, "opt", "homebrew", "bin");
+  await mkdir(linkDir, { recursive: true });
+  const link = join(linkDir, "paddock");
+  await symlink(kegBin, link);
+  const h = await harness(body, sum);
+  return { dir, kegBin, link, fetchImpl: h.fetchImpl };
+}
+
+test("update refuses to overwrite a Homebrew keg and points at brew", async () => {
+  // The Homebrew prefix is user-owned, so rename(2) here would SUCCEED --
+  // leaving `brew info paddock` reporting a version that is no longer the
+  // bytes on disk. The existing "installed by a package manager" message
+  // only fires when rename FAILS, which under brew it does not.
+  const body = "NEW BINARY";
+  const h = await brewHarness(body, await sha(body));
+  const said: string[] = [];
+  const code = await runUpdate({
+    selfPath: h.kegBin, platform: "linux", arch: "x64",
+    current: "0.1.0", fetchImpl: h.fetchImpl, log: (l) => said.push(l),
+  });
+  expect(code).not.toBe(0);
+  expect(await readFile(h.kegBin, "utf8")).toBe("BREW BINARY");
+  expect(said.join("\n")).toContain("brew upgrade paddock");
+});
+
+test("update follows the brew symlink before deciding, so <prefix>/bin is caught too", async () => {
+  // process.execPath may hand back either the symlink in <prefix>/bin or the
+  // resolved keg path. A guard that only inspects the literal string misses
+  // the former and overwrites the keg through the link.
+  const body = "NEW BINARY";
+  const h = await brewHarness(body, await sha(body));
+  const code = await runUpdate({
+    selfPath: h.link, platform: "linux", arch: "x64",
+    current: "0.1.0", fetchImpl: h.fetchImpl, log: () => {},
+  });
+  expect(code).not.toBe(0);
+  expect(await readFile(h.kegBin, "utf8")).toBe("BREW BINARY");
+});
+
+test("--check still reports a new version under brew, and names brew upgrade", async () => {
+  // The check writes nothing, so there is no reason to refuse it -- and the
+  // in-app update banner depends on this signal. It must name the command
+  // that actually works here, not `paddock update`.
+  const body = "NEW BINARY";
+  const h = await brewHarness(body, await sha(body));
+  const said: string[] = [];
+  const code = await runUpdate({
+    selfPath: h.kegBin, platform: "linux", arch: "x64",
+    current: "0.1.0", checkOnly: true, fetchImpl: h.fetchImpl,
+    log: (l) => said.push(l),
+  });
+  expect(code).toBe(0);
+  const text = said.join("\n");
+  expect(text).toContain("0.1.0 -> 9.9.9");
+  expect(text).toContain("brew upgrade paddock");
+  expect(text).not.toContain("run `paddock update`");
+});
+
+test("the brew guard does not download the binary before refusing", async () => {
+  // Refusing after pulling 83MB would be a silly way to say no. The release
+  // API call is fine -- it is how the version is known -- but the asset must
+  // never be fetched.
+  const body = "NEW BINARY";
+  const h = await brewHarness(body, await sha(body));
+  const asked: string[] = [];
+  const spy = (async (url: string) => {
+    asked.push(String(url));
+    return h.fetchImpl(url as unknown as Request);
+  }) as unknown as typeof fetch;
+  await runUpdate({
+    selfPath: h.kegBin, platform: "linux", arch: "x64",
+    current: "0.1.0", fetchImpl: spy, log: () => {},
+  });
+  expect(asked.some((u) => u.includes("releases/latest"))).toBe(true);
+  expect(asked.some((u) => u.endsWith("paddock-linux-x86_64"))).toBe(false);
 });
