@@ -64,14 +64,14 @@ const agents: Agent[] = SEED.map((s) => ({
  * token-shaped string out of the demo bundle, and out of every screenshot taken
  * from it. `scripts/check-private.sh` scans for that shape.
  */
-function demoSettings(): SettingsView {
+function demoSettings(mutedUntil: number | null = null): SettingsView {
   return {
     telegram: { configured: false, hint: null, chatId: null },
     notify: {
       enabled: false,
       triggers: ["blocked"],
       settleMs: { blocked: 5_000, done: 10_000 },
-      mutedUntil: null,
+      mutedUntil,
       cooldownMs: 60_000,
     },
     publicUrl: null,
@@ -145,13 +145,33 @@ function handle(url: string, body: Record<string, unknown>): Response {
   // The demo is the only sanctioned source of screenshots, so every screen the
   // product has must render here — including settings, which needs a whole
   // SettingsView before it will paint at all.
-  if (url.includes("/api/settings")) {
-    // A PUT echoes the patch back as an accepted view rather than storing it:
-    // the demo has no server to persist to, and a Save that appeared to fail
-    // would read as a bug in the product rather than an absence in the demo.
+  //
+  // Path, not substring: "/api/settings" is a prefix of
+  // "/api/settings/telegram/test" and "/api/settings/mute", so a substring
+  // match answered both of those with a settings view — which made the test
+  // button render an empty error banner and Mute silently do nothing.
+  const path = url.split("?")[0] ?? url;
+
+  if (path.endsWith("/api/settings/telegram/test")) {
+    // The real route reports whether the token and chat id actually work.
+    // The demo has no bot, and saying so is more honest than claiming success.
+    return json({ ok: false, detail: "The demo has no Telegram bot configured." });
+  }
+  if (path.endsWith("/api/settings/mute")) {
+    // The real route stamps the instant server-side from a client-supplied
+    // duration and returns the updated view, so the countdown has something to
+    // render. Computed, not persisted: the demo has no store, and a mute that
+    // appeared to fail would read as a product bug rather than a demo's limit.
+    const forMs = typeof body.forMs === "number" ? body.forMs : 0;
+    return json(demoSettings(forMs > 0 ? Date.now() + forMs : null));
+  }
+  if (path.endsWith("/api/settings")) {
+    // A PUT returns the same unconfigured view rather than the patch: the demo
+    // has no store, and keeping it unconfigured regardless of what anyone types
+    // is what keeps a token-shaped string out of every screenshot taken here.
     return json(demoSettings());
   }
-  if (url.includes("/api/health")) return json(demoHealth());
+  if (path.endsWith("/api/health")) return json(demoHealth());
 
   const m = /\/api\/agents\/([^/]+)\/(\w+)/.exec(url);
   if (!m) return json({ ok: false, detail: "not found" }, 404);
