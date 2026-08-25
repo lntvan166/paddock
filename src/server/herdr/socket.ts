@@ -78,6 +78,39 @@ export const GLOBAL_SUBSCRIPTIONS: Subscription[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Structural events — Spaces screen invalidation.
+//
+// Measured against a live herdr 0.8.2, not guessed: see
+// docs/probes/2026-08-25-structural-events.md. All six subscribe dotted and
+// deliver underscored, same as pane.agent_detected above but unlike
+// pane.agent_status_changed, which stays dotted both ways. Match on the
+// top-level `event` field, following the pane.* convention already in this
+// file — the probe found the name duplicated at `data.type` too, but `event`
+// is what the rest of this module matches on.
+// ---------------------------------------------------------------------------
+
+/** Delivered names for structural changes — match incoming events on these. */
+export const EVENT_WORKSPACE_CREATED = "workspace_created";
+export const EVENT_WORKSPACE_CLOSED = "workspace_closed";
+export const EVENT_WORKSPACE_RENAMED = "workspace_renamed";
+export const EVENT_TAB_CREATED = "tab_created";
+export const EVENT_TAB_CLOSED = "tab_closed";
+export const EVENT_TAB_RENAMED = "tab_renamed";
+
+/**
+ * Structure only.
+ *
+ * `workspace.updated` and `workspace.metadata_updated` are deliberately
+ * ABSENT: a space's rollup `agent_status` moves on those, so subscribing
+ * would turn invalidation into a refetch on every agent state change —
+ * strictly worse than having none.
+ */
+export const STRUCTURAL_SUBSCRIPTIONS: Subscription[] = [
+  { type: "workspace.created" }, { type: "workspace.closed" }, { type: "workspace.renamed" },
+  { type: "tab.created" }, { type: "tab.closed" }, { type: "tab.renamed" },
+];
+
+// ---------------------------------------------------------------------------
 // Requests: one connection, one request, one response. herdr hangs up after
 // the response, so there is nothing to pool, reuse, or correlate by id.
 // ---------------------------------------------------------------------------

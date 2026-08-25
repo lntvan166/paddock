@@ -6,7 +6,14 @@ import {
   EVENT_PANE_CLOSED,
   EVENT_PANE_EXITED,
   EVENT_STATUS_CHANGED,
+  EVENT_TAB_CLOSED,
+  EVENT_TAB_CREATED,
+  EVENT_TAB_RENAMED,
+  EVENT_WORKSPACE_CLOSED,
+  EVENT_WORKSPACE_CREATED,
+  EVENT_WORKSPACE_RENAMED,
   GLOBAL_SUBSCRIPTIONS,
+  STRUCTURAL_SUBSCRIPTIONS,
   statusSubscriptions,
   type Subscription,
 } from "@server/herdr/socket";
@@ -59,11 +66,34 @@ export interface SupervisorOptions {
    * nothing goes quiet by omission.
    */
   onSubscribed?: (panes: number) => void;
+  /**
+   * The session tree moved — a workspace or tab appeared, closed, or was
+   * renamed, or a pane's agent-ness changed. Fired for the six structural
+   * events plus the three pane lifecycle events paddock already subscribes
+   * to (`pane_agent_detected`, `pane_closed`, `pane_exited`), which change
+   * the tree too and cost nothing extra to also report here.
+   *
+   * Never fired for `workspace.updated` / `workspace.metadata_updated`: a
+   * space's rollup `agent_status` moves on those, so invalidating on them
+   * would turn this into a refetch on every agent state change — see
+   * STRUCTURAL_SUBSCRIPTIONS in socket.ts.
+   */
+  onTreeStale?: () => void;
 }
 
 // Delivered names, not subscribe names — see src/server/herdr/socket.ts.
 // EVENT_STATUS_CHANGED is dotted; the lifecycle ones are underscored.
 const LIFECYCLE_GONE: string[] = [EVENT_PANE_CLOSED, EVENT_PANE_EXITED];
+
+// Structural events that invalidate the Spaces tree: the six from
+// STRUCTURAL_SUBSCRIPTIONS plus the three pane lifecycle events paddock
+// already subscribes to for its own reasons (agent appears/disappears).
+// Measured spellings — see docs/probes/2026-08-25-structural-events.md.
+const TREE_STALE_EVENTS: string[] = [
+  EVENT_WORKSPACE_CREATED, EVENT_WORKSPACE_CLOSED, EVENT_WORKSPACE_RENAMED,
+  EVENT_TAB_CREATED, EVENT_TAB_CLOSED, EVENT_TAB_RENAMED,
+  EVENT_AGENT_DETECTED, EVENT_PANE_CLOSED, EVENT_PANE_EXITED,
+];
 
 export class Supervisor {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -161,6 +191,7 @@ export class Supervisor {
     await this.opts.client.openStream([
       ...statusSubscriptions(paneIds),
       ...GLOBAL_SUBSCRIPTIONS,
+      ...STRUCTURAL_SUBSCRIPTIONS,
     ]);
     if (generation !== this.subscriptionGeneration) {
       // Something learned the stream was dead while this open was in flight.
@@ -332,6 +363,13 @@ export class Supervisor {
    * is now stale and the stream must be re-opened.
    */
   handleEvent(e: HerdrEvent): void {
+    // Structure changed: the Spaces tree is stale regardless of what else
+    // this event does below. Checked first and unconditionally so a pure
+    // workspace/tab event (which matches none of the branches further down)
+    // still reports it, and so pane_agent_detected/pane_closed/pane_exited
+    // report it in addition to their existing handling, not instead of it.
+    if (TREE_STALE_EVENTS.includes(e.event)) this.opts.onTreeStale?.();
+
     if (e.event === EVENT_AGENT_DETECTED) {
       this.eventAt = this.now();
       console.info("herdr: new agent detected, resubscribing", (e.data as any).pane_id);

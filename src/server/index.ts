@@ -432,6 +432,9 @@ if (DEMO) {
       if (bootLog.inBoot) bootLog.notePanes(panes);
       else console.info("herdr: subscribed", { panes });
     },
+    // Structural events only (see socket.ts's STRUCTURAL_SUBSCRIPTIONS) —
+    // absent in `--demo`, which has no herdr session tree to invalidate.
+    onTreeStale: () => hub.queueTreeStale(),
     onShapeChange: (verdict) => {
       // Three explicit branches. `shapeMessage` returns null for BOTH `ok` and
       // `unknown`, so a two-branch version announced "every field present" when
