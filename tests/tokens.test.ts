@@ -146,6 +146,9 @@ const OFF_SCALE = [
   // Arrow keys size a SYMBOL, not text. On the text scale a 16px arrow sat in
   // the middle of an 80px target and read as an empty button.
   '.term-key[data-key="right"]',
+  ".host-spaces-btn", // sizes the ▦ GLYPH, not text — same reason as .host-settings-btn
+  "[data-expand]",    // sizes the ▸/▾ chevron GLYPH, not text
+  ".row-more",        // sizes the ⋯ GLYPH, not text
 ];
 
 interface Rule { sel: string; body: string }

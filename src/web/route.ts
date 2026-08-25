@@ -26,3 +26,14 @@ export function useSettingsRoute(): boolean {
   }, []);
   return on;
 }
+
+export function useSpacesRoute(): boolean {
+  const [on, setOn] = useState(() => location.hash === "#/spaces");
+  useEffect(() => {
+    const onChange = () => setOn(location.hash === "#/spaces");
+    addEventListener("hashchange", onChange);
+    onChange();
+    return () => removeEventListener("hashchange", onChange);
+  }, []);
+  return on;
+}

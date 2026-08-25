@@ -1551,6 +1551,245 @@ body {
 
 .term-option-label { min-width: 0; }
 
+/* ── Spaces screen ──────────────────────────────────────────────────────────
+   No new colour tokens: every value below is one already defined on bare
+   :root and redefined under both the dark media query and the explicit
+   [data-theme="dark"] toggle, so nothing here needs its own dark-mode block. */
+
+/* The one entry point into #/spaces, sized and bordered exactly like
+   `.host-settings-btn` beside it — two controls in the same header that look
+   like two different systems is worse than one that is merely plain. */
+.host-spaces-btn {
+  min-height: 2.5rem;
+  min-width: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--fg);
+  /* Off the --t-* scale, like `.host-settings-btn`: this sizes the ▦ GLYPH,
+     not text. */
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.spaces-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.spaces-head button {
+  min-height: 2.75rem;
+  padding: 0 0.5rem;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.spaces-head h2 {
+  margin: 0;
+  font-size: var(--t-xl);
+  font-weight: 600;
+}
+
+/* A failed read, surfaced. Danger-coloured rather than `.settings-banner`'s
+   warn: this is not "here is a thing to notice", it is "the tree you are
+   looking at may be stale or wrong" — the same rule that keeps the last good
+   tree on screen instead of an empty list. */
+.error {
+  margin: 0.6rem 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.4rem;
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: var(--t-md);
+}
+
+.spaces {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+[data-space-row] {
+  border-top: 1px solid var(--border);
+}
+
+.space-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.75rem;
+}
+
+[data-expand] {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  color: var(--fg-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+/* The scan target, same voice as an agent's name on the dashboard: an
+   identifier you match, set in mono. Truncated rather than wrapped — a name
+   that wraps pushes the ⋯ button off a narrow phone. */
+.space-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+  font-size: var(--t-lg);
+  font-weight: 600;
+}
+
+.space-count {
+  flex: none;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inert (`disabled`) in this task — a later plan wires it to a rename/close
+   sheet. Visible at rest regardless: a hover-only affordance does not exist
+   on a touch screen, which is the whole reason it is rendered now rather than
+   behind a long-press. */
+.row-more {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  color: var(--fg-dim);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.row-more:disabled { opacity: 0.5; cursor: default; }
+
+.space-tabs {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0.4rem;
+  background: var(--surface);
+}
+
+.space-tabs > li + li { border-top: 1px solid var(--border); }
+
+.space-tabs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tab-name {
+  margin: 0;
+  padding: 0.5rem 0.75rem 0.15rem;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+}
+
+/* Scoped to sub-rows inside `.space-tabs`, not `[data-pane-row]` generally —
+   a MERGED row (a flat space's single pane) also carries `data-pane-row` for
+   the reason SpaceRow.tsx documents, but its layout comes entirely from
+   `.space-head` above. Styling `[data-pane-row]` unscoped would apply a
+   second, conflicting flex layout to that same row. */
+.space-tabs [data-pane-row] {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--border);
+}
+
+.space-tabs [data-pane-row] a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.pane-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+  font-size: var(--t-md);
+}
+
+.pane-state {
+  flex: none;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
+
+/* A shell has no triage state at all — it is not `idle`, which is why it gets
+   no `StatusDot`. Same geometry as `.dot` (a ring is the same size as a disc;
+   hollowing must not also move it) but DASHED rather than solid, so a shell
+   is never mistaken for the one real state that happens to render as a
+   hollow ring. */
+.dot-none {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border-radius: 9999px;
+  border-width: 1.5px;
+  border-style: dashed;
+  border-color: var(--fg-dim);
+  background: var(--bg);
+}
+
+.spaces-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
+
+.spaces-foot button {
+  min-height: 2.25rem;
+  background: none;
+  border: 0;
+  color: var(--fg-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   /* The app's own system stack. shadcn's preset put 'Geist Variable' here and

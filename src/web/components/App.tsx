@@ -9,8 +9,9 @@ import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
 import { groupAgents, SECTION_DOT, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { Settings } from "@web/components/Settings";
+import { Spaces } from "@web/components/Spaces";
 import { staleAttrs } from "@web/components/staleness";
-import { agentHash, useAgentRoute, useSettingsRoute } from "@web/route";
+import { agentHash, useAgentRoute, useSettingsRoute, useSpacesRoute } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { UpdateBar } from "@web/components/UpdateBar";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
@@ -32,6 +33,7 @@ export function App() {
   const [dismissedVersion, setDismissedVersion] = useState(dismissedRelease);
   const openId = useAgentRoute();
   const showSettings = useSettingsRoute();
+  const showSpaces = useSpacesRoute();
 
   useEffect(() => {
     connect();
@@ -95,6 +97,8 @@ export function App() {
   // only unmounting the old instance can.
   if (showSettings) return <Settings onBack={() => { location.hash = ""; }} />;
 
+  if (showSpaces) return <Spaces onBack={() => { location.hash = ""; }} />;
+
   if (openAgent) {
     return (
       <AgentTerminal
@@ -135,6 +139,7 @@ export function App() {
         <HostHeader
           hostId={hostId} agents={agents}
           onOpenSettings={() => { location.hash = "#/settings"; }}
+          onOpenSpaces={() => { location.hash = "#/spaces"; }}
         />
 
         {SECTION_ORDER.map((key) => {

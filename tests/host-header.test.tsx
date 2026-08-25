@@ -21,6 +21,7 @@ test("the settings button is the entry point to #/settings", async () => {
     <HostHeader
       hostId="dev-box" agents={[]}
       onOpenSettings={() => { calls.push("#/settings"); }}
+      onOpenSpaces={() => {}}
     />,
   );
 
@@ -28,6 +29,22 @@ test("the settings button is the entry point to #/settings", async () => {
   expect(button).not.toBeNull();
   await click(button);
   expect(calls).toEqual(["#/settings"]);
+});
+
+test("the spaces button is the entry point to #/spaces", async () => {
+  const calls: string[] = [];
+  const host = await render(
+    <HostHeader
+      hostId="dev-box" agents={[]}
+      onOpenSettings={() => {}}
+      onOpenSpaces={() => { calls.push("#/spaces"); }}
+    />,
+  );
+
+  const button = host.querySelector('button[aria-label="Spaces"]') as HTMLButtonElement | null;
+  expect(button).not.toBeNull();
+  await click(button);
+  expect(calls).toEqual(["#/spaces"]);
 });
 
 test("the summary counts by section, so it cannot contradict the section headers", async () => {
@@ -44,6 +61,7 @@ test("the summary counts by section, so it cannot contradict the section headers
         agent({ agentId: "c", name: "api-refactor", state: "working" }),
       ]}
       onOpenSettings={() => {}}
+      onOpenSpaces={() => {}}
     />,
   );
   const text = (host.textContent ?? "").replace(/\s+/g, " ");
@@ -58,6 +76,7 @@ test("an acknowledged finish is counted as idle, not as needing attention", asyn
       hostId="dev-box"
       agents={[agent({ agentId: "d", name: "docs-cleanup", state: "done", acknowledgedAt: 1 })]}
       onOpenSettings={() => {}}
+      onOpenSpaces={() => {}}
     />,
   );
   const text = (host.textContent ?? "").replace(/\s+/g, " ");

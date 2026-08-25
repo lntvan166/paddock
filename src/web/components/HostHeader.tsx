@@ -12,7 +12,7 @@ import { Mark } from "@web/components/Mark";
 const DEFAULT_HOST_ID = "local";
 
 export function HostHeader({
-  hostId, agents, onOpenSettings,
+  hostId, agents, onOpenSettings, onOpenSpaces,
 }: {
   hostId: string | null;
   agents: Agent[];
@@ -28,6 +28,10 @@ export function HostHeader({
    * App.tsx" convention as AgentCard/AgentRow's `onSelect`.
    */
   onOpenSettings: () => void;
+  /** The only route into `#/spaces`. REQUIRED for the same reason
+   *  `onOpenSettings` is: an optional prop makes a dropped call site a
+   *  silent no-op instead of a compile error. */
+  onOpenSpaces: () => void;
   /**
    * `latestKnown` was here, REQUIRED so that an edit which stopped passing it
    * would be a type error rather than a silently absent line. The line it fed
@@ -82,6 +86,18 @@ export function HostHeader({
             read, it is skipped, and an operator a version behind did not know.
             It is now `ReleaseBanner`, shown once and dismissible. Do not add a
             second copy here: one fact, one channel. */}
+        {/* Same shape and focus treatment as the settings button beside it —
+            a real button, not a hover-revealed affordance, since this is the
+            only route into #/spaces and must be reachable by touch on the
+            first tap. */}
+        <button
+          type="button"
+          className="host-spaces-btn tap shrink-0"
+          aria-label="Spaces"
+          onClick={onOpenSpaces}
+        >
+          ▦
+        </button>
         {/* A real button, not a hover-revealed affordance — the only route
             into #/settings, so it must be reachable by touch on the first
             tap, not discoverable only with a mouse. */}
