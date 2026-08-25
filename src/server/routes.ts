@@ -1262,7 +1262,7 @@ export function createApp(deps: AppDeps) {
     });
 
     /**
-     * Start a coding agent in an existing pane. Body: `{kind, name?, args?}`.
+     * Start a coding agent in an existing pane. Body: `{kind, name, args?}`.
      *
      * `kind` is checked against `actions.harnessKinds()` — the harnesses
      * THIS machine actually has installed (`server.agent_manifests`) — and
@@ -1270,6 +1270,21 @@ export function createApp(deps: AppDeps) {
      * on that list. The allowlist is never hardcoded (§9.3):
      * `AgentStartParams.kind` is a plain string in protocol 20, not an
      * enum, so the only defensible allowlist is what is measured installed.
+     *
+     * `name` is REQUIRED — an absent, empty, or whitespace-only value is
+     * refused with 400 before `agent.start` is ever called, the same shape
+     * the rename routes use for a label. `agent.start`'s own `name` field
+     * carries no `?` in the measured schema
+     * (`docs/design/2026-08-19-notifications-and-settings-design.md` §10),
+     * and whether herdr accepts `null` for it was never measured — this
+     * route is not authorised to spawn a live agent to find out — so there
+     * is no fallback here to guess one. An earlier version defaulted an
+     * absent name to `kind`, which would have made every agent spawned
+     * from the UI come out `claude`, then `claude 2`, then `claude 3`: the
+     * create sheet (Task 8) pre-fills this field from the space's own
+     * label instead — herdr's own convention when a human starts an agent
+     * (§14.7) — so the common case stays one tap and the unmeasured
+     * `null` question stays unasked.
      *
      * A herdr failure inside `agent.start` gets its OWN inner `catch`,
      * distinct from the outer one: by the time that call runs, the pane
@@ -1290,13 +1305,13 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: "kind must be a non-empty string" }, 400);
       }
       const rawName = body.name;
-      if (rawName !== undefined && rawName !== null && typeof rawName !== "string") {
-        return c.json({ ok: false, detail: "name must be a string or null" }, 400);
+      if (typeof rawName !== "string" || rawName.trim() === "") {
+        return c.json({ ok: false, detail: "name must be a non-empty string" }, 400);
       }
-      if (typeof rawName === "string" && rawName.length > MAX_LABEL_LEN) {
+      if (rawName.length > MAX_LABEL_LEN) {
         return c.json({ ok: false, detail: "name must be within the length limit" }, 400);
       }
-      const name = typeof rawName === "string" && rawName.trim() !== "" ? rawName : null;
+      const name = rawName;
 
       const rawArgs = body.args;
       if (

@@ -320,8 +320,11 @@ export interface HerdrActions {
    * `docs/probes/2026-08-25-structural-events.md`). The route calling this
    * makes no tree read of its own either, for the same reason.
    *
-   * `focus: false` always — measured (§17 probe 5) not to steal the
-   * desktop's focus, and paddock must not start doing so from a phone.
+   * `focus: false` always — measured, §17's Probe 5 as extended 2026-08-25:
+   * the original probe covered `tab.create` only, and this call's own
+   * comment briefly cited it as covering `workspace.create` too before
+   * that sibling was measured the same way. Both create calls are now
+   * covered by measurement rather than one by inference from the other.
    */
   createSpace(opts: CreateOpts): Promise<{ spaceId: string; tabId: string; paneId: string }>;
   /**
@@ -339,17 +342,27 @@ export interface HerdrActions {
    * blocks on readiness for up to `AGENT_START_TIMEOUT_MS`, far past
    * `HERDR_TIMEOUT_MS`.
    *
-   * `name`, unlike `renameAgent`'s, is never forwarded as `null`: the
-   * measured shape of `agent.start`'s params
+   * `name` is REQUIRED and forwarded verbatim — this function never
+   * defaults or guesses one. The measured shape of `agent.start`'s params
    * (`docs/design/2026-08-19-notifications-and-settings-design.md` §10) is
-   * `{name, kind, pane_id, args?, timeout_ms?}` — `name` carries no `?`,
-   * so it is required, and whether herdr accepts `null` for it was never
-   * measured and this task is not authorised to spawn a live agent to find
-   * out. Defaulting an absent name to `kind` itself is the one choice that
-   * needs no such measurement: it is always a valid non-empty string.
+   * `{name, kind, pane_id, args?, timeout_ms?}`, no `?` on `name`, and
+   * whether herdr accepts `null` for it was never measured — this task is
+   * not authorised to spawn a live agent to find out — so the route
+   * calling this refuses an absent, empty, or whitespace-only `name` with
+   * 400 before this ever runs, the same shape the rename routes use.
+   *
+   * An earlier version of this function defaulted an absent name to
+   * `kind`. That default would have been the ONLY path once Task 8's
+   * create sheet shipped with no name field of its own — every agent
+   * spawned from the UI would have come out `claude`, then `claude 2`,
+   * `claude 3` once paddock's own disambiguation kicked in. herdr's own
+   * convention when a human starts an agent through its UI (§14.7) is to
+   * name it from the workspace label's slug — a better default than
+   * `kind`, and one that belongs where that label already lives: the
+   * create sheet, pre-filled and editable, not guessed here.
    */
   startAgent(
-    paneId: string, kind: string, name: string | null, args?: string[],
+    paneId: string, kind: string, name: string, args?: string[],
   ): Promise<void>;
   /**
    * The harness kinds this machine actually has installed
@@ -519,7 +532,9 @@ export function createActions(socketPath: string): HerdrActions {
     async createSpace(opts) {
       const res = await request<HerdrWorkspaceCreated>(socketPath, "workspace.create", {
         label: opts.label, cwd: opts.cwd,
-        // Never steals the desktop's focus — measured, §17 probe 5.
+        // Never steals the desktop's focus — measured, §17's Probe 5
+        // extended to `workspace.create` (2026-08-25), not inferred from
+        // `tab.create`'s own measurement.
         focus: false,
       });
       // Straight off the envelope. No `session.snapshot` call here — that
@@ -540,13 +555,10 @@ export function createActions(socketPath: string): HerdrActions {
     },
 
     async startAgent(paneId, kind, name, args) {
+      // `name` is required and forwarded verbatim — see the interface doc
+      // above for why this function does not default or guess one.
       await request(socketPath, "agent.start", {
-        pane_id: paneId, kind,
-        // See the interface doc above: `name` is required, not nullable —
-        // an absent one falls back to `kind` rather than `null`, since
-        // `null`'s acceptance here was never measured.
-        name: name ?? kind,
-        args,
+        pane_id: paneId, kind, name, args,
         timeout_ms: AGENT_START_TIMEOUT_MS,
       }, agentStartTimeoutMs());
     },

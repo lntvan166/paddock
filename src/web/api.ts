@@ -341,13 +341,19 @@ export async function createTab(
 }
 
 /**
- * Start a coding agent in an existing pane. A REJECTED response here does
- * not mean nothing happened — the pane the operator is looking at is real
- * either way, and the server's `detail` says so explicitly when only the
- * agent failed to start (mirrors `sendPaneText`'s "typed, but not run").
+ * Start a coding agent in an existing pane. `name` is REQUIRED — the server
+ * refuses an absent, empty, or whitespace-only one with 400, the same shape
+ * a rename label uses; the create sheet pre-fills it from the space's own
+ * label (herdr's own naming convention, §14.7) rather than this client
+ * guessing a default.
+ *
+ * A REJECTED response here does not mean nothing happened — the pane the
+ * operator is looking at is real either way, and the server's `detail`
+ * says so explicitly when only the agent failed to start (mirrors
+ * `sendPaneText`'s "typed, but not run").
  */
 export async function startAgent(
-  paneId: string, kind: string, name?: string | null, args?: string[], f: Fetch = fetch,
+  paneId: string, kind: string, name: string, args?: string[], f: Fetch = fetch,
 ): Promise<StartAgentResult> {
   return readJson<StartAgentResult>(paneUrl(paneId, "agent"), { kind, name, args }, f);
 }

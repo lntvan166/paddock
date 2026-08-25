@@ -798,6 +798,15 @@ create, and unchanged again after the throwaway tab was closed. So creating
 from a phone cannot yank the desktop out from under someone sitting at it,
 which is what made this worth measuring rather than assuming.
 
+**Probe 5, extended 2026-08-25 — `workspace.create {focus: false}` does not
+steal focus either.** The original probe measured `tab.create` only, and a
+comment in `herdr/actions.ts` briefly cited it as covering both. Rather than
+soften the comment, the sibling call was measured the same way: a throwaway
+space was created with `focus: false`, `focused_pane_id` and
+`focused_workspace_id` were unchanged, and both were unchanged again after the
+cleanup close. Both create calls are now covered by measurement rather than by
+inference from a sibling endpoint.
+
 **Probe 1 — an empty label is ACCEPTED, and it is not a clear.** `tab.rename`
 with `label: ""` succeeds and the tab's label becomes the empty string — herdr
 does not treat it as "unset" and does not restore the number. paddock happens

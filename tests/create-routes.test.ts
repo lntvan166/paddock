@@ -168,16 +168,19 @@ test("startAgent sends pane_id/kind and a timeout_ms body field inside herdr's o
   } finally { stop(); }
 });
 
-test("startAgent defaults an absent name to the kind, never to null", async () => {
+test("startAgent forwards name verbatim — no default, no fallback to kind", async () => {
   // `agent.start`'s `name` is a REQUIRED field (docs/design/2026-08-19-…
   // §10: `{name, kind, pane_id, args?, timeout_ms?}`, no `?` on name), and
   // whether herdr accepts `null` for it was never measured — this task is
-  // not authorised to spawn a live agent to check. `kind` is always a valid
-  // non-empty string, so it is the default that needs no such measurement.
+  // not authorised to spawn a live agent to check. So this function makes
+  // no decision about `name` at all: the caller (the route, which refuses
+  // an absent/blank one with 400) always has a valid non-empty string in
+  // hand by the time this runs. An earlier version defaulted an absent
+  // name to `kind` — reverted, see the interface doc in actions.ts for why.
   const { path, seen, stop } = await fakeHerdr(() => AGENT_STARTED);
   try {
-    await createActions(path).startAgent("w1:p9", "claude", null);
-    expect(seen[0].params.name).toBe("claude");
+    await createActions(path).startAgent("w1:p9", "claude", "schema-migration");
+    expect(seen[0].params.name).toBe("schema-migration");
   } finally { stop(); }
 });
 
@@ -258,7 +261,7 @@ function harness(
   overrides: {
     createSpace?: (opts: { label?: string; cwd?: string }) => Promise<{ spaceId: string; tabId: string; paneId: string }>;
     createTab?: (spaceId: string, opts: { label?: string; cwd?: string }) => Promise<{ tabId: string; paneId: string }>;
-    startAgent?: (paneId: string, kind: string, name: string | null, args?: string[]) => Promise<void>;
+    startAgent?: (paneId: string, kind: string, name: string, args?: string[]) => Promise<void>;
     harnessKinds?: () => Promise<string[]>;
   } = {},
 ) {
@@ -457,7 +460,7 @@ test("a kind not in server.agent_manifests is refused 400 and agent.start is nev
   const { app, calls } = harness(async () => TREE, {
     harnessKinds: async () => ["claude", "codex"],
   });
-  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "not-installed" });
+  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "not-installed", name: "docs-cleanup" });
   expect(res.status).toBe(400);
   const body = await res.json();
   expect(body.ok).toBe(false);
@@ -470,10 +473,22 @@ test("a kind not in server.agent_manifests is refused 400 and agent.start is nev
 
 test("starting an agent in an unknown pane 404s before the manifest list is even read", async () => {
   const { app, calls } = harness(async () => TREE);
-  const res = await post(app, "/api/panes/nope/agent", { kind: "claude" });
+  const res = await post(app, "/api/panes/nope/agent", { kind: "claude", name: "docs-cleanup" });
   expect(res.status).toBe(404);
   expect((await res.json()).detail).toBe("unknown pane");
   expect(calls).toEqual([]);
+});
+
+test("a missing, empty, or whitespace-only name is refused 400 before the tree is even read", async () => {
+  const { app, calls, readTreeCallCount } = harness(async () => TREE);
+  for (const body of [{ kind: "claude" }, { kind: "claude", name: "" }, { kind: "claude", name: "   " }, { kind: "claude", name: 5 }]) {
+    const res = await post(app, "/api/panes/w1:p2/agent", body);
+    expect(res.status).toBe(400);
+  }
+  // Never reaches the manifest check or agent.start — a client input error,
+  // same shape a rename route's blank label gets.
+  expect(calls).toEqual([]);
+  expect(readTreeCallCount()).toBe(0);
 });
 
 test("a missing or blank kind is refused 400 before the tree is even read", async () => {
@@ -505,18 +520,18 @@ test("a failed agent.start reports the shell still exists, distinct from an ordi
   const { app, calls } = harness(async () => TREE, {
     startAgent: async () => { throw new Error("harness binary not found"); },
   });
-  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude" });
+  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude", name: "docs-cleanup" });
   expect(res.status).toBe(502);
   const body = await res.json();
   expect(body.ok).toBe(false);
   expect(body.detail).toContain("shell exists, but the agent did not start");
   expect(body.detail).toContain("harness binary not found");
-  expect(calls).toEqual(["harnessKinds", `startAgent:w1:p2:claude:null:${JSON.stringify(null)}`]);
+  expect(calls).toEqual(["harnessKinds", `startAgent:w1:p2:claude:docs-cleanup:${JSON.stringify(null)}`]);
 });
 
 test("a readTree throw for starting an agent becomes ok:false/502, never a bare 500", async () => {
   const { app, calls } = harness(async () => { throw new Error("herdr socket refused"); });
-  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude" });
+  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude", name: "docs-cleanup" });
   expect(res.status).toBe(502);
   const body = await res.json();
   expect(body.ok).toBe(false);
@@ -526,7 +541,7 @@ test("a readTree throw for starting an agent becomes ok:false/502, never a bare 
 
 test("args must be an array of strings, or the call is refused before anything is sent", async () => {
   const { app, calls } = harness(async () => TREE);
-  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude", args: ["ok", 5] });
+  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude", name: "docs-cleanup", args: ["ok", 5] });
   expect(res.status).toBe(400);
   expect(calls).toEqual([]);
 });
