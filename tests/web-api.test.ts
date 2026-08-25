@@ -115,11 +115,20 @@ test("fetchPaneOutput rejects when the pane has an agent", async () => {
 // typed against an agent id and would 404 for a pane the store does not hold.
 test("sendPaneText POSTs to the encoded pane route", async () => {
   const { fn, seen } = stubFetch(200, { ok: true });
-  const res = await sendPaneText("w3:p1", "ls", fn);
+  const res = await sendPaneText("w3:p1", "ls", false, fn);
   expect(seen[0]!.init.method).toBe("POST");
   expect(seen[0]!.url).toBe("/api/panes/w3%3Ap1/text");
-  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ text: "ls" });
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ text: "ls", submit: false });
   expect(res.ok).toBe(true);
+});
+
+// `pane.send_text` does not submit, so `submit` is what separates typing a
+// command from running one — and it has to reach the wire, not just the
+// function. This is the assertion the shipped defect had nowhere to fail.
+test("submit rides the body, so the route can run what was typed", async () => {
+  const { fn, seen } = stubFetch(200, { ok: true });
+  await sendPaneText("w3:p1", "ls", true, fn);
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ text: "ls", submit: true });
 });
 
 // Unlike the agent-side actions (`sendText`/`sendKey`), the pane route's
@@ -130,7 +139,7 @@ test("sendPaneText rejects on a non-2xx with the server's detail", async () => {
   const { fn } = stubFetch(409, {
     ok: false, detail: "this pane has an agent; use /api/panes/:id/text",
   });
-  await expect(sendPaneText("w3:p1", "ls", fn)).rejects.toThrow(/has an agent/);
+  await expect(sendPaneText("w3:p1", "ls", false, fn)).rejects.toThrow(/has an agent/);
 });
 
 test("sendPaneKey POSTs to the encoded pane route", async () => {

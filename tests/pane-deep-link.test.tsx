@@ -145,13 +145,19 @@ test("a deep link to a pane with NO agent opens the shell transcript, with its o
   localStorage.removeItem("paddock.term.keypad");
 });
 
-test("a shell opened through App reaches the real sendPaneText route — App -> PaneTerminal -> api.ts", async () => {
+test("a shell opened through App RUNS the command — App -> PaneTerminal -> api.ts -> submit", async () => {
   // The gap the previous round's route-level curl check could not see: a
   // curl against `/api/panes/:id/text` proves the SERVER route works, but
   // says nothing about whether `App.tsx` actually WIRES `sendPaneText` into
   // the `PaneTerminal` it renders. This mounts the real `App`, types into the
   // real reply box, and asserts the stubbed `fetch` sees the real route —
   // the one path nothing else in this suite drives end to end.
+  //
+  // The body assertion is FLIPPED from `{text: "ls"}`: `pane.send_text` does
+  // not submit, so a request without `submit` typed the command onto the
+  // prompt line and ran nothing. `submit: true` has to survive every hop —
+  // reply box, `App`'s memoised sender, `api.ts` — or a button labelled Send
+  // is a button that types.
   useStore.setState({ connect: () => {} });
   location.hash = "#/pane/w9%3Ap1";
 
@@ -177,7 +183,7 @@ test("a shell opened through App reaches the real sendPaneText route — App -> 
   const textCall = calls.find((c) => c.url.includes("/text"));
   expect(textCall).toBeDefined();
   expect(textCall!.url).toContain(encodeURIComponent("w9:p1"));
-  expect(textCall!.body).toEqual({ text: "ls" });
+  expect(textCall!.body).toEqual({ text: "ls", submit: true });
 });
 
 test("a shell already on screen keeps its transcript through a live promotion", async () => {

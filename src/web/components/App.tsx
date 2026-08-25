@@ -249,11 +249,13 @@ export function App() {
    * `agent.send_keys` — this pane has no harness, so there is no prompt to
    * answer, only a shell to type at.
    */
-  const sendShellText = useCallback((text: string) => {
+  const sendShellText = useCallback((text: string, submit: boolean) => {
     // Unreachable, same as `loadPane` above: only ever handed to a mounted
     // `PaneTerminal`, which only exists once the pane resolved.
     if (openShellId === null) throw new Error("no pane to send to");
-    return sendPaneText(openShellId, text);
+    // `submit` forwarded, never assumed: the reply box decides whether its own
+    // button means "type this" or "run this", and it means the second.
+    return sendPaneText(openShellId, text, submit);
   }, [openShellId]);
   const sendShellKey = useCallback((key: NavKey) => {
     if (openShellId === null) throw new Error("no pane to send to");

@@ -823,7 +823,22 @@ export function createApp(deps: AppDeps) {
 
     /**
      * Type into a pane with no agent — the shell case §8 promised plain text
-     * input for and no route ever delivered (§16.3).
+     * input for and no route ever delivered (§16.3) — and, with
+     * `submit: true`, RUN what was typed.
+     *
+     * `submit` exists because `pane.send_text` does not submit. Without the
+     * key that follows it, the whole shipped shell flow was: open a shell,
+     * type `ls`, tap a button labelled **Send**, and watch the text land on
+     * the prompt line and sit there. The reply box is single-line, so the
+     * operator cannot supply the newline; the only Enter in the app is the
+     * keypad's, whose stored default is `hidden`. So the ROUTE performs the
+     * whole operator act — one tap on Send is one command run, in one round
+     * trip — rather than leaving the client to fire two requests and own the
+     * gap between them.
+     *
+     * Opt-in rather than always-on: typing without running is still a real
+     * thing to want (a partial line, a here-doc), and a default that submits
+     * would change what every existing caller of this route does.
      *
      * Validation and error shape are `/api/panes/:id/output`'s, verbatim: the
      * 404 (no `readTree`, or unknown pane) and 409 (pane has a harness — use
@@ -836,13 +851,17 @@ export function createApp(deps: AppDeps) {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
       const id = c.req.param("id");
 
-      const text = (await jsonBody(c)).text;
+      const body = await jsonBody(c);
+      const text = body.text;
       // Refused, not truncated — a silently shortened command is a DIFFERENT
       // command, potentially a destructive one. Same ceiling the agent-side
       // `/text` route uses, for the same reason.
       if (typeof text !== "string" || text.trim() === "" || text.length > MAX_TEXT_LEN) {
         return c.json({ ok: false, detail: "text must be a non-empty string within the length limit" }, 400);
       }
+      // `=== true`, not truthy: this decides whether a command RUNS, and a
+      // body that sent `"submit": "no"` must not run it.
+      const submit = body.submit === true;
 
       try {
         const tree = await deps.readTree();
@@ -852,6 +871,22 @@ export function createApp(deps: AppDeps) {
           return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/text" }, 409);
         }
         await actions.sendPaneText(id, text);
+        if (submit) {
+          // Its OWN catch, and the reason is that this failure is not the same
+          // failure as the one below. The text IS on the prompt line now:
+          // reporting a plain error would tell the operator nothing landed,
+          // and they would retype a command that is already sitting there —
+          // which, once Enter does work, runs it twice. So the half-landed
+          // case says both halves, and carries herdr's own reason for the
+          // half that did not.
+          try {
+            await actions.sendPaneKey(id, "enter");
+          } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            warn(`panes: typed into \`${id}\` but could not run it: ${detail}`);
+            return c.json({ ok: false, detail: `typed, but not run: ${detail}` }, 502);
+          }
+        }
         return c.json({ ok: true });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);

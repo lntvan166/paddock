@@ -198,17 +198,27 @@ export async function sendText(id: string, text: string, f: Fetch = fetch): Prom
  * decides which verb applies. `AgentTerminal`'s `submitReply` is the mirror
  * image of this same asymmetry on the agent side.
  *
+ * `submit` asks the route to press Enter after the text, in the same round
+ * trip. It is the whole difference between typing a command and RUNNING one:
+ * `pane.send_text` does not submit, so without this a tap on Send left `ls`
+ * sitting unexecuted on the prompt line. The reply box passes `true`; the
+ * parameter exists because typing without running is still a real thing to
+ * want, and because a route that always submitted would change what every
+ * earlier caller did.
+ *
  * Uses `readJson`, unlike `sendText`/`sendKey` above: the pane route's whole
  * success body is `{ok: true}` (see `PaneOutput`'s note on why a shell has
  * no server-side screen cache to fold a reply into), so there is no partial
  * "resolve with a failure shape" to preserve. A refusal — unknown pane, a
- * pane promoted to an agent mid-type, text over the length ceiling — rejects
- * with the server's own `detail`, the same as every read here; the caller
- * must catch it and show it, never let a keystroke that did not land look
- * like it did.
+ * pane promoted to an agent mid-type, text over the length ceiling, or the
+ * half-landed `typed, but not run` — rejects with the server's own `detail`,
+ * the same as every read here; the caller must catch it and show it, never
+ * let a keystroke that did not land look like it did.
  */
-export async function sendPaneText(id: string, text: string, f: Fetch = fetch): Promise<ActionResult> {
-  return readJson<ActionResult>(paneUrl(id, "text"), { text }, f);
+export async function sendPaneText(
+  id: string, text: string, submit = false, f: Fetch = fetch,
+): Promise<ActionResult> {
+  return readJson<ActionResult>(paneUrl(id, "text"), { text, submit }, f);
 }
 
 /**

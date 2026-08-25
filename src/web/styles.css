@@ -758,6 +758,15 @@ body {
 
 .term-error, .term-note { flex: none; margin: 0; padding: 0.5rem 0.75rem; font-size: var(--t-md); }
 
+/* A failure has to LOOK like one. Both of these carried `class="… warn"` from
+   the moment they were written, and no rule in scope gave `.warn` a colour
+   here — `.detail .warn` is scoped to the old detail sheet — so a shell send
+   that did not land rendered in ordinary body colour, indistinguishable from
+   the transcript above it. Colour is added to text that already says what
+   happened, never the only channel; `--warn` is defined on bare :root and
+   redefined under both dark blocks, so nothing new is needed for a theme. */
+.term-error.warn, .term-note.warn { color: var(--warn); }
+
 /* Three columns: the two wide keys on the last row span the leftover space.
    Every key clears 44px because this is the primary control surface, and a
    mis-tap here sends a real keystroke to a real agent. */

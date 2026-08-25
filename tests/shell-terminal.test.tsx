@@ -300,3 +300,83 @@ test("a shell's keypad and reply box never grow prompt options — there is no p
   expect(el.querySelector("[data-prompt-option]")).toBeNull();
   localStorage.removeItem("paddock.term.keypad");
 });
+
+test("Send RUNS the command, in the default configuration — no stored prefs at all", async () => {
+  // The test the shipped defect walked past. Every other send test here asserts
+  // that the injected sender was CALLED, which `pane.send_text` satisfies while
+  // leaving the command sitting unexecuted on the prompt line — and the two
+  // tests that show a keypad set `paddock.term.keypad` first, so the only Enter
+  // in the app was reachable in the test and not on a first run.
+  //
+  // So: nothing is stored, deliberately. `DEFAULTS.keypad` is `hidden`
+  // (`prefs.ts`), which means the assertion below is the ONLY way an operator
+  // opening a shell for the first time can run anything.
+  localStorage.removeItem("paddock.term.keypad");
+  const calls: Array<{ text: string; submit: boolean }> = [];
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p14" title="bash" onBack={() => {}} load={load}
+      sendText={async (text, submit) => { calls.push({ text, submit }); return { ok: true }; }}
+      sendKey={async () => ({ ok: true })}
+    />,
+  );
+  await settle();
+
+  // The premise, asserted rather than assumed: there is no keypad on screen, so
+  // no Enter key, so Send is the whole of the operator's keyboard.
+  expect(el.querySelector("[data-keypad]")).toBeNull();
+
+  const input = el.querySelector<HTMLInputElement>("#term-reply-input");
+  await typeInto(input!, "ls");
+  await click(el.querySelector('.term-reply button[type="submit"]'));
+
+  expect(calls).toEqual([{ text: "ls", submit: true }]);
+});
+
+test("a half-landed send reads as half-landed, never as sent", async () => {
+  // The route answers 502 `typed, but not run: …` when the text landed and the
+  // key did not. Reported as the operator sees it, because retyping a command
+  // that is already on the prompt line runs it twice.
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p15" title="bash" onBack={() => {}} load={load}
+      sendText={async () => { throw new RequestFailed(502, "typed, but not run: pane_not_found"); }}
+    />,
+  );
+  await settle();
+
+  const input = el.querySelector<HTMLInputElement>("#term-reply-input");
+  await typeInto(input!, "ls");
+  await click(el.querySelector('.term-reply button[type="submit"]'));
+
+  expect(el.querySelector(".term-note")?.textContent).toContain("typed, but not run");
+  // And the text stays in the box only as long as it is not misleading: the
+  // command is already on the prompt line, so the box is NOT cleared.
+  expect(input!.value).toBe("ls");
+});
+
+test("a 409 on the WRITE path is a promotion, not an internal route name (§16.3 read path, mirrored)", async () => {
+  // The rule this file states at the read path — never put an internal route
+  // name in front of the operator — applied where it was broken: a promotion
+  // landing mid-type made the reply box print
+  // "this pane has an agent; use /api/agents/:id/text".
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p16" title="bash" onBack={() => {}} load={load}
+      sendText={async () => {
+        throw new RequestFailed(409, "this pane has an agent; use /api/agents/:id/text");
+      }}
+    />,
+  );
+  await settle();
+
+  const input = el.querySelector<HTMLInputElement>("#term-reply-input");
+  await typeInto(input!, "claude");
+  await click(el.querySelector('.term-reply button[type="submit"]'));
+
+  expect(el.textContent).not.toContain("/api/agents/:id/text");
+  expect(el.textContent).toContain("this pane is now an agent");
+  // Treated as the read path treats it: the pane has stopped updating as a
+  // shell, and says so.
+  expect(el.querySelector(".term-stalled")?.textContent).toBe("not updating");
+});

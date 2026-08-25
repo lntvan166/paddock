@@ -199,3 +199,55 @@ test("a herdr throw from sendPaneKey becomes ok:false/502, with the message in d
   expect(body.detail).toContain("pane_not_found");
   expect(calls).toEqual(["key:w1:p2:enter"]);
 });
+
+// ── submit: the whole operator act, in one round trip ────────────────────────
+// `pane.send_text` does not submit. Without the key that follows it, one tap on
+// a button labelled Send typed `ls` onto the prompt line and left it sitting
+// there — and the shell's reply box is single-line, so the operator could not
+// supply the newline themselves. The pad's Enter was the only one in the app
+// and its stored default is `hidden`.
+
+test("submit: true types the command AND runs it — one tap on Send is one command run", async () => {
+  const { app, calls } = harness(async () => TREE);
+  const res = await post(app, "/api/panes/w1:p2/text", { text: "ls", submit: true });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ ok: true });
+  expect(calls).toEqual(["text:w1:p2:ls", "key:w1:p2:enter"]);
+});
+
+test("without submit the text is typed and nothing is run", async () => {
+  // The default, and the shape every earlier caller of this route relied on:
+  // `submit` is opt-in, so typing without running stays reachable.
+  const { app, calls } = harness(async () => TREE);
+  const res = await post(app, "/api/panes/w1:p2/text", { text: "ls" });
+  expect(res.status).toBe(200);
+  expect(calls).toEqual(["text:w1:p2:ls"]);
+});
+
+test("a half-landed submit says so: typed, but not run, with herdr's own reason", async () => {
+  // The worst outcome to report as success. The text IS on the prompt line, so
+  // "failed" would be a lie in the other direction — the operator needs to know
+  // both halves, or they will retype a command that is already sitting there.
+  const { app, calls } = harness(async () => TREE, {
+    sendPaneKey: async () => { throw new Error("pane_not_found"); },
+  });
+  const res = await post(app, "/api/panes/w1:p2/text", { text: "ls", submit: true });
+  expect(res.status).toBe(502);
+  const body = await res.json();
+  expect(body.ok).toBe(false);
+  expect(body.detail).toContain("typed, but not run");
+  expect(body.detail).toContain("pane_not_found");
+  // Both halves were attempted, which is what makes this case distinct from a
+  // plain failure.
+  expect(calls).toEqual(["text:w1:p2:ls", "key:w1:p2:enter"]);
+});
+
+test("a submit whose TEXT fails never presses enter into whatever is on the line", async () => {
+  const { app, calls } = harness(async () => TREE, {
+    sendPaneText: async () => { throw new Error("pane_not_found"); },
+  });
+  const res = await post(app, "/api/panes/w1:p2/text", { text: "ls", submit: true });
+  expect(res.status).toBe(502);
+  expect((await res.json()).detail).not.toContain("typed, but not run");
+  expect(calls).toEqual(["text:w1:p2:ls"]);
+});

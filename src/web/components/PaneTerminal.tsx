@@ -156,6 +156,17 @@ const REFRESH_BACKOFF = 2;
  * digest arrives in the request — and it would make a quiet shell cost what a
  * quiet agent costs. Recorded as follow-up work; do not read this comment as
  * a claim that it has been done.
+ *
+ * AND IT IS NOT ONLY READS. All of the above budgets the `session.snapshot`
+ * per POLL, which is how the number was arrived at — but the validation is
+ * per REQUEST, and every shell WRITE goes through the same guard: each
+ * keystroke on the pad is one `session.snapshot` plus one `pane.send_keys`,
+ * and one tap on Send is one snapshot plus `pane.send_text` plus
+ * `pane.send_keys`. So a burst of typing costs herdr the same ~19 ms per tap
+ * that a poll does, on top of the polling. That is the right trade for an
+ * operator-initiated action — a person cannot tap faster than the poll floor
+ * for long — but the digest fix above would not touch it, and nothing here
+ * throttles it.
  */
 export const SHELL_MIN_REFRESH_MS = 1_000;
 
@@ -285,12 +296,18 @@ export interface PaneTerminalProps {
    * reply box calls this. Injected exactly like `load`, so the tests need no
    * network and so the component itself never has to know the route.
    *
+   * `submit` says whether the command should also be RUN. The reply box always
+   * passes `true`, because that is what a button labelled Send means to the
+   * person tapping it; the parameter is here so the promise the button makes is
+   * visible at this seam rather than buried in the route. `pane.send_text` on
+   * its own types and does not submit.
+   *
    * Undefined for an agent pane: `AgentTerminal` renders its OWN reply box
    * through `afterControls`, wired to `sendText` (`agent.prompt` — answering
    * a prompt) instead of this (`pane.send_text` — typing at a shell). Same
    * control, different verb, decided by the pane's `harness` (§16.3).
    */
-  sendText?: (text: string) => Promise<ActionResult>;
+  sendText?: (text: string, submit: boolean) => Promise<ActionResult>;
   /**
    * Send one nav key to THIS pane, when it has no agent — the mirror of
    * `sendText` above, for `pane.send_keys` in place of `agent.send_keys`.
@@ -356,7 +373,17 @@ export function PaneTerminal({
    */
   const [shellReply, setShellReply] = useState("");
   const [shellBusy, setShellBusy] = useState(false);
-  const [shellFeedback, setShellFeedback] = useState<ActionResult | null>(null);
+  /**
+   * A FAILURE, or nothing — not an `ActionResult`.
+   *
+   * It was typed as one, which meant the renderer carried an `ok ? "Sent." :
+   * detail` branch whose success half nothing could ever reach: every write to
+   * it was `ok: false`. There is no success message to write either, now that
+   * Send runs the command — what success looks like is the command's own output
+   * arriving in the transcript, and a "Sent." line under it would be paddock
+   * claiming credit for something the pane already shows.
+   */
+  const [shellFeedback, setShellFeedback] = useState<{ detail: string } | null>(null);
   const [shellKeypad, setShellKeypad] = useState<KeypadPref>(() => readPrefs().keypad);
 
   // Mirrors `paused` (and, for a shell, its own send) for the polling
@@ -659,10 +686,37 @@ export function PaneTerminal({
   };
 
   /**
-   * Type a command into the shell. The pad is disabled for the whole round
-   * trip, same as `AgentTerminal.press` — two keys in flight against one
-   * shell can land out of order, and a cursor that jumps two rows on one tap
-   * is worse than one that responds a beat later.
+   * A rejection from a shell send, turned into something an operator can read.
+   *
+   * A 409 is the pane route's answer for "this pane has an agent now" — a
+   * promotion in flight, from a shell someone just typed `claude` into. The
+   * READ path already treats that as a transition rather than a failure, and
+   * says why: never raise a banner that would put an internal route name in
+   * front of the operator. The write path is the same event arriving through a
+   * different door, so it gets the same treatment — `stalled`, plus a note in
+   * the operator's own words. The detail string it replaces
+   * ("use /api/agents/:id/text") was written for a developer calling the API.
+   */
+  const shellFailure = (err: unknown): string => {
+    if (err instanceof RequestFailed && err.status === 409) {
+      setStalled(true);
+      return "this pane is now an agent";
+    }
+    return err instanceof Error ? err.message : String(err);
+  };
+
+  /**
+   * Type a command into the shell AND run it. The pad is disabled for the
+   * whole round trip, same as `AgentTerminal.press` — two keys in flight
+   * against one shell can land out of order, and a cursor that jumps two rows
+   * on one tap is worse than one that responds a beat later.
+   *
+   * `submit` is passed as `true` because that is what the button says. It is a
+   * parameter rather than a constant inside the sender so that the seam a test
+   * drives is the same one the route sees: `pane.send_text` does NOT submit,
+   * and a test that only asserts "the sender was called" is satisfied by a
+   * command left sitting unexecuted on the prompt line — which is exactly what
+   * shipped.
    *
    * No `pane.apply(...)` afterwards: `sendText`'s success body is `{ok:
    * true}` alone (see the prop's own note), so there is no screen to push in
@@ -675,13 +729,13 @@ export function PaneTerminal({
     setShellBusy(true);
     setShellFeedback(null);
     try {
-      const res = await onSendText(text);
+      const res = await onSendText(text, true);
       if (res.ok) {
         setShellReply("");
       } else {
         // Surfaced, never swallowed: a command that did not reach the shell
         // must not look like it did (§16.3).
-        setShellFeedback({ ok: false, detail: res.detail ?? "Failed." });
+        setShellFeedback({ detail: res.detail ?? "Failed." });
       }
     } catch (err) {
       // `sendPaneText` REJECTS on a refusal — `readJson`'s convention, not
@@ -690,7 +744,13 @@ export function PaneTerminal({
       // `res.ok === false`. Caught so it still reaches the operator instead
       // of becoming an unhandled rejection that looks, from their chair,
       // exactly like the command landed.
-      setShellFeedback({ ok: false, detail: err instanceof Error ? err.message : String(err) });
+      //
+      // The box is deliberately NOT cleared on a failure, including the
+      // half-landed `typed, but not run` one. There the text is already on
+      // the prompt line, so what the operator needs is the message saying
+      // so — not an empty box that invites retyping a command which would
+      // then run twice.
+      setShellFeedback({ detail: shellFailure(err) });
     }
     setShellBusy(false);
   };
@@ -701,11 +761,11 @@ export function PaneTerminal({
     setShellFeedback(null);
     try {
       const res = await onSendKey(key);
-      if (!res.ok) setShellFeedback({ ok: false, detail: res.detail ?? "Key failed." });
+      if (!res.ok) setShellFeedback({ detail: res.detail ?? "Key failed." });
     } catch (err) {
       // See `submitShellText`'s note just above: `sendPaneKey` rejects rather
       // than resolving `ok: false`.
-      setShellFeedback({ ok: false, detail: err instanceof Error ? err.message : String(err) });
+      setShellFeedback({ detail: shellFailure(err) });
     }
     setShellBusy(false);
   };
@@ -884,10 +944,11 @@ export function PaneTerminal({
           `App.tsx` tells a shell pane from an agent pane here. */}
       {onSendText && (
         <>
+          {/* Failures only — see `shellFeedback`'s own note. `.warn` is a
+              colour ON TOP of text that already says what happened, never the
+              only channel. */}
           {shellFeedback && (
-            <p className={shellFeedback.ok ? "term-note ok" : "term-note warn"} role="status">
-              {shellFeedback.ok ? "Sent." : (shellFeedback.detail ?? "Failed.")}
-            </p>
+            <p className="term-note warn" role="status">{shellFeedback.detail}</p>
           )}
 
           {onSendKey && (
@@ -901,6 +962,10 @@ export function PaneTerminal({
               // Sent verbatim: this is typing at a shell, not composing a
               // reply to a question, so there is nothing here to trim or
               // reshape beyond leaving an all-whitespace box un-submittable.
+              // The newline is NOT appended here — `submit` on the route sends
+              // a real `enter` key, which is what a shell's line editor is
+              // waiting for, and it keeps the text the operator typed the text
+              // that gets stored in their shell history.
               if (shellReply.trim()) void submitShellText(shellReply);
             }}
           >
