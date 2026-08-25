@@ -3,7 +3,7 @@ import type { Space, TreePane } from "@shared/types";
 import { CreateSheet, slug, type CreateSenders } from "@web/components/CreateSheet";
 import { paneIdentity, paneLabel } from "@web/components/pane-label";
 import { plural, RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
-import { StatusDot } from "@web/components/ui/StatusDot";
+import { NO_AGENT, StateMarker } from "@web/components/ui/StateMarker";
 
 /*
  * THE `⋯` AND WHY IT LOOKS LIKE THIS.
@@ -188,7 +188,7 @@ export function SpaceRow({
             unreachable by keyboard. */}
         {only ? (
           <a href={paneHash(only.paneId)}>
-            <PaneMarker pane={only} />
+            <StateMarker state={only.state} />
             {heading}
             <PaneState pane={only} />
           </a>
@@ -243,7 +243,7 @@ export function SpaceRow({
                 {t.panes.map((p) => (
                   <li key={p.paneId} data-pane-row data-state={p.state ?? "none"}>
                     <a href={paneHash(p.paneId)}>
-                      <PaneMarker pane={p} />
+                      <StateMarker state={p.state} />
                       <span className="pane-heading">
                         <span className="pane-name">{paneLabel(p)}</span>
                         {/* A tab label is a CAPTION on the pane it labels, not
@@ -283,15 +283,8 @@ export function SpaceRow({
   );
 }
 
-/** A shell has no state, so it gets no StatusDot — that component's whole
- *  contract is that a dot MEANS one of four states. */
-function PaneMarker({ pane }: { pane: TreePane }) {
-  if (pane.state === null) return <span className="dot-none" aria-hidden="true" />;
-  return <StatusDot state={pane.state} />;
-}
-
-/** Colour is never the only channel — StatusDot is aria-hidden, so the state
- *  has to be readable as text right here. */
+/** Colour is never the only channel — `StateMarker` is aria-hidden, so the
+ *  state has to be readable as text right here. */
 function PaneState({ pane }: { pane: TreePane }) {
-  return <span className="pane-state">{pane.state ?? "no agent"}</span>;
+  return <span className="pane-state">{pane.state ?? NO_AGENT}</span>;
 }

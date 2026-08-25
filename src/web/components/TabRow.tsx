@@ -2,7 +2,7 @@ import { paneHash } from "@shared/route";
 import type { Tab, TreePane } from "@shared/types";
 import { paneLabel } from "@web/components/pane-label";
 import { RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
-import { StatusDot } from "@web/components/ui/StatusDot";
+import { NO_AGENT, StateMarker } from "@web/components/ui/StateMarker";
 
 /**
  * One tab as a row, with its panes under it only when it holds more than one.
@@ -56,7 +56,7 @@ export function TabRow({ tab, onChanged, senders }: {
             keyboard. */}
         {root !== null ? (
           <a href={paneHash(root.paneId)}>
-            {!split && <PaneMarker pane={root} />}
+            {!split && <StateMarker state={root.state} />}
             <span className="tab-heading">
               <span className="tab-name">{tabName}</span>
             </span>
@@ -84,7 +84,7 @@ export function TabRow({ tab, onChanged, senders }: {
           {tab.panes.map((p) => (
             <li key={p.paneId} data-pane-row data-state={p.state ?? "none"}>
               <a href={paneHash(p.paneId)}>
-                <PaneMarker pane={p} />
+                <StateMarker state={p.state} />
                 <span className="pane-heading">
                   <span className="pane-name">{paneLabel(p)}</span>
                 </span>
@@ -98,15 +98,10 @@ export function TabRow({ tab, onChanged, senders }: {
   );
 }
 
-/** A shell has no state, so it gets no StatusDot — that component's whole
- *  contract is that a dot MEANS one of four states. */
-function PaneMarker({ pane }: { pane: TreePane }) {
-  if (pane.state === null) return <span className="dot-none" aria-hidden="true" />;
-  return <StatusDot state={pane.state} />;
-}
-
-/** Colour is never the only channel — StatusDot is aria-hidden, so the state
- *  has to be readable as text right here. */
+/** Colour is never the only channel — `StateMarker` is aria-hidden, so the
+ *  state has to be readable as text right here. `.pane-state` is this
+ *  surface's own class; `NO_AGENT` is the one string every surface that says
+ *  this shares. */
 function PaneState({ pane }: { pane: TreePane }) {
-  return <span className="pane-state">{pane.state ?? "no agent"}</span>;
+  return <span className="pane-state">{pane.state ?? NO_AGENT}</span>;
 }
