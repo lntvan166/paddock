@@ -601,6 +601,21 @@ test("a failed harness read leaves no stale kinds beside its error", async () =>
   await unmount();
 });
 
+test("the create sheet carries no shadcn close button either", async () => {
+  // The same defect at the second call site — see the note in
+  // tests/row-actions.test.tsx. Cancel, Escape and the scrim already close it.
+  withTree(true);
+  const { senders } = recorder();
+  const el = await render(
+    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+  );
+  await settle();
+  await click(el.querySelector('.spaces-head [data-create="space"]'));
+  await settle();
+  expect(sheet().querySelector('[data-slot="sheet-close"]')).toBeNull();
+  await unmount();
+});
+
 test("an UNNAMED space suggests no agent name at all, rather than its herdr coordinate", async () => {
   // `SpaceRow` renders an unnamed space as its `spaceId` — `w1`, `w3` — because
   // the row has to say something. Passing that string on as the agent's

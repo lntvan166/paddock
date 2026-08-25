@@ -296,7 +296,10 @@ export function CreateSheet({
       {/* The home-indicator inset is in this rule's own padding-bottom, not a
           second class beside it: two rules at equal specificity setting
           padding-bottom is how that inset gets silently dropped. */}
-      <SheetContent side="bottom" className="row-actions-sheet create-sheet">
+      {/* `showCloseButton={false}` for the reason `RowActions` spells out at
+          its own `SheetContent`: shadcn's default is a 16px unsized X, and
+          Cancel, Escape and the scrim already close this. */}
+      <SheetContent side="bottom" className="row-actions-sheet create-sheet" showCloseButton={false}>
         <SheetHeader className="row-actions-head">
           <SheetTitle className="row-actions-title">{title}</SheetTitle>
           <SheetDescription className="row-actions-scope">

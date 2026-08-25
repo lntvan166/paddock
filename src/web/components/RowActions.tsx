@@ -215,7 +215,15 @@ export function RowActions({ label, renames, close, onChanged, senders = LIVE_SE
           padding-bottom, not in a second `.safe-bottom` class beside it: two
           rules at equal specificity setting `padding-bottom` is how that
           inset gets silently dropped. */}
-      <SheetContent side="bottom" className="row-actions-sheet">
+      {/* No shadcn close button. Its default is `true`, and it renders an
+          absolutely positioned 16px `XIcon` at `top-4 right-4` with no
+          `min-width`/`min-height` — in a feature whose CSS sets `2.75rem` on
+          every one of its other controls. `.row-actions-title` is mono with
+          `overflow-wrap: anywhere`, so a long label wrapped UNDER it. Back,
+          Cancel, Escape and the scrim all already close this sheet; a twelfth
+          control doing the same thing at a third of the tap size is the worse
+          of the two fixes. */}
+      <SheetContent side="bottom" className="row-actions-sheet" showCloseButton={false}>
         <SheetHeader className="row-actions-head">
           <SheetTitle className="row-actions-title">{label}</SheetTitle>
           <SheetDescription className="row-actions-scope">{scopeOf(close.kind)}</SheetDescription>

@@ -163,6 +163,23 @@ test("the sheet offers rename and close", async () => {
   await unmount();
 });
 
+test("the sheet carries no shadcn close button — every control in it clears 44px", async () => {
+  // shadcn's `SheetContent` defaults `showCloseButton` to true, and neither
+  // call site passed false. So every sheet got an absolutely positioned 16px
+  // `XIcon` at `top-4 right-4` with NO `min-width`/`min-height`, inside a
+  // feature whose CSS sets `2.75rem` on all eleven of its other controls — and
+  // `.row-actions-title` is mono with `overflow-wrap: anywhere`, so a long
+  // label wrapped UNDER it.
+  //
+  // Passed false rather than resized: Cancel/Back, Escape and the scrim already
+  // close the sheet, and fewer controls doing the same thing is the better fix.
+  const el = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={recorder().senders} />);
+  await settle();
+  await click(triggers(el)[0]);
+  expect(sheet().querySelector('[data-slot="sheet-close"]')).toBeNull();
+  await unmount();
+});
+
 test("a pane row reaches its agent and the tab that holds it", async () => {
   const el = await render(<Spaces onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
   await settle();
