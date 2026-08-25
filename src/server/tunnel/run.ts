@@ -376,6 +376,9 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
         startedAt,
         deadline,
         now: now(),
+        // Wired for real below, once the QR's own decision exists.
+        qr: null,
+        compact: false,
       },
       colour,
     );

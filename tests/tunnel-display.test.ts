@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { render, useColour, type DisplayState } from "@server/tunnel/display";
+import { qrMatrix } from "@server/qr";
 
 const T0 = 1_700_000_000_000;
 const state = (over: Partial<DisplayState> = {}): DisplayState => ({
@@ -10,6 +11,8 @@ const state = (over: Partial<DisplayState> = {}): DisplayState => ({
   startedAt: T0 - 1_380_000,
   deadline: null,
   now: T0,
+  qr: null,
+  compact: false,
   ...over,
 });
 
@@ -48,6 +51,21 @@ test("colour decorates and never informs", () => {
     { name: "paired: 3 (plural)", overrides: { paired: 3 } },
     { name: "deadline: null (no closes line)", overrides: { deadline: null } },
     { name: "deadline: set (closes line)", overrides: { deadline: T0 + 4_320_000 } },
+    // The QR is the one thing on screen whose colour is not decoration —
+    // forced black-on-white is what stops it rendering inverted. It stays
+    // inside the rule because the GLYPHS carry the symbol and survive
+    // stripping; only the escapes differ between these two renders.
+    {
+      name: "qr present",
+      overrides: { qr: qrMatrix("https://quiet-harbor-8f31.trycloudflare.com/#4F7KQP2M") },
+    },
+    {
+      name: "qr present, compact",
+      overrides: {
+        qr: qrMatrix("https://quiet-harbor-8f31.trycloudflare.com/#4F7KQP2M"),
+        compact: true,
+      },
+    },
   ];
 
   for (const { name, overrides } of cases) {
