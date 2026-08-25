@@ -107,7 +107,7 @@ paddock tunnel
 
 That publishes a temporary public URL and a pairing code, and prints both. Nothing to configure, no DNS, no inbound port: open the URL on your
 phone, type the code once, and you are watching the same agents from the sofa.
-`--for 2h` bounds how long it lives; `ctrl+c` ends it.
+`--for 2h` bounds how long it lives (`30m`, `2h`, `7d`); `ctrl+c` ends it.
 
 It is a try-it path, not a deployment. A quick tunnel cannot have Cloudflare
 Access in front of it, so that pairing code is the only gate there is, and the
@@ -151,7 +151,7 @@ paddock tunnel
 A temporary Cloudflare quick tunnel, gated by a pairing code — both printed in
 the terminal. It dials **out**, so no inbound port is opened and nothing on your
 network changes. Pair the phone once and the session lasts as long as the tunnel
-does. `--for 2h` bounds how long it lives.
+does. `--for 2h` bounds how long it lives — `30m`, `2h` and `7d` all parse.
 
 The code is good for **10 minutes**, then it rotates; five wrong guesses burn it
 early. It is not single-use, so anything that can read it inside that window can

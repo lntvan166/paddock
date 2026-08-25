@@ -96,21 +96,26 @@ test("the existing verb behaviour is unchanged", () => {
   expect(parseArgs(["update", "--check"]).flags.has("--check")).toBe(true);
 });
 
-test("durations parse in seconds, minutes and hours", () => {
+test("durations parse in seconds, minutes, hours and days", () => {
   expect(parseDuration("45s")).toBe(45_000);
   expect(parseDuration("90m")).toBe(5_400_000);
   expect(parseDuration("2h")).toBe(7_200_000);
+  // Added with the day-aware formatter: a tunnel whose remaining time reads
+  // "4d 4h" must also be requestable as `--for 4d`.
+  expect(parseDuration("2d")).toBe(172_800_000);
+  expect(parseDuration("14d")).toBe(1_209_600_000);
 });
 
 test("a malformed duration is null, never a default", () => {
   // A mistyped deadline that silently becomes "no deadline" defeats the flag.
-  for (const bad of ["", "2", "h", "2d", "-2h", "2.5h", "0h", "two hours", "2h30m"]) {
+  for (const bad of ["", "2", "h", "d", "-2h", "2.5h", "0h", "0d", "two hours", "2h30m", "2D"]) {
     expect(parseDuration(bad)).toBe(null);
   }
 });
 
-test("USAGE documents the verb", () => {
+test("USAGE names the units --for accepts", () => {
   expect(USAGE).toContain("paddock tunnel");
+  expect(USAGE).toContain("30m");
 });
 
 test("a trailing --for with no value is refused, not read as 'no deadline'", () => {

@@ -37,6 +37,7 @@ export const USAGE = [
   "       paddock update [--check]  install the latest release",
   "       paddock doctor            can this paddock talk to your herdr?",
   "       paddock tunnel [--for D]  publish it on a quick tunnel, gated by a code",
+  "                                 D is 30m, 2h or 7d",
   "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",
 ].join("\n");
@@ -107,18 +108,24 @@ function commandFor(verb: string | null): Command {
 }
 
 /**
- * `45s`, `90m`, `2h`. Returns null for anything else — including `2`, `2d` and
- * `2h30m`.
+ * `45s`, `90m`, `2h`, `2d`. Returns null for anything else — including `2`,
+ * `2.5h` and `2h30m`.
  *
  * Null is a REFUSAL, not a default. `--for` exists to bound how long a public
  * URL lives; a typo that quietly became "no deadline" would defeat the only
  * reason to type the flag.
+ *
+ * `d` was added alongside the day-aware `duration()` formatter: a tunnel whose
+ * remaining time reads `4d 4h` must be requestable in the same units it is
+ * reported in. There is deliberately still no cap — `--for 400h` was uncapped
+ * before this change, and introducing a limit here would be an unrelated
+ * policy decision smuggled in behind a formatting fix.
  */
 export function parseDuration(input: string): number | null {
-  const m = /^(\d+)([smh])$/.exec(input);
+  const m = /^(\d+)([smhd])$/.exec(input);
   if (m === null) return null;
   const n = Number(m[1]);
   if (n <= 0) return null;
-  const unit = { s: 1_000, m: 60_000, h: 3_600_000 }[m[2] as "s" | "m" | "h"];
+  const unit = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as "s" | "m" | "h" | "d"];
   return n * unit;
 }
