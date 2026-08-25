@@ -60,3 +60,32 @@ export function agentIdFromHash(hash: string): string | null {
     return null;
   }
 }
+
+/**
+ * The space URL shape, here rather than in `src/web/` for the reason the file's
+ * opening note gives about `paneHash`: this is where hash formats live, and a
+ * format kept somewhere else is a format free to drift from the parser.
+ *
+ * `#/space/<id>` singular against `#/spaces` plural — the collection and one
+ * member of it. The trailing slash in the pattern is what keeps them apart, so
+ * `#/spaces` can never parse as a space whose id is "s".
+ */
+const SPACE_HASH_RE = /^#\/space\/(.+)$/;
+
+export function spaceHash(spaceId: string): string {
+  return `#/space/${encodeURIComponent(spaceId)}`;
+}
+
+/** The space id addressed by a hash, or null for anything else. Returns null
+ *  rather than throwing on a malformed escape (`#/space/%`), the same rule
+ *  `agentIdFromHash` follows and for the same reason. */
+export function spaceIdFromHash(hash: string): string | null {
+  const encoded = SPACE_HASH_RE.exec(hash)?.[1];
+  if (encoded === undefined) return null;
+  try {
+    const id = decodeURIComponent(encoded);
+    return id === "" ? null : id;
+  } catch {
+    return null;
+  }
+}
