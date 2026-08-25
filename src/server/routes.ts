@@ -781,18 +781,36 @@ export function createApp(deps: AppDeps) {
      * Separate from `/api/agents/:id/output` because the store cannot
      * validate this id — a shell pane is not in it, by design (§3). The tree
      * is the authority instead.
+     *
+     * Both herdr calls — `deps.readTree()` and `actions.readPane()` — are
+     * wrapped in the same try/catch `/api/spaces` already uses around this
+     * exact `readTree()` call, and every sibling route in this block uses
+     * around its own herdr call. The gap between validating the pane against
+     * a snapshot and reading it is real: a shell pane lives in the tree and
+     * not in the store precisely so this route can exist, and that is the
+     * same window in which the pane can close. An uncaught throw there would
+     * fall through to Hono's default handler as a plain-text 500 instead of
+     * paddock's `{ok:false, detail}` 502 carrying herdr's own message — the
+     * 404 (unknown pane) and 409 (pane has an agent) outcomes below are
+     * deliberate, not errors, and stay outside the catch.
      */
     app.post("/api/panes/:id/output", async (c) => {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
       const id = c.req.param("id");
-      const tree = await deps.readTree();
-      const pane = tree.spaces.flatMap((s) => s.tabs).flatMap((t) => t.panes).find((p) => p.paneId === id);
-      if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
-      if (pane.harness !== null) {
-        return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/output" }, 409);
+      try {
+        const tree = await deps.readTree();
+        const pane = tree.spaces.flatMap((s) => s.tabs).flatMap((t) => t.panes).find((p) => p.paneId === id);
+        if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
+        if (pane.harness !== null) {
+          return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/output" }, 409);
+        }
+        const { lines, source } = await actions.readPane(id);
+        return c.json({ lines, source });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        warn(`panes: could not read pane \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
       }
-      const { lines, source } = await actions.readPane(id);
-      return c.json({ lines, source });
     });
 
     app.post("/api/agents/:id/answer", async (c) => {
