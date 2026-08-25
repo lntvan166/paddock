@@ -28,11 +28,27 @@ export function formatCode(raw: string): string {
   return `${raw.slice(0, 4)}-${raw.slice(4)}`;
 }
 
+/**
+ * Crockford's own specification decodes `I` and `L` as `1` and `O` as `0`.
+ * This used to DROP them, which is worse than either accepting or refusing
+ * them: the input silently lost a character, failed the length check inside
+ * `sameCode`, and came back as `wrong code, 4 attempts remaining` — spending
+ * an attempt on the one confusion the alphabet was chosen to prevent, and
+ * reissuing the code on screen after five.
+ *
+ * `U` is NOT here. It is excluded from the alphabet to avoid an accidental
+ * obscenity, not for visual confusion, and there is no digit it means — so it
+ * stays dropped, along with every other character that is not a code.
+ */
+const CONFUSABLE: Record<string, string | undefined> = { I: "1", L: "1", O: "0" };
+
 /** The dash and the case are presentation. Anything else is dropped. */
 export function normalise(input: string): string {
-  const upper = input.toUpperCase();
   let out = "";
-  for (const ch of upper) if (ALPHABET.includes(ch)) out += ch;
+  for (const ch of input.toUpperCase()) {
+    const mapped = CONFUSABLE[ch] ?? ch;
+    if (ALPHABET.includes(mapped)) out += mapped;
+  }
   return out;
 }
 

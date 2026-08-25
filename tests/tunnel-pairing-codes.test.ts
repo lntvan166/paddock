@@ -121,3 +121,34 @@ test("two pairings are two sessions", () => {
   expect(a.token).not.toBe(b.token);
   expect(p.pairedCount).toBe(2);
 });
+
+// The alphabet omits I, L, O and U precisely so a code read off a terminal
+// cannot be lost to 1/I or 0/O. Dropping them instead of decoding them ate a
+// character, failed the length check, and spent one of five attempts — on
+// exactly the confusion the alphabet was chosen to prevent.
+test("a confusable character is decoded, not dropped", () => {
+  expect(normalise("O123-4567")).toBe("01234567");
+  expect(normalise("I234-5678")).toBe("12345678");
+  expect(normalise("L234-5678")).toBe("12345678");
+  expect(normalise("o123-4567")).toBe("01234567");
+});
+
+// U is excluded to avoid an accidental obscenity, not for visual confusion.
+// There is no digit it means, so it stays dropped.
+test("U stays dropped — it is not a confusable, it is an exclusion", () => {
+  expect(normalise("U123-4567")).toBe("1234567");
+});
+
+test("the dash and the case are still presentation, and still dropped", () => {
+  expect(normalise("4f7k-qp2m")).toBe("4F7KQP2M");
+  expect(normalise(" 4F7K QP2M ")).toBe("4F7KQP2M");
+});
+
+// The mapping must be reachable through the real entry point, not only the
+// helper: a code typed with an O on a phone must actually pair.
+test("a code typed with O for 0 pairs", () => {
+  const p = new Pairing({ bytes: () => new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]) });
+  const live = p.current().code; // "01234567"
+  expect(live[0]).toBe("0");
+  expect(p.attempt(`O${live.slice(1, 4)}-${live.slice(4)}`).kind).toBe("paired");
+});
