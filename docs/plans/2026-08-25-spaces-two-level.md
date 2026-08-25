@@ -1209,9 +1209,16 @@ import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
 import { click, render, textsOf, unmount } from "./support/render";
 import { Space } from "@web/components/Space";
+import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
 
-afterEach(async () => { await unmount(); });
+afterEach(async () => {
+  await unmount();
+  // Module state, and `bun test` shares a module registry across FILES: a
+  // capability left set here would leak into another file's expectations.
+  // `tests/create-sheet.test.tsx` carries the same reset for the same reason.
+  useStore.setState({ spacesAvailable: false });
+});
 
 const TREE: SpaceTree = {
   readAt: 1_700_000_000_000,
@@ -1252,6 +1259,12 @@ test("the header names the space and is the picker's trigger", async () => {
 });
 
 test("add-tab is the last row of the list it adds to, not a floating button", async () => {
+  // The capability has to be SET. `spacesAvailable` defaults to false in the
+  // store, and the `+` is deliberately gated on it — with no herdr session the
+  // create routes 404 honestly, so an ungated control would always error. A
+  // test that leaves it false asserts against a screen that correctly offers
+  // no create control at all, which is not what this test is about.
+  useStore.setState({ spacesAvailable: true });
   const host = await render(<Space spaceId="w1" onBack={() => {}} load={load(TREE)} />);
   const rows = [...host.querySelectorAll("[data-tab-row], [data-create]")];
   expect(rows.at(-1)!.getAttribute("data-create")).toBe("tab");
@@ -1794,6 +1807,13 @@ test("no row carries a management control — the whole point of the second leve
   // spaces each carrying a link, a ⋯ and a + put 33 tap targets on one 390px
   // viewport while fitting every row without a scroll. If a control comes back
   // onto a row, this fails.
+  // The capability is set deliberately, and this is the whole point of the
+  // test. `spacesAvailable` defaults to FALSE, and the create control is gated
+  // on it — so with the default this assertion would pass even if every row
+  // still rendered a `+`, because nothing would render one either way. Setting
+  // it true is what makes this a guard: the rows carry no create control EVEN
+  // WHEN creating is available.
+  useStore.setState({ spacesAvailable: true });
   const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
   const list = host.querySelector(".spaces")!;
   expect(list.querySelectorAll("[data-create]").length).toBe(0);
@@ -1843,6 +1863,7 @@ test("blocked sorts first and a space with no agent sorts last", async () => {
 });
 
 test("the header keeps the one control that makes a space", async () => {
+  useStore.setState({ spacesAvailable: true });
   const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
   expect(host.querySelector(".spaces-head [data-create='space']")).not.toBeNull();
 });
@@ -1859,6 +1880,18 @@ test("an unnamed space is named by its id, because a blank row is not a row", as
 
 The `MIXED` fixture's spaces are deliberately NOT already in sorted order, so
 the assertion cannot pass on the fixture's own shape.
+
+**The rewritten file must import `useStore` from `@web/store` and reset the
+capability after each test**, exactly as `tests/create-sheet.test.tsx` does and
+for the reason it documents — `bun test` shares a module registry across files,
+so a capability left set here leaks into another file's expectations:
+
+```tsx
+afterEach(async () => {
+  await unmount();
+  useStore.setState({ spacesAvailable: false });
+});
+```
 
 - [ ] **Step 2: Run and confirm the new tests fail**
 
