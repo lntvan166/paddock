@@ -1,4 +1,6 @@
-import type { ActionResult, HistoryResult, KeyResult, NavKey, OutputResult, ParsedPrompt } from "@shared/types";
+import type {
+  ActionResult, HistoryResult, KeyResult, NavKey, OutputResult, ParsedPrompt, SpaceTree,
+} from "@shared/types";
 
 /**
  * Just the call signature these helpers use — not `typeof fetch`.
@@ -146,4 +148,21 @@ export async function sendText(id: string, text: string, f: Fetch = fetch): Prom
   } catch (err) {
     return { ok: false, detail: String(err), lines: [], source: "" };
   }
+}
+
+/**
+ * The session tree. A GET with no body — the only read here that is not a
+ * POST, because it has no payload to keep out of an access log.
+ *
+ * Rejects on non-2xx rather than resolving, for the reason `readJson`
+ * records: a 404 body has no `spaces`, and resolving with it would hand the
+ * caller an object TypeScript believes is a SpaceTree and isn't.
+ */
+export async function fetchSpaceTree(f: Fetch = fetch): Promise<SpaceTree> {
+  const res = await f("/api/spaces", { method: "GET" });
+  if (!res.ok) {
+    const detail = await detailFrom(res);
+    throw new Error(detail ?? `request failed: ${res.status}`);
+  }
+  return (await res.json()) as SpaceTree;
 }
