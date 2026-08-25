@@ -475,8 +475,9 @@ accepts a fourth argument for exactly this.
 > cleared when `POST /api/panes/:id/agent` answers — so the notice tracks
 > paddock's own request, not herdr's view of the pane. That matters to anyone
 > reading this to implement it: a herdr-driven notice would survive a reload
-> and a second tab, and this one does not — which is the parked "stale failed
-> launch persistence" gap, not a claim this section makes. The second sentence
+> and a second tab, and this one does not. That is a known consequence of
+> tracking paddock's own request rather than herdr's state, not a claim this
+> section makes. The second sentence
 > stands exactly as written: a 200 never hides a failed start.
 
 While `launch_pending` is true the terminal shows `starting claude…`. Any

@@ -369,9 +369,12 @@ surprise.
   `tests/lifecycle-detach.test.ts` does.
 
 - **Nothing has exercised `agent.start` against a live herdr.** Every other
-  write this branch added — `workspace.create`, `tab.create`, the three
-  renames, the two closes — was driven against a real herd and is written up in
-  `docs/probes/2026-08-25-structural-events.md`. `agent.start` was not, and
+  write this branch added — `workspace.create`, `tab.create`, the tab and space
+  renames, the two closes — was driven against a real herd. The creates, the
+  tab/space renames and the closes are written up in
+  `docs/probes/2026-08-25-structural-events.md`; the AGENT rename's live
+  measurement is separate, in the design doc's §14.2, and that probe never
+  covered it. `agent.start` was not exercised at all, and
   `server.agent_manifests` only as a schema read. So the spawn path is built
   from the schema plus fakes, which is exactly the combination that produced
   this branch's one measured-false assumption: `tab.create` "returns a bare
