@@ -48,6 +48,9 @@ function harness(state: Agent["state"] = "blocked") {
     async sendPaneText(_p: string, text: string) { calls.push(`paneText:${text}`); },
     async sendPaneKey(_p: string, k: string) { calls.push(`paneKey:${k}`); },
     async waitUntilUnblocked() { calls.push("wait"); },
+    async renameAgent() { calls.push("renameAgent"); },
+    async renameTab() { calls.push("renameTab"); },
+    async renameSpace() { calls.push("renameSpace"); },
   };
   const app = createApp({
     store, actions, now: () => NOW, health,

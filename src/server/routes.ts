@@ -24,7 +24,9 @@ import {
   type HealthBody,
   type NotifyTrigger,
   type SettingsPatch,
+  type Space,
   type SpaceTree,
+  type Tab,
   type TreePane,
 } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
@@ -78,6 +80,17 @@ const KEY_SETTLE_MS = 120;
  * runaway paste cannot be forwarded into an agent's prompt wholesale.
  */
 const MAX_TEXT_LEN = 10_000;
+
+/**
+ * Ceiling on a rename label — an agent's name, a tab's label, a space's
+ * label. Bounded by paddock, not the caller, for the same reason
+ * `MAX_READ_LINES` is in `actions.ts`: a client-supplied value reaching a
+ * herdr parameter has to be governed by paddock's own policy. Refused, not
+ * truncated, same as `MAX_TEXT_LEN` above — a silently shortened name is a
+ * wrong name. 64 is generous for a name or a short label and short enough to
+ * stay legible in the Spaces list and the terminal view's header alike.
+ */
+const MAX_LABEL_LEN = 64;
 
 /**
  * Digest of a screen, used to answer "has this changed?" without resending it.
@@ -214,6 +227,17 @@ async function jsonBody(c: Context): Promise<Record<string, unknown>> {
  *  (§3). Factored so the three call sites can't drift on how a pane is found. */
 function findPane(tree: SpaceTree, id: string): TreePane | undefined {
   return tree.spaces.flatMap((s) => s.tabs).flatMap((t) => t.panes).find((p) => p.paneId === id);
+}
+
+/** Same reasoning as `findPane`: a tab is not in `AgentStore` either (§3), so
+ *  the tree is the only authority that can confirm one exists. */
+function findTab(tree: SpaceTree, id: string): Tab | undefined {
+  return tree.spaces.flatMap((s) => s.tabs).find((t) => t.tabId === id);
+}
+
+/** Same reasoning again, one level up: a space is not in the store. */
+function findSpace(tree: SpaceTree, id: string): Space | undefined {
+  return tree.spaces.find((s) => s.spaceId === id);
 }
 
 /**
@@ -784,6 +808,46 @@ export function createApp(deps: AppDeps) {
     });
 
     /**
+     * Rename an agent. Validated against `deps.store`, unlike the tab and
+     * space routes below it — an agent IS in the store, so reading it here is
+     * both correct and the same authority every other `/api/agents/:id/*`
+     * route already uses. (Reading the store to validate an id is fine; the
+     * §3 invariant this feature must not cross is WRITING to it, or
+     * enqueueing to the hub, from a management route — this route does
+     * neither: an agent rename rides the existing delta, since `differs()` in
+     * `state/store.ts` already compares `a.name !== b.name`.)
+     *
+     * `name: null` is accepted and forwarded as the one real clear (§7.2,
+     * §17) — herdr removes the field rather than storing an empty string, and
+     * does not re-derive a name afterward, so a cleared agent falls to
+     * paddock's own `basename(cwd)` fallback. That is why this is never
+     * called "reset to default" anywhere in the UI: the label that results is
+     * paddock's, not herdr's.
+     */
+    app.post("/api/agents/:id/name", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+
+      const name = (await jsonBody(c)).name;
+      // Two valid shapes only: `null` (clear) or a non-empty bounded string.
+      // An empty string is refused rather than forwarded — herdr's behaviour
+      // for `name: ""` was never measured, and only `null` and a real string
+      // were, so paddock does not send it anything outside what was checked.
+      if (name !== null && (typeof name !== "string" || name.trim() === "" || name.length > MAX_LABEL_LEN)) {
+        return c.json({ ok: false, detail: "name must be null or a non-empty string within the length limit" }, 400);
+      }
+
+      try {
+        await actions.renameAgent(agent.agentId, name);
+        return c.json({ ok: true });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        warn(`agents: could not rename \`${agent.agentId}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
      * Output for a pane that has no agent.
      *
      * Separate from `/api/agents/:id/output` because the store cannot
@@ -924,6 +988,78 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not send key to pane \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Rename a tab. Modelled on `/api/panes/:id/output`: 404 when
+     * `deps.readTree` is absent, 404 for an unknown id, and a `try`/`catch`
+     * around the herdr call that reports `{ok:false, detail}` at 502 — with
+     * the deliberate 404 returned from INSIDE the `try`, so a race between
+     * validating the id and the tab closing underneath it can never be
+     * relabelled a server failure by the catch.
+     *
+     * Validated against `deps.readTree`, not `deps.store` — a tab is not an
+     * agent and is not in the store (§3's invariant). The store and the tree
+     * are not interchangeable authorities: an agent id is confirmed by
+     * reading the store (see `/api/agents/:id/name` above), a tab or a space
+     * id only by reading the tree.
+     *
+     * `label` is a required, non-empty string. herdr's `tab.rename` ACCEPTS
+     * an empty label and stores it as `""` rather than treating it as unset
+     * — measured, §17 — so there is no clear for a tab, and an empty label
+     * is refused with 400 and never forwarded. It is refused BEFORE the
+     * `try` opens, alongside the over-length case: both are client input
+     * errors, not herdr failures.
+     */
+    app.post("/api/tabs/:id/name", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      const label = (await jsonBody(c)).label;
+      if (typeof label !== "string" || label === "" || label.length > MAX_LABEL_LEN) {
+        return c.json({ ok: false, detail: "label must be a non-empty string within the length limit" }, 400);
+      }
+
+      try {
+        const tree = await deps.readTree();
+        const tab = findTab(tree, id);
+        if (!tab) return c.json({ ok: false, detail: "unknown tab" }, 404);
+        await actions.renameTab(id, label);
+        return c.json({ ok: true });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        warn(`tabs: could not rename \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Rename a space. Same shape as `/api/tabs/:id/name` immediately above,
+     * for the same reasons: validated against `deps.readTree` because a
+     * space is not in the store either, and an empty label is refused rather
+     * than forwarded because `workspace.rename` accepts and stores one as
+     * `""` (§17) — there is no clear here either.
+     */
+    app.post("/api/spaces/:id/name", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      const label = (await jsonBody(c)).label;
+      if (typeof label !== "string" || label === "" || label.length > MAX_LABEL_LEN) {
+        return c.json({ ok: false, detail: "label must be a non-empty string within the length limit" }, 400);
+      }
+
+      try {
+        const tree = await deps.readTree();
+        const space = findSpace(tree, id);
+        if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
+        await actions.renameSpace(id, label);
+        return c.json({ ok: true });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        warn(`spaces: could not rename \`${id}\`: ${detail}`);
         return c.json({ ok: false, detail }, 502);
       }
     });

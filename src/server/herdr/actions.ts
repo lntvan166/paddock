@@ -218,6 +218,32 @@ export interface HerdrActions {
    */
   sendPaneKey(paneId: string, key: NavKey): Promise<void>;
   waitUntilUnblocked(target: string, timeoutMs?: number): Promise<void>;
+  /**
+   * Rename an agent. `name: null` genuinely clears it — measured (design doc
+   * §14.1): herdr removes the field from the `agent.list` row rather than
+   * storing an empty string, and it does NOT re-derive a name afterward, so
+   * the agent falls to paddock's own `basename(cwd)` fallback in `toAgents`.
+   * That is the one real "clear" among the three rename actions below; see
+   * `renameTab` for why the other two have none. The route calling this
+   * validates the id against `deps.store` — an agent IS in the store.
+   */
+  renameAgent(target: string, name: string | null): Promise<void>;
+  /**
+   * Rename a tab. Unlike `renameAgent`, `label` is a required string:
+   * measured (design doc §17) against herdr 0.8.2, an empty label is
+   * ACCEPTED and stored as `""` rather than treated as unset. So there is no
+   * clear for a tab, and the route calling this refuses an empty label
+   * rather than forwarding one that would only replace the tab's number with
+   * something worse. A tab is not in `AgentStore` (§3), so the route
+   * validates the id against `deps.readTree` instead.
+   */
+  renameTab(tabId: string, label: string): Promise<void>;
+  /**
+   * Rename a space (herdr's workspace). Same non-clearable shape as
+   * `renameTab`, same reason, same authority — the route validates the id
+   * against `deps.readTree`, not the store.
+   */
+  renameSpace(spaceId: string, label: string): Promise<void>;
 }
 
 /** Binds the socket path once so routes can take an injectable object. */
@@ -334,6 +360,27 @@ export function createActions(socketPath: string): HerdrActions {
       await request(socketPath, "agent.wait", {
         target, until: ["working", "idle", "done"], timeout_ms: budget,
       }, budget + WAIT_TRANSPORT_MARGIN_MS);
+    },
+
+    async renameAgent(target, name) {
+      // `name: null` genuinely removes the field — measured (§14.1). herdr
+      // does NOT re-derive one, so the agent falls to paddock's own
+      // `basename(cwd)` fallback. That is why the UI must not call this
+      // "reset to default" (§7.2).
+      await request(socketPath, "agent.rename", { target, name });
+    },
+
+    async renameTab(tabId, label) {
+      // `label` is a required string, and an empty one is ACCEPTED and
+      // stored as "" rather than unset (§17). So there is no clear here, and
+      // the route refuses an empty label before it ever reaches this call.
+      await request(socketPath, "tab.rename", { tab_id: tabId, label });
+    },
+
+    async renameSpace(spaceId, label) {
+      // Same shape and same reasoning as `renameTab` above: herdr models no
+      // unset state for a workspace label either (§17).
+      await request(socketPath, "workspace.rename", { workspace_id: spaceId, label });
     },
   };
 }

@@ -57,6 +57,9 @@ function harness(
           if (overrides.sendPaneKey) await overrides.sendPaneKey(paneId, key);
         },
         async waitUntilUnblocked() {},
+        async renameAgent() {},
+        async renameTab() {},
+        async renameSpace() {},
       },
       health: () => ({
         ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: true, lastEventAt: NOW,
