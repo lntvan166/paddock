@@ -396,6 +396,33 @@ test("a body that ends mid-stream is reported, and the binary survives", async (
   expect(await readdir(h.dir)).not.toContain(".paddock.new");
 });
 
+test("a write that never reaches disk is caught, even though the hasher saw every byte", async () => {
+  // The exact hole an unawaited sink.write() opens: the hasher and the sink
+  // are handed the same chunks, so a write that silently goes nowhere would
+  // still let the digest match a file that never received the bytes. Rather
+  // than faking FileSink's write()/end() return values (measured directly:
+  // they reflect Bun's internal buffering, not a per-chunk "on disk" count),
+  // this points .paddock.new at /dev/null before the download starts -- a
+  // real write that really lands nowhere -- so the stat()-based check has to
+  // catch it, or the real binary gets overwritten with a checksum that
+  // "passed" against bytes nothing ever wrote.
+  const body = "NEW BINARY";
+  const h = await harness(body, await sha(body));
+  await symlink("/dev/null", join(h.dir, ".paddock.new"));
+  const said: string[] = [];
+  const code = await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl: h.fetchImpl, log: (s) => said.push(s), progress: silent(),
+  });
+  expect(code).toBe(1);
+  // Its own message: this is a different fault from a checksum mismatch, and
+  // an operator should be able to tell them apart.
+  expect(said.join("\n")).not.toContain("CHECKSUM MISMATCH");
+  expect(said.join("\n")).toContain("did not land intact");
+  expect(await readFile(h.self, "utf8")).toBe("OLD BINARY");
+  expect(await readdir(h.dir)).not.toContain(".paddock.new");
+});
+
 // --- the instance still running the binary that was just replaced ----------
 //
 // `update` swaps the file on disk; a paddock already running keeps serving

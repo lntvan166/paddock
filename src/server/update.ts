@@ -1,4 +1,4 @@
-import { chmod, realpath, rename, rm } from "node:fs/promises";
+import { chmod, realpath, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { upgradeCommand, type ManagedBy } from "@shared/types";
 import { say } from "@server/term";
@@ -286,15 +286,35 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
     const total = Number.isFinite(declared) && declared > 0 ? declared : null;
     progress.start(asset, total);
     const sink = Bun.file(tmp).writer();
+    let hashed = 0;
     try {
       for await (const chunk of binRes.body as ReadableStream<Uint8Array>) {
         hasher.update(chunk);
-        sink.write(chunk);
+        // Awaited: write() returns a Promise when the write is pending, and a
+        // dropped promise is a dropped write error — the digest below would
+        // keep matching the bytes handed to the hasher even if some of them
+        // never reached disk.
+        await sink.write(chunk);
+        hashed += chunk.length;
         progress.advance(chunk.length);
       }
     } finally {
       await sink.end();
       progress.done();
+    }
+    // Belt and braces on top of the awaited write() above: ask the
+    // filesystem, not the sink, how many bytes actually landed. FileSink's
+    // write()/end() resolve to Bun's internal buffering bookkeeping, not a
+    // per-chunk "bytes now on disk" count — measured directly (see the
+    // fix-round-1 section of the task report), summing successive write()
+    // results overcounts by nearly 2x and end() alone reports 0 once
+    // everything already flushed, so neither is a usable signal here. A
+    // stat() of the temp file is the honest way to catch a short write that
+    // the hasher never saw.
+    if ((await stat(tmp)).size !== hashed) {
+      log(`paddock: wrote a different number of bytes than were hashed for ${asset} — the download did not land intact`);
+      await removeTemp();
+      return 1;
     }
     actual = hasher.digest("hex");
   } catch (e) {
