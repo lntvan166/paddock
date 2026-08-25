@@ -1,7 +1,8 @@
-import { chmod, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, realpath, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { upgradeCommand, type ManagedBy } from "@shared/types";
 import { say } from "@server/term";
+import { makeProgress, type Progress } from "@server/progress";
 
 const REPO = "lntvan166/paddock";
 
@@ -124,6 +125,11 @@ export interface UpdateOpts {
    * supplies the real one.
    */
   running?: () => Promise<{ pid: number; port: number; version: string } | null>;
+  /**
+   * How the download reports itself. Injected like `log` so no test needs a
+   * pty; defaults to a bar on a tty and one line under a pipe.
+   */
+  progress?: Progress;
 }
 
 /** Returns a process exit code. Never throws for an expected failure. */
@@ -220,49 +226,101 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
     return 1;
   }
 
+  const progress = o.progress ?? makeProgress({ log, env: process.env, stream: process.stdout });
   const base = `https://github.com/${REPO}/releases/download/v${latest}`;
-  let bytes: Uint8Array;
+  const tmp = join(dirname(o.selfPath), ".paddock.new");
+
+  /**
+   * Announced, never swallowed. A leftover full-size temp file beside the
+   * binary with nothing mentioning it is the half-update this command exists
+   * to refuse to leave behind.
+   */
+  const removeTemp = async (): Promise<void> => {
+    try {
+      await rm(tmp, { force: true });
+    } catch (e) {
+      log(`paddock: also failed to remove the leftover temp file ${tmp}: ${(e as Error).message}`);
+    }
+  };
+
+  // SHA256SUMS FIRST, and on its own. It is a few hundred bytes, so a release
+  // published without a listed checksum fails here rather than after an 83MB
+  // download. This used to be a Promise.all with the asset, which is why the
+  // failure message named both halves at once.
   let expected: string | undefined;
   try {
-    const [binRes, sumRes] = await Promise.all([f(`${base}/${asset}`), f(`${base}/SHA256SUMS`)]);
-    // Named the same way the release-API branch above names its failure, and
-    // the same way install.sh names its own: an operator who cannot tell a 404
-    // (no such asset for this platform, or a release published without
-    // assets) from a 403 (rate-limited) has been told nothing they can act on.
-    if (!binRes.ok || !sumRes.ok) {
-      log(`paddock: download failed (HTTP ${binRes.status} for ${asset}, HTTP ${sumRes.status} for SHA256SUMS)`);
+    const sumRes = await f(`${base}/SHA256SUMS`);
+    if (!sumRes.ok) {
+      log(`paddock: download failed (HTTP ${sumRes.status} for SHA256SUMS)`);
       return 1;
     }
-    bytes = new Uint8Array(await binRes.arrayBuffer());
     expected = (await sumRes.text())
       .split("\n").find((l) => l.trim().endsWith(asset))?.trim().split(/\s+/)[0];
   } catch (e) {
-    // A body that ends mid-stream (a declared content-length the connection
-    // never delivers) throws out of arrayBuffer()/text() rather than
-    // resolving with a short buffer, so this needs the same treatment as the
-    // release-API fetch above.
     log(`paddock: download failed: ${(e as Error).message}`);
     return 1;
   }
   if (!expected) { log(`paddock: ${asset} is not listed in SHA256SUMS`); return 1; }
 
-  const actual = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
-  if (actual !== expected) {
-    // Nothing is written. Replacing a working install with a broken one is a
-    // worse outcome than not updating.
-    log("paddock: CHECKSUM MISMATCH — keeping the current binary");
-    log(`  expected ${expected}`);
-    log(`  actual   ${actual}`);
+  // Streamed to disk and hashed as it passes, rather than buffered whole by
+  // arrayBuffer(). The operator sees it move, and 83MB stays out of memory.
+  //
+  // The "nothing is written" guarantee is UNCHANGED: only the temp file exists
+  // during the download, the real binary is untouched until after the digest
+  // is compared, and every failure path below removes the temp file.
+  const hasher = new Bun.CryptoHasher("sha256");
+  let actual: string;
+  try {
+    const binRes = await f(`${base}/${asset}`);
+    if (!binRes.ok) {
+      log(`paddock: download failed (HTTP ${binRes.status} for ${asset})`);
+      return 1;
+    }
+    if (binRes.body === null) {
+      log(`paddock: download failed: ${asset} arrived with no body`);
+      return 1;
+    }
+    // Absent or unparseable content-length means no denominator; the sink
+    // shows a byte counter rather than inventing a percentage.
+    const declared = Number(binRes.headers.get("content-length"));
+    const total = Number.isFinite(declared) && declared > 0 ? declared : null;
+    progress.start(asset, total);
+    const sink = Bun.file(tmp).writer();
+    try {
+      for await (const chunk of binRes.body as ReadableStream<Uint8Array>) {
+        hasher.update(chunk);
+        sink.write(chunk);
+        progress.advance(chunk.length);
+      }
+    } finally {
+      await sink.end();
+      progress.done();
+    }
+    actual = hasher.digest("hex");
+  } catch (e) {
+    // A body that ends mid-stream — a declared content-length the connection
+    // never delivers — throws here rather than resolving short.
+    progress.done();
+    log(`paddock: download failed: ${(e as Error).message}`);
+    await removeTemp();
     return 1;
   }
 
-  const tmp = join(dirname(o.selfPath), ".paddock.new");
+  if (actual !== expected) {
+    // The real binary was never touched. Replacing a working install with a
+    // broken one is a worse outcome than not updating.
+    log("paddock: CHECKSUM MISMATCH — keeping the current binary");
+    log(`  expected ${expected}`);
+    log(`  actual   ${actual}`);
+    await removeTemp();
+    return 1;
+  }
+
   try {
-    await writeFile(tmp, bytes);
-    // writeFile creates the file at the umask's default (typically 0644).
-    // This chmod is the ONLY thing that makes the replacement executable —
-    // dropping it would ship a `paddock` that no longer runs, silently,
-    // by way of the update path meant to keep it running.
+    // The writer above created the file at the umask's default (typically
+    // 0644). This chmod is the ONLY thing that makes the replacement
+    // executable — dropping it would ship a `paddock` that no longer runs,
+    // silently, by way of the update path meant to keep it running.
     await chmod(tmp, 0o755);
     // rename(2) over a running executable is safe on Linux and macOS: the
     // running process keeps its inode and the next invocation gets the new
@@ -271,15 +329,7 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
   } catch (e) {
     log(`paddock: could not replace ${o.selfPath}: ${(e as Error).message}`);
     log("paddock: if it was installed by a package manager, update it there instead");
-    // A half-finished write here is exactly the half-update this command
-    // must refuse to leave behind: if writeFile succeeded but chmod or
-    // rename then failed, a full-size temp file would otherwise sit next to
-    // the binary forever with no mention of it in the error above.
-    try {
-      await rm(tmp, { force: true });
-    } catch (cleanupErr) {
-      log(`paddock: also failed to remove the leftover temp file ${tmp}: ${(cleanupErr as Error).message}`);
-    }
+    await removeTemp();
     return 1;
   }
   log(`paddock: updated to ${latest}`);

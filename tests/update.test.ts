@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assetName, detectManagedBy, isBrewManaged, isNewer, runUpdate } from "@server/update";
+import type { Progress } from "@server/progress";
 
 test("the asset table matches install.sh exactly, so the two cannot disagree", () => {
   expect(assetName("linux", "x64")).toBe("paddock-linux-x86_64");
@@ -49,6 +50,9 @@ async function harness(body: string, sum: string) {
   }) as unknown as typeof fetch;
   return { dir, self, fetchImpl };
 }
+
+/** A Progress that records nothing — the default for tests that assert text. */
+const silent = (): Progress => ({ start() {}, advance() {}, done() {} });
 
 const sha = async (s: string) =>
   new Bun.CryptoHasher("sha256").update(s).digest("hex");
@@ -190,38 +194,35 @@ test("a malformed release-API response is reported, not thrown", async () => {
   expect(await readFile(self, "utf8")).toBe("OLD BINARY");
 });
 
-test("a truncated download is reported, not thrown", async () => {
-  const h = await harness("unused", "unused");
+// SHA256SUMS is fetched FIRST and is a few hundred bytes: a release published
+// without a listed checksum must fail before an 83 MB download, not after it.
+test("a missing SHA256SUMS fails before the asset is ever requested", async () => {
+  const asked: string[] = [];
+  const dir = await mkdtemp(join(tmpdir(), "paddock-up-"));
+  const self = join(dir, "paddock");
+  await writeFile(self, "OLD BINARY");
   const fetchImpl = (async (url: string) => {
+    asked.push(String(url));
     if (String(url).includes("releases/latest")) {
       return new Response(JSON.stringify({ tag_name: "v9.9.9" }));
     }
-    if (String(url).endsWith("SHA256SUMS")) {
-      return new Response("deadbeef  paddock-linux-x86_64\n");
-    }
-    // A body that ends mid-stream (a declared content-length the connection
-    // never delivers) throws out of arrayBuffer() rather than resolving
-    // with a short buffer.
-    const badStream = new ReadableStream({
-      start(controller) {
-        controller.error(new Error("stream ended early"));
-      },
-    });
-    return new Response(badStream);
+    if (String(url).endsWith("SHA256SUMS")) return new Response("nope", { status: 403 });
+    return new Response("BODY");
   }) as unknown as typeof fetch;
+
+  const said: string[] = [];
   const code = await runUpdate({
-    selfPath: h.self, platform: "linux", arch: "x64",
-    current: "0.1.0", fetchImpl, log: () => {},
+    selfPath: self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl, log: (s) => said.push(s), progress: silent(),
   });
-  expect(code).not.toBe(0);
-  expect(await readFile(h.self, "utf8")).toBe("OLD BINARY");
+  expect(code).toBe(1);
+  expect(said.join("\n")).toContain("403");
+  expect(said.join("\n")).toContain("SHA256SUMS");
+  expect(asked.some((u) => u.endsWith("paddock-linux-x86_64"))).toBe(false);
+  expect(await readFile(self, "utf8")).toBe("OLD BINARY");
 });
 
-test("a failed download names the HTTP status for each half, not just 'download failed'", async () => {
-  // Same class as install.sh's silent curl failure: "paddock: download failed"
-  // with no status leaves the operator unable to tell a missing asset from a
-  // rate limit. The release-API branch above already reports its status; these
-  // two must read the same way.
+test("a failed asset download names its own HTTP status", async () => {
   const dir = await mkdtemp(join(tmpdir(), "paddock-up-"));
   const self = join(dir, "paddock");
   await writeFile(self, "OLD BINARY");
@@ -229,26 +230,170 @@ test("a failed download names the HTTP status for each half, not just 'download 
     if (String(url).includes("releases/latest")) {
       return new Response(JSON.stringify({ tag_name: "v9.9.9" }));
     }
-    if (String(url).endsWith("SHA256SUMS")) return new Response("nope", { status: 403 });
+    if (String(url).endsWith("SHA256SUMS")) {
+      return new Response("abc  paddock-linux-x86_64\n");
+    }
     return new Response("nope", { status: 404 });
   }) as unknown as typeof fetch;
 
   const said: string[] = [];
   const code = await runUpdate({
     selfPath: self, platform: "linux", arch: "x64", current: "0.1.0",
-    fetchImpl, log: (s) => said.push(s),
+    fetchImpl, log: (s) => said.push(s), progress: silent(),
   });
   expect(code).toBe(1);
-  const out = said.join("\n");
-  expect(out).toContain("download failed");
-  expect(out).toContain("HTTP 404");
-  expect(out).toContain("paddock-linux-x86_64");
-  expect(out).toContain("HTTP 403");
-  expect(out).toContain("SHA256SUMS");
-  // And nothing was written: a failed download must leave the working binary
-  // and no leftovers beside it.
-  expect(await readFile(self, "utf8")).toBe("OLD BINARY");
-  expect((await readdir(dir)).sort()).toEqual(["paddock"]);
+  expect(said.join("\n")).toContain("404");
+  expect(said.join("\n")).toContain("paddock-linux-x86_64");
+});
+
+test("a chunked body hashes to the same digest as one buffered read", async () => {
+  // The whole risk of streaming: if the hasher were fed anything other than
+  // the exact bytes, in order, the checksum gate would start rejecting good
+  // releases — or worse, accepting bad ones.
+  const body = "PADDOCK".repeat(5000);
+  const sum = new Bun.CryptoHasher("sha256").update(body).digest("hex");
+  const dir = await mkdtemp(join(tmpdir(), "paddock-up-"));
+  const self = join(dir, "paddock");
+  await writeFile(self, "OLD BINARY");
+  await chmod(self, 0o755);
+  const fetchImpl = (async (url: string) => {
+    if (String(url).includes("releases/latest")) {
+      return new Response(JSON.stringify({ tag_name: "v9.9.9" }));
+    }
+    if (String(url).endsWith("SHA256SUMS")) {
+      return new Response(`${sum}  paddock-linux-x86_64\n`);
+    }
+    // A body delivered in many small chunks, as a real download is.
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const bytes = new TextEncoder().encode(body);
+        for (let i = 0; i < bytes.length; i += 997) {
+          controller.enqueue(bytes.slice(i, i + 997));
+        }
+        controller.close();
+      },
+    });
+    return new Response(stream, { headers: { "content-length": String(body.length) } });
+  }) as unknown as typeof fetch;
+
+  const code = await runUpdate({
+    selfPath: self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl, log: () => {}, progress: silent(),
+  });
+  expect(code).toBe(0);
+  expect(await readFile(self, "utf8")).toBe(body);
+  expect((await stat(self)).mode & 0o111).toBeGreaterThan(0);
+});
+
+test("progress is told the size, advanced, and finished exactly once", async () => {
+  const body = "x".repeat(4096);
+  const sum = new Bun.CryptoHasher("sha256").update(body).digest("hex");
+  const dir = await mkdtemp(join(tmpdir(), "paddock-up-"));
+  const self = join(dir, "paddock");
+  await writeFile(self, "OLD BINARY");
+  await chmod(self, 0o755);
+  // content-length is set EXPLICITLY rather than left to `new Response(string)`.
+  // This test asserts what the updater does with the header; relying on the
+  // Response constructor to supply one would make it a test of Bun instead.
+  const fetchImpl = (async (url: string) => {
+    if (String(url).includes("releases/latest")) {
+      return new Response(JSON.stringify({ tag_name: "v9.9.9" }));
+    }
+    if (String(url).endsWith("SHA256SUMS")) {
+      return new Response(`${sum}  paddock-linux-x86_64\n`);
+    }
+    return new Response(body, { headers: { "content-length": String(body.length) } });
+  }) as unknown as typeof fetch;
+  const events: string[] = [];
+  let advanced = 0;
+  const code = await runUpdate({
+    selfPath: self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl, log: () => {},
+    progress: {
+      start: (label, total) => events.push(`start:${label}:${total}`),
+      advance: (n) => { advanced += n; },
+      done: () => events.push("done"),
+    },
+  });
+  expect(code).toBe(0);
+  expect(events[0]).toBe(`start:paddock-linux-x86_64:${body.length}`);
+  expect(events.filter((e) => e === "done")).toHaveLength(1);
+  expect(advanced).toBe(body.length);
+});
+
+test("a passing checksum is not announced, but a failing one still is", async () => {
+  const good = await harness("NEW BINARY", new Bun.CryptoHasher("sha256").update("NEW BINARY").digest("hex"));
+  const quiet: string[] = [];
+  await runUpdate({
+    selfPath: good.self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl: good.fetchImpl, log: (s) => quiet.push(s), progress: silent(),
+  });
+  // Presentation: a passing integrity check is not news.
+  expect(quiet.join("\n")).not.toContain("sha256");
+  expect(quiet.join("\n")).toContain("updated to 9.9.9");
+
+  // Never swallowed: a FAILING one is the whole point of the check.
+  const bad = await harness("NEW BINARY", "0".repeat(64));
+  const loud: string[] = [];
+  const code = await runUpdate({
+    selfPath: bad.self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl: bad.fetchImpl, log: (s) => loud.push(s), progress: silent(),
+  });
+  expect(code).toBe(1);
+  expect(loud.join("\n")).toContain("CHECKSUM MISMATCH");
+  expect(await readFile(bad.self, "utf8")).toBe("OLD BINARY");
+});
+
+test("a checksum mismatch leaves no temp file behind", async () => {
+  // The half-finished write this command must never leave: a full-size
+  // .paddock.new sitting next to the binary with nothing mentioning it.
+  const h = await harness("NEW BINARY", "0".repeat(64));
+  await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl: h.fetchImpl, log: () => {}, progress: silent(),
+  });
+  expect(await readdir(h.dir)).not.toContain(".paddock.new");
+});
+
+test("--check downloads nothing and never touches the sink", async () => {
+  const h = await harness("NEW BINARY", "unused");
+  const events: string[] = [];
+  const code = await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl: h.fetchImpl, log: () => {}, checkOnly: true,
+    progress: { start: () => events.push("start"), advance: () => {}, done: () => events.push("done") },
+  });
+  expect(code).toBe(0);
+  expect(events).toEqual([]);
+});
+
+test("a body that ends mid-stream is reported, and the binary survives", async () => {
+  const h = await harness("unused", "unused");
+  const fetchImpl = (async (url: string) => {
+    if (String(url).includes("releases/latest")) {
+      return new Response(JSON.stringify({ tag_name: "v9.9.9" }));
+    }
+    if (String(url).endsWith("SHA256SUMS")) {
+      return new Response(`${"a".repeat(64)}  paddock-linux-x86_64\n`);
+    }
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("half"));
+        controller.error(new Error("connection reset"));
+      },
+    });
+    return new Response(stream);
+  }) as unknown as typeof fetch;
+
+  const said: string[] = [];
+  const code = await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl, log: (s) => said.push(s), progress: silent(),
+  });
+  expect(code).toBe(1);
+  expect(said.join("\n")).toContain("download failed");
+  expect(await readFile(h.self, "utf8")).toBe("OLD BINARY");
+  expect(await readdir(h.dir)).not.toContain(".paddock.new");
 });
 
 // --- the instance still running the binary that was just replaced ----------
