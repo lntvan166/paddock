@@ -35,10 +35,10 @@ One process. No relay hop, no plugin, no polling loop.
 | `server/state/store.ts` | Authoritative in-memory `Map<string, Agent>` keyed by `agentId` alone (the herdr `pane_id`). `hostId` is carried on every `Agent` record but is not part of the key — see `docs/roadmap.md` for what multi-host requires. Computes deltas. Knows nothing about transport. |
 | `server/demo.ts` | Synthetic agents for `--demo`, with invented names. Ticks go through the store like everything else, so the store is authoritative in both modes. Knows nothing about herdr, and takes the store structurally so it imports nothing downstream. |
 | `server/ws/hub.ts` | Browser fan-out. Full snapshot on connect, coalesced deltas after, and a 20s heartbeat so a quiet-but-live link does not read as stale. Knows nothing about herdr. |
-| `server/herdr/actions.ts` | The herdr calls behind reading a pane and answering a blocked agent, and the home of the bounds on both numeric parameters (`resolveReadLines`, `resolveWaitTimeoutMs` — clamped out of range, defaulted when malformed): `readOutput`/`readDetection` (both typed with the generated `HerdrPaneRead` envelope, since the text is at `result.read.text`; source picked by `readSourceFor`, which gives scrollback to an `idle` agent and the viewport to every other state — see gotchas), `sendOptionKey`/`sendReply`, and `waitUntilUnblocked` (waits on *leaving* `blocked`, not on reaching `working`). Bound to one socket path via `createActions` so `routes.ts` takes it as an injectable `HerdrActions`, omitted entirely in `--demo`. |
+| `server/herdr/actions.ts` | The herdr calls behind reading a pane and answering a blocked agent, and the home of the bounds on both numeric parameters (`resolveReadLines`, `resolveWaitTimeoutMs` — clamped out of range, defaulted when malformed): `readOutput`/`readDetection` (both typed with the generated `HerdrPaneRead` envelope, since the text is at `result.read.text`; source picked by `readSourceFor`, which gives scrollback to an `idle` agent and the viewport to every other state — see gotchas), `sendOptionKey`/`sendReply`, and `waitUntilUnblocked` (waits on *leaving* `blocked`, not on reaching `working`). Also the nine management calls the write routes forward to, unchanged from the herdr method they wrap: `renameAgent`/`renameTab`/`renameSpace`, `closeTab`/`closeSpace`, `createSpace`/`createTab` (read the new id straight off `workspace.create`'s/`tab.create`'s own envelope — `HerdrWorkspaceCreated`/`HerdrTabCreated` — never a second `session.snapshot`), `startAgent` (`agent.start`, `name` required, no fallback), and `harnessKinds` (`server.agent_manifests`, the only allowlist a `kind` is checked against). Declares the `HostPath` brand — `string & { readonly __hostPath: unique symbol }` — so `CreateOpts.cwd` cannot compile from a raw client string; only `tree.ts`'s `expandHome` casts into it. Bound to one socket path via `createActions` so `routes.ts` takes it as an injectable `HerdrActions`, omitted entirely in `--demo`. |
 | `server/herdr/prompt-parse.ts` | Turns a `detection` snapshot into `ParsedPrompt` — the last contiguous run of numbered option lines, plus the question line pinned to that run. Returns `options: null` rather than guess when the shape does not hold. The only place that knows the numbered-menu text format. |
-| `server/herdr/tree.ts` | `toSpaceTree`: one `session.snapshot` shaped into the `SpaceTree` the Spaces screen renders. The only module that knows the snapshot's field names — the same containment rule 2 places on `adapter.ts` — and it borrows `toState` from there rather than mapping states twice. Pure: `home` is injected so `cwd` can be tilde-ised without reading `process.env`. It imports neither `state/store.ts` nor `ws/hub.ts`, because the tree is read on demand and never replicated into paddock's state — see decision 21. |
-| `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. Read-only routes (`/api/health`, `/api/agents`), `/ack` and `POST /api/agents/:id/history` are always registered — none of them touches herdr, so gating them on it would break them in `--demo`. The herdr-backed routes are added only `if (deps.actions)` and so do not exist there: the agent actions (`/output`, `/prompt`, `/key`, `/text`, `/answer`) and the pane routes (`POST /api/panes/:id/output`, `/text`, `/key`). `GET /api/spaces` is gated separately, on `deps.readTree`. Client-supplied values are validated at this boundary before they reach a herdr parameter: `:id` against the store for an agent and against the TREE for a pane (a shell pane is deliberately not in the store), `lines` through `resolveReadLines`, `key` against the option-digit pattern for an agent and `isNavKey`'s closed allowlist for a pane. |
+| `server/herdr/tree.ts` | `toSpaceTree`: one `session.snapshot` shaped into the `SpaceTree` the Spaces screen renders. The only module that knows the snapshot's field names — the same containment rule 2 places on `adapter.ts` — and it borrows `toState` from there rather than mapping states twice. Pure: `home` is injected so `cwd` can be tilde-ised without reading `process.env`. It imports neither `state/store.ts` nor `ws/hub.ts`, because the tree is read on demand and never replicated into paddock's state — see decision 21. Also owns `expandHome`, the inbound mirror of that same tilde-ising: the ONLY function that casts a client-supplied `cwd` into the `HostPath` brand (`herdr/actions.ts`) a create route is allowed to forward to herdr, refusing (`null`) a `~` it cannot resolve rather than letting herdr silently drop the pane in the home directory — measured behaviour, not a guess. |
+| `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. Read-only routes (`/api/health`, `/api/agents`), `/ack` and `POST /api/agents/:id/history` are always registered — none of them touches herdr, so gating them on it would break them in `--demo`. The herdr-backed routes are added only `if (deps.actions)` and so do not exist there: the agent actions (`/output`, `/prompt`, `/key`, `/text`, `/answer`) and the pane routes (`POST /api/panes/:id/output`, `/text`, `/key`). `GET /api/spaces` is gated separately, on `deps.readTree`. Client-supplied values are validated at this boundary before they reach a herdr parameter: `:id` against the store for an agent and against the TREE for a pane (a shell pane is deliberately not in the store), `lines` through `resolveReadLines`, `key` against the option-digit pattern for an agent and `isNavKey`'s closed allowlist for a pane. The nine **management** routes (rename agent/tab/space, close tab/space, create space/tab, start an agent, list installed harnesses — see "Management routes" below) live in this same `if (deps.actions)` block, validated the same way — an agent id against `deps.store`, a tab or space id against `deps.readTree` — but hold to a narrower invariant than every route around them: none of the nine may write to `deps.store` or enqueue to `deps.hub`, guarded by `tests/manage-invariant.test.ts`. `normalizeCreateBody` is the one place a create route's `label`/`cwd` body is normalised (blank treated as absent, `cwd` run through `expandHome`) before either create route touches it. |
 | `server/settings/store.ts` | Loads and atomically persists `~/.config/paddock/settings.json` (mode `0600`, override with `PADDOCK_CONFIG_DIR`): the Telegram token/chat id, notification triggers and their settle windows, the mute instant, and the public URL used in a notification's deep link. `migrate()` normalises every stored shape to the current one — explicitly, field by field, because a shallow merge once let a missing settle window mean "fire immediately". `view()` is the only thing routes and the notifier read from it, and it never includes the token itself — only whether one is `configured` and its last four characters. |
 | `server/update-check.ts` | The once-a-day "is there a newer release" check, and nothing else. `scheduleUpdateChecks` keeps asking for as long as paddock runs (hourly), because a single boot-time call froze `latestKnown` for the life of the process — the long-lived case is the whole point of `paddock start`. The timer is NOT the rate limit; the 24h cache below is, so the network behaviour is unchanged. It takes a FACTORY, not a `CheckOpts`: a captured `now` would make every tick look like the same instant and the cache would never appear to expire. Caches the last check time and last seen tag in `~/.config/paddock/update-check.json` (mode `0600`, same directory and same posture as `settings.json`; `PADDOCK_CONFIG_DIR` moves both). **Off entirely with `PADDOCK_NO_UPDATE_CHECK=1`**, and off automatically for a `0.0.0-dev` build. Every failure — unreachable API, unwritable cache — is logged at INFO and returns `null`; `startUpdateCheck` owns the `.catch` so a failed check can never take the server down. |
 | `server/notify/notifier.ts` | Watches deltas for a state **transition**, then arms a per-trigger timer and sends a Telegram message only once that state has **held** for the settle window — the next transition cancels it. Subject to mute and a per-agent cooldown, which defers rather than drops. Owns timers, so it also owns `dispose()`, called from the shutdown path. A leaf off the composition root. `fanOut()` is the small function `index.ts` composes with `hub.queue` so a delta reaches both without either learning the other exists. |
@@ -99,6 +99,21 @@ split" on the path that decides whether to message the operator — see
 decision 21. `ws/hub.ts` carries only the payload-free `tree-stale`
 invalidation, which is why the hub still knows nothing about herdr or about
 what a space is.
+
+The nine management routes ("Management routes" below) sit on this same
+branch, not on the store side of it: a tab or space id is validated by
+reading `herdr/tree.ts`'s tree, never `state/store.ts`'s map, and none of the
+nine may write to the store or call `hub.queue` — only read either to
+validate an id. `herdr/actions.ts` gained the write calls those routes
+forward (`renameAgent`, `closeTab`, `createSpace`, `startAgent`, and their
+siblings) without gaining a new position in the graph: it is still called
+only from `routes.ts`, same as every read call it already held. The one new
+edge is inbound rather than outbound — `routes.ts` now imports `expandHome`
+from `herdr/tree.ts` to turn a client-supplied `cwd` into the `HostPath`
+brand `herdr/actions.ts` declares, so a raw client string cannot compile as
+the argument a create call forwards to herdr. That brand is what keeps the
+expansion from being "one route remembered to call it, and the next did
+not" — the failure mode it replaced.
 
 `journal/` is a second axis beside `herdr/`, not a branch off it. It knows
 HARNESSES (Claude Code's own transcript format today), never herdr — nothing
@@ -184,6 +199,59 @@ browser learns about the dismissal too, not just the tab that tapped it.
 herdr, and the resulting state change (leaving `blocked`) arrives back to
 every browser, including the one that sent it, through the normal event →
 store → delta path once herdr reports it.
+
+## Management routes
+
+paddock can also manage the herdr session it watches, not just watch it:
+rename an agent, a tab or a space; close a tab or a space; create a space or
+a tab; start an agent in an existing pane; and list the harnesses this
+machine has installed. Same transport shape as the actions above — a plain
+route, no correlation id, no round trip through the hub — but a narrower
+validation split and a hard invariant neither of the sections above needs.
+
+| Route | What it does |
+|---|---|
+| `POST /api/agents/:id/name` | Rename an agent. `name: null` genuinely clears it — herdr removes the field rather than storing `""`, and does not re-derive one afterward, so the agent falls to `adapter.ts`'s own `basename(cwd)` fallback. |
+| `POST /api/tabs/:id/name` | Rename a tab. `label` is required — herdr accepts and stores an empty one verbatim, so there is no clear, and an empty or whitespace-only label is refused with 400 before it ever reaches herdr. |
+| `POST /api/spaces/:id/name` | Rename a space (herdr's workspace). Same non-clearable shape as the tab route, same reason. |
+| `POST /api/tabs/:id/close` | Close a tab and every pane inside it, killing any working agent one of those panes held. paddock's first destructive action. |
+| `POST /api/spaces/:id/close` | Close a space and everything inside it. Does not refuse on "this is the last space" — whether herdr permits that is deliberately unmeasured, so paddock relays herdr's own answer rather than guessing its policy. |
+| `POST /api/spaces` | Create a space. Body `{label?, cwd?}`. The only create route with no `:id` to validate, and the only one that makes zero `session.snapshot` reads: `workspace.create`'s own envelope carries the new space's id, its first tab, and its first pane. |
+| `POST /api/spaces/:id/tabs` | Create a tab in an existing space. Body `{label?, cwd?}`. One `readTree()` call, to validate the space id — never to find the new tab/pane afterward, which come off `tab.create`'s own envelope the same way. |
+| `POST /api/panes/:id/agent` | Start a coding agent in an existing (typically shell) pane. Body `{kind, name, args?}`. `kind` is checked against `harnessKinds()` — what this machine actually has installed — before `agent.start` is ever called; `name` is required, with no fallback to `kind`. |
+| `GET /api/harnesses` | The harness kinds this machine has installed (`server.agent_manifests`), for the create sheet's picker. The one GET among the nine, and the one with no client-supplied value at all. |
+
+**Validation authority is split, deliberately, by what the id actually is.**
+An agent id is confirmed against `deps.store` — `/api/agents/:id/name` reads
+it the same way every existing `/api/agents/:id/*` route already does,
+because an agent genuinely IS in the store. A tab or space id has no such
+home: neither is in `AgentStore` (§3 of the design doc), so those routes —
+and the two pane routes above — confirm the id by reading `deps.readTree()`
+instead. The store and the tree are not interchangeable authorities; which
+one a route reads says what kind of id it was handed, not a stylistic choice.
+
+**The invariant these nine routes hold to, and none of the routes around them
+need to:** none of them may write to `AgentStore` or enqueue anything to
+`Hub.queue`. Reading either to validate an id is correct and required, and is
+exactly what the paragraph above describes; the line these routes must not
+cross is a mutation. This exists because §3 of the design doc refuses to
+widen `Agent` into `Pane` everywhere — doing so would drag panes with no
+agent through `state/store.ts`, the delta path, and `notify/notifier.ts`,
+which is the unguarded call site `docs/roadmap.md` already flags: a mistake
+there disables notifications while every test stays green. A rename, close,
+create or start reaching the store or the hub directly would be exactly that
+mistake, wearing a management feature's clothes. Two things ARE allowed to
+follow from these routes without being a violation, because they ride the
+*existing* reconcile/delta path rather than a new one: an agent rename
+becomes visible on the dashboard because `differs()` in `state/store.ts`
+already compares `a.name !== b.name` on the next reconcile, and a closed
+tab's panes disappear because `store.replaceAll` already emits `removedIds`
+the same way. `tests/manage-invariant.test.ts` guards this by driving every
+one of the nine routes against real `AgentStore`/`Hub` instances wrapped to
+record any call to a mutating method, rather than grepping route bodies for
+`store.`/`hub.queue` — the wrapper is the actual object each route call runs
+against, so it cannot be fooled by an alias or a helper that forwards the
+call three lines lower.
 
 ## Liveness
 
