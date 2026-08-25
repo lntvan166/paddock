@@ -33,24 +33,6 @@ export function useColour(env: Record<string, string | undefined>, isTty: boolea
 }
 
 /**
- * Emphasise every backticked span in `line`, keeping the backticks.
- *
- * Applied at the PRINT boundary, not inside the message builders. The builders
- * — `portInUseMessage`, `herdrUnreachableMessage`, `shapeMessage`, the
- * preflight hints — are pure functions whose whole value is that they can be
- * asserted without a tty, and threading a `colour` flag through all of them
- * would have put a presentation concern into every signature and every test for
- * the sake of one escape sequence.
- *
- * The backticks are retained under colour rather than consumed by it. Removing
- * them would make the coloured output carry information the plain output lost,
- * which is the exact thing the strip-equals-plain test forbids.
- *
- * `[^`\n]+` and not `[^`]+`: a span may not straddle a newline, so one unpaired
- * backtick cannot pair with another on a later line and swallow everything
- * between them. The `+` leaves an empty ` `` ` alone — it names no command.
- */
-/**
  * The three answers any diagnostic command can give. `unknown` is the one that
  * earns its place: `runStatus`'s `unreadable` and `doctorReport`'s exit code 2
  * both mean "could not decide", and both used to be typeset identically to the
@@ -76,6 +58,24 @@ const GLYPH_COLOUR: Record<string, string | undefined> = {
   "⚠": "33",
 };
 
+/**
+ * Emphasise every backticked span in `line`, keeping the backticks.
+ *
+ * Applied at the PRINT boundary, not inside the message builders. The builders
+ * — `portInUseMessage`, `herdrUnreachableMessage`, `shapeMessage`, the
+ * preflight hints — are pure functions whose whole value is that they can be
+ * asserted without a tty, and threading a `colour` flag through all of them
+ * would have put a presentation concern into every signature and every test for
+ * the sake of one escape sequence.
+ *
+ * The backticks are retained under colour rather than consumed by it. Removing
+ * them would make the coloured output carry information the plain output lost,
+ * which is the exact thing the strip-equals-plain test forbids.
+ *
+ * `[^`\n]+` and not `[^`]+`: a span may not straddle a newline, so one unpaired
+ * backtick cannot pair with another on a later line and swallow everything
+ * between them. The `+` leaves an empty ` `` ` alone — it names no command.
+ */
 export function paint(line: string, colour: boolean): string {
   if (!colour) return line;
   const spans = line.replace(/`[^`\n]+`/g, (span) => `\x1b[1;36m${span}\x1b[0m`);
