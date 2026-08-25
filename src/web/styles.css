@@ -2064,9 +2064,19 @@ body {
 
 /* The header's `+` sits at the far end of the row, past the screen title. The
    back link and the title take their natural width; this takes what is left,
-   which puts it under the thumb rather than beside the heading. */
+   which puts it under the thumb rather than beside the heading.
+
+   The glyph size is repeated HERE, and that is not duplication for its own
+   sake: `.spaces-head button` above sets `font: inherit` at specificity
+   (0,1,1), which beats the bare `.create-btn` rule's (0,1,0) whatever the
+   source order says. So the header's `+` rendered its glyph at the ambient
+   16px while the identical control on a space row rendered at 22px — the two
+   controls §16.7 says must read as one thing did not, and the header one was
+   the very "16px mark in an empty button" defect an earlier commit is named
+   for. Scoped to the header, this is (0,2,0) and wins. */
 .spaces-head .create-btn {
   margin-left: auto;
+  font-size: 1.375rem;
 }
 
 .create-form {

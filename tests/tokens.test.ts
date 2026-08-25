@@ -150,6 +150,9 @@ const OFF_SCALE = [
   // 13px prose step a `+` sat in the middle of a 44px target and read as an
   // empty button — the same defect the arrow keys above record.
   ".create-btn",
+  // The same `+`, sized a second time where the header's own `font: inherit`
+  // cannot outrank it — see the cascade test at the bottom of this file.
+  ".spaces-head .create-btn",
 ];
 
 interface Rule { sel: string; body: string }
@@ -235,4 +238,69 @@ test("nothing references a scale step that does not exist", async () => {
     }
   }
   expect([...used.entries()].map(([t, f]) => `${t} in ${[...new Set(f)].join(", ")}`)).toEqual([]);
+});
+
+/**
+ * Specificity of one selector, as `(ids, classes, types)` folded into a number.
+ *
+ * Deliberately crude — it handles the selector shapes this stylesheet actually
+ * uses (classes, attributes, bare type names, descendant combinators) and
+ * nothing else. It is not a CSS engine and must not grow into one; it exists to
+ * answer one question the two tests below ask.
+ */
+function specificity(sel: string): number {
+  const classes = (sel.match(/\.[a-zA-Z][\w-]*/g) ?? []).length
+    + (sel.match(/\[[^\]]*\]/g) ?? []).length;
+  const types = (sel.match(/(?:^|[\s>+~])([a-z][a-z0-9]*)/g) ?? []).length;
+  return classes * 100 + types;
+}
+
+test("an ancestor's font shorthand cannot outrank a glyph size it contains", async () => {
+  // The bug this exists for, in full: `.create-btn` declared
+  // `font-size: 1.375rem` — specificity (0,1,0) — and `.spaces-head button`
+  // declared `font: inherit` — specificity (0,1,1). Specificity beats source
+  // order, so the HEADER's `+` rendered its glyph at the ambient 16px while the
+  // identical control on a space row rendered at 22px: the two controls §16.7
+  // says must read as one thing did not, and the header one was exactly the
+  // "16px mark in an empty button" defect an earlier commit is named after.
+  //
+  // Nothing caught it. The tests above GREP for the declaration and find it
+  // present; the live check that measured the control measured its 44px tap
+  // target (`min-width`/`min-height`, which no `font` shorthand touches), not
+  // its glyph. So this asserts the one thing those cannot: that the rule sizing
+  // a glyph OUTRANKS the ancestor rule that would otherwise reset it.
+  const all = rules(await css());
+  const sizes = all.filter((r) => /font(-size)?:/.test(r.body));
+
+  // A container rule: an ancestor class plus a bare element name, setting a
+  // font. `.spaces-head button { font: inherit }` is the shape.
+  const containers = sizes
+    .map((r) => ({ ...r, m: /^(\.[\w-]+)\s+[a-z][a-z0-9]*$/.exec(r.sel) }))
+    .filter((r) => r.m !== null)
+    .map((r) => ({ sel: r.sel, ancestor: r.m![1]!, spec: specificity(r.sel) }));
+
+  const offenders: string[] = [];
+  for (const glyph of OFF_SCALE.filter((s) => /^\.[\w-]+$/.test(s))) {
+    for (const c of containers) {
+      // Only a pairing the stylesheet itself asserts: a rule scoping this glyph
+      // class inside this container is what says the two meet on one element.
+      // Without that the check would guess at the DOM, which it must not.
+      // Deliberately over-broad in one direction: it does not know what ELEMENT
+      // the glyph class sits on, so `.spaces-head h2` counts as a container
+      // even though an `h2` rule can never match a `<button>`. That is
+      // tolerated rather than fixed, because the remedy is identical either way
+      // — scope the glyph's size to its container — and the alternative is
+      // resolving the class-to-tag mapping, which is the CSS engine this must
+      // not become.
+      const scoped = `${c.ancestor} ${glyph}`;
+      if (!all.some((r) => r.sel === scoped)) continue;
+      const won = sizes
+        .filter((r) => r.sel === glyph || r.sel === scoped)
+        .reduce((best, r) => Math.max(best, specificity(r.sel)), -1);
+      if (won <= c.spec) {
+        offenders.push(`${glyph} inside ${c.ancestor} is reset by \`${c.sel}\``);
+      }
+    }
+  }
+  expect(offenders, "move the font-size into the ancestor-scoped rule so it wins").toEqual([]);
 });
