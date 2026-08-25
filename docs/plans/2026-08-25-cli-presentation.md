@@ -1312,12 +1312,27 @@ test("a chunked body hashes to the same digest as one buffered read", async () =
 test("progress is told the size, advanced, and finished exactly once", async () => {
   const body = "x".repeat(4096);
   const sum = new Bun.CryptoHasher("sha256").update(body).digest("hex");
-  const h = await harness(body, sum);
+  const dir = await mkdtemp(join(tmpdir(), "paddock-up-"));
+  const self = join(dir, "paddock");
+  await writeFile(self, "OLD BINARY");
+  await chmod(self, 0o755);
+  // content-length is set EXPLICITLY rather than left to `new Response(string)`.
+  // This test asserts what the updater does with the header; relying on the
+  // Response constructor to supply one would make it a test of Bun instead.
+  const fetchImpl = (async (url: string) => {
+    if (String(url).includes("releases/latest")) {
+      return new Response(JSON.stringify({ tag_name: "v9.9.9" }));
+    }
+    if (String(url).endsWith("SHA256SUMS")) {
+      return new Response(`${sum}  paddock-linux-x86_64\n`);
+    }
+    return new Response(body, { headers: { "content-length": String(body.length) } });
+  }) as unknown as typeof fetch;
   const events: string[] = [];
   let advanced = 0;
   const code = await runUpdate({
-    selfPath: h.self, platform: "linux", arch: "x64", current: "0.1.0",
-    fetchImpl: h.fetchImpl, log: () => {},
+    selfPath: self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl, log: () => {},
     progress: {
       start: (label, total) => events.push(`start:${label}:${total}`),
       advance: (n) => { advanced += n; },
