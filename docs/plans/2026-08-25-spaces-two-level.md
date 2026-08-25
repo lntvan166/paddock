@@ -478,18 +478,25 @@ test("the blocked pill says its word without an illegible glyph", async () => {
   // circle 9.2px, and the "!" inside it a 1.8px bar over a sub-pixel dot. It
   // was also redundant: only `blocked` ever renders this pill, so there is no
   // green pill to confuse it with and the pill itself is the shape channel.
-  const host = await render(
-    <AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} load={async () => ({ lines: [] })} />,
-  );
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+
   const pill = host.querySelector(".term-title .term-state")!;
   expect(pill.textContent).toContain("blocked");
   expect(pill.querySelector("svg")).toBeNull();
 });
 ```
 
-The `AgentTerminal` render above must match how the other tests in
-`tests/terminal-render.test.tsx` mount it — copy the props from the existing
-test at line 440 (`a blocked agent's header says so`) rather than inventing a
+That mount is this suite’s own shape, taken from the existing test in
+`tests/terminal-render.test.tsx` that already asserts on `.term-state`:
+`stubFetch` over `/output` and `/prompt`, `screenOf(...)`, **no `load` prop**,
+then `await settle()`. `stubFetch`, `screenOf`, `settle` and `agent` are all
+already imported in that file — reuse them, do not add a second helper.
 call shape, and reuse that file's existing imports and fixtures.
 
 - [ ] **Step 2: Run the three and confirm each fails**
@@ -1357,46 +1364,43 @@ export function Space({
   // so a `+` would be a control that always errors.
   const canCreate = spacesAvailable;
 
+  /*
+   * Built once and rendered from every branch below — the same rule `SpaceRow`
+   * applies to its own heading, and for the same reason: this header is
+   * identical in all four states, and four copies of it would be four things
+   * free to drift. There is only one route into this screen, so its back
+   * control takes no target.
+   */
+  const bare = (children: React.ReactNode) => (
+    <main className="dash mx-auto max-w-2xl safe-bottom">
+      <header className="space-screen-head">
+        <button type="button" className="term-back" onClick={onBack} aria-label="Back to spaces">
+          ‹ Spaces
+        </button>
+      </header>
+      {children}
+    </main>
+  );
+
+  // The read failed and nothing is held from a previous one. Said, never
+  // rendered as a space that happens to have no tabs.
   if (error !== null && tree === null) {
-    return (
-      <main className="dash mx-auto max-w-2xl safe-bottom">
-        <header className="space-screen-head">
-          <button type="button" className="term-back" onClick={onBack} aria-label="Back to spaces">
-            ‹ Spaces
-          </button>
-        </header>
-        <p className="error" role="alert">{error}</p>
-      </main>
-    );
+    return bare(<p className="error" role="alert">{error}</p>);
   }
 
   // Tree read, no such space. Said explicitly rather than rendered as a space
   // with no tabs, which is indistinguishable from a real one that has none.
   if (tree !== null && space === null) {
-    return (
-      <main className="dash mx-auto max-w-2xl safe-bottom">
-        <header className="space-screen-head">
-          <button type="button" className="term-back" onClick={onBack} aria-label="Back to spaces">
-            ‹ Spaces
-          </button>
-        </header>
+    return bare(
+      <>
         <p className="empty">That space is gone.</p>
         <p><a href="#/spaces">All spaces</a></p>
-      </main>
+      </>,
     );
   }
 
-  if (tree === null || space === null) {
-    return (
-      <main className="dash mx-auto max-w-2xl safe-bottom">
-        <header className="space-screen-head">
-          <button type="button" className="term-back" onClick={onBack} aria-label="Back to spaces">
-            ‹ Spaces
-          </button>
-        </header>
-      </main>
-    );
-  }
+  // Still loading: no tree yet, and no error to show.
+  if (tree === null || space === null) return bare(null);
 
   const spaceRenames: RenameTarget[] = [
     { kind: "space", id: space.spaceId, current: space.label },
@@ -1967,7 +1971,31 @@ git commit -m "feat: the list goes back to being a list, and sheds 22 tap target
   `.space-picker-list`, `[data-picker-row]`, `.space-state`.
 - Produces: nothing.
 
-- [ ] **Step 1: Write the failing guard**
+- [ ] **Step 1: Delete the dead rules FIRST**
+
+The guard in Step 2 can only go red once the stylesheet has actually lost the
+selector. Task 8 removed the chevron’s JSX, not its CSS, so `[data-expand]` is
+still a live selector in `styles.css` until this step runs — write the guard
+before deleting and it passes both before and after, which is a test whose red
+state was never seen.
+
+Remove from `src/web/styles.css` every rule whose selector nothing renders any
+more. Confirm each one before deleting — this list was written before Tasks 4–8
+existed, so do not delete on its authority:
+
+```bash
+for sel in "data-expand" "space-alias" "space-tabs" "pane-tab" "space-heading" "space-head"; do
+  echo "== $sel"; grep -rn "$sel" src/web --include="*.tsx" --include="*.ts" | grep -v styles.css
+done
+```
+
+A selector with no hit outside `styles.css` is dead and goes. A selector still
+rendered by `TabRow`, `Space`, `SpacePicker` or `SpaceRow` **stays** —
+`.pane-heading`, `.pane-name`, `.pane-state`, `.space-name`, `.space-count` and
+`.dot-none` are all still rendered, so none of them is a candidate. `.dot-none`
+in particular was just rewritten in Task 3; deleting it would undo that.
+
+- [ ] **Step 2: Write the guard, and watch it go red**
 
 Append to `tests/tokens.test.ts`:
 
@@ -1985,28 +2013,19 @@ test("every off-scale exception still names a selector the stylesheet has", asyn
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+Run: `bun test tests/tokens.test.ts`
+Expected: **FAIL** — `[data-expand]` is in `OFF_SCALE` and no longer in the
+stylesheet. If it PASSES, Step 1 did not actually delete the chevron rule and
+this guard is asserting nothing; finish Step 1 before going on.
+
+- [ ] **Step 3: Remove the stale exception, and watch it go green**
+
+Delete `"[data-expand]",` and its `// sizes the ▸/▾ chevron GLYPH, not text`
+comment from `OFF_SCALE` in `tests/tokens.test.ts`. Leave every other entry —
+each excuses a rule that still exists.
 
 Run: `bun test tests/tokens.test.ts`
-Expected: FAIL on `[data-expand]` once Task 8 removed the chevron's CSS — and
-if it PASSES, the dead rule is still in the stylesheet and Step 3 has work to
-do before this guard means anything.
-
-- [ ] **Step 3: Delete the dead rules and the stale exception**
-
-Remove from `src/web/styles.css` every rule whose selector nothing renders any
-more. Confirm each one first — do not delete on the strength of this list:
-
-```bash
-for sel in "data-expand" "space-alias" "space-tabs" "pane-tab" "space-heading" "space-head"; do
-  echo "== $sel"; grep -rn "$sel" src/web --include=\*.tsx --include=\*.ts | grep -v styles.css
-done
-```
-
-A selector with no hit outside `styles.css` is dead and goes. A selector still
-used by `TabRow` or `Space` stays. Then remove `"[data-expand]",` and its
-comment from `OFF_SCALE` in `tests/tokens.test.ts`.
-
+Expected: PASS.
 - [ ] **Step 4: Style the two screens**
 
 Style A, the quiet dot (§6): hairline dividers, no per-row card, no border,
