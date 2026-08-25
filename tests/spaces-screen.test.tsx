@@ -30,7 +30,12 @@ const SHELL: SpaceTree = {
   spaces: [{
     spaceId: "w3", label: "docs-cleanup", tabCount: 1, paneCount: 1,
     tabs: [{ tabId: "w3:t1", label: null, panes: [
-      { paneId: "w3:p1", harness: null, name: null, title: "bash", cwd: "/srv/project", state: null },
+      // cwd's own last segment is "bash", not `/srv/project` like the other
+      // fixtures: the shell defect fix (§16.6) labels a pane with no agent by
+      // its folder, never by its terminal title, so the pinned assertions
+      // below that expect "bash" on screen need the folder itself to be the
+      // thing named that.
+      { paneId: "w3:p1", harness: null, name: null, title: "bash", cwd: "/srv/project/bash", state: null },
     ] }],
   }],
 };
@@ -49,6 +54,90 @@ const SPLIT: SpaceTree = {
 };
 
 const load = (t: SpaceTree) => async () => t;
+
+const SLUG: SpaceTree = {
+  readAt: 1_700_000_000_000,
+  spaces: [{
+    spaceId: "w1", label: "api refactor", tabCount: 1, paneCount: 1,
+    tabs: [{ tabId: "w1:t1", label: null, panes: [
+      { paneId: "w1:p1", harness: "claude", name: "api-refactor", title: "x", cwd: "/srv/project", state: "idle" },
+    ] }],
+  }],
+};
+
+const DIVERGED: SpaceTree = {
+  readAt: 1_700_000_000_000,
+  spaces: [{
+    spaceId: "w2", label: "api refactor", tabCount: 1, paneCount: 1,
+    tabs: [{ tabId: "w2:t1", label: null, panes: [
+      { paneId: "w2:p1", harness: "claude", name: "chasing a flaky test", title: "x", cwd: "/srv/project", state: "idle" },
+    ] }],
+  }],
+};
+
+const TABBED: SpaceTree = {
+  readAt: 1_700_000_000_000,
+  spaces: [{
+    spaceId: "w3", label: "schema migration", tabCount: 2, paneCount: 2,
+    tabs: [
+      { tabId: "w3:t1", label: "migrate up", panes: [{ paneId: "w3:p1", harness: "codex", name: "schema-migration", title: "x", cwd: "/srv/project", state: "working" }] },
+      { tabId: "w3:t2", label: null, panes: [{ paneId: "w3:p2", harness: "claude", name: "schema-migration-2", title: "x", cwd: "/srv/project", state: "idle" }] },
+    ],
+  }],
+};
+
+const SHELL_HOME: SpaceTree = {
+  readAt: 1_700_000_000_000,
+  spaces: [{
+    spaceId: "w4", label: "scratch", tabCount: 1, paneCount: 1,
+    tabs: [{ tabId: "w4:t1", label: null, panes: [
+      { paneId: "w4:p1", harness: null, name: null, title: "operator@dev-box:~", cwd: "~", state: null },
+    ] }],
+  }],
+};
+
+test("a name that is the slug of its space label shows no alias", async () => {
+  const el = await render(<Spaces onBack={() => {}} load={async () => SLUG} />);
+  await settle();
+  expect(el.textContent).toContain("api refactor");
+  expect(el.querySelector(".space-alias")).toBeNull();
+  await unmount();
+});
+
+test("a genuinely different name is shown, on the pane not the space", async () => {
+  const el = await render(<Spaces onBack={() => {}} load={async () => DIVERGED} />);
+  await settle();
+  expect(el.textContent).toContain("api refactor");
+  expect(el.textContent).toContain("chasing a flaky test");
+  await unmount();
+});
+
+test("a tab label is a caption on its pane, not a heading above a group", async () => {
+  const el = await render(<Spaces onBack={() => {}} load={async () => TABBED} />);
+  await settle();
+  expect(el.querySelector("h3")).toBeNull();
+  const cap = el.querySelector(".pane-tab");
+  expect(cap?.textContent).toContain("migrate up");
+  // The pane it captions, not a sibling of the group.
+  expect(cap?.closest("[data-pane-row]")).not.toBeNull();
+  await unmount();
+});
+
+test("an unnamed tab contributes no caption at all", async () => {
+  const el = await render(<Spaces onBack={() => {}} load={async () => TABBED} />);
+  await settle();
+  expect(el.querySelectorAll(".pane-tab")).toHaveLength(1);
+  await unmount();
+});
+
+test("a shell is labelled by its folder, never by its prompt", async () => {
+  const el = await render(<Spaces onBack={() => {}} load={async () => SHELL_HOME} />);
+  await settle();
+  const row = el.querySelector("[data-pane-row]")!;
+  expect(row.textContent).not.toContain("operator@dev-box");
+  expect(row.textContent).toContain("~");
+  await unmount();
+});
 
 test("a 1:1:1 space renders as ONE row with nothing to expand", async () => {
   const el = await render(<Spaces onBack={() => {}} load={load(FLAT)} />);

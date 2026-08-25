@@ -87,35 +87,44 @@ export function HostHeader({
             read, it is skipped, and an operator a version behind did not know.
             It is now `ReleaseBanner`, shown once and dismissible. Do not add a
             second copy here: one fact, one channel. */}
-        {/* Same shape and focus treatment as the settings button beside it —
-            a real button, not a hover-revealed affordance, since this is the
-            only route into #/spaces and must be reachable by touch on the
-            first tap.
+        {/* Spaces and Settings, grouped in one cluster.
+            A bare `justify-between` row with THREE children strands the
+            middle one at the row's exact horizontal centre — the header's
+            most prominent line spending its centre on a control that has
+            nothing to do with the title beside it (§16.5). Wrapping the pair
+            gives the row two ends: the title owns the left, the controls
+            read as one cluster on the right. */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Same shape and focus treatment as the settings button beside it —
+              a real button, not a hover-revealed affordance, since this is the
+              only route into #/spaces and must be reachable by touch on the
+              first tap.
 
-            A DRAWN glyph, not a codepoint. This was `▦` (U+25A6), whose
-            coverage in mobile system fonts is not something paddock gets to
-            assume — and a tofu box on the only route into #/spaces is a
-            button whose label is a rendering failure. `aria-label` carries
-            the name either way; the icon is `aria-hidden`. */}
-        <button
-          type="button"
-          className="host-spaces-btn tap shrink-0"
-          aria-label="Spaces"
-          onClick={onOpenSpaces}
-        >
-          <SpacesIcon className="host-btn-glyph" />
-        </button>
-        {/* A real button, not a hover-revealed affordance — the only route
-            into #/settings, so it must be reachable by touch on the first
-            tap, not discoverable only with a mouse. */}
-        <button
-          type="button"
-          className="host-settings-btn tap shrink-0"
-          aria-label="Settings"
-          onClick={onOpenSettings}
-        >
-          ⚙
-        </button>
+              A DRAWN glyph, not a codepoint. This was `▦` (U+25A6), whose
+              coverage in mobile system fonts is not something paddock gets to
+              assume — and a tofu box on the only route into #/spaces is a
+              button whose label is a rendering failure. `aria-label` carries
+              the name either way; the icon is `aria-hidden`. */}
+          <button
+            type="button"
+            className="host-spaces-btn tap shrink-0"
+            aria-label="Spaces"
+            onClick={onOpenSpaces}
+          >
+            <SpacesIcon className="host-btn-glyph" />
+          </button>
+          {/* A real button, not a hover-revealed affordance — the only route
+              into #/settings, so it must be reachable by touch on the first
+              tap, not discoverable only with a mouse. */}
+          <button
+            type="button"
+            className="host-settings-btn tap shrink-0"
+            aria-label="Settings"
+            onClick={onOpenSettings}
+          >
+            ⚙
+          </button>
+        </div>
       </div>
       {/* paddock's own sentence about the list, so sans — the counts inside it
           are part of the sentence, not a data readout. */}

@@ -47,6 +47,21 @@ test("readAt is the clock passed in, so the UI can say how stale it is", () => {
   expect(tree().readAt).toBe(NOW);
 });
 
+test("a home-directory cwd is tilde-ised, so no username crosses the wire", () => {
+  const snap = { ...(snapshot as any), panes: (snapshot as any).panes.map((p: any) =>
+    p.pane_id === "w3:p1" ? { ...p, cwd: "/base/operator/work" } : p) };
+  const t = toSpaceTree(snap as HerdrSessionSnapshot, NOW, { home: "/base/operator" });
+  const pane = t.spaces.find((s) => s.spaceId === "w3")!.tabs[0]!.panes[0]!;
+  expect(pane.cwd).toBe("~/work");
+  expect(pane.cwd).not.toContain("operator");
+});
+
+test("a cwd outside home is untouched", () => {
+  const t = toSpaceTree(snapshot as unknown as HerdrSessionSnapshot, NOW, { home: "/base/operator" });
+  const pane = t.spaces.find((s) => s.spaceId === "w1")!.tabs[0]!.panes[0]!;
+  expect(pane.cwd).toBe("/srv/project");
+});
+
 test("a pane whose tab is missing from the snapshot is dropped, not orphaned", () => {
   const broken = {
     ...(snapshot as any),

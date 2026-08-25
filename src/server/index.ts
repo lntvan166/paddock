@@ -412,6 +412,7 @@ if (DEMO) {
   readTree = async () => toSpaceTree(
     (await client.request<{ snapshot: HerdrSessionSnapshot }>("session.snapshot", {})).snapshot,
     Date.now(),
+    { home: process.env.HOME },
   );
   supervisor = new Supervisor({
     client,

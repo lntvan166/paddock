@@ -31,6 +31,37 @@ import { StatusDot } from "@web/components/ui/StatusDot";
  * chevron — there is nothing to expand, and offering a control that reveals
  * nothing is worse than offering none. Most spaces are that shape.
  */
+/**
+ * Are these two strings the same label, allowing for herdr's own slugging?
+ *
+ * §14.7 measured that herdr initialises an agent's `name` to the SLUG of its
+ * workspace label. A literal comparison therefore reports a difference that is
+ * not one — `"api refactor"` vs `"api-refactor"` — and the first version of
+ * this screen printed every merged row's title twice, once de-spaced. §16.1.
+ *
+ * Deliberately loose. A false negative hides an alias on a row whose labels
+ * differ only in punctuation, which costs nothing. A false positive is visible
+ * noise on nearly every row, which is the defect this replaces.
+ */
+function sameLabel(a: string, b: string): boolean {
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug(a) === slug(b);
+}
+
+/**
+ * What to call a pane that has no agent.
+ *
+ * NOT its terminal title: for a pane sitting at a prompt that title IS the
+ * prompt (`operator@dev-box:~`), which labels nothing and puts a hostname on
+ * screen. The folder answers the question an unnamed pane actually raises —
+ * where is it — and `cwd` arrives already tilde-ised (§16.6).
+ */
+function shellLabel(p: TreePane): string {
+  const trimmed = p.cwd.replace(/\/+$/, "");
+  const seg = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  return seg || "shell";
+}
+
 export function SpaceRow({ space, open, onToggle }: {
   space: Space;
   open: boolean;
@@ -54,8 +85,10 @@ export function SpaceRow({ space, open, onToggle }: {
   // an agent whose name matches its space, so this stays silent for the
   // common case; a bare shell (no name) is identified by its title, which is
   // the one case this exists for.
-  const paneIdentity = only ? (only.name ?? only.title) : null;
-  const showAlias = paneIdentity !== null && paneIdentity !== spaceLabel;
+  const paneIdentity = only
+    ? (only.name ?? (only.harness === null ? shellLabel(only) : only.title))
+    : null;
+  const showAlias = paneIdentity !== null && !sameLabel(paneIdentity, spaceLabel);
 
   // Why this row is structured at all, said in the unit that explains it.
   //
@@ -132,15 +165,22 @@ export function SpaceRow({ space, open, onToggle }: {
         <ul className="space-tabs">
           {space.tabs.map((t) => (
             <li key={t.tabId}>
-              {/* An unnamed tab has no heading of its own: "1" is not a name,
-                  and a heading that repeats the row below is noise. */}
-              {t.label !== null && <h3 className="tab-name">{t.label}</h3>}
               <ul>
                 {t.panes.map((p) => (
                   <li key={p.paneId} data-pane-row data-state={p.state ?? "none"}>
                     <a href={paneHash(p.paneId)}>
                       <PaneMarker pane={p} />
-                      <span className="pane-name">{p.name ?? p.title ?? p.paneId}</span>
+                      <span className="pane-heading">
+                        <span className="pane-name">
+                          {p.name ?? (p.harness === null ? shellLabel(p) : p.title) ?? p.paneId}
+                        </span>
+                        {/* A tab label is a CAPTION on the pane it labels, not
+                            a heading above a group of panes — a bare uppercase
+                            `<h3>` between rows read as a section header for
+                            the whole list (§16.2). An unnamed tab ("1") has no
+                            caption at all: repeating the row below is noise. */}
+                        {t.label !== null && <span className="pane-tab">{t.label}</span>}
+                      </span>
                       <PaneState pane={p} />
                     </a>
                   </li>

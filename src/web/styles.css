@@ -1738,10 +1738,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* A space's children are visibly BRACKETED — a left rule plus indent, closed
+   at the bottom — so the space reads as a container you can see the end of,
+   rather than a flat run of rows indistinguishable from the row above them
+   (§16.2). `border-left` and `margin-left` reuse `--border`, the same token
+   every other rule in this file draws from: no new colour for containment. */
 .space-tabs {
   list-style: none;
-  margin: 0;
+  margin: 0 0.75rem 0.4rem;
   padding: 0 0 0.4rem;
+  border-left: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
 
@@ -1751,16 +1758,6 @@ body {
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.tab-name {
-  margin: 0;
-  padding: 0.5rem 0.75rem 0.15rem;
-  font-size: var(--t-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--fg-dim);
 }
 
 /* Scoped to sub-rows inside `.space-tabs`, not `[data-pane-row]` generally —
@@ -1786,8 +1783,17 @@ body {
   text-decoration: none;
 }
 
-.pane-name {
+/* Holds the pane's name and, when its tab is named, the tab's label
+   underneath it — a column so the two stack rather than compete for the same
+   line. Same shape as `.space-heading` above, one level down. */
+.pane-heading {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1795,6 +1801,20 @@ body {
   font-family: var(--mono);
   letter-spacing: -0.02em;
   font-size: var(--t-md);
+}
+
+/* A CAPTION on the pane it labels, not a heading above a group of panes — the
+   defect this replaces was a bare uppercase `<h3>` between rows, read by an
+   operator as a section header for the whole list (§16.2). Prose, not a
+   glyph, so it sits on the `--t-*` scale like everything else here rather
+   than carving out an off-scale exemption. */
+.pane-tab {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
 }
 
 .pane-state {
