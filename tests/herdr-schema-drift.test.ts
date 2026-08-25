@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test";
 import type {
   HerdrAgentRaw,
+  HerdrPaneInfo,
   HerdrPaneRead,
   HerdrPaneReadResult,
+  HerdrSessionSnapshot,
   HerdrStatusChanged,
+  HerdrTabInfo,
+  HerdrWorkspaceInfo,
   HerdrWorkspaceRaw,
 } from "@shared/herdr-api";
 
@@ -240,4 +244,56 @@ test.skipIf(!HAVE_HERDR)("HerdrStatusChanged has not drifted from the installed 
     DECLARED_STATUS_FIELDS,
     IGNORED_STATUS_FIELDS,
   );
+});
+
+const DECLARED_TAB_FLAGS = {
+  tab_id: true, workspace_id: true, label: true, number: true,
+  agent_status: true, pane_count: true, focused: true,
+} satisfies Record<keyof HerdrTabInfo, true>;
+
+const DECLARED_WORKSPACE_INFO_FLAGS = {
+  workspace_id: true, label: true, number: true, active_tab_id: true,
+  agent_status: true, pane_count: true, tab_count: true, focused: true,
+} satisfies Record<keyof HerdrWorkspaceInfo, true>;
+
+const DECLARED_PANE_FLAGS = {
+  pane_id: true, workspace_id: true, tab_id: true, agent: true,
+  agent_status: true, cwd: true, focused: true, label: true,
+  terminal_title: true, terminal_title_stripped: true, revision: true,
+} satisfies Record<keyof HerdrPaneInfo, true>;
+
+const DECLARED_SNAPSHOT_FLAGS = {
+  workspaces: true, tabs: true, panes: true, agents: true,
+} satisfies Record<keyof HerdrSessionSnapshot, true>;
+
+test.skipIf(!HAVE_HERDR)("TabInfo declares every field the installed herdr sends", async () => {
+  const schema = await liveSchema();
+  const actual = Object.keys(schema.schemas.success_response.$defs.TabInfo.properties);
+  for (const field of Object.keys(DECLARED_TAB_FLAGS)) {
+    expect(actual).toContain(field);
+  }
+});
+
+test.skipIf(!HAVE_HERDR)("WorkspaceInfo declares every field the installed herdr sends", async () => {
+  const schema = await liveSchema();
+  const actual = Object.keys(schema.schemas.success_response.$defs.WorkspaceInfo.properties);
+  for (const field of Object.keys(DECLARED_WORKSPACE_INFO_FLAGS)) {
+    expect(actual).toContain(field);
+  }
+});
+
+test.skipIf(!HAVE_HERDR)("PaneInfo models every field paddock reads, and names the rest", async () => {
+  const schema = await liveSchema();
+  const actual = Object.keys(schema.schemas.success_response.$defs.PaneInfo.properties);
+  for (const field of Object.keys(DECLARED_PANE_FLAGS)) {
+    expect(actual).toContain(field);
+  }
+});
+
+test.skipIf(!HAVE_HERDR)("SessionSnapshot carries the four collections the tree is built from", async () => {
+  const schema = await liveSchema();
+  const actual = Object.keys(schema.schemas.success_response.$defs.SessionSnapshot.properties);
+  for (const field of Object.keys(DECLARED_SNAPSHOT_FLAGS)) {
+    expect(actual).toContain(field);
+  }
 });

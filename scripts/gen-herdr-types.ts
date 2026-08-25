@@ -136,6 +136,68 @@ export interface HerdrPaneRead {
   read: HerdrPaneReadResult;
 }
 
+/** One entry from \`session.snapshot\` -> result.snapshot.workspaces[].
+ *
+ * Richer than \`HerdrWorkspaceRaw\`, which models only what \`workspace.list\`
+ * needed for labelling. The rollup \`agent_status\`, \`pane_count\` and
+ * \`tab_count\` are what let the Spaces screen show a space's shape without
+ * walking its children.
+ */
+export interface HerdrWorkspaceInfo {
+  workspace_id: string;
+  label?: string | null;
+  number: number;
+  active_tab_id?: string | null;
+  agent_status: HerdrAgentStatus;
+  pane_count: number;
+  tab_count: number;
+  focused: boolean;
+}
+
+/** One entry from \`session.snapshot\` -> result.snapshot.tabs[].
+ *
+ * \`label\` is the tab's NUMBER as a string when the operator has never named
+ * it, so "1" means unnamed rather than named "1". \`tree.ts\` is where that is
+ * normalised; nothing else may assume it.
+ */
+export interface HerdrTabInfo {
+  tab_id: string;
+  workspace_id: string;
+  label?: string | null;
+  number: number;
+  agent_status: HerdrAgentStatus;
+  pane_count: number;
+  focused: boolean;
+}
+
+/** One entry from \`session.snapshot\` -> result.snapshot.panes[].
+ *
+ * Carries NO \`name\`: only \`agent.list\` does, which is why
+ * docs/gotchas.md forbids labelling from this. \`label\` is a DIFFERENT field
+ * that \`agent.list\` does not read — see the design doc §14.3 before using it.
+ */
+export interface HerdrPaneInfo {
+  pane_id: string;
+  workspace_id: string;
+  tab_id: string;
+  agent?: string | null;
+  agent_status: HerdrAgentStatus;
+  cwd: string;
+  focused: boolean;
+  label?: string | null;
+  terminal_title?: string | null;
+  terminal_title_stripped?: string | null;
+  revision: number;
+}
+
+/** \`session.snapshot\` -> result.snapshot. The whole tree in one call. */
+export interface HerdrSessionSnapshot {
+  workspaces: HerdrWorkspaceInfo[];
+  tabs: HerdrTabInfo[];
+  panes: HerdrPaneInfo[];
+  agents: HerdrAgentRaw[];
+}
+
 export interface HerdrRequest { id: string; method: string; params: object }
 export type HerdrResponse =
   | { id: string; result: Record<string, unknown> }
