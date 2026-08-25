@@ -415,41 +415,61 @@ test.skipIf(!HAVE_HERDR)("HerdrAgentManifest has not drifted from the installed 
 
 // `HerdrTabCreated`, `HerdrWorkspaceCreated`, `HerdrAgentStarted` and
 // `HerdrAgentManifests` are the ENVELOPES for `tab.create`, `workspace.create`,
-// `agent.start` and `server.agent_manifests`. Checked against the live
-// protocol-20 schema while writing this: none of the four is a named `$def`
-// anywhere in `herdr api schema --json` — they exist only as anonymous
-// members of `success_response.$defs.ResponseResult`'s `oneOf`, found (as
-// `HerdrPaneRead`'s own test above already does for `pane_read`) by matching
-// on `properties.type.const`. Unlike `pane_read`, none of these four was
-// re-derived that way here: they were measured from live creates instead —
-// `docs/probes/2026-08-25-structural-events.md` — and that measurement, not
-// this schema, is the source of truth cited below. Recorded as an explicit
-// gap in `docs/roadmap.md`'s "Known v3 gaps", alongside the same honest
-// treatment already given to `agent.send_keys` / `agent.prompt` /
-// `agent.wait`: known, but not drift-tested against a live schema.
+// `agent.start` and `server.agent_manifests`. None of the four is a named
+// top-level `$def` in `herdr api schema --json` — but all four are still
+// live-checkable: they exist as anonymous members of
+// `success_response.$defs.ResponseResult`'s `oneOf`, discriminated by
+// `properties.type.const`, exactly the technique `HerdrPaneRead`'s test
+// above already uses for `pane_read`. An earlier pass at this file treated
+// "not a named $def" as "nothing to compare against" and self-referentially
+// pinned these four against hand-written literals in this same file —
+// which cannot detect upstream drift at all, the one protection this task
+// exists to add. Corrected here: each of the four now gets its own
+// `expectNoDrift` against the live `oneOf` member, the same as every
+// payload type above.
 //
 // §9.1 originally read `TabInfo` — a real `$def` with no `pane_id` — and
 // concluded from that alone that `tab.create`'s whole response has no pane
-// id, prescribing a snapshot re-read to find the new pane. A probe measured
-// that false: the pane arrives on the envelope as `root_pane`. That is the
-// same mistake as the `result.text` bug this repo already shipped — reading
-// a `$defs` entry as though it were the whole response — so this file does
-// not invent a `$defs.TabCreated`/`$defs.WorkspaceCreated`/`$defs.AgentStarted`
-// lookup that doesn't exist just to keep the same bidirectional test shape a
-// row further down; a test that reads `undefined` off a schema and passes
-// would be worse than no test.
-//
-// What CAN be pinned at compile time, and is pinned below: each envelope's
-// own field set (so adding or removing a member is a `make check` failure in
-// THIS file, even with no live comparison), and that each member already
-// under the guarantee above — `tab`, `root_pane`, `workspace`, `agent`,
-// `manifests` — stays typed as the SAME guarded interface, not an inline
-// duplicate shape that could silently diverge from it.
+// id, prescribing a snapshot re-read to find the new pane. A probe
+// (`docs/probes/2026-08-25-structural-events.md`) measured that false for
+// `tab.create` and `workspace.create`: the pane arrives on the envelope as
+// `root_pane`. `agent_started`'s envelope shape was NOT captured by that
+// probe — it only ever drove workspace/tab create-rename-close traffic —
+// so `agent_started`'s shape below is cited to this live schema instead.
+// That distinction matters: citing a source for a claim it never made is
+// the same class of defect as reading a `$defs` entry as though it were
+// the whole response — both are "the document says so" without checking
+// what the document actually says.
+
 const DECLARED_TAB_CREATED_FLAGS = {
   type: true,
   tab: true,
   root_pane: true,
 } satisfies Record<keyof HerdrTabCreated, true>;
+
+const DECLARED_TAB_CREATED_FIELDS = Object.keys(
+  DECLARED_TAB_CREATED_FLAGS,
+) as (keyof HerdrTabCreated)[];
+
+/** paddock models every field the live `tab_created` variant carries. */
+const IGNORED_TAB_CREATED_FIELDS = [] as const;
+
+test.skipIf(!HAVE_HERDR)("HerdrTabCreated has not drifted from the installed herdr's tab_created response variant", async () => {
+  // Measured live, docs/probes/2026-08-25-structural-events.md: the new
+  // pane arrives here as `root_pane`, not found by re-reading the snapshot
+  // as §9.1 originally (and wrongly) prescribed.
+  const schema = await liveSchema();
+  const variants: any[] = schema.schemas.success_response.$defs.ResponseResult.oneOf;
+  const tabCreated = variants.find((v) => v.properties?.type?.const === "tab_created");
+  expect(tabCreated).toBeDefined();
+  expect(tabCreated.properties.tab.$ref).toBe("#/schemas/success_response/$defs/TabInfo");
+  expect(tabCreated.properties.root_pane.$ref).toBe("#/schemas/success_response/$defs/PaneInfo");
+  expectNoDrift(
+    Object.keys(tabCreated.properties),
+    DECLARED_TAB_CREATED_FIELDS,
+    IGNORED_TAB_CREATED_FIELDS,
+  );
+});
 
 const DECLARED_WORKSPACE_CREATED_FLAGS = {
   type: true,
@@ -458,47 +478,89 @@ const DECLARED_WORKSPACE_CREATED_FLAGS = {
   root_pane: true,
 } satisfies Record<keyof HerdrWorkspaceCreated, true>;
 
+const DECLARED_WORKSPACE_CREATED_FIELDS = Object.keys(
+  DECLARED_WORKSPACE_CREATED_FLAGS,
+) as (keyof HerdrWorkspaceCreated)[];
+
+/** paddock models every field the live `workspace_created` variant carries. */
+const IGNORED_WORKSPACE_CREATED_FIELDS = [] as const;
+
+test.skipIf(!HAVE_HERDR)("HerdrWorkspaceCreated has not drifted from the installed herdr's workspace_created response variant", async () => {
+  // Measured live, docs/probes/2026-08-25-structural-events.md: same
+  // envelope shape as tab_created, one level up.
+  const schema = await liveSchema();
+  const variants: any[] = schema.schemas.success_response.$defs.ResponseResult.oneOf;
+  const workspaceCreated = variants.find((v) => v.properties?.type?.const === "workspace_created");
+  expect(workspaceCreated).toBeDefined();
+  expect(workspaceCreated.properties.workspace.$ref).toBe(
+    "#/schemas/success_response/$defs/WorkspaceInfo",
+  );
+  expect(workspaceCreated.properties.tab.$ref).toBe("#/schemas/success_response/$defs/TabInfo");
+  expect(workspaceCreated.properties.root_pane.$ref).toBe(
+    "#/schemas/success_response/$defs/PaneInfo",
+  );
+  expectNoDrift(
+    Object.keys(workspaceCreated.properties),
+    DECLARED_WORKSPACE_CREATED_FIELDS,
+    IGNORED_WORKSPACE_CREATED_FIELDS,
+  );
+});
+
 const DECLARED_AGENT_STARTED_FLAGS = {
   type: true,
   agent: true,
 } satisfies Record<keyof HerdrAgentStarted, true>;
+
+const DECLARED_AGENT_STARTED_FIELDS = Object.keys(
+  DECLARED_AGENT_STARTED_FLAGS,
+) as (keyof HerdrAgentStarted)[];
+
+// `argv` — the argv herdr launched the harness with — is required upstream
+// (protocol 20) but paddock's `agent.start` caller has no present use for
+// it. NOT measured by docs/probes/2026-08-25-structural-events.md, which
+// only ever captured workspace/tab create-rename-close traffic; read
+// directly off this live schema instead.
+const IGNORED_AGENT_STARTED_FIELDS = ["argv"] as const;
+
+test.skipIf(!HAVE_HERDR)("HerdrAgentStarted has not drifted from the installed herdr's agent_started response variant", async () => {
+  const schema = await liveSchema();
+  const variants: any[] = schema.schemas.success_response.$defs.ResponseResult.oneOf;
+  const agentStarted = variants.find((v) => v.properties?.type?.const === "agent_started");
+  expect(agentStarted).toBeDefined();
+  expect(agentStarted.properties.agent.$ref).toBe("#/schemas/success_response/$defs/AgentInfo");
+  expectNoDrift(
+    Object.keys(agentStarted.properties),
+    DECLARED_AGENT_STARTED_FIELDS,
+    IGNORED_AGENT_STARTED_FIELDS,
+  );
+});
 
 const DECLARED_AGENT_MANIFESTS_FLAGS = {
   type: true,
   manifests: true,
 } satisfies Record<keyof HerdrAgentManifests, true>;
 
-// Compile-time only, and this is the reason it must not be deleted as
-// "unused": each generic parameter's constraint forces the corresponding
-// envelope type to stay assignable to a shape built from the already-guarded
-// payload interfaces. If a member's declared type in
-// `scripts/gen-herdr-types.ts` ever changed away from `HerdrTabInfo` /
-// `HerdrPaneInfo` / `HerdrWorkspaceInfo` / `HerdrAgentRaw` /
-// `HerdrAgentManifest[]`, this call stops compiling — a `make check`
-// failure, not a `bun test` one (Bun strips types without checking them).
-function pinsGuardedMembers<
-  _TabCreated extends { tab: HerdrTabInfo; root_pane: HerdrPaneInfo },
-  _WorkspaceCreated extends {
-    workspace: HerdrWorkspaceInfo;
-    tab: HerdrTabInfo;
-    root_pane: HerdrPaneInfo;
-  },
-  _AgentStarted extends { agent: HerdrAgentRaw },
-  _AgentManifests extends { manifests: HerdrAgentManifest[] },
->(): void {}
-pinsGuardedMembers<HerdrTabCreated, HerdrWorkspaceCreated, HerdrAgentStarted, HerdrAgentManifests>();
+const DECLARED_AGENT_MANIFESTS_FIELDS = Object.keys(
+  DECLARED_AGENT_MANIFESTS_FLAGS,
+) as (keyof HerdrAgentManifests)[];
 
-test("HerdrTabCreated/HerdrWorkspaceCreated/HerdrAgentStarted/HerdrAgentManifests declare exactly the fields pinned in this file (no live $def exists to compare against — see the comment above)", () => {
-  // No `HAVE_HERDR` guard: unlike every `expectNoDrift` test in this file,
-  // this one compares this file against itself, not against a live herdr,
-  // so it runs even where herdr is not installed (e.g. CI).
-  expect(Object.keys(DECLARED_TAB_CREATED_FLAGS).sort()).toEqual(["root_pane", "tab", "type"]);
-  expect(Object.keys(DECLARED_WORKSPACE_CREATED_FLAGS).sort()).toEqual([
-    "root_pane",
-    "tab",
-    "type",
-    "workspace",
-  ]);
-  expect(Object.keys(DECLARED_AGENT_STARTED_FLAGS).sort()).toEqual(["agent", "type"]);
-  expect(Object.keys(DECLARED_AGENT_MANIFESTS_FLAGS).sort()).toEqual(["manifests", "type"]);
+// `last_check_unix` and `last_result` describe herdr's own background
+// update-check run as a whole, not any individual manifest — paddock reads
+// only `manifests`, to build §9.3's kind allowlist at runtime. Read
+// directly off this live schema, same as `argv` above.
+const IGNORED_AGENT_MANIFESTS_FIELDS = ["last_check_unix", "last_result"] as const;
+
+test.skipIf(!HAVE_HERDR)("HerdrAgentManifests has not drifted from the installed herdr's agent_manifest_status response variant", async () => {
+  const schema = await liveSchema();
+  const variants: any[] = schema.schemas.success_response.$defs.ResponseResult.oneOf;
+  const manifestStatus = variants.find((v) => v.properties?.type?.const === "agent_manifest_status");
+  expect(manifestStatus).toBeDefined();
+  expect(manifestStatus.properties.manifests.items.$ref).toBe(
+    "#/schemas/success_response/$defs/AgentManifestInfo",
+  );
+  expectNoDrift(
+    Object.keys(manifestStatus.properties),
+    DECLARED_AGENT_MANIFESTS_FIELDS,
+    IGNORED_AGENT_MANIFESTS_FIELDS,
+  );
 });

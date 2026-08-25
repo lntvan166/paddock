@@ -368,35 +368,34 @@ surprise.
   file the child writes and killing that pid in a `finally`, the way
   `tests/lifecycle-detach.test.ts` does.
 
-- **The schema-drift guarantee does not cover the four write-call envelopes
-  added for spaces/tabs management.** `HerdrTabCreated` (`tab.create`),
-  `HerdrWorkspaceCreated` (`workspace.create`), `HerdrAgentStarted`
-  (`agent.start`) and `HerdrAgentManifests` (`server.agent_manifests`) are
-  declared in `src/shared/herdr-api.d.ts`, but — checked against the live
-  protocol-20 schema while adding them — none of the four is a named `$def`
-  anywhere in `herdr api schema --json`; they exist only as anonymous
-  members of `success_response.$defs.ResponseResult`'s `oneOf`, the way
-  `pane_read` already does (and that one *does* get a drift test, by
-  matching on `properties.type.const` — see `HerdrPaneRead`'s test in
-  `tests/herdr-schema-drift.test.ts`). The three envelopes here were instead
-  measured from live create/start calls,
-  `docs/probes/2026-08-25-structural-events.md`, not derived from this
-  schema, so `tests/herdr-schema-drift.test.ts` pins their field sets
-  against themselves and pins each member's type against the already-guarded
-  payload interfaces (`HerdrTabInfo`, `HerdrPaneInfo`, `HerdrWorkspaceInfo`,
-  `HerdrAgentRaw`) at compile time, but runs no `expectNoDrift` for any of
-  the four — there is nothing named to compare against. This is the same
-  honest treatment already given, above, to `agent.send_keys` /
-  `agent.prompt` / `agent.wait`: known, but not drift-tested against a live
-  schema. The one exception is `HerdrAgentManifest` — the type of one
-  *element* of `HerdrAgentManifests.manifests[]` — which maps to
-  `AgentManifestInfo`, a genuine named `$def`, and does get the full
-  bidirectional `expectNoDrift` treatment paddock's other payload types get.
-  Closing this gap for the three envelopes proper means either getting
-  herdr to publish a named `$def` for each, or extending
-  `tests/herdr-schema-drift.test.ts`'s `oneOf`-matching technique (already
-  used for `pane_read`) to `tab_created`, `workspace_created` and
-  `agent_started` — not attempted here because the brief for this task
-  treated the absence of a named `$def` as reason enough to stop, and that
-  distinction (named `$def` vs. findable `oneOf` member) is worth a
-  deliberate decision rather than a silent scope change inside this task.
+- ~~**The schema-drift guarantee does not cover the four write-call
+  envelopes added for spaces/tabs management.**~~ *Resolved.* `HerdrTabCreated`
+  (`tab.create`), `HerdrWorkspaceCreated` (`workspace.create`),
+  `HerdrAgentStarted` (`agent.start`) and `HerdrAgentManifests`
+  (`server.agent_manifests`) all turned out to be reachable the same way
+  `pane_read` already was: as anonymous members of
+  `success_response.$defs.ResponseResult`'s `oneOf`, discriminated by
+  `properties.type.const`, even though none of the four is a named
+  top-level `$def`. An earlier version of this entry said there was
+  "nothing named to compare against" for these three — that was checked
+  only against `$defs` directly and never against `ResponseResult`'s
+  `oneOf`, and was wrong; a reviewer caught it in the same round that also
+  caught this entry's stale `AgentManifestInfo` field count (see below).
+  `tests/herdr-schema-drift.test.ts` now runs `expectNoDrift` for all four
+  against the live schema, matching the treatment every other payload type
+  in that file already gets, with each ignore list named individually:
+  `HerdrAgentStarted` ignores `argv` (a required array of the launch
+  command's arguments, upstream), and `HerdrAgentManifests` ignores
+  `last_check_unix` and `last_result` (herdr's own background
+  update-check bookkeeping, not per-manifest data). Neither `argv` nor
+  those two fields was captured by
+  `docs/probes/2026-08-25-structural-events.md` — that probe only ever
+  drove workspace/tab create-rename-close traffic, never `agent.start` or
+  `server.agent_manifests` — so both are cited to this live schema
+  directly rather than, incorrectly, to that probe. `HerdrAgentManifest`
+  — the payload type of one element of `manifests[]` — was already fully
+  guarded from the start, against the named `AgentManifestInfo` `$def`,
+  with its own ignore list (9 fields: `active_version`,
+  `cached_remote_version`, `local_override_shadowing_remote`,
+  `remote_last_checked_unix`, `remote_update_error`, `remote_update_result`,
+  `source`, `source_kind`, `warning`).
