@@ -31,7 +31,7 @@ test("a tab holding one pane IS that pane — the row opens it directly", async 
 
 test("a tab holding several panes shows them, and still opens its root pane", async () => {
   const host = await render(<TabRow tab={SPLIT} onChanged={() => {}} />);
-  expect(host.querySelector("[data-tab-row] > a")?.getAttribute("href")).toBe("#/pane/w2%3Ap1");
+  expect(host.querySelector("[data-tab-row] .tab-head > a")?.getAttribute("href")).toBe("#/pane/w2%3Ap1");
   const subs = [...host.querySelectorAll("[data-pane-row] a")].map((a) => a.getAttribute("href"));
   expect(subs).toEqual(["#/pane/w2%3Ap1", "#/pane/w2%3Ap2"]);
 });

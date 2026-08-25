@@ -50,33 +50,34 @@ export function TabRow({ tab, onChanged, senders }: {
 
   return (
     <li data-tab-row data-tab-id={tab.tabId}>
-      {/* No wrapping element here: the link and RowActions' `⋯` are direct
-          children of this <li>, and stay SIBLINGS of each other — a
-          <button> inside an <a> is invalid HTML and unreachable by
-          keyboard. */}
-      {root !== null ? (
-        <a href={paneHash(root.paneId)}>
-          {!split && <PaneMarker pane={root} />}
-          <span className="tab-heading">
-            <span className="tab-name">{tabName}</span>
-          </span>
-          {split
-            ? <span className="tab-count">{tab.panes.length} panes</span>
-            : <PaneState pane={root} />}
-        </a>
-      ) : (
-        <span className="tab-heading"><span className="tab-name">{tabName}</span></span>
-      )}
-      <RowActions
-        label={tabName}
-        renames={renames}
-        // Closing a tab takes its panes with it, which is what the
-        // consequence line has to say — counted off the tree already on
-        // screen (§10), never fetched.
-        close={{ kind: "tab", id: tab.tabId, panes: tab.panes }}
-        onChanged={onChanged}
-        senders={senders}
-      />
+      <div className="tab-head">
+        {/* Whatever sits beside this anchor stays a SIBLING of it, never a
+            child: a <button> inside an <a> is invalid HTML and unreachable by
+            keyboard. */}
+        {root !== null ? (
+          <a href={paneHash(root.paneId)}>
+            {!split && <PaneMarker pane={root} />}
+            <span className="tab-heading">
+              <span className="tab-name">{tabName}</span>
+            </span>
+            {split
+              ? <span className="tab-count">{tab.panes.length} panes</span>
+              : <PaneState pane={root} />}
+          </a>
+        ) : (
+          <span className="tab-heading"><span className="tab-name">{tabName}</span></span>
+        )}
+        <RowActions
+          label={tabName}
+          renames={renames}
+          // Closing a tab takes its panes with it, which is what the
+          // consequence line has to say — counted off the tree already on
+          // screen (§10), never fetched.
+          close={{ kind: "tab", id: tab.tabId, panes: tab.panes }}
+          onChanged={onChanged}
+          senders={senders}
+        />
+      </div>
 
       {split && (
         <ul className="tab-panes">
