@@ -244,6 +244,28 @@ export interface HerdrActions {
    * against `deps.readTree`, not the store.
    */
   renameSpace(spaceId: string, label: string): Promise<void>;
+  /**
+   * Close a tab and everything inside it. herdr kills every pane the tab
+   * holds, and any pane carrying a working agent kills that agent too —
+   * paddock's first destructive action (design doc §10). The route calling
+   * this validates the id against `deps.readTree`, the same authority
+   * `renameTab` uses: a tab is not in `AgentStore` (§3).
+   */
+  closeTab(tabId: string): Promise<void>;
+  /**
+   * Close a space and everything inside it — every tab, every pane, every
+   * agent any of them held.
+   *
+   * Whether herdr permits closing the LAST remaining space is deliberately
+   * UNMEASURED (design doc §17 probe 3): establishing that condition means
+   * reducing a working herd to one space, and the only herd available to
+   * measure against is an operator's live session. So this does NOT
+   * pre-emptively refuse on a count of one — that would encode a guess
+   * about herdr's policy as a fact, the exact failure §17 records. herdr's
+   * own answer, allow or refuse, is relayed verbatim by the calling route's
+   * try/catch instead.
+   */
+  closeSpace(spaceId: string): Promise<void>;
 }
 
 /** Binds the socket path once so routes can take an injectable object. */
@@ -381,6 +403,25 @@ export function createActions(socketPath: string): HerdrActions {
       // Same shape and same reasoning as `renameTab` above: herdr models no
       // unset state for a workspace label either (§17).
       await request(socketPath, "workspace.rename", { workspace_id: spaceId, label });
+    },
+
+    async closeTab(tabId) {
+      // `tab_id`, not `target` and not `workspace_id` — the two close calls
+      // take differently-named parameters and are not interchangeable; this
+      // repo has already shipped a bug from a wrong herdr field name.
+      await request(socketPath, "tab.close", { tab_id: tabId });
+    },
+
+    async closeSpace(spaceId) {
+      // Whether herdr permits closing the LAST space is deliberately
+      // unmeasured (§17 probe 3): establishing that condition means reducing
+      // a working herd to one space, and the only herd available is the
+      // operator's live session. So paddock does not pre-emptively disable
+      // this on a count of one — that would encode a guess about herdr's
+      // policy as a fact. If herdr allows it, the operator gets what they
+      // asked for; if it refuses, the calling route's catch relays the
+      // reason verbatim rather than paddock predicting it.
+      await request(socketPath, "workspace.close", { workspace_id: spaceId });
     },
   };
 }

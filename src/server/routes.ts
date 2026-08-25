@@ -1075,6 +1075,87 @@ export function createApp(deps: AppDeps) {
       }
     });
 
+    /**
+     * Close a tab and everything inside it — herdr kills every pane the tab
+     * holds, and any pane carrying a working agent kills that agent too.
+     * This is paddock's first destructive action (design doc §10).
+     *
+     * The arm-then-confirm interaction and the "N working agents will be
+     * killed" consequence line are a later UI task's job, not this route's —
+     * this route just closes, honestly, using the tab already found on the
+     * tree read that validated the id.
+     *
+     * Same shape as `/api/tabs/:id/name` above and for the same reasons: 404
+     * when `deps.readTree` is absent, 404 for an unknown id, and a
+     * try/catch around the herdr call reporting `{ok:false, detail}` at 502
+     * — with the deliberate 404 returned from INSIDE the try, so a race
+     * between validating the id and the tab closing out from under it (at
+     * the desk, or from another browser) can never be relabelled a server
+     * failure by the catch.
+     *
+     * The success response reports what was closed — the tab's own label
+     * and how many panes it held — both already known from the same tree
+     * read used to validate the id, rather than inventing a second herdr
+     * call to enrich the answer. That lets the screen say what happened
+     * instead of refetching and hoping the operator notices something
+     * vanished.
+     */
+    app.post("/api/tabs/:id/close", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      try {
+        const tree = await deps.readTree();
+        const tab = findTab(tree, id);
+        if (!tab) return c.json({ ok: false, detail: "unknown tab" }, 404);
+        await actions.closeTab(id);
+        return c.json({ ok: true, tabId: id, label: tab.label, paneCount: tab.panes.length });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        warn(`tabs: could not close \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Close a space and everything inside it — every tab, every pane, every
+     * agent any of them held. Same shape as `/api/tabs/:id/close` above, and
+     * the response reuses `Space`'s own `tabCount`/`paneCount` for the same
+     * reason: it is already known from the tree read that validated the id,
+     * so no second herdr call is needed to describe what disappeared.
+     *
+     * One thing this route deliberately does NOT do: refuse when the tree
+     * shows exactly one space. Whether herdr permits closing the LAST
+     * remaining space is UNMEASURED (design doc §17 probe 3) — establishing
+     * that condition means reducing a working herd to one space, and the
+     * only herd available to measure against is the operator's own live
+     * session. So paddock relays herdr's answer verbatim through the same
+     * catch every other action route uses, rather than guessing herdr's
+     * policy and enforcing the guess itself. If herdr allows the close, the
+     * operator gets what they asked for; if herdr refuses, this is the path
+     * by which that refusal — and herdr's own reason for it — reaches the
+     * operator as a 502 `detail`, exactly like any other herdr failure.
+     */
+    app.post("/api/spaces/:id/close", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      try {
+        const tree = await deps.readTree();
+        const space = findSpace(tree, id);
+        if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
+        await actions.closeSpace(id);
+        return c.json({
+          ok: true, spaceId: id, label: space.label,
+          tabCount: space.tabCount, paneCount: space.paneCount,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        warn(`spaces: could not close \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
     app.post("/api/agents/:id/answer", async (c) => {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);

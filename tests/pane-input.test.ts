@@ -60,6 +60,8 @@ function harness(
         async renameAgent() {},
         async renameTab() {},
         async renameSpace() {},
+        async closeTab() {},
+        async closeSpace() {},
       },
       health: () => ({
         ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: true, lastEventAt: NOW,

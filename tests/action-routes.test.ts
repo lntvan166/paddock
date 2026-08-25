@@ -41,6 +41,8 @@ function harness(a: Agent = agent(), screen?: string[]) {
     async renameAgent(_t: string, name: string | null) { calls.push(`renameAgent:${name}`); },
     async renameTab(_id: string, label: string) { calls.push(`renameTab:${label}`); },
     async renameSpace(_id: string, label: string) { calls.push(`renameSpace:${label}`); },
+    async closeTab(id: string) { calls.push(`closeTab:${id}`); },
+    async closeSpace(id: string) { calls.push(`closeSpace:${id}`); },
   };
   const hub = new Hub({ now: () => NOW });
   const app = createApp({
@@ -262,6 +264,7 @@ test("a failed action reports ok:false rather than throwing", async () => {
       async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
       async renameAgent() {}, async renameTab() {}, async renameSpace() {},
+      async closeTab() {}, async closeSpace() {},
       async sendPaneText() {}, async sendPaneKey() {},
     },
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
@@ -376,6 +379,7 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
       async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
       async renameAgent() {}, async renameTab() {}, async renameSpace() {},
+      async closeTab() {}, async closeSpace() {},
       async sendPaneText() {}, async sendPaneKey() {},
     },
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),

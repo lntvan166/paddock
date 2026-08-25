@@ -74,6 +74,8 @@ function harness(
         calls.push(`renameSpace:${spaceId}:${label}`);
         if (overrides.renameSpace) await overrides.renameSpace(spaceId, label);
       },
+      async closeTab() {},
+      async closeSpace() {},
     },
     health: () => ({
       ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW,

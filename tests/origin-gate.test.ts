@@ -51,6 +51,8 @@ function harness(state: Agent["state"] = "blocked") {
     async renameAgent() { calls.push("renameAgent"); },
     async renameTab() { calls.push("renameTab"); },
     async renameSpace() { calls.push("renameSpace"); },
+    async closeTab() { calls.push("closeTab"); },
+    async closeSpace() { calls.push("closeSpace"); },
   };
   const app = createApp({
     store, actions, now: () => NOW, health,
