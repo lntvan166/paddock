@@ -1,5 +1,6 @@
 import type {
-  ActionResult, HistoryResult, KeyResult, NavKey, OutputResult, ParsedPrompt, SpaceTree,
+  ActionResult, HistoryResult, KeyResult, NavKey, OutputResult, PaneOutput, ParsedPrompt,
+  SpaceTree,
 } from "@shared/types";
 
 /**
@@ -64,6 +65,21 @@ export async function fetchOutput(
   return readJson<OutputResult>(
     url(id, "output"), { lines, scrollback, since: since ?? undefined }, f,
   );
+}
+
+/**
+ * The screen of a pane that has NO agent.
+ *
+ * Its own route, and its own function, because the store cannot validate the
+ * id: a shell pane is deliberately absent from it (§3), so the server checks
+ * the session tree instead. Nothing else differs — same POST-only rule (a
+ * payload in a query string lands in edge access logs, even an empty one's
+ * path does not need to be a second shape), and the same rejection on non-2xx
+ * that every read here uses, so an unknown or already-promoted pane arrives as
+ * a message the terminal can show rather than as a value shaped like a screen.
+ */
+export async function fetchPaneOutput(id: string, f: Fetch = fetch): Promise<PaneOutput> {
+  return readJson<PaneOutput>(`/api/panes/${encodeURIComponent(id)}/output`, {}, f);
 }
 
 export async function fetchPrompt(id: string, f: Fetch = fetch) {

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { answerWithKey, fetchOutput, type Fetch } from "@web/api";
+import { answerWithKey, fetchOutput, fetchPaneOutput, type Fetch } from "@web/api";
 
 // Typed as the real `fetch`, so call sites need no `as any`.
 //
@@ -68,4 +68,30 @@ test("answerWithKey still resolves (not rejects) with the server's detail on a 4
   const res = await answerWithKey("w1:p1", "1", fn);
   expect(res.ok).toBe(false);
   expect(res.detail).toContain("no longer blocked");
+});
+
+// A pane with no agent is read through its own route, because the store cannot
+// validate the id — that is the whole reason `/api/panes/:id/output` exists.
+test("fetchPaneOutput POSTs to the pane route with an encoded id", async () => {
+  const { fn, seen } = stubFetch(200, { lines: ["$ ls"], source: "recent_unwrapped" });
+  const out = await fetchPaneOutput("w3:p1", fn);
+  expect(seen[0]!.init.method).toBe("POST");
+  expect(seen[0]!.url).toBe("/api/panes/w3%3Ap1/output");
+  expect(out.lines).toEqual(["$ ls"]);
+});
+
+// Same rule as every other read: a non-2xx body has no `lines`, so resolving
+// with it would hand the caller an object TypeScript believes is a screen.
+test("fetchPaneOutput rejects on a 404 with the server's detail", async () => {
+  const { fn } = stubFetch(404, { ok: false, detail: "unknown pane" });
+  await expect(fetchPaneOutput("w3:p1", fn)).rejects.toThrow(/unknown pane/);
+});
+
+// The 409 the route answers for a pane that HAS an agent. A refusal, but still
+// a read: it must reject rather than resolve with a body shaped like output.
+test("fetchPaneOutput rejects when the pane has an agent", async () => {
+  const { fn } = stubFetch(409, {
+    ok: false, detail: "this pane has an agent; use /api/agents/:id/output",
+  });
+  await expect(fetchPaneOutput("w3:p1", fn)).rejects.toThrow(/has an agent/);
 });

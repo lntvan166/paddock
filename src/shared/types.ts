@@ -281,6 +281,21 @@ export type OutputResult =
   | { unchanged?: false; patch: ScreenPatch; source: string }
   | { unchanged?: false; lines: string[]; source: string; digest: string };
 
+/**
+ * The success body of `POST /api/panes/:id/output` — a pane with NO agent.
+ *
+ * No `digest`, and no `unchanged` variant, because there is nothing on the
+ * server to revalidate against: the screen cache is keyed by agent id and a
+ * shell pane is deliberately not in the store (§3). The client computes its
+ * own digest to decide whether a screen moved; see `applyResult` in
+ * `PaneTerminal.tsx`, which is also where the polling cadence that follows
+ * from this route's cost is argued.
+ */
+export interface PaneOutput {
+  lines: string[];
+  source: string;
+}
+
 export type ServerMessage =
   | {
       type: "snapshot"; hostId: string; agents: Agent[]; serverTime: number;

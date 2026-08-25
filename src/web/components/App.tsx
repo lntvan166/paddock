@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { isStale, useStore } from "@web/store";
+import { fetchPaneOutput, fetchSpaceTree } from "@web/api";
+import type { SpaceTree, TreePane } from "@shared/types";
+import { PaneTerminal, SHELL_MIN_REFRESH_MS } from "@web/components/PaneTerminal";
 import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
 import { AgentTerminal } from "@web/components/AgentTerminal";
@@ -20,7 +23,8 @@ import { readPrefs, themeAttr } from "@web/prefs";
 
 export function App() {
   const {
-    agents, hostId, connected, lastMessageAt, updateAvailable, latestKnown, managedBy, connect,
+    agents, hostId, connected, lastMessageAt, updateAvailable, latestKnown, managedBy,
+    treeStaleAt, connect,
   } = useStore();
   const [now, setNow] = useState(() => Date.now());
   // Expanded by default. Collapsed, idle agents render as chips that carry a
@@ -73,8 +77,14 @@ export function App() {
    */
   const agentIds = agents.map((a) => a.agentId).sort().join("\u0000");
   useEffect(() => {
-    prunePanes(new Set(agentIds ? agentIds.split("\u0000") : []));
-  }, [agentIds]);
+    const live = new Set(agentIds ? agentIds.split("\u0000") : []);
+    // The pane on screen is kept whatever the agent list says. A shell pane is
+    // never IN that list — that is the whole point of §3 — so pruning by
+    // agents alone would evict the screen of the very pane the operator is
+    // reading, on the next delta that changes some other agent.
+    if (openId !== null) live.add(openId);
+    prunePanes(live);
+  }, [agentIds, openId]);
 
   const groups = groupAgents(agents);
   const stale = isStale({ connected, lastMessageAt }, now);
@@ -84,6 +94,28 @@ export function App() {
   // stale deep link (a notification for an agent that has since finished and
   // been pruned) land somewhere useful rather than on an empty screen.
   const openAgent = agents.find((a) => a.agentId === openId) ?? null;
+  // A shell pane is deliberately absent from `agents` (§3), so the lookup above
+  // would bounce it straight back to a dashboard that can never show it. The
+  // tree is the authority for panes the store does not hold — asked only on
+  // that miss, so an agent pane and the dashboard itself cost nothing extra.
+  const openTree = useTreePane(openAgent === null ? openId : null, treeStaleAt);
+  const openShell = openTree.pane;
+  /**
+   * The read for the open shell.
+   *
+   * Memoised on the id alone, so a delta that re-renders `App` does not hand
+   * `PaneTerminal` a new `load` — which it reads as "ask again", the mechanism
+   * `AgentTerminal` uses deliberately when an agent's state moves.
+   */
+  const openShellId = openShell?.paneId ?? null;
+  const loadPane = useCallback(() => {
+    // Unreachable: this is only ever handed to `PaneTerminal`, which is only
+    // rendered when the pane resolved. Thrown rather than defaulted to "",
+    // because `POST /api/panes//output` would 404 and read as "the pane is
+    // gone" — a wrong answer dressed as a real one.
+    if (openShellId === null) throw new Error("no pane to read");
+    return fetchPaneOutput(openShellId);
+  }, [openShellId]);
 
   // A full screen, not an overlay. The terminal needs every row it can get on
   // a phone, and a sheet over a dimmed list spends a third of the viewport
@@ -106,6 +138,57 @@ export function App() {
         agent={openAgent}
         onBack={() => { location.hash = ""; }}
       />
+    );
+  }
+
+  if (openShell) {
+    return (
+      <PaneTerminal
+        // The pane id, exactly as the agent case above — a shell and an agent
+        // are one pane at two moments, and typing `claude` into this one turns
+        // it into the other under the SAME id. Keying on anything else would
+        // make that transition look like a navigation.
+        key={openShell.paneId}
+        paneId={openShell.paneId}
+        // `title` before `name`, the reverse of a row in Spaces: a pane with
+        // no agent has no name, and the terminal title is the only label it
+        // has ever had. The id is the last resort and never a guess.
+        title={openShell.title ?? openShell.name ?? openShell.paneId}
+        // Back to Spaces, not to the dashboard: the dashboard lists agents,
+        // and this pane is not one — sending the operator there would be a
+        // door onto a screen that cannot show what they just left.
+        backLabel="Back to spaces"
+        onBack={() => { location.hash = "#/spaces"; }}
+        load={loadPane}
+        minIntervalMs={SHELL_MIN_REFRESH_MS}
+      />
+    );
+  }
+
+  // The tree read is still in flight. Holding here rather than falling through
+  // is not cosmetic: the dashboard is a full agent list, and rendering it for
+  // the ~20 ms a `session.snapshot` takes makes every tap on a shell pane
+  // blink through the screen the operator just left.
+  if (openId !== null && !openTree.resolved) {
+    return (
+      <main className="dash mx-auto max-w-2xl safe-bottom">
+        <p className="px-3 py-6 text-[11px]" style={{ color: "var(--fg-dim)" }}>Opening…</p>
+      </main>
+    );
+  }
+
+  // The tree could not be read, and the id is not an agent: say so instead of
+  // showing a dashboard that will never contain this pane. "No such pane" and
+  // "herdr did not answer" are different claims and must not look alike.
+  if (openId !== null && openTree.error !== null) {
+    return (
+      <main className="dash mx-auto max-w-2xl safe-bottom">
+        <header className="spaces-head">
+          <button type="button" onClick={() => { location.hash = "#/spaces"; }}>Back</button>
+          <h2>{openId}</h2>
+        </header>
+        <p className="error" role="alert">Could not open this pane: {openTree.error}</p>
+      </main>
     );
   }
 
@@ -198,4 +281,66 @@ export function App() {
       <BuildStamp />
     </main>
   );
+}
+
+/**
+ * The tree entry for a pane the store does not hold.
+ *
+ * A shell pane is deliberately absent from `agents` (§3) — that absence is
+ * what makes `POST /api/panes/:id/output` a separate route at all — so
+ * resolving `#/pane/<id>` against the agent list alone would bounce every
+ * shell straight back to the dashboard. The session tree is the only authority
+ * for those panes, and it is fetched ONLY when the id misses `agents`: pass
+ * `null` for `paneId` and nothing is asked for.
+ *
+ * Refetched when the server says the tree moved (`tree-stale`). That is also
+ * how a shell which has just become an agent is noticed — although in practice
+ * the store's own delta gets there first, and the moment it does the caller's
+ * agent lookup wins and this hook goes quiet again.
+ *
+ * A tree that cannot be read leaves the answer UNKNOWN and carries the reason.
+ * "No such pane" and "herdr did not answer" are different claims, and
+ * rendering the second as the first would evict the operator from a pane that
+ * exists, with nothing on screen to say why.
+ */
+function useTreePane(
+  paneId: string | null,
+  treeStaleAt: number,
+  load: () => Promise<SpaceTree> = fetchSpaceTree,
+): { pane: TreePane | null; error: string | null; resolved: boolean } {
+  const [held, setHeld] = useState<
+    { id: string; pane: TreePane | null; error: string | null } | null
+  >(null);
+
+  useEffect(() => {
+    if (paneId === null) { setHeld(null); return; }
+    let live = true;
+    void load()
+      .then((tree) => {
+        if (!live) return;
+        const pane = tree.spaces
+          .flatMap((s) => s.tabs)
+          .flatMap((t) => t.panes)
+          .find((p) => p.paneId === paneId) ?? null;
+        setHeld({ id: paneId, pane, error: null });
+      })
+      .catch((err) => {
+        // Not swallowed, and not turned into "no such pane": the caller
+        // renders this where the pane would have been.
+        if (live) {
+          setHeld({
+            id: paneId, pane: null,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      });
+    return () => { live = false; };
+  }, [paneId, treeStaleAt, load]);
+
+  // Guarded on the id, so an answer that arrives for a pane the operator has
+  // already navigated away from never renders as this one's.
+  if (paneId === null || held === null || held.id !== paneId) {
+    return { pane: null, error: null, resolved: paneId === null };
+  }
+  return { pane: held.pane, error: held.error, resolved: true };
 }

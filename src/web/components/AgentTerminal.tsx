@@ -1,38 +1,33 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import type { ActionResult, Agent, NavKey, OutputResult, ParsedPrompt } from "@shared/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ActionResult, Agent, NavKey, ParsedPrompt } from "@shared/types";
 import { answerWithKey, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
-import { parseAnsi, type AnsiSpan } from "@web/ansi";
-import { groupLines } from "@web/lines";
 import { StatusDot } from "@web/components/AgentRow";
 import { StateIcon } from "@web/components/ui/StateIcon";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
-import { mergeSnapshot } from "@web/history";
+import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
 import {
-  emptyJournal, historyFor, journalFor, rememberHistory, rememberScreen, screenFor,
-  updateJournal, type JournalState,
+  emptyJournal, journalFor, updateJournal, type JournalState,
 } from "@web/pane-cache";
-import { applyPatch, digestOf } from "@shared/screen";
-import { RATE_MS, readPrefs, writePref, type KeypadPref, type RatePref } from "@web/prefs";
+import { readPrefs, writePref, type KeypadPref } from "@web/prefs";
 
 /**
- * Undefined for an unstyled span, so the common run of plain text costs no
- * style object at all — a full pane is on the order of a thousand spans and
- * most of them carry nothing.
+ * An agent's controls, wrapped around the pane transcript every pane has.
+ *
+ * The transcript, the ANSI pass, the scroll handling and the read loop live in
+ * `PaneTerminal` — they work for any pane, with or without an agent, because a
+ * shell and an agent are ONE PANE AT TWO MOMENTS: open a shell, type `claude`,
+ * and the same `pane_id` becomes an agent. What is left here is everything
+ * that needs an agent to point at: the prompt and its options, the keypad, the
+ * state dot, the reply box, and the journal that only a harness has.
+ *
+ * The refresh ladder's constants are re-exported below rather than moved,
+ * because they were exported from this module before the split and other
+ * callers (and tests) import them from here.
  */
-function styleFor(s: AnsiSpan): CSSProperties | undefined {
-  if (!s.fg && !s.bg && !s.bold && !s.dim && !s.italic && !s.underline) return undefined;
-  return {
-    color: s.fg,
-    background: s.bg,
-    fontWeight: s.bold ? 700 : undefined,
-    // `dim` as opacity rather than a second palette: it composes with whatever
-    // foreground is already set, which is what the attribute means.
-    opacity: s.dim ? 0.7 : undefined,
-    fontStyle: s.italic ? "italic" : undefined,
-    textDecoration: s.underline ? "underline" : undefined,
-  };
-}
+export {
+  MIN_REFRESH_MS, MAX_REFRESH_MS, floorFor, nextRefreshMs,
+} from "@web/components/PaneTerminal";
 
 /**
  * The keypad, laid out as it is rendered.
@@ -68,109 +63,17 @@ const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
 ];
 
 /**
- * Whether the pane reflows long lines to the viewport.
- *
- * A choice rather than a heuristic, and deliberately so. Measured across five
- * live agents: of the lines too long for a phone, 57% are STRUCTURED — box
- * drawing, or table rows whose columns carry meaning positionally — and 43%
- * are prose or code that reflows perfectly. No per-line rule gets both right.
- * Wrap everything and the majority of long lines fold into nonsense; wrap
- * nothing and half the transcript needs sideways scrolling to read a sentence.
- *
- * So the operator decides, per pane, at any moment. The stored value is owned
- * by `@web/prefs` (key `paddock.term.wrap`, kept verbatim from this file's own
- * former constant so no operator's setting resets) — this component reads and
- * writes through it rather than touching `localStorage` directly.
- */
-
-/** Distance from the bottom, in px, still counted as "following the tail". */
-const STICK_THRESHOLD_PX = 48;
-
-/**
- * Distance from the top, in px, still counted as "at the top" — the state that
- * offers "Show earlier".
- *
- * Deliberately generous. A thumb-flick to the top of a scroller rarely lands on
- * exactly 0, and a control that appears only at a pixel-perfect position reads
- * as broken rather than as conditional. Smaller than STICK_THRESHOLD_PX because
- * the tail is a place you MEAN to be while output keeps arriving, whereas the
- * top is a place you arrive at once and then act.
- */
-const TOP_THRESHOLD_PX = 24;
-
-/**
- * Adaptive refresh bounds.
- *
- * A fixed interval is wrong in both directions, because the AGENT STATE DOES
- * NOT PREDICT whether the screen is changing. Measured at 1s sampling: an
- * agent actively drawing output changed on 100% of samples, an idle one on 7%,
- * and a `working` agent sitting between tool calls on 0%. Polling all three at
- * 3s is simultaneously too slow to follow the first and pure waste on the
- * other two.
- *
- * So the interval follows observed change instead: back off while the server
- * keeps answering `unchanged`, snap back to the floor the moment the screen
- * moves.
- *
- * The FLOOR is what governs how coarse an update looks. Measured against an
- * agent producing a burst of output, a 1s poll replaced up to 86% of the
- * screen in a single step — which is the "jumps rather than flows" complaint,
- * and no rendering change can fix it: the step size IS the poll interval. At
- * 250ms the same burst arrives in roughly four smaller steps.
- *
- * Paying for that floor only while output is moving is the whole point of the
- * backoff. A quiet pane still reaches the 10s ceiling and costs almost
- * nothing, because a revalidated poll is 38 B. Doubling (rather than 1.5x)
- * keeps the climb to the ceiling at six steps from the lower floor, so a pane
- * that goes quiet stops costing requests about as quickly as it did before.
- */
-export const MIN_REFRESH_MS = 250;
-export const MAX_REFRESH_MS = 10_000;
-const REFRESH_BACKOFF = 2;
-
-/**
- * The operator's refresh preset, as a floor in milliseconds.
- *
- * Raises the FLOOR only — the backoff ceiling (`MAX_REFRESH_MS`) and the
- * doubling that climbs toward it are untouched by the preset, so a metered
- * connection still quiets down on an idle pane exactly as before. Named
- * points from `@web/prefs`, not a free numeric field: see `RATE_MS` there for
- * why.
- */
-export function floorFor(rate: RatePref): number {
-  return RATE_MS[rate];
-}
-
-/**
- * The next poll delay, given the current one, whether the screen moved, and
- * the floor to snap back to.
- *
- * Pure and exported so the ladder is testable without a live agent and
- * without a DOM — the component holds it in a ref, which no unit test can
- * reach. `floor` defaults to `MIN_REFRESH_MS` so every existing caller (and
- * `tests/refresh-backoff.test.ts`, which predates the refresh preset) keeps
- * its prior behaviour unchanged.
- */
-export function nextRefreshMs(current: number, changed: boolean, floor: number = MIN_REFRESH_MS): number {
-  if (changed) return floor;
-  return Math.min(MAX_REFRESH_MS, Math.round(current * REFRESH_BACKOFF));
-}
-
-/** Settled lines revealed per tap of "show earlier" for a plain shell pane. */
-const HISTORY_PAGE = 200;
-
-/**
  * Earlier turns fetched per tap of "show earlier" for an agent with a
  * journal — `fetchHistory`'s `limit`.
  *
  * Counted in TURNS, not lines — deliberately its own constant rather than
- * reusing `HISTORY_PAGE` above, which counts LINES for the reconstructed-
- * scrollback path. A single assistant turn routinely flattens to several
- * lines, so a page size chosen the way `HISTORY_PAGE` was (as a count of
- * lines) would ask for far more prose than it looks like: 50 turns lands
- * 250+ lines in one tap — a wall dumped on a phone screen, not the
- * thumb-flick "show earlier" is meant to be. 20 keeps one tap's growth in
- * the same ballpark as what the reconstructed path already reveals.
+ * reusing `HISTORY_PAGE`, which counts LINES for the reconstructed-scrollback
+ * path. A single assistant turn routinely flattens to several lines, so a page
+ * size chosen the way `HISTORY_PAGE` was (as a count of lines) would ask for
+ * far more prose than it looks like: 50 turns lands 250+ lines in one tap — a
+ * wall dumped on a phone screen, not the thumb-flick "show earlier" is meant
+ * to be. 20 keeps one tap's growth in the same ballpark as what the
+ * reconstructed path already reveals.
  */
 const JOURNAL_PAGE_TURNS = 20;
 
@@ -180,18 +83,7 @@ export interface AgentTerminalProps {
 }
 
 export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
-  // Seeded from the cache, so a re-opened agent has its screen on the first
-  // render rather than after a round trip.
-  const [output, setOutput] = useState<string[]>(() => screenFor(agent.agentId)?.lines ?? []);
-  // Digest of the screen currently held, sent with each poll so the server can
-  // answer "unchanged" instead of resending ~10 KB the client already has.
-  const digestRef = useRef<string | null>(screenFor(agent.agentId)?.digest ?? null);
-  const [error, setError] = useState<string | null>(null);
-  // A poll that failed while output is already on screen. Distinct from
-  // `error`, which means the read failed with nothing to show.
-  const [stalled, setStalled] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [wrap, setWrap] = useState(() => readPrefs().wrap);
   /**
    * Which half of the pad is on screen, seeded from the stored preference.
    *
@@ -201,11 +93,6 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
    * an agent asked a question.
    */
   const [keypad, setKeypad] = useState<KeypadPref>(() => readPrefs().keypad);
-  // Read once: Settings is a separate full-screen view (App.tsx unmounts this
-  // component to show it), so there is no live pref change to react to while
-  // a pane stays open.
-  const [fontPx] = useState(() => readPrefs().fontPx);
-  const [shownHistory, setShownHistory] = useState(0);
   /**
    * Journal-sourced lines, the cursor for the next page, and this pane's two
    * latched answers — all of it read from and written back to `pane-cache`.
@@ -220,8 +107,8 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
    * the cache stays the single source of truth and `prunePanes` evicts this
    * alongside the screen and scrollback when the agent is gone.
    *
-   * Kept separate from `history.settled` because the two sources never mix for
-   * one agent (design decision 18) — this is WHICH ONE is in play, not
+   * Kept separate from the reconstructed path because the two sources never mix
+   * for one agent (design decision 18) — this is WHICH ONE is in play, not
    * something merged with the reconstructed path.
    *
    * `done` is "no more JOURNAL pages", set only on a genuine `hasMore: false`
@@ -235,11 +122,11 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
    * decision 18's "quiet in the UI, loud on the host" cases). Rendering off
    * the hint alone stranded the operator on a pane whose every response came
    * back `source: "reconstruction", lines: []` — `done` latched true and
-   * `revealed` stayed pinned to the empty `lines` forever, with
-   * `history.settled` never read. `fellBack` flips permanently false→true the
-   * first time a response says so, and once it does this pane behaves
-   * EXACTLY like a journal-less one from then on — the two sources still
-   * never coexist, decided here instead of from the static prop.
+   * `revealed` stayed pinned to the empty `lines` forever, with the
+   * reconstructed scrollback never read. `fellBack` flips permanently
+   * false→true the first time a response says so, and once it does this pane
+   * behaves EXACTLY like a journal-less one from then on — the two sources
+   * still never coexist, decided here instead of from the static prop.
    */
   const [journal, setJournal] = useState<JournalState>(
     () => journalFor(agent.agentId) ?? emptyJournal(),
@@ -272,6 +159,10 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const promptOptionCount = prompt?.options?.length ?? 0;
   /** Whether the `/prompt` fetch below has settled — see its own note. */
   const [promptLoaded, setPromptLoaded] = useState(false);
+  const [reply, setReply] = useState("");
+  const [feedback, setFeedback] = useState<ActionResult | null>(null);
+  /** The transcript, so a key press can push the screen it just produced. */
+  const pane = useRef<PaneTerminalHandle>(null);
 
   /**
    * A blocked agent may OPEN a collapsed pad. It may never close one.
@@ -302,163 +193,19 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
     if (promptOptionCount > 0) return;
     setKeypad("full");
   }, [agent.state, promptOptionCount, promptLoaded]);
-  const [reply, setReply] = useState("");
-  const [feedback, setFeedback] = useState<ActionResult | null>(null);
-  const paneRef = useRef<HTMLDivElement>(null);
-  // Whether the operator is following the tail. Read BEFORE the DOM updates
-  // and applied after, so replacing the screen does not yank someone who has
-  // deliberately scrolled up to read earlier output.
-  const stick = useRef(true);
-  /**
-   * Whether the operator has scrolled to the top of the transcript.
-   *
-   * Gates "Show earlier", which used to be rendered whenever more history
-   * existed — so on a long-running agent it was permanently on screen, costing
-   * a row of transcript on every pane for an action nobody takes until they
-   * have read back that far.
-   *
-   * State, not a ref: this one has to re-render, which is the whole point.
-   *
-   * Starts `true` for the case where the output is shorter than the pane. There
-   * is no scrollbar then, no scroll event ever fires, and top and bottom are the
-   * same place — a short pane with earlier history to fetch must still offer it.
-   */
-  const [atTop, setAtTop] = useState(true);
-
-  // Mirrors `busy` for the polling interval, which must read the CURRENT value
-  // without being torn down and rebuilt every time a key press flips it.
-  const busyRef = useRef(false);
-  useEffect(() => { busyRef.current = busy; }, [busy]);
-
-  // The floor the backoff snaps back to, from the operator's refresh preset.
-  // A ref for the same reason as `intervalRef` below: read once (see the
-  // `fontPx` comment above for why once is enough), and read by callbacks
-  // that must not be rebuilt every render to pick up a value that cannot
-  // change under them anyway.
-  //
-  // Read through a LAZY initializer, like `wrap` and `fontPx` above.
-  // `useRef(floorFor(readPrefs().rate))` evaluates its argument on every
-  // render and throws the result away on all but the first — four
-  // localStorage reads per render, in a component that re-renders every
-  // 250 ms on the Live preset.
-  const [floorMs] = useState(() => floorFor(readPrefs().rate));
-  const floorRef = useRef(floorMs);
-
-  // Current backoff position. A ref, not state: changing it must not re-render
-  // the pane, and the polling loop has to read the latest value without being
-  // rebuilt around it.
-  const intervalRef = useRef(floorRef.current);
-
-
-  const apply = useCallback((lines: string[], digest: string | null = null) => {
-    digestRef.current = digest;
-    rememberScreen(agent.agentId, { lines, digest });
-    // Every live screen is folded into the reconstructed scrollback. Only
-    // lines that have provably left the viewport are committed — see
-    // `web/history.ts`, which is what stops a redrawn spinner being pasted
-    // into history on every poll.
-    rememberHistory(
-      agent.agentId,
-      mergeSnapshot(historyFor(agent.agentId) ?? { settled: [], gaps: 0 }, lines),
-    );
-    setOutput(lines);
-    setError(null);
-    setStalled(false);
-  }, [agent.agentId]);
 
   /**
-   * Applies a read that may be a "nothing changed" answer.
+   * The agent's read, handed to the transcript.
    *
-   * `unchanged` must NOT fall through to `apply([])` — that would blank the
-   * pane on precisely the responses that mean it is still correct. It clears
-   * `stalled` though: a successful revalidation is proof the link is alive.
+   * `agent.state` is in the dependency list on purpose even though the body
+   * never reads it: `PaneTerminal` re-reads whenever `load` changes identity,
+   * and a transcript frozen at the moment the view opened is the thing an
+   * operator is most likely to misread as current.
    */
-  /**
-   * Returns false when a patch could not be verified, which tells the caller
-   * to fetch a whole screen. Reported rather than thrown: a failed patch is a
-   * recoverable transport hiccup, not an error worth showing the operator.
-   */
-  const applyResult = useCallback((res: OutputResult): boolean => {
-    if (res.unchanged) {
-      // Nothing moved: wait longer before asking again.
-      intervalRef.current = nextRefreshMs(intervalRef.current, false);
-      setStalled(false);
-      return true;
-    }
-    // The screen moved, so it may well move again — follow it closely.
-    intervalRef.current = nextRefreshMs(intervalRef.current, true, floorRef.current);
-
-    if ("patch" in res) {
-      const base = screenFor(agent.agentId)?.lines ?? [];
-      const next = applyPatch(base, res.patch);
-      // Self-check. The server states the digest the patch should produce, so
-      // a patch applied against the wrong base — or a bug in either half —
-      // is caught here instead of showing output that never existed.
-      if (digestOf(next) !== res.patch.digest) return false;
-      apply(next, res.patch.digest);
-      return true;
-    }
-
-    apply(res.lines, res.digest);
-    return true;
-  }, [agent.agentId, apply]);
-
-  /**
-   * The cheap re-read used by the poll: `visible` only, never scrollback.
-   *
-   * A failed poll does NOT clear the screen and does NOT raise the error
-   * banner — the last good output is still the best thing to show. It is not
-   * swallowed either: `stalled` puts a marker in the header, so a pane that
-   * has quietly stopped updating says so rather than looking current.
-   */
-  const refresh = useCallback(async () => {
-    try {
-      const ok = applyResult(await fetchOutput(agent.agentId, undefined, false, digestRef.current));
-      // A patch that failed its self-check: ask for a whole screen, without a
-      // digest so the server cannot answer with another patch.
-      if (!ok) applyResult(await fetchOutput(agent.agentId));
-    } catch {
-      setStalled(true);
-    }
-  }, [agent.agentId, applyResult]);
-
-  /**
-   * The opening read. `visible` only — the live viewport, which is exactly
-   * what the terminal shows.
-   *
-   * This used to make a SECOND, scrollback read for `idle` agents to add
-   * history. That was removed, because the poll asks for `visible` and the two
-   * sources return different content: the digest could never match, and
-   * suppressing the poll to avoid the pane oscillating left it frozen. The
-   * justification given at the time — "an idle agent by definition is not
-   * producing output" — is simply false. `idle` means READY FOR INPUT, and a
-   * pane changes whenever anyone types at the desk. An operator watching a
-   * frozen screen has no way to tell it from a quiet one.
-   *
-   * History on demand is worth having back as an explicit control; see
-   * `docs/roadmap.md`. It is not worth having as a hidden second request that
-   * fights the refresh loop.
-   */
-  const load = useCallback(async () => {
-    try {
-      // No `since` on the opening read: the point is to paint, and a cached
-      // screen from a previous visit may be minutes stale even when its
-      // digest still matches whatever it matched then.
-      applyResult(await fetchOutput(agent.agentId));
-    } catch (err) {
-      // Surfaced where the output would have been. A blank pane that means
-      // "the read failed" is indistinguishable from one that means "no
-      // output", and this project treats a silent break as the defect.
-      setError(String(err instanceof Error ? err.message : err));
-    }
-  }, [agent.agentId, applyResult]);
-
-  // Refetch on open and whenever the agent's state changes: a transcript
-  // frozen at the moment the view opened is the thing an operator is most
-  // likely to misread as current.
-  useEffect(() => {
-    void load();
-  }, [load, agent.state]);
+  const load = useCallback(
+    (since: string | null) => fetchOutput(agent.agentId, undefined, false, since),
+    [agent.agentId, agent.state],
+  );
 
   /**
    * The prompt, fetched only while the agent is actually blocked.
@@ -484,83 +231,6 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   }, [agent.agentId, agent.state]);
 
   /**
-   * Keep the open pane live.
-   *
-   * Spec §5's "never streamed" rule is about pushing SEVERAL terminals
-   * continuously down a ~250 ms link — the thing named as the one way to make
-   * paddock genuinely slow. This is one pane, only while its screen is open,
-   * from the `visible` source that costs ~2 ms. Without it a working agent's
-   * transcript is frozen at the moment the view opened, which is worse than
-   * slow: it is confidently wrong, and indistinguishable from an agent that
-   * has stopped.
-   *
-   * Paused when the document is hidden — a phone with the browser backgrounded
-   * must not poll a tunnel every few seconds for a screen nobody is looking at.
-   * Skipped while `busy`, so a poll cannot land on top of the screen a key
-   * press just returned.
-   */
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-
-    // Self-scheduling rather than setInterval, for two reasons. The interval
-    // is now a moving target (it backs off), and setInterval would also fire
-    // on schedule regardless of whether the PREVIOUS request had returned —
-    // stacking overlapping reads on exactly the slow link where that hurts.
-    // Scheduling the next poll only after the current one settles cannot.
-    const run = async () => {
-      if (cancelled) return;
-      if (!document.hidden && !busyRef.current) await refresh();
-      if (!cancelled) timer = setTimeout(run, intervalRef.current);
-    };
-    timer = setTimeout(run, intervalRef.current);
-
-    // Coming back to a backgrounded tab: the screen on display may be minutes
-    // old, so reset to the floor and read immediately rather than waiting out
-    // whatever backoff was in force when the phone was pocketed.
-    const onVisible = () => {
-      if (document.hidden) return;
-      intervalRef.current = floorRef.current;
-      clearTimeout(timer);
-      void run();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    const el = paneRef.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-    // Recomputed here as well as on scroll: sticking to the bottom by ASSIGNING
-    // scrollTop does fire a scroll event, but output that is shorter than the
-    // pane never scrolls at all, so nothing would ever correct the initial
-    // value. Reading it on every output change covers both.
-    readScroll();
-  }, [output]);
-
-  /**
-   * The pane's scroll position, reduced to the two facts anything here needs:
-   * are we following the tail, and are we at the top.
-   *
-   * `atTop` uses a generous threshold and no hysteresis, which is safe because
-   * showing the button cannot move the scroll position that decides whether to
-   * show it: the button occupies layout above the pane, so the pane loses
-   * height at its BOTTOM edge while scrollTop and scrollHeight both stay put.
-   * There is no feedback loop to oscillate.
-   */
-  const readScroll = () => {
-    const el = paneRef.current;
-    if (!el) return;
-    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
-    setAtTop(el.scrollTop <= TOP_THRESHOLD_PX);
-  };
-
-  /**
    * The pad is disabled for the whole round trip rather than queueing presses.
    * Two keys in flight against one TUI can land out of order, and a cursor
    * that jumps two rows on one tap is worse than one that responds a beat
@@ -574,7 +244,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
     // is empty" — replacing the output with it would blank the terminal on a
     // key that simply did not go through.
     if (res.ok) {
-      apply(res.lines);
+      pane.current?.apply(res.lines);
       // The cursor has moved, so the preview must move with it.
       if (res.selected !== undefined) {
         setPrompt((p) => (p ? { ...p, selected: res.selected ?? null } : p));
@@ -593,7 +263,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
     const res = await sendText(agent.agentId, text);
     if (res.ok) {
       setReply("");
-      apply(res.lines);
+      pane.current?.apply(res.lines);
       setFeedback(null);
     } else {
       setFeedback({ ok: false, detail: res.detail ?? "Failed." });
@@ -601,14 +271,6 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
     setBusy(false);
   };
 
-  // Parsed once per render and shared by both modes. `parseAnsi` carries style
-  // ACROSS lines, so it must see the whole buffer in order — slicing the
-  // result is safe, slicing the input would not be.
-  // Reconstructed scrollback, revealed only as far as the operator asked.
-  // Nothing of it renders by default: the pane costs exactly what it did
-  // before until "show earlier" is tapped, which is what keeps a 2000-line
-  // history from becoming 36,000 DOM nodes nobody asked for.
-  const history = historyFor(agent.agentId) ?? { settled: [], gaps: 0 };
   // Design decision 18: the two sources never coexist for one agent, but
   // which one is "in play" is decided by what the SERVER has answered for
   // this pane (`journal.fellBack`), not by the static `hasJournal` hint —
@@ -616,17 +278,6 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   // load-bearing. Once a pane has fallen back, it reveals reconstructed
   // history exactly like a journal-less agent always has.
   const useJournal = agent.hasJournal && !journal.fellBack;
-  const revealed = useJournal
-    ? journal.lines
-    : shownHistory > 0
-      ? history.settled.slice(Math.max(0, history.settled.length - shownHistory))
-      : [];
-
-  // parseAnsi carries style ACROSS lines, so it must see history and the live
-  // screen as one sequence — parsing them separately would drop any colour a
-  // scrolled-off line had opened.
-  const lineSpans = parseAnsi([...revealed, ...output]);
-  const blocks = groupLines(lineSpans.map((spans) => spans.map((sp) => sp.text).join("")));
 
   /**
    * Whether the cursor is on this option, judged by `prompt.selected` and NOT
@@ -651,17 +302,101 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
   const isSelected = (o: { key: string; label: string }) =>
     `${o.key}. ${o.label}` === prompt?.selected;
 
+  /**
+   * "Show earlier", for the agents that have a journal.
+   *
+   * `undefined` hands the decision back to the transcript's own reconstructed
+   * button, which is exactly what a journal-less agent — and a pane that has
+   * fallen back — must get. `null` is the other outcome and a different claim:
+   * the journal has genuinely run out, so nothing is offered even though
+   * reconstructed lines exist behind it.
+   */
+  const earlier = (ctx: EarlierContext) => {
+    if (!useJournal) return undefined;
+    if (journal.done) return null;
+    return (
+      <button
+        type="button"
+        className="term-earlier"
+        disabled={journalBusy}
+        onClick={() => {
+          const restore = ctx.pinScroll();
+          // Synchronous re-entrancy guard: two `click()`s land before
+          // React re-renders to reflect `journalBusy`, so only a ref read
+          // here — not the state below — actually stops a double-tap from
+          // firing the request twice against the same, not-yet-advanced
+          // cursor.
+          if (journalBusyRef.current) return;
+          journalBusyRef.current = true;
+          setJournalBusy(true);
+          // The agent's own log, not the reconstructed path — see design
+          // decision 18.
+          void fetchHistory(agent.agentId, journal.cursor, JOURNAL_PAGE_TURNS)
+            .then((page) => {
+              if (page.source !== "journal") {
+                // The server has no journal for THIS pane after all — no
+                // adapter, no session ref, a missing or unreadable file
+                // (decision 18's "quiet in the UI" causes). Hand the pane
+                // over to the reconstructed path ENTIRELY and permanently,
+                // exactly as if `hasJournal` had been false from the
+                // start — never retry the journal route again for it, and
+                // never leave the pane pinned to the empty `journal.lines`
+                // it fetched nothing into. Grant the first page of
+                // reconstruction now too, so this tap is not wasted on
+                // discovering the fallback alone.
+                patchJournal((held) => ({ ...held, fellBack: true }));
+                ctx.revealMore();
+                return;
+              }
+              // PREPEND: a page fetched with a cursor is older than what is
+              // already held. `cursor` and `done` move with it, in ONE write,
+              // so a pane reopened between taps never sees lines whose cursor
+              // has not caught up.
+              patchJournal((held) => ({
+                ...held,
+                lines: [...page.lines, ...held.lines],
+                cursor: page.cursor,
+                // A genuine "no more journal pages" — the only case that
+                // ends the affordance without a fallback.
+                done: !page.hasMore,
+              }));
+              restore();
+            })
+            .catch((err) => {
+              // A transient failure (network blip, herdr hiccup) is NOT
+              // "no more history" and NOT "no journal" — the cached
+              // `cursor` and `done` are left untouched so the next tap
+              // retries the SAME page, and this is surfaced the way every
+              // other action failure in this component is (`feedback`),
+              // never swallowed into a permanently hidden button.
+              setFeedback({
+                ok: false,
+                detail: err instanceof Error ? err.message : String(err),
+              });
+            })
+            .finally(() => {
+              journalBusyRef.current = false;
+              setJournalBusy(false);
+            });
+        }}
+      >
+        Show earlier
+      </button>
+    );
+  };
+
   return (
-    <section className="term" aria-label={`${agent.name} terminal`}>
-      <header className="term-header">
-        {/* Glyph only. `aria-label` already carried the meaning for assistive
-            tech, so the word was spending ~55px of a 390px header on something
-            only sighted users read — and they read the ‹ just as well. */}
-        <button type="button" className="term-back" onClick={onBack} aria-label="Back to agents">
-          ‹
-        </button>
-        <div className="term-title">
-          <strong>{agent.name}</strong>
+    <PaneTerminal
+      ref={pane}
+      paneId={agent.agentId}
+      title={agent.name}
+      onBack={onBack}
+      load={load}
+      paused={busy}
+      revealed={useJournal ? journal.lines : undefined}
+      earlier={earlier}
+      headerExtra={
+        <>
           {/* Blocked renders a PILL instead of the dot; every other state keeps
               the same `StatusDot` the list renders. That is the dashboard's own
               escalation — needs-you gets a tinted, bordered treatment and the
@@ -669,9 +404,9 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               padding is paid for by the dot and gap it replaces, which matters
               because this header is width-starved and the agent's name is
               already truncated. Measured: the name holds at 65px either way,
-              where a pill BESIDE the dot took it to 50px. */}
+              where a pill BESIDE the dot took it to 50px.
 
-          {/* Blocked keeps its WORD, visibly. Everywhere else the dot is enough
+              Blocked keeps its WORD, visibly. Everywhere else the dot is enough
               and the word is only for assistive tech.
 
               Colour alone is not a channel a sighted colour-blind operator can
@@ -691,284 +426,103 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
                 <StatusDot state={agent.state} />
                 <span className="sr-only">{agent.state}</span>
               </>}
-          {/* Shown rather than hidden: a pane that has stopped updating must
-              not look current. */}
-          {stalled && <span className="term-stalled" role="status">not updating</span>}
-        </div>
-      </header>
-
-      {/* Offered when there is something to show AND the operator has scrolled
-          to the top — which is the moment they have run out of transcript and
-          the only moment the button answers a question they are asking. It used
-          to render on the strength of "more history exists", so on any
-          long-running agent it never went away: a permanent row of chrome above
-          a pane whose entire job is showing as many lines as possible.
-
-          Revealing PREPENDS content, which would otherwise shove the screen
-          down and lose the operator's place, so the scroll position is pinned
-          across the growth in the handler below. A consequence worth stating:
-          pinning means one tap leaves you no longer at the top, so the button
-          hides itself and you scroll up through what you just loaded to ask for
-          more. That is the same shape as every message app's back-scroll, and
-          it beats the alternative of holding you at the top while content
-          appears under you. */}
-      {!error && atTop
-        && (useJournal ? !journal.done : history.settled.length > revealed.length) && (
-        <button
-          type="button"
-          className="term-earlier"
-          disabled={journalBusy}
-          onClick={() => {
-            const el = paneRef.current;
-            const before = el ? el.scrollHeight - el.scrollTop : 0;
-            const restore = () => requestAnimationFrame(() => {
-              if (el) el.scrollTop = el.scrollHeight - before;
-            });
-            if (!useJournal) {
-              setShownHistory((n) => n + HISTORY_PAGE);
-              restore();
-              return;
-            }
-            // Synchronous re-entrancy guard: two `click()`s land before
-            // React re-renders to reflect `journalBusy`, so only a ref read
-            // here — not the state below — actually stops a double-tap from
-            // firing the request twice against the same, not-yet-advanced
-            // cursor.
-            if (journalBusyRef.current) return;
-            journalBusyRef.current = true;
-            setJournalBusy(true);
-            // The agent's own log, not the reconstructed path — see design
-            // decision 18.
-            void fetchHistory(agent.agentId, journal.cursor, JOURNAL_PAGE_TURNS)
-              .then((page) => {
-                if (page.source !== "journal") {
-                  // The server has no journal for THIS pane after all — no
-                  // adapter, no session ref, a missing or unreadable file
-                  // (decision 18's "quiet in the UI" causes). Hand the pane
-                  // over to the reconstructed path ENTIRELY and permanently,
-                  // exactly as if `hasJournal` had been false from the
-                  // start — never retry the journal route again for it, and
-                  // never leave `revealed` pinned to the empty `journal.lines`
-                  // it fetched nothing into. Grant the first page of
-                  // reconstruction now too, so this tap is not wasted on
-                  // discovering the fallback alone.
-                  patchJournal((held) => ({ ...held, fellBack: true }));
-                  setShownHistory((n) => n + HISTORY_PAGE);
-                  restore();
-                  return;
-                }
-                // PREPEND: a page fetched with a cursor is older than what is
-                // already held. `cursor` and `done` move with it, in ONE write,
-                // so a pane reopened between taps never sees lines whose cursor
-                // has not caught up.
-                patchJournal((held) => ({
-                  ...held,
-                  lines: [...page.lines, ...held.lines],
-                  cursor: page.cursor,
-                  // A genuine "no more journal pages" — the only case that
-                  // ends the affordance without a fallback.
-                  done: !page.hasMore,
-                }));
-                restore();
-              })
-              .catch((err) => {
-                // A transient failure (network blip, herdr hiccup) is NOT
-                // "no more history" and NOT "no journal" — the cached
-                // `cursor` and `done` are left untouched so the next tap
-                // retries the SAME page, and this is surfaced the way every
-                // other action failure in this component is (`feedback`),
-                // never swallowed into a permanently hidden button.
-                setFeedback({
-                  ok: false,
-                  detail: err instanceof Error ? err.message : String(err),
-                });
-              })
-              .finally(() => {
-                journalBusyRef.current = false;
-                setJournalBusy(false);
-              });
-          }}
-        >
-          Show earlier
-          {!useJournal && ` · ${history.settled.length - revealed.length} lines`}
-          {!useJournal && history.gaps > 0 && (
-            <span className="term-gapnote"> · {history.gaps} gaps</span>
+        </>
+      }
+      beforeControls={
+        <>
+          {feedback && (
+            <p className={feedback.ok ? "term-note ok" : "term-note warn"} role="status">
+              {feedback.ok ? "Sent." : (feedback.detail ?? "Failed.")}
+            </p>
           )}
-        </button>
-      )}
 
-      {error ? (
-        <p className="term-error warn" role="alert">Could not load output: {error}</p>
-      ) : (
-        <div
-          ref={paneRef}
-          className="term-pane"
-          data-wrap={wrap ? "on" : "off"}
-          onScroll={readScroll}
-          // `--term-font-px` is read by styles.css's `.term-pane` rule. Set
-          // as a custom property rather than a `fontSize` style so
-          // `.term-exact`'s `font: inherit` picks it up in both wrap modes
-          // without a second place to apply it.
-          //
-          // Written ONLY when the operator has chosen a size. That rule reads
-          // `var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))`, so writing
-          // the property unconditionally — which is what a numeric default
-          // for `fontPx` made this do — means the clamp never applies to
-          // anybody and the pane loses roughly a quarter of its columns on a
-          // phone. `undefined` leaves the attribute off entirely.
-          style={fontPx === null ? undefined : ({ "--term-font-px": `${fontPx}px` } as CSSProperties)}
-        >
-          {/* Spans, not raw text: the escapes carry the structure. Every span's
-              content is a React child, so React escapes it — this is agent
-              output, arbitrary untrusted text, and it must never reach
-              innerHTML.
+          {/* Real option buttons, but ONLY when the parser was confident. Each
+              carries the agent's own label verbatim — no reordering, no
+              summarising, no generic "Approve" — so committing one cannot be off
+              by one the way arrowing to it can. When the parser refuses (it does,
+              on prompts whose options are separated by description lines) there
+              are simply no buttons, and the keypad below is the floor. */}
+          {prompt?.options && prompt.options.length > 0 && (
+            <div className="term-options" role="group" aria-label="Answer">
+              {prompt.question && <p className="term-question">{prompt.question}</p>}
+              {prompt.options.map((o) => (
+                <Button
+                  key={o.key}
+                  type="button"
+                  variant="outline"
+                  className="term-option"
+                  data-prompt-option={o.key}
+                  disabled={busy}
+                  aria-pressed={isSelected(o)}
+                  onClick={() => {
+                    setBusy(true);
+                    void answerWithKey(agent.agentId, o.key)
+                      .then((r) => setFeedback(r))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  {/* The agent's OWN digit, not a guessed keystroke: `o.key` is what
+                      herdr read off the screen and what `answerWithKey` sends
+                      below, so the badge shows the key pressing this will send.
+                      Rendering it makes a three-option prompt scannable at arm's
+                      length instead of three similar sentences. */}
+                  <span aria-hidden="true" className="term-option-key">{o.key}</span>
+                  <span className="term-option-label">{o.label}</span>
+                </Button>
+              ))}
+            </div>
+          )}
 
-              In Exact mode the whole pane is one `pre` block and the newline is
-              emitted explicitly, so a blank line still occupies a row.
+          {/* What Enter would commit, right where the thumb is.
 
-              In Wrap mode the buffer is split into runs (`web/lines.ts`):
-              prose reflows to the viewport, and each run of structure becomes
-              its OWN horizontally scrollable strip. That is what keeps a table
-              readable without dragging the surrounding sentences sideways with
-              it. */}
-          {wrap
-            ? blocks.map((b) => (
-                <div key={b.from} className={`term-${b.kind}`}>
-                  {lineSpans.slice(b.from, b.to + 1).map((spans, i) => (
-                    <Fragment key={i}>
-                      {spans.map((sp, j) => (
-                        <span key={j} style={styleFor(sp)}>{sp.text}</span>
-                      ))}
-                      {"\n"}
-                    </Fragment>
-                  ))}
-                </div>
-              ))
-            : (
-              <pre className="term-exact">
-                {lineSpans.map((spans, i) => (
-                  <Fragment key={i}>
-                    {spans.map((sp, j) => (
-                      <span key={j} style={styleFor(sp)}>{sp.text}</span>
-                    ))}
-                    {"\n"}
-                  </Fragment>
-                ))}
-              </pre>
-            )}
-        </div>
-      )}
+              The keypad's ↓ wraps from the last option back to the first, and the
+              middle option of a permission prompt is routinely a persistent grant
+              ("and don't ask again"). The wrap was never really the hazard — the
+              wrap being INVISIBLE was. This is shown whenever a cursor exists, so
+              it covers the prompt shapes the option parser refuses to read, which
+              are exactly the ones where the keypad is the only way to answer.
 
-      {feedback && (
-        <p className={feedback.ok ? "term-note ok" : "term-note warn"} role="status">
-          {feedback.ok ? "Sent." : (feedback.detail ?? "Failed.")}
-        </p>
-      )}
-
-      {/* Real option buttons, but ONLY when the parser was confident. Each
-          carries the agent's own label verbatim — no reordering, no
-          summarising, no generic "Approve" — so committing one cannot be off
-          by one the way arrowing to it can. When the parser refuses (it does,
-          on prompts whose options are separated by description lines) there
-          are simply no buttons, and the keypad below is the floor. */}
-      {prompt?.options && prompt.options.length > 0 && (
-        <div className="term-options" role="group" aria-label="Answer">
-          {prompt.question && <p className="term-question">{prompt.question}</p>}
-          {prompt.options.map((o) => (
-            <Button
-              key={o.key}
-              type="button"
-              variant="outline"
-              className="term-option"
-              disabled={busy}
-              aria-pressed={isSelected(o)}
-              onClick={() => {
-                setBusy(true);
-                void answerWithKey(agent.agentId, o.key)
-                  .then((r) => setFeedback(r))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              {/* The agent's OWN digit, not a guessed keystroke: `o.key` is what
-                  herdr read off the screen and what `answerWithKey` sends
-                  below, so the badge shows the key pressing this will send.
-                  Rendering it makes a three-option prompt scannable at arm's
-                  length instead of three similar sentences. */}
-              <span aria-hidden="true" className="term-option-key">{o.key}</span>
-              <span className="term-option-label">{o.label}</span>
-            </Button>
-          ))}
-        </div>
-      )}
-
-      {/* What Enter would commit, right where the thumb is.
-
-          The keypad's ↓ wraps from the last option back to the first, and the
-          middle option of a permission prompt is routinely a persistent grant
-          ("and don't ask again"). The wrap was never really the hazard — the
-          wrap being INVISIBLE was. This is shown whenever a cursor exists, so
-          it covers the prompt shapes the option parser refuses to read, which
-          are exactly the ones where the keypad is the only way to answer. */}
-      {/* Hidden when a button above already carries the accent border for the
-          same option: the two would say the same thing, and this one costs a
-          bordered band plus a rule on a phone where the transcript is already
-          fighting for height. Kept for the case it was written for — a prompt
-          the option parser refuses, where the keypad is the only way to answer
-          and nothing else shows what Enter would commit. */}
-      {prompt?.selected && !prompt.options?.some(isSelected) && (
-        <p className="term-selected" role="status">
-          <span className="term-selected-label">⏎ Enter selects</span>
-          {prompt.selected}
-        </p>
-      )}
-
-      {/* Always present, in every state. These keys move the agent's own
-          cursor on a screen the operator can see; they assert nothing about
-          what an option means, which is why they work on prompt shapes the
-          parser cannot read. A pad that appeared and vanished as the agent's
-          state changed would move under the operator's thumb. */}
-      {/* The view controls live HERE, not in the header. In the header they
-          competed with the agent's name for a 390px row that also carries a
-          back link and a state pill — and the name is the only flexible item,
-          so the name lost: it rendered as `sche…`, which is the one thing a
-          header exists to tell you. Down here they are also next to the keypad
-          that `Keys` collapses, which is where a control for a thing belongs. */}
-      <div className="term-controls" role="group" aria-label="View">
-        <button
-          type="button"
-          className="term-wrap-toggle"
-          aria-pressed={wrap}
-          onClick={() => { const v = !wrap; setWrap(v); writePref("wrap", v); }}
-        >
-          {wrap ? "Wrap" : "Exact"}
-        </button>
-        {/* Beside Wrap because both are view controls, and because a collapse
-            button INSIDE the pad would spend the height it exists to reclaim.
-            Its OWN class: sharing `.term-wrap-toggle` made a selector written
-            for the wrap control match this one too, by DOM order rather than
-            by intent. Text rather than a keyboard glyph because this file
-            already records that a symbol renders as tofu in several mobile
-            system fonts — the pressed state is carried by `aria-pressed`,
-            which the stylesheet dims. */}
-        {/* Three states, cycled: hidden -> compact -> full -> hidden. The pad
-            is 106px of a 390x844 phone, measured, and its default is now
-            `hidden` — a parsed prompt renders real option buttons and tapping
-            one answers in a single tap, so on the commonest blocked screen the
-            arrows were a duplicate path charging a quarter of the transcript.
-
-            A cycle rather than two controls because this row has 36px and
-            already carries Wrap and refresh.
-
-            The accessible name stays exactly "Keys". `aria-pressed` is gone
-            with the boolean it described, and it is NOT replaced by an
-            aria-label: this file already records that an accessible name which
-            does not contain the visible label is a WCAG 2.5.3 hazard for voice
-            control, and "Keys ·" against "Keys: arrows and Enter" is that
-            hazard. `aria-expanded` carries the part that matters instead — the
-            pad is a disclosure, which is what that attribute is for — and the
-            dots are decorative, so they are hidden from the name rather than
-            being spoken as punctuation. Which of the two open sizes is showing
-            is audible the way it is visible: the keys themselves appear. */}
+              Hidden when a button above already carries the accent border for the
+              same option: the two would say the same thing, and this one costs a
+              bordered band plus a rule on a phone where the transcript is already
+              fighting for height. */}
+          {prompt?.selected && !prompt.options?.some(isSelected) && (
+            <p className="term-selected" role="status">
+              <span className="term-selected-label">⏎ Enter selects</span>
+              {prompt.selected}
+            </p>
+          )}
+        </>
+      }
+      controls={
+        // Beside Wrap because both are view controls, and because a collapse
+        // button INSIDE the pad would spend the height it exists to reclaim.
+        // Its OWN class: sharing `.term-wrap-toggle` made a selector written
+        // for the wrap control match this one too, by DOM order rather than
+        // by intent. Text rather than a keyboard glyph because this file
+        // already records that a symbol renders as tofu in several mobile
+        // system fonts — the pressed state is carried by `aria-pressed`,
+        // which the stylesheet dims.
+        //
+        // Three states, cycled: hidden -> compact -> full -> hidden. The pad
+        // is 106px of a 390x844 phone, measured, and its default is now
+        // `hidden` — a parsed prompt renders real option buttons and tapping
+        // one answers in a single tap, so on the commonest blocked screen the
+        // arrows were a duplicate path charging a quarter of the transcript.
+        //
+        // A cycle rather than two controls because this row has 36px and
+        // already carries Wrap and refresh.
+        //
+        // The accessible name stays exactly "Keys". `aria-pressed` is gone
+        // with the boolean it described, and it is NOT replaced by an
+        // aria-label: this file already records that an accessible name which
+        // does not contain the visible label is a WCAG 2.5.3 hazard for voice
+        // control, and "Keys ·" against "Keys: arrows and Enter" is that
+        // hazard. `aria-expanded` carries the part that matters instead — the
+        // pad is a disclosure, which is what that attribute is for — and the
+        // dots are decorative, so they are hidden from the name rather than
+        // being spoken as punctuation. Which of the two open sizes is showing
+        // is audible the way it is visible: the keys themselves appear.
         <button
           type="button"
           className="term-keys-toggle"
@@ -988,63 +542,67 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
             <span aria-hidden="true">{keypad === "compact" ? " ·" : " ··"}</span>
           )}
         </button>
-        <button type="button" onClick={() => void load()} disabled={busy} aria-label="Refresh">
-          ↻
-        </button>
-      </div>
-      {keypad !== "hidden" && (
-      <div className="term-keys" role="group" aria-label="Send key">
-        <div className="term-keys-primary">
-          {PRIMARY_KEYS.map((k) => (
-            <Button
-              key={k.key} type="button" variant="outline"
-              /* Enter carries the commit — see .term-key-enter. The other two
-                 only move a highlight, so they stay quiet. */
-              className={k.key === "enter" ? "term-key term-key-enter" : "term-key"}
-              data-key={k.key}
-              disabled={busy} onClick={() => void press(k.key)}
-            >
-              {k.label}
-            </Button>
-          ))}
-        </div>
-        {keypad === "full" && (
-        <div className="term-keys-secondary">
-          {SECONDARY_KEYS.map((k) => (
-            <Button
-              key={k.key} type="button" variant="outline" className="term-key term-key-sm"
-              data-key={k.key}
-              disabled={busy} onClick={() => void press(k.key)}
-              aria-label={k.key}
-            >
-              {k.label}
-            </Button>
-          ))}
-        </div>
-        )}
-      </div>
-      )}
+      }
+      afterControls={
+        <>
+          {/* These keys move the agent's own cursor on a screen the operator
+              can see; they assert nothing about what an option means, which is
+              why they work on prompt shapes the parser cannot read. */}
+          {keypad !== "hidden" && (
+            <div className="term-keys" data-keypad={keypad} role="group" aria-label="Send key">
+              <div className="term-keys-primary">
+                {PRIMARY_KEYS.map((k) => (
+                  <Button
+                    key={k.key} type="button" variant="outline"
+                    /* Enter carries the commit — see .term-key-enter. The other two
+                       only move a highlight, so they stay quiet. */
+                    className={k.key === "enter" ? "term-key term-key-enter" : "term-key"}
+                    data-key={k.key}
+                    disabled={busy} onClick={() => void press(k.key)}
+                  >
+                    {k.label}
+                  </Button>
+                ))}
+              </div>
+              {keypad === "full" && (
+                <div className="term-keys-secondary">
+                  {SECONDARY_KEYS.map((k) => (
+                    <Button
+                      key={k.key} type="button" variant="outline" className="term-key term-key-sm"
+                      data-key={k.key}
+                      disabled={busy} onClick={() => void press(k.key)}
+                      aria-label={k.key}
+                    >
+                      {k.label}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-      <form
-        className="term-reply"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (reply.trim()) void submitReply(reply.trim());
-        }}
-      >
-        <label className="sr-only" htmlFor="term-reply-input">Reply</label>
-        <Input
-          id="term-reply-input"
-          value={reply}
-          disabled={busy}
-          onChange={(e) => setReply(e.target.value)}
-          placeholder="Type a reply…"
-        />
-        {/* Filled, not outline: this is the committing action. The keys above
-            are `outline` because pressing one is cheap and reversible; sending a
-            reply to an agent is neither. */}
-        <Button type="submit" disabled={busy || !reply.trim()}>Send</Button>
-      </form>
-    </section>
+          <form
+            className="term-reply"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (reply.trim()) void submitReply(reply.trim());
+            }}
+          >
+            <label className="sr-only" htmlFor="term-reply-input">Reply</label>
+            <Input
+              id="term-reply-input"
+              value={reply}
+              disabled={busy}
+              onChange={(e) => setReply(e.target.value)}
+              placeholder="Type a reply…"
+            />
+            {/* Filled, not outline: this is the committing action. The keys above
+                are `outline` because pressing one is cheap and reversible; sending a
+                reply to an agent is neither. */}
+            <Button type="submit" disabled={busy || !reply.trim()}>Send</Button>
+          </form>
+        </>
+      }
+    />
   );
 }
