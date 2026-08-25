@@ -37,7 +37,8 @@ One process. No relay hop, no plugin, no polling loop.
 | `server/ws/hub.ts` | Browser fan-out. Full snapshot on connect, coalesced deltas after, and a 20s heartbeat so a quiet-but-live link does not read as stale. Knows nothing about herdr. |
 | `server/herdr/actions.ts` | The herdr calls behind reading a pane and answering a blocked agent, and the home of the bounds on both numeric parameters (`resolveReadLines`, `resolveWaitTimeoutMs` — clamped out of range, defaulted when malformed): `readOutput`/`readDetection` (both typed with the generated `HerdrPaneRead` envelope, since the text is at `result.read.text`; source picked by `readSourceFor`, which gives scrollback to an `idle` agent and the viewport to every other state — see gotchas), `sendOptionKey`/`sendReply`, and `waitUntilUnblocked` (waits on *leaving* `blocked`, not on reaching `working`). Bound to one socket path via `createActions` so `routes.ts` takes it as an injectable `HerdrActions`, omitted entirely in `--demo`. |
 | `server/herdr/prompt-parse.ts` | Turns a `detection` snapshot into `ParsedPrompt` — the last contiguous run of numbered option lines, plus the question line pinned to that run. Returns `options: null` rather than guess when the shape does not hold. The only place that knows the numbered-menu text format. |
-| `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. Read-only routes (`/api/health`, `/api/agents`) and `/ack` are always registered — `/ack` touches only the store and the hub, so gating it on herdr would break it in `--demo`. The three herdr-backed action routes (`/output`, `/prompt`, `/answer`) are added only `if (deps.actions)`, so they do not exist there. Client-supplied values are validated at this boundary before they reach a herdr parameter: `:id` against the store, `lines` through `resolveReadLines`, and `key` against the option-digit pattern. |
+| `server/herdr/tree.ts` | `toSpaceTree`: one `session.snapshot` shaped into the `SpaceTree` the Spaces screen renders. The only module that knows the snapshot's field names — the same containment rule 2 places on `adapter.ts` — and it borrows `toState` from there rather than mapping states twice. Pure: `home` is injected so `cwd` can be tilde-ised without reading `process.env`. It imports neither `state/store.ts` nor `ws/hub.ts`, because the tree is read on demand and never replicated into paddock's state — see decision 21. |
+| `server/routes.ts` | Hono routes, plus the static-file / SPA fallback handler. Read-only routes (`/api/health`, `/api/agents`), `/ack` and `POST /api/agents/:id/history` are always registered — none of them touches herdr, so gating them on it would break them in `--demo`. The herdr-backed routes are added only `if (deps.actions)` and so do not exist there: the agent actions (`/output`, `/prompt`, `/key`, `/text`, `/answer`) and the pane routes (`POST /api/panes/:id/output`, `/text`, `/key`). `GET /api/spaces` is gated separately, on `deps.readTree`. Client-supplied values are validated at this boundary before they reach a herdr parameter: `:id` against the store for an agent and against the TREE for a pane (a shell pane is deliberately not in the store), `lines` through `resolveReadLines`, `key` against the option-digit pattern for an agent and `isNavKey`'s closed allowlist for a pane. |
 | `server/settings/store.ts` | Loads and atomically persists `~/.config/paddock/settings.json` (mode `0600`, override with `PADDOCK_CONFIG_DIR`): the Telegram token/chat id, notification triggers and their settle windows, the mute instant, and the public URL used in a notification's deep link. `migrate()` normalises every stored shape to the current one — explicitly, field by field, because a shallow merge once let a missing settle window mean "fire immediately". `view()` is the only thing routes and the notifier read from it, and it never includes the token itself — only whether one is `configured` and its last four characters. |
 | `server/update-check.ts` | The once-a-day "is there a newer release" check, and nothing else. `scheduleUpdateChecks` keeps asking for as long as paddock runs (hourly), because a single boot-time call froze `latestKnown` for the life of the process — the long-lived case is the whole point of `paddock start`. The timer is NOT the rate limit; the 24h cache below is, so the network behaviour is unchanged. It takes a FACTORY, not a `CheckOpts`: a captured `now` would make every tick look like the same instant and the cache would never appear to expire. Caches the last check time and last seen tag in `~/.config/paddock/update-check.json` (mode `0600`, same directory and same posture as `settings.json`; `PADDOCK_CONFIG_DIR` moves both). **Off entirely with `PADDOCK_NO_UPDATE_CHECK=1`**, and off automatically for a `0.0.0-dev` build. Every failure — unreachable API, unwritable cache — is logged at INFO and returns `null`; `startUpdateCheck` owns the `.catch` so a failed check can never take the server down. |
 | `server/notify/notifier.ts` | Watches deltas for a state **transition**, then arms a per-trigger timer and sends a Telegram message only once that state has **held** for the settle window — the next transition cancels it. Subject to mute and a per-agent cooldown, which defers rather than drops. Owns timers, so it also owns `dispose()`, called from the shutdown path. A leaf off the composition root. `fanOut()` is the small function `index.ts` composes with `hub.queue` so a delta reaches both without either learning the other exists. |
@@ -82,6 +83,22 @@ other module has to.
 `notify/` (`notifier.ts` plus its `telegram.ts` transport) hangs off `index.ts`
 as a second leaf, alongside `hub.ts`, not chained into the line above: nothing
 in `herdr/`, `state/store.ts` or `ws/hub.ts` imports it or knows it exists.
+
+`herdr/tree.ts` hangs off `herdr/` and stops there. It reads one
+`session.snapshot` and shapes it for the UI, and it deliberately does NOT
+continue along the line above: nothing in it imports `state/store.ts` or
+`ws/hub.ts`, and no tree is ever put into either.
+
+```
+herdr/socket → herdr/tree → routes (GET /api/spaces) → web/
+```
+
+That is a branch that skips the store on purpose. The store is what computes
+the deltas `notify/` rides, so a tree living there would put "a pane was
+split" on the path that decides whether to message the operator — see
+decision 21. `ws/hub.ts` carries only the payload-free `tree-stale`
+invalidation, which is why the hub still knows nothing about herdr or about
+what a space is.
 
 `journal/` is a second axis beside `herdr/`, not a branch off it. It knows
 HARNESSES (Claude Code's own transcript format today), never herdr — nothing
@@ -133,11 +150,30 @@ the detached child it spawns does. Nothing in `herdr/`, `state/store.ts` or
 
 ## Actions transport
 
-Reading a pane and answering a blocked agent do not ride the WebSocket at all.
-Each is a plain POST route (`/api/agents/:id/output`, `/prompt`, `/answer`,
-`/ack`) that calls into `HerdrActions` and returns its result — success or
-`ActionResult`-shaped failure — directly in the HTTP response to the caller
-that made the request. No correlation id, no round trip through the hub.
+Reading a pane, answering a blocked agent, typing at a shell and browsing the
+session tree do not ride the WebSocket at all. Each is a plain route that calls
+into `HerdrActions` (or `readTree`) and returns its result — success or
+`ActionResult`-shaped failure — directly in the HTTP response to the caller that
+made the request. No correlation id, no round trip through the hub.
+
+| Route | What it does |
+|---|---|
+| `POST /api/agents/:id/output` | The agent's screen, revalidated against the store's cached screen with a client-supplied digest — `unchanged` is 38 B. |
+| `POST /api/agents/:id/prompt` | The parsed prompt for a `blocked` agent. |
+| `POST /api/agents/:id/answer` | Answer that prompt. Refused with a 409 once the agent is no longer blocked. |
+| `POST /api/agents/:id/key` | One nav key from the closed `NavKey` allowlist, plus the screen it produced. |
+| `POST /api/agents/:id/text` | Type into the agent's terminal in any state — NOT `/answer`, which is prompt-only. |
+| `POST /api/agents/:id/ack` | Dismiss a finished agent. Touches only paddock's own store; see below. |
+| `POST /api/agents/:id/history` | A page of the agent's own session log, from `journal/`. No herdr call, so registered unconditionally. |
+| `GET /api/spaces` | The session tree, read on demand from `session.snapshot` (decision 21). The one GET here, and it has no parameters at all — so it does not breach "never put a payload in a query string". |
+| `POST /api/panes/:id/output` | The screen of a pane with NO agent. Its own route because the store cannot validate the id; the tree is the authority. |
+| `POST /api/panes/:id/text` | Type into such a pane, and with `submit: true` also press Enter — `pane.send_text` does not submit, so without that a Send button typed a command and ran nothing. |
+| `POST /api/panes/:id/key` | One nav key to such a pane, behind the same closed allowlist as the agent side. |
+
+A pane route answers `404` for an unknown pane and `409` for a pane that has
+an agent — pointing at the agent route — and both are deliberate outcomes
+rather than errors, which is why they are returned from inside the `try` and
+can never be relabelled a `502`.
 
 The one exception is `/ack`: it sends nothing to herdr at all. It changes
 agent state (`acknowledgedAt`) in paddock's own store, so

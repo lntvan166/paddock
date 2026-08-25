@@ -737,6 +737,20 @@ using the shared `term-back` treatment with its `‹` chevron.
 
 A pane returns to the surface it was opened from. The control is the shared one.
 
+> **Correction, 2026-08-25.** "A **shell** pane returned to `#/spaces`
+> correctly" is false, and it was false when this section was written. The
+> shell branch **hard-coded** `#/spaces` regardless of where the pane was
+> opened from — which is why a cold deep link (a notification tap, a pasted
+> link, a reload) returned the operator to a screen they had never visited.
+> That is a different defect from the agent branch's, not the correct reference
+> point this section holds it up as.
+>
+> Both branches now go through one origin-aware rule (`backTargetFor`), keyed
+> on the real `hashchange`'s `oldURL`: no recorded origin, no Spaces. The
+> sentence above is left in place deliberately — a future reader who trusted it
+> would re-derive exactly the same wrong instruction, which is the failure mode
+> §9.1 exists to record.
+
 ### 16.5 A control marooned by its container
 
 The Spaces entry point sat at the exact horizontal centre of the header,

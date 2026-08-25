@@ -580,16 +580,28 @@ session does not silently re-litigate them.
     on a slow mobile link (decision 6), and that ships one JS chunk
     deliberately because an extra round trip costs more than the bytes it
     would save at ~250 ms RTT (decision 5). Typing `claude` or `ls` into a
-    shell, and pressing Ctrl-C to stop one, needs neither cursor addressing
-    nor a full-screen program — the two things that actually justify an
-    emulator's weight.
+    shell needs neither cursor addressing nor a full-screen program — the two
+    things that actually justify an emulator's weight.
 
     What shipped instead is `pane.send_text` / `pane.send_keys`, the shell's
     mirror of the agent path's `agent.prompt` / `agent.send_keys` — wired into
     the existing reply box and keypad, behind the same closed `NavKey`
     allowlist recorded in `docs/gotchas.md` (never guess a keystroke; render
-    real labels or fall back to raw output plus free text). That covers what
-    was actually asked: type a command, interrupt one.
+    real labels or fall back to raw output plus free text).
+
+    **Corrected 2026-08-25.** This entry claimed the shipped solution covered
+    "pressing Ctrl-C to stop one" and "type a command, interrupt one". It does
+    not, and did not when the claim was written. `NAV_KEYS` in
+    `src/shared/types.ts` is `up, down, left, right, enter, esc, tab, space,
+    backspace`; `C-c` is outside it, and `tests/pane-input.test.ts` pins that
+    `{key: "C-c"}` is refused with a 400 and never forwarded to herdr. So:
+    **typing a command is covered. Interrupting one is not.**
+
+    Widening that allowlist is a separate decision with its own reasoning —
+    `NavKey` is closed precisely so the UI cannot smuggle a control sequence
+    past it, and a bare shell is a larger lever than an agent's prompt. Do not
+    add `C-c` to make this paragraph true again; write the entry that argues
+    for it.
 
     Revisit only on a STATED need to run a full-screen program from a phone —
     not a general wish for higher fidelity, which is a bottomless ask against
@@ -598,3 +610,33 @@ session does not silently re-litigate them.
     it would reopen it, on the same one-screen app the "one chunk" reasoning
     was written for.
 
+
+21. **The session tree is read on demand and never replicated into state.**
+    `GET /api/spaces` calls `session.snapshot` and shapes it in
+    `herdr/tree.ts`, per request. Nothing about spaces, tabs or panes-without-
+    agents is held in `state/store.ts`, and no tree ever rides a WebSocket
+    frame. When the tree changes, the hub sends a payload-free `tree-stale`
+    and whoever is looking at the Spaces screen refetches.
+
+    The reason is the delta path, not the read cost. `state/store.ts` computes
+    the deltas that `notify/notifier.ts` rides: a transition into `blocked` or
+    `done` is what arms a Telegram message. Putting the tree in that store
+    would put "a pane was split", "a tab was renamed", "a shell opened" onto
+    the same path — a browse feature reaching the notifier, where every new
+    field is a new way to send an operator a message about nothing. Keeping it
+    out means the notifier's inputs stay exactly the agent transitions it was
+    designed for, and the Spaces screen cannot regress it.
+
+    The costs are real and accepted. Reading a shell pane cannot be validated
+    against the store — a shell is not in it — so `POST /api/panes/:id/*` pays
+    a `session.snapshot` (~17-19 ms measured) per request, roughly ten times an
+    agent poll's herdr work; `SHELL_MIN_REFRESH_MS` matches the RATE instead of
+    the interval to compensate, and every shell keystroke pays it too. The
+    screen is also honestly "as of" a moment rather than live (design §5.2).
+
+    What would change it: a herdr event stream that reports tree changes
+    field by field, so a tree could be maintained incrementally without
+    polling — and even then it belongs in its own store, not the agent one, or
+    the notifier is back in the blast radius. A cached tree with an
+    invalidation window is NOT the answer: it makes a pane id's validation
+    stale, which is the one thing the pane routes must not be.
