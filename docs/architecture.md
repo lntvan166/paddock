@@ -221,6 +221,11 @@ validation split and a hard invariant neither of the sections above needs.
 | `POST /api/panes/:id/agent` | Start a coding agent in an existing (typically shell) pane. Body `{kind, name, args?}`. `kind` is checked against `harnessKinds()` — what this machine actually has installed — before `agent.start` is ever called; `name` is required, with no fallback to `kind`. |
 | `GET /api/harnesses` | The harness kinds this machine has installed (`server.agent_manifests`), for the create sheet's picker. The one GET among the nine, and the one with no client-supplied value at all. |
 
+**A tenth management route must be added to `tests/manage-invariant.test.ts`.**
+That guard is an enumerated allowlist — it drives each of these nine by hand —
+so a route added here without a row there inherits none of the protection, and
+the reminder belongs in the table someone adding a route is already reading.
+
 **Validation authority is split, deliberately, by what the id actually is.**
 An agent id is confirmed against `deps.store` — `/api/agents/:id/name` reads
 it the same way every existing `/api/agents/:id/*` route already does,

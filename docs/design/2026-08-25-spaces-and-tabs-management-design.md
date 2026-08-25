@@ -465,6 +465,20 @@ split honest rather than merely convenient:
 for which `historyTimeoutMs()` is the existing precedent — `request()` already
 accepts a fourth argument for exactly this.
 
+> **Corrected 2026-08-25:** the sentence below is not what was built.
+> `launch_pending` is never read. It is a real field on herdr's `AgentInfo`,
+> and paddock deliberately does not model it — it sits in
+> `tests/herdr-schema-drift.test.ts`'s `IGNORED_FIELDS`, so the adapter never
+> carries it and nothing downstream can consult one. The
+> `starting claude…` notice comes from a CLIENT-SIDE launch store
+> (`src/web/launch.ts`), written by the create sheet before it navigates and
+> cleared when `POST /api/panes/:id/agent` answers — so the notice tracks
+> paddock's own request, not herdr's view of the pane. That matters to anyone
+> reading this to implement it: a herdr-driven notice would survive a reload
+> and a second tab, and this one does not — which is the parked "stale failed
+> launch persistence" gap, not a claim this section makes. The second sentence
+> stands exactly as written: a 200 never hides a failed start.
+
 While `launch_pending` is true the terminal shows `starting claude…`. Any
 herdr error is surfaced **inline and verbatim**; a 200 must never hide a failed
 start, or the operator is left watching a shell that silently never becomes an

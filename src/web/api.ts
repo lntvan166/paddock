@@ -24,7 +24,18 @@ const paneUrl = (id: string, action: string) => `/api/panes/${encodeURIComponent
 /** A tab id is `w1:t2` — same colon, same need to encode it. */
 const tabUrl = (id: string, action: string) => `/api/tabs/${encodeURIComponent(id)}/${action}`;
 
-/** A space id (herdr's `workspace_id`) contains a colon too. */
+/**
+ * A space id (herdr's `workspace_id`) — encoded because it is OPAQUE, not
+ * because it contains a colon.
+ *
+ * It does not. Every workspace id measured is colon-free (`w1`, `w1S` — see
+ * `docs/probes/2026-08-25-structural-events.md`); the colon appears only where
+ * herdr composes a workspace id with a tab or pane suffix. This said "contains
+ * a colon too", which was false, and a false reason is worse than none: the
+ * next reader checks it, finds no colon, and concludes the encoding is
+ * unnecessary. It is not — nothing measured constrains a workspace id's
+ * charset, so paddock does not get to assume one is URL-safe.
+ */
 const spaceUrl = (id: string, action: string) => `/api/spaces/${encodeURIComponent(id)}/${action}`;
 
 async function request(path: string, body: object, f: Fetch): Promise<Response> {
