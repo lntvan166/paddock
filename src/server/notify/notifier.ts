@@ -25,6 +25,20 @@ export interface NotifierOpts {
    * overwrite it to make one notification's link work.
    */
   publicUrlOverride?: () => string | null;
+  /**
+   * The second transport. Optional, and independent of `send`: either,
+   * neither, or both may be configured.
+   *
+   * Deliberately a second field rather than a `Transport[]`. Two transports do
+   * not earn an abstraction, and generalising this file would put every comment
+   * in it at risk for no gain.
+   *
+   * Takes the payload rather than composed text: a push notification is
+   * rendered by `sw.js` from structured fields, where Telegram receives a
+   * string. `{name, state, agentId}` and NOTHING else — `a.task` is
+   * agent-authored text and this one lands on a lock screen.
+   */
+  sendPush?: (payload: { name: string; state: AgentState; agentId: string }) => Promise<void>;
 }
 
 /**
@@ -34,8 +48,13 @@ export interface NotifierOpts {
  * `terminal_title_stripped`, live agent-authored text that may carry a pasted
  * credential. Telegram bot messages are not end-to-end encrypted and Telegram
  * can read them; the design accepts that cost and names content minimalism as
- * the ONLY mitigation for choosing Telegram over Web Push. Adding a field here
- * spends it.
+ * the mitigation. Adding a field here spends it.
+ *
+ * Web Push now ships alongside rather than instead (decision 23), and the same
+ * restraint holds there for a DIFFERENT reason — a push payload IS encrypted
+ * end to end, so the push service cannot read it, but the notification renders
+ * on a lock screen. Two transports, one rule, two justifications; neither
+ * inherits the other's.
  *
  * The link is an inline button when it can be. Telegram answers
  * `Button_url_invalid` for a non-https button URL, so anything else falls back
@@ -259,7 +278,21 @@ export class Notifier {
     // or go down between two notifications, and the override is a getter so
     // that a message always carries whatever URL a phone can actually open now.
     const m = composeMessage(a, state, this.o.publicUrlOverride?.() ?? s.publicUrl);
-    const r = await this.o.send(m.text, m.replyMarkup);
+
+    // Dispatched BEFORE the Telegram await, and settled in the `finally`.
+    //
+    // Order is load-bearing. A Telegram REJECTION deliberately gets no retry
+    // (see `#arm`) and propagates out of this method, so a push started after
+    // it would never run — and the two transports must be independent in both
+    // directions. `#sendPush` swallows its own faults, so it can never turn a
+    // push failure into the "outside the send contract" path `#arm` describes.
+    const pushed = this.#sendPush(a, state);
+    let r: { ok: boolean; detail: string | null };
+    try {
+      r = await this.o.send(m.text, m.replyMarkup);
+    } finally {
+      await pushed;
+    }
 
     // EVERYTHING BELOW RESUMES LATER — a Telegram POST takes up to 10s, and
     // the agent can have transitioned several times in the meantime. So
@@ -289,6 +322,28 @@ export class Notifier {
     // waiting for.
     if (current && attempts + 1 < MAX_ATTEMPTS) {
       this.#arm(a, state, s.notify.cooldownMs, attempts + 1, episode);
+    }
+  }
+
+  /**
+   * The push half of the fan-out. Never throws, never retries.
+   *
+   * No retry, unlike Telegram: `sendPush` fans out to every subscribed device
+   * and prunes the ones the push service reports gone, so a partial failure has
+   * already been handled where it happened. Re-sending here would re-notify
+   * every device that succeeded.
+   *
+   * Reported, never swallowed, and never rethrown — a transport failure
+   * reaching the delta path would take the dashboard down to deliver a
+   * notification, which is exactly backwards.
+   */
+  async #sendPush(a: Agent, state: NotifyTrigger): Promise<void> {
+    const send = this.o.sendPush;
+    if (send === undefined) return;
+    try {
+      await send({ name: a.name, state, agentId: a.agentId });
+    } catch (e) {
+      console.info(`paddock: push failed for ${a.name}: ${(e as Error).message}`);
     }
   }
 }
