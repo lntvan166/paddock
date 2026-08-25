@@ -1,6 +1,6 @@
 import type {
-  ActionResult, HistoryResult, KeyResult, NavKey, OutputResult, PaneOutput, ParsedPrompt,
-  SpaceTree,
+  ActionResult, CloseSpaceResult, CloseTabResult, HistoryResult, KeyResult, NavKey, OutputResult,
+  PaneOutput, ParsedPrompt, SpaceTree,
 } from "@shared/types";
 
 /**
@@ -19,6 +19,12 @@ const url = (id: string, action: string) => `/api/agents/${encodeURIComponent(id
 /** The pane route's own URL, encoded the same way — a pane id is the same
  *  string as an agent id, just addressed through `/api/panes/` instead. */
 const paneUrl = (id: string, action: string) => `/api/panes/${encodeURIComponent(id)}/${action}`;
+
+/** A tab id is `w1:t2` — same colon, same need to encode it. */
+const tabUrl = (id: string, action: string) => `/api/tabs/${encodeURIComponent(id)}/${action}`;
+
+/** A space id (herdr's `workspace_id`) contains a colon too. */
+const spaceUrl = (id: string, action: string) => `/api/spaces/${encodeURIComponent(id)}/${action}`;
 
 async function request(path: string, body: object, f: Fetch): Promise<Response> {
   return f(path, {
@@ -245,4 +251,66 @@ export async function fetchSpaceTree(f: Fetch = fetch): Promise<SpaceTree> {
     throw new RequestFailed(res.status, detail ?? `request failed: ${res.status}`);
   }
   return (await res.json()) as SpaceTree;
+}
+
+/**
+ * Rename an agent, or clear its name with `name: null` — the one real clear
+ * (§7.2, §17): herdr removes the field rather than storing an empty string.
+ *
+ * `name` has no default and no nullish-stripping in between: `null` must
+ * reach the wire as the JSON literal `null`, not be coerced to `undefined`
+ * and silently dropped from the body, which would turn the clear into a
+ * no-op the operator would have no way to notice.
+ *
+ * Uses `readJson`, not the `act()` convention `answerWithKey` etc. use below:
+ * a rename's refusal (unknown agent, an over-length or blank name) must
+ * reject with the server's `detail` for the caller to render, per
+ * `readJson`'s own note on why a non-2xx must not resolve with a value
+ * shaped like success.
+ */
+export async function renameAgent(
+  id: string, name: string | null, f: Fetch = fetch,
+): Promise<ActionResult> {
+  return readJson<ActionResult>(url(id, "name"), { name }, f);
+}
+
+/** Rename a tab. `label` is forwarded verbatim; the server refuses an empty
+ *  or whitespace-only one (§17) rather than paddock re-checking that here. */
+export async function renameTab(id: string, label: string, f: Fetch = fetch): Promise<ActionResult> {
+  return readJson<ActionResult>(tabUrl(id, "name"), { label }, f);
+}
+
+/** Rename a space. Same shape as `renameTab`, for the same reasons. */
+export async function renameSpace(id: string, label: string, f: Fetch = fetch): Promise<ActionResult> {
+  return readJson<ActionResult>(spaceUrl(id, "name"), { label }, f);
+}
+
+/**
+ * Close a tab — and every pane, and every agent, it holds. paddock's first
+ * destructive action (design doc §10); the arm-then-confirm interaction and
+ * its consequence line are a UI concern built on top of this call, not
+ * inside it.
+ *
+ * No body: closing takes no parameter beyond the id already in the path, so
+ * an empty object is sent, the same as the other bodyless POSTs in this file
+ * (`fetchPrompt`, `acknowledge`).
+ *
+ * The success body is `{ok, tabId, label, paneCount}` — what the route
+ * already knew about the tab from the tree read that validated the id, so
+ * the caller can say what closed without a second round trip. A refusal
+ * (unknown id, or herdr declining) rejects with the server's `detail`, same
+ * as every other read here.
+ */
+export async function closeTab(id: string, f: Fetch = fetch): Promise<CloseTabResult> {
+  return readJson<CloseTabResult>(tabUrl(id, "close"), {}, f);
+}
+
+/**
+ * Close a space — every tab, every pane, every agent any of them held. Same
+ * shape as `closeTab` above, and for the same reasons: no body, and a
+ * success response (`{ok, spaceId, label, tabCount, paneCount}`) built from
+ * the tree read that already validated the id.
+ */
+export async function closeSpace(id: string, f: Fetch = fetch): Promise<CloseSpaceResult> {
+  return readJson<CloseSpaceResult>(spaceUrl(id, "close"), {}, f);
 }

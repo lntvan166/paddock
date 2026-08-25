@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-  answerWithKey, fetchOutput, fetchPaneOutput, RequestFailed, sendPaneKey, sendPaneText, type Fetch,
+  answerWithKey, closeSpace, closeTab, fetchOutput, fetchPaneOutput, RequestFailed, renameAgent,
+  renameSpace, renameTab, sendPaneKey, sendPaneText, type Fetch,
 } from "@web/api";
 
 // Typed as the real `fetch`, so call sites need no `as any`.
@@ -154,4 +155,98 @@ test("sendPaneKey POSTs to the encoded pane route", async () => {
 test("sendPaneKey rejects on a non-2xx with the server's detail", async () => {
   const { fn } = stubFetch(400, { ok: false, detail: "unsupported key: pageup" });
   await expect(sendPaneKey("w3:p1", "enter", fn)).rejects.toThrow(/unsupported key/);
+});
+
+// --- rename and close (§7, §10) ---------------------------------------
+
+test("renameAgent POSTs to the encoded agent route with the new name", async () => {
+  const { fn, seen } = stubFetch(200, { ok: true });
+  const res = await renameAgent("w1:p1", "api-refactor", fn);
+  expect(seen[0]!.init.method).toBe("POST");
+  expect(seen[0]!.url).toBe("/api/agents/w1%3Ap1/name");
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ name: "api-refactor" });
+  expect(res.ok).toBe(true);
+});
+
+// The one real clear (§7.2, §17): `null` must reach the wire as the JSON
+// literal `null`, not be stripped from the body or coerced to `undefined` —
+// either of those would silently turn the clear into a no-op.
+test("renameAgent sends {name: null} verbatim, not omitted or coerced", async () => {
+  const { fn, seen } = stubFetch(200, { ok: true });
+  await renameAgent("w1:p1", null, fn);
+  const body = JSON.parse(String(seen[0]!.init.body)) as { name: unknown };
+  expect(Object.keys(body)).toEqual(["name"]);
+  expect(body.name).toBeNull();
+});
+
+test("renameAgent rejects on a non-2xx with the server's detail", async () => {
+  const { fn } = stubFetch(404, { ok: false, detail: "unknown agent" });
+  await expect(renameAgent("w1:p1", "api-refactor", fn)).rejects.toThrow(/unknown agent/);
+});
+
+test("renameTab POSTs to the encoded tab route with the new label", async () => {
+  const { fn, seen } = stubFetch(200, { ok: true });
+  const res = await renameTab("w1:t2", "docs-cleanup", fn);
+  expect(seen[0]!.init.method).toBe("POST");
+  expect(seen[0]!.url).toBe("/api/tabs/w1%3At2/name");
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ label: "docs-cleanup" });
+  expect(res.ok).toBe(true);
+});
+
+test("renameTab rejects on a non-2xx with the server's detail", async () => {
+  const { fn } = stubFetch(400, { ok: false, detail: "label must be a non-empty string within the length limit" });
+  await expect(renameTab("w1:t2", "", fn)).rejects.toThrow(/non-empty string/);
+});
+
+test("renameSpace POSTs to the encoded space route with the new label", async () => {
+  const { fn, seen } = stubFetch(200, { ok: true });
+  const res = await renameSpace("w1", "schema-migration", fn);
+  expect(seen[0]!.init.method).toBe("POST");
+  expect(seen[0]!.url).toBe("/api/spaces/w1/name");
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ label: "schema-migration" });
+  expect(res.ok).toBe(true);
+});
+
+test("renameSpace rejects on a non-2xx with the server's detail", async () => {
+  const { fn } = stubFetch(404, { ok: false, detail: "unknown space" });
+  await expect(renameSpace("w9", "schema-migration", fn)).rejects.toThrow(/unknown space/);
+});
+
+// Closing sends no body — there is nothing beyond the id in the path — so an
+// empty object goes over the wire, the same as the other bodyless POSTs in
+// this file (`fetchPrompt`, `acknowledge`).
+test("closeTab POSTs an empty body to the encoded tab route", async () => {
+  const { fn, seen } = stubFetch(200, { ok: true, tabId: "w1:t2", label: "docs-cleanup", paneCount: 2 });
+  const res = await closeTab("w1:t2", fn);
+  expect(seen[0]!.init.method).toBe("POST");
+  expect(seen[0]!.url).toBe("/api/tabs/w1%3At2/close");
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({});
+  expect(res.ok).toBe(true);
+  expect(res.tabId).toBe("w1:t2");
+  expect(res.label).toBe("docs-cleanup");
+  expect(res.paneCount).toBe(2);
+});
+
+test("closeTab rejects on a non-2xx with the server's detail", async () => {
+  const { fn } = stubFetch(404, { ok: false, detail: "unknown tab" });
+  await expect(closeTab("w1:t2", fn)).rejects.toThrow(/unknown tab/);
+});
+
+test("closeSpace POSTs an empty body to the encoded space route", async () => {
+  const { fn, seen } = stubFetch(
+    200, { ok: true, spaceId: "w1", label: "schema-migration", tabCount: 3, paneCount: 5 },
+  );
+  const res = await closeSpace("w1", fn);
+  expect(seen[0]!.init.method).toBe("POST");
+  expect(seen[0]!.url).toBe("/api/spaces/w1/close");
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({});
+  expect(res.ok).toBe(true);
+  expect(res.spaceId).toBe("w1");
+  expect(res.tabCount).toBe(3);
+  expect(res.paneCount).toBe(5);
+});
+
+test("closeSpace rejects on a non-2xx with the server's detail", async () => {
+  const { fn } = stubFetch(502, { ok: false, detail: "herdr socket unreachable" });
+  await expect(closeSpace("w1", fn)).rejects.toThrow(/herdr socket unreachable/);
 });

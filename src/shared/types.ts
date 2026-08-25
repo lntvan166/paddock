@@ -563,3 +563,25 @@ export interface TreePane {
    */
   state: AgentState | null;
 }
+
+/**
+ * `POST /api/tabs/:id/close`'s success body. `label`/`paneCount` are the
+ * `Tab` already found on the tree read that validated the id — the route
+ * makes no second herdr call to describe what disappeared, so the client
+ * gets to say what closed without a refetch.
+ */
+export interface CloseTabResult extends ActionResult {
+  tabId: string;
+  label: string | null;
+  paneCount: number;
+}
+
+/** `POST /api/spaces/:id/close`'s success body. Same reasoning as
+ *  `CloseTabResult`, one level up — `tabCount`/`paneCount` are `Space`'s own
+ *  fields, already known from the tree read. */
+export interface CloseSpaceResult extends ActionResult {
+  spaceId: string;
+  label: string | null;
+  tabCount: number;
+  paneCount: number;
+}
