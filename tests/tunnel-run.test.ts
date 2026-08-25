@@ -595,20 +595,34 @@ test("the QR is suppressed for each reason independently", () => {
   // change that collapses two of them into one cannot pass by accident.
   expect(wantsQr({ colour: false, columns: 80, rows: 40 })).toBe(false); // not a tty, or NO_COLOR
   expect(wantsQr({ colour: true, columns: 36, rows: 40 })).toBe(false);  // too narrow
-  expect(wantsQr({ colour: true, columns: 80, rows: 25 })).toBe(false);  // too short
+  expect(wantsQr({ colour: true, columns: 80, rows: 26 })).toBe(false);  // too short
   expect(wantsQr({ colour: true, columns: 80, rows: 40 })).toBe(true);
 });
 
-test("37 columns and 26 rows are the exact thresholds", () => {
-  // 29 modules + 4 quiet each side = 37 columns.
-  expect(wantsQr({ colour: true, columns: 37, rows: 26 })).toBe(true);
-  expect(wantsQr({ colour: true, columns: 36, rows: 26 })).toBe(false);
-  expect(wantsQr({ colour: true, columns: 37, rows: 25 })).toBe(false);
+test("37 columns and 27 rows are the exact thresholds", () => {
+  // 29 modules + 4 quiet each side = 37 columns. 27 rows and not 26: the
+  // trimmed block is 26 lines and `draw` appends a newline, so 26 would admit
+  // the QR onto a terminal exactly one row too short — where the block scrolls
+  // and the repaint tears. tunnel-display.test.ts ties this to what render
+  // actually emits.
+  expect(wantsQr({ colour: true, columns: 37, rows: 27 })).toBe(true);
+  expect(wantsQr({ colour: true, columns: 36, rows: 27 })).toBe(false);
+  expect(wantsQr({ colour: true, columns: 37, rows: 26 })).toBe(false);
 });
 
-test("the prose is dropped below 34 rows and kept at or above it", () => {
-  // 6 state + 7 prose + 19 QR + 1 blank + 1 trailing = 34.
-  expect(wantsCompact(33)).toBe(true);
-  expect(wantsCompact(34)).toBe(false);
-  expect(wantsCompact(80)).toBe(false);
+test("the prose is dropped below 34 rows, but only when a QR needs the room", () => {
+  // The full block is 33 lines and `draw` appends a newline, so 34 rows hold it.
+  expect(wantsCompact({ qr: true, rows: 33 })).toBe(true);
+  expect(wantsCompact({ qr: true, rows: 34 })).toBe(false);
+  expect(wantsCompact({ qr: true, rows: 80 })).toBe(false);
+});
+
+test("with no QR the prose is never dropped, however short the terminal", () => {
+  // The prose is dropped to make ROOM for a QR. With no QR there is nothing to
+  // make room for, and a default 80x24 would otherwise silently lose the
+  // warning that the pairing code is the only thing between a public URL and
+  // keystroke access to every agent — printed every second on purpose.
+  expect(wantsCompact({ qr: false, rows: 24 })).toBe(false);
+  expect(wantsCompact({ qr: false, rows: 10 })).toBe(false);
+  expect(wantsCompact({ qr: false, rows: 33 })).toBe(false);
 });

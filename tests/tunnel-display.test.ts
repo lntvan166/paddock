@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { render, useColour, type DisplayState } from "@server/tunnel/display";
 import { qrMatrix } from "@server/qr";
+import { QR_ROWS_THRESHOLD, FULL_ROWS_THRESHOLD } from "@server/tunnel/run";
 
 const T0 = 1_700_000_000_000;
 const state = (over: Partial<DisplayState> = {}): DisplayState => ({
@@ -140,4 +141,24 @@ test("no QR renders exactly the block that shipped before", () => {
   expect(lines).not.toMatch(/[█▀▄]/);
   expect(lines).toContain("a quick tunnel is public");
   expect(lines).toContain("^C to close");
+});
+
+// The thresholds in run.ts are only correct if the block they admit actually
+// FITS. `draw` writes `${block()}\n`, so a block of N lines occupies N + 1
+// terminal rows — without that trailing row the block scrolls and the
+// once-a-second \x1b[H\x1b[J repaint tears. This is the assertion that ties
+// render()'s real output to the numbers wantsQr/wantsCompact are built on.
+test("each layout fits the terminal its threshold admits", () => {
+  const withDeadline = { deadline: T0 + 4_320_000 };
+
+  // Trimmed: the smallest terminal wantsQr accepts must hold the block AND the
+  // trailing newline.
+  const trimmed = render(state({ qr: QR, compact: true, ...withDeadline }), false);
+  expect(trimmed.split("\n")).toHaveLength(26);
+  expect(trimmed.split("\n").length + 1).toBeLessThanOrEqual(QR_ROWS_THRESHOLD);
+
+  // Full: same, at the taller threshold.
+  const full = render(state({ qr: QR, compact: false, ...withDeadline }), false);
+  expect(full.split("\n")).toHaveLength(33);
+  expect(full.split("\n").length + 1).toBeLessThanOrEqual(FULL_ROWS_THRESHOLD);
 });

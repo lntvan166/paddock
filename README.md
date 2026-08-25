@@ -109,7 +109,7 @@ That publishes a temporary public URL and a pairing code, and prints both. Nothi
 phone, type the code once, and you are watching the same agents from the sofa.
 `--for 2h` bounds how long it lives (`30m`, `2h`, `7d`); `ctrl+c` ends it.
 
-On a terminal at least 37 columns wide and 26 rows tall, it also draws a QR:
+On a terminal at least 37 columns wide and 27 rows tall, it also draws a QR:
 scan it and the phone opens the dashboard already paired, because the code
 rides in the URL fragment — which browsers never send, so it reaches no access
 log. Below that size the QR is omitted and you type the code, and a terminal

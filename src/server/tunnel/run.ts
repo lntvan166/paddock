@@ -143,10 +143,24 @@ export function gatedPortInUseMessage(port: number, hostname = "127.0.0.1"): str
 
 /** 29 modules + a 4-module quiet zone on each side. */
 const QR_COLS = 37;
-/** 6 state lines + 19 QR + 1 blank + 1 trailing. */
-const QR_ROWS = 26;
-/** ...plus the 7 prose lines the full block adds. */
-const FULL_ROWS = 34;
+
+/**
+ * The row thresholds, EXPORTED so `tunnel-display.test.ts` can tie them to
+ * what `render` actually emits rather than to arithmetic done once in a
+ * comment.
+ *
+ * `draw` writes `${block()}\n`, so a block of N lines occupies N + 1 terminal
+ * rows. That trailing row is not bookkeeping: without it the block scrolls, and
+ * a scrolled block makes the once-a-second `\x1b[H\x1b[J` repaint tear.
+ *
+ * Measured, not derived. The trimmed block is 26 lines with a `--for` deadline
+ * (status, URL, blank, 19 QR, blank, code, paired, closes) and the full block
+ * is 33. An earlier count put the trimmed threshold at 26 by folding the
+ * trailing row into the block's own line count — which admitted the QR onto a
+ * terminal exactly one row too short to hold it.
+ */
+export const QR_ROWS_THRESHOLD = 27;
+export const FULL_ROWS_THRESHOLD = 34;
 
 /**
  * Whether to draw a QR at all.
@@ -162,18 +176,25 @@ const FULL_ROWS = 34;
  * else. Presence is `DisplayState.qr`; polarity is `colour`.
  */
 export function wantsQr(o: { colour: boolean; columns: number; rows: number }): boolean {
-  return o.colour && o.columns >= QR_COLS && o.rows >= QR_ROWS;
+  return o.colour && o.columns >= QR_COLS && o.rows >= QR_ROWS_THRESHOLD;
 }
 
 /**
  * Whether the terminal is too short for the QR AND the prose.
  *
- * Independent of `wantsQr`: this is a height decision and that one is mostly a
- * width decision, and entangling them makes a resize change what the block says
- * rather than only how much of it fits.
+ * Takes `qr`, because the prose is dropped to make ROOM for a QR — so with no
+ * QR there is nothing to make room for. Dropping it anyway is pure loss: a
+ * default 80x24 gets no QR, and it would have silently lost the on-screen
+ * warning that the pairing code is the only thing between a public URL and
+ * keystroke access to every agent. That warning is printed every second on
+ * purpose. Without this guard the third regime in the design —
+ * "no QR; the block exactly as it is today" — quietly became a trimmed block.
+ *
+ * `render` still treats `qr` and `compact` as independent inputs and handles
+ * all four combinations; it is only the DECISION here that couples them.
  */
-export function wantsCompact(rows: number): boolean {
-  return rows < FULL_ROWS;
+export function wantsCompact(o: { qr: boolean; rows: number }): boolean {
+  return o.qr && o.rows < FULL_ROWS_THRESHOLD;
 }
 
 /**
@@ -408,7 +429,7 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   const columns = deps.columns ?? process.stdout.columns ?? 0;
   const rows = deps.rows ?? process.stdout.rows ?? 0;
   const qrOn = wantsQr({ colour, columns, rows });
-  const compact = wantsCompact(rows);
+  const compact = wantsCompact({ qr: qrOn, rows });
 
   let lastCode: string | null = null;
   let lastPaired: number | null = null;
