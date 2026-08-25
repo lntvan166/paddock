@@ -57,8 +57,13 @@ export function App() {
    * to survive — a shell promoted to an agent unmounts one and mounts the
    * other under the SAME pane id.
    *
-   * DECLARED BEFORE THE ROUTE HOOKS, and that is load-bearing — effects run in
-   * declaration order, so this listener must register before `useAgentRoute`'s.
+   * DECLARED BEFORE THE ROUTE HOOKS, and that is load-bearing. Effects run in
+   * declaration order, so registering after `useAgentRoute` put this listener
+   * second: the route's `setId` was queued first, and only React 18's batching
+   * kept the re-render from landing between the two handlers. A ref write
+   * schedules no render of its own, so if that queue ever flushed in between,
+   * `backTargetFor` would read the previous pane's origin — or none. Ordering
+   * the registration removes the dependency instead of relying on it.
    */
   const paneOriginRef = useRef<{ paneId: string; origin: string } | null>(null);
   useEffect(() => {
