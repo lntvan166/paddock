@@ -333,7 +333,19 @@ export type ServerMessage =
       build?: string | null;
       latestKnown?: string | null;
       managedBy?: ManagedBy | null;
-    };
+    }
+  /**
+   * "The session tree changed — refetch it if you are looking at it."
+   *
+   * Payload-free by design. The tree is read on demand (design doc §5.2), so
+   * this is an INVALIDATION, not a delivery: sending the tree here would
+   * replicate it onto the delta path, which is exactly what §3 refuses.
+   *
+   * Its own variant rather than an empty delta, for the same reason
+   * `heartbeat` is: a delta states "these agents changed", and a client is
+   * entitled to believe it.
+   */
+  | { type: "tree-stale"; serverTime: number };
 
 /**
  * A package manager that owns a paddock install and therefore owns its

@@ -30,6 +30,13 @@ export interface ClientState {
    * declines.
    */
   managedBy: ManagedBy | null;
+  /**
+   * Server clock of the most recent `tree-stale` frame, or `0` if none has
+   * arrived yet. The Spaces screen watches this to know when to refetch
+   * `/api/spaces` — the frame itself carries no tree, only the fact that one
+   * changed.
+   */
+  treeStaleAt: number;
 }
 
 /**
@@ -117,6 +124,13 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
       ...trackManagedBy(state, msg.managedBy),
       lastMessageAt: msg.serverTime,
     };
+  }
+  // BEFORE the delta fall-through below, which reads `msg.upserted`
+  // unconditionally: an unhandled variant would throw there rather than being
+  // ignored. Bumps a counter the Spaces screen watches; the agent list is
+  // returned by identity so nothing re-renders that does not care.
+  if (msg.type === "tree-stale") {
+    return { ...state, treeStaleAt: msg.serverTime, lastMessageAt: msg.serverTime };
   }
   const byId = new Map(state.agents.map((a) => [a.agentId, a]));
   for (const a of msg.upserted) byId.set(a.agentId, a);
@@ -220,6 +234,7 @@ export const useStore = create<Store>((set, get) => {
     updateAvailable: false,
     latestKnown: null,
     managedBy: null,
+    treeStaleAt: 0,
     connect,
   };
 });

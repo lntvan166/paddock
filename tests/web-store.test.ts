@@ -4,7 +4,7 @@ import type { Agent, ServerMessage } from "@shared/types";
 import { wsUrlFrom } from "@web/store";
 
 const NOW = 1_700_000_000_000;
-const EMPTY: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null, managedBy: null };
+const EMPTY: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null, managedBy: null, treeStaleAt: 0 };
 
 function agent(over: Partial<Agent> = {}): Agent {
   return {

@@ -4,6 +4,7 @@ import { applyMessage, type ClientState } from "@web/store";
 const base = (): ClientState => ({
   agents: [], hostId: null, connected: true, lastMessageAt: null,
   build: null, updateAvailable: false, latestKnown: null, managedBy: null,
+  treeStaleAt: 0,
 });
 
 const beat = (build: string | null) =>

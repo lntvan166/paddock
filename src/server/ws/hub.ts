@@ -95,6 +95,18 @@ export class Hub {
     for (const client of [...this.clients]) this.sendTo(client, msg);
   }
 
+  /**
+   * Tell every browser the session tree moved.
+   *
+   * Sent immediately rather than through the coalescing buffer: it carries no
+   * payload to merge, and a structural change is rare enough that batching
+   * buys nothing.
+   */
+  queueTreeStale(): void {
+    const msg: ServerMessage = { type: "tree-stale", serverTime: this.now() };
+    for (const client of [...this.clients]) this.sendTo(client, msg);
+  }
+
   add(client: HubClient): void {
     this.clients.add(client);
   }
