@@ -84,9 +84,21 @@ export interface Prefs {
  */
 const DEFAULTS: Prefs = {
   theme: "system", rate: "live", wrap: true, fontPx: null,
-  // Visible by default, for the same reason `wrap` is: a default that hides a
-  // control is indistinguishable from an operator who chose to hide it.
-  keypad: "hidden", keypadAuto: true,
+  // HIDDEN by default, and this comment used to say "visible by default, for
+  // the same reason `wrap` is" long after the value stopped agreeing with it.
+  // The pad is 106px of a 390x844 phone and a parsed prompt answers in one tap
+  // on a real option button, so it is not the primary path on the screen it
+  // used to charge a quarter of.
+  //
+  // WHAT THIS DEFAULT MUST NOT DECIDE: whether an operator can act. The shell's
+  // reply box submits through the route (`submit: true`), so a first run with
+  // this pref untouched can still RUN a command — which for a while it could
+  // not, because the pad's Enter was the only one in the app.
+  keypad: "hidden",
+  // Auto-reveal on a blocked agent whose prompt the parser could not read, so
+  // the arrows appear exactly when they are the only way in. Never persisted:
+  // that is the agent's doing, not a choice (see `AgentTerminal`).
+  keypadAuto: true,
 };
 
 /** `wrap` is kept verbatim from AgentTerminal's own `WRAP_KEY` so no
