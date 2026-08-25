@@ -88,3 +88,124 @@ test("U is dropped as you type, exactly as the server drops it", () => {
 test("the page carries the server's alphabet, not a copy of it", () => {
   expect(pairingPage({ insecure: false })).toContain(ALPHABET);
 });
+
+/**
+ * Give the document a fragment for the script to read at mount.
+ *
+ * happy-dom starts at `about:blank`, where `history.replaceState` silently
+ * does NOTHING — `location.hash` stays `""` and `pathname` reads `"blank"`.
+ * That failure is invisible: the tests below would report "nothing was
+ * submitted" and look like an implementation bug rather than a harness one.
+ * So the document gets a real URL first, and only then can a fragment exist.
+ */
+const withFragment = (frag: string): void => {
+  const win = globalThis.window as unknown as {
+    happyDOM?: { setURL?: (u: string) => void };
+  };
+  win.happyDOM?.setURL?.("https://paddock.example.com/");
+  history.replaceState(null, "", `/${frag}`);
+};
+
+const stubFetch = (): { calls: unknown[]; restore: () => void } => {
+  const calls: unknown[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  }) as unknown as typeof fetch;
+  return { calls, restore: () => { globalThis.fetch = real; } };
+};
+
+test("a code in the fragment is filled in and submitted", async () => {
+  const f = stubFetch();
+  try {
+    withFragment("#4F7KQP2M");
+    const c = mount();
+    await Promise.resolve();
+    expect(c.value).toBe("4F7K-QP2M");
+    expect(f.calls).toHaveLength(1);
+  } finally {
+    f.restore();
+  }
+});
+
+// THE hazard. An attempt is a guess and spends one of five; five wrong ones
+// reissue the code and invalidate the QR still on the operator's screen.
+test("the fragment is submitted exactly once, never twice", async () => {
+  const f = stubFetch();
+  try {
+    withFragment("#4F7KQP2M");
+    mount();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(f.calls).toHaveLength(1);
+  } finally {
+    f.restore();
+  }
+});
+
+test("the fragment is cleared, so a reload replays nothing", async () => {
+  const f = stubFetch();
+  try {
+    withFragment("#4F7KQP2M");
+    mount();
+    await Promise.resolve();
+    expect(location.hash).toBe("");
+    // Mounting again is a reload: with the hash gone there is nothing to send.
+    const before = f.calls.length;
+    mount();
+    await Promise.resolve();
+    expect(f.calls).toHaveLength(before);
+  } finally {
+    f.restore();
+  }
+});
+
+test("no fragment means no automatic attempt at all", async () => {
+  const f = stubFetch();
+  try {
+    withFragment("");
+    mount();
+    await Promise.resolve();
+    expect(f.calls).toHaveLength(0);
+  } finally {
+    f.restore();
+  }
+});
+
+test("a rejected code stops and shows the error rather than retrying", async () => {
+  const calls: unknown[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    return Promise.resolve(
+      new Response(JSON.stringify({ ok: false, detail: "that code is not right — 4 attempts left" }), { status: 400 }),
+    );
+  }) as unknown as typeof fetch;
+  try {
+    withFragment("#4F7KQP2M");
+    mount();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toHaveLength(1);
+    const err = document.getElementById("e");
+    expect(err?.textContent ?? "").toContain("not right");
+    expect((err as HTMLElement).hidden).toBe(false);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+// Garbage in the fragment must not spend an attempt either.
+test("a fragment with no code characters submits nothing", async () => {
+  const f = stubFetch();
+  try {
+    withFragment("#!!!!");
+    mount();
+    await Promise.resolve();
+    expect(f.calls).toHaveLength(0);
+  } finally {
+    f.restore();
+  }
+});

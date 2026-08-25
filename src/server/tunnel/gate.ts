@@ -161,8 +161,7 @@ export function pairingPage(opts: { insecure: boolean }): string {
       if (c.setSelectionRange) c.setSelectionRange(next.length, next.length);
     }
   });
-  f.addEventListener("submit", function (ev) {
-    ev.preventDefault();
+  function send() {
     e.hidden = true;
     fetch("/pair", {
       method: "POST",
@@ -178,7 +177,30 @@ export function pairingPage(opts: { insecure: boolean }): string {
       e.textContent = "Could not reach paddock.";
       e.hidden = false;
     });
+  }
+  f.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    send();
   });
+  // A code from the QR the terminal draws. The fragment is NEVER sent to the
+  // server — that is the entire reason a code may travel this way, and why it
+  // reaches no access log. See docs/decisions.md decision 22.
+  //
+  // Cleared BEFORE the attempt, not after. An attempt is a guess and spends one
+  // of five; five spent reissue the code and invalidate the QR still on the
+  // operator's screen. Clearing first means a reload replays nothing.
+  //
+  // A rejected code stops here: \`send\` shows the error and this path is not
+  // retried, so an operator sees what was tried instead of watching invisible
+  // attempts drain the budget.
+  var frag = fmt(location.hash.replace("#", ""));
+  if (frag) {
+    if (history.replaceState) {
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+    c.value = frag;
+    send();
+  }
 </script>
 </body></html>`;
 }

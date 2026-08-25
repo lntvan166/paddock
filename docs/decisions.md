@@ -204,7 +204,9 @@ session does not silently re-litigate them.
     request arrived on, which nothing outside the machine can forge.
 
     Not a token, and not a precedent for one. See
-    `docs/design/2026-08-20-quick-tunnel-design.md`.
+    `docs/design/2026-08-20-quick-tunnel-design.md`. **Amended by decision 22**,
+    which admits exactly one narrow exception — a code in a URL *fragment*,
+    which is never transmitted and so reaches no log. Read the two together.
 
 14. **Protocol drift is directional, and fields are the real contract.**
     `checkProtocol` compared herdr's protocol with `!==`, so any drift in either
@@ -640,3 +642,40 @@ session does not silently re-litigate them.
     the notifier is back in the blast radius. A cached tree with an
     invalidation window is NOT the answer: it makes a pane id's validation
     stale, which is the one thing the pane routes must not be.
+
+22. **A pairing code may travel in a URL fragment, and only there.** Decision 13
+    ends "Not a token, and not a precedent for one." This is that precedent,
+    drawn as narrowly as it can be: `paddock tunnel` draws a QR encoding
+    `https://<host>/#<code>`, so scanning it opens the dashboard already paired.
+
+    A fragment is never sent in an HTTP request. It reaches neither Cloudflare
+    nor paddock nor any access log, which is what distinguishes it from the
+    obvious `?code=` and satisfies `CLAUDE.md`'s query-string rule on the merits
+    rather than on a technicality. There is no transmitted secret.
+
+    **Rejected, and the reasoning matters more than the conclusion:** it is
+    tempting to argue that a QR carrying the code makes a photograph of the
+    terminal into a pairing. That is weak and must not be the basis for
+    anything — the code is ALREADY on that screen, one line above the QR, and
+    anyone who can photograph one can photograph the other. The real delta is
+    that a QR bundles URL and code into a single scannable artifact, so a
+    shoulder-surfer gets both in one camera motion instead of one scan plus
+    reading eight characters. Real, and modest. The log exposure is the durable
+    difference, and it is the one this decision turns on.
+
+    What it costs: the code lands in the phone's browser history. `CODE_TTL_MS`
+    is ten minutes and five wrong guesses reissue early, so such an entry is
+    worthless almost immediately — but it is a real cost and it is why this is a
+    decision rather than a shrug.
+
+    **The hazard it introduces, and the containment.** An auto-submitted
+    fragment is a GUESS, and a guess spends one of five attempts — the same
+    budget `routes.ts` already protects when it refuses to let a malformed body
+    spend one. A stale QR reloaded a few times would burn the live code and
+    invalidate the QR on the operator's own screen. So the page submits a
+    fragment at most once per load, clears it with `history.replaceState`
+    BEFORE attempting, and stops on rejection instead of retrying. This defends
+    the operator from their own reload; it does not defend against an attacker
+    who photographed the QR, who could already POST five wrong codes.
+
+    See `docs/design/2026-08-25-tunnel-qr-design.md`.
