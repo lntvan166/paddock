@@ -45,8 +45,20 @@ export type CreateTarget =
   | {
     kind: "tab";
     spaceId: string;
-    /** The space's visible label, slugified into the agent's name. */
-    spaceLabel: string;
+    /**
+     * The space's OWN label, and `null` when it has none — never the `spaceId`
+     * substituted for one.
+     *
+     * The row above this control renders an unnamed space as its id (`w1`,
+     * `w3`), because a row has to say something. Passing that string on as the
+     * label was how a herdr COORDINATE became an agent's suggested name — the
+     * exact thing `docs/gotchas.md` and `adapter.ts`'s three-rung labelling
+     * exist to prevent ("`w3:p1` is correct and useless"), from the write side
+     * and durably. So the caller passes what herdr actually holds, and the two
+     * consumers below make their own decision: the heading falls back to the
+     * id, the suggested NAME does not fall back at all.
+     */
+    spaceLabel: string | null;
     /** The space's own working directory — its first pane's — or null when the
      *  tree does not say. Null means "let herdr pick", never a guessed path. */
     spaceCwd: string | null;
@@ -130,7 +142,11 @@ export function CreateSheet({
 
   const isSpace = target.kind === "space";
   const what = isSpace ? "space" : "tab";
-  const title = isSpace ? "New space" : `New tab in ${target.spaceLabel}`;
+  /** Where this tab is going, for the heading and the accessible name. The id
+   *  IS the honest answer for an unnamed space — it is what the row shows, and
+   *  the sheet must agree with the row it opened from. */
+  const where = isSpace ? "" : target.spaceLabel ?? target.spaceId;
+  const title = isSpace ? "New space" : `New tab in ${where}`;
 
   /**
    * The name the agent gets, unless the operator says otherwise.
@@ -145,8 +161,16 @@ export function CreateSheet({
    * paddock's own disambiguation renders as `claude`, `claude 2`, `claude 3`.
    * The slug of the space's label is what herdr itself writes when a human
    * starts an agent (§14.7), so the common case is still one tap.
+   *
+   * And it is EMPTY when there is no label to slugify — an unnamed space, which
+   * is the common case because herdr numbers them by default. It used to be
+   * `slug(spaceId)`, so `w1` was submitted as the agent's real herdr `name`:
+   * a coordinate written as a name, durably, until someone renamed it. Submit
+   * is already disabled on a blank name for a harness, so the operator is asked
+   * for a name exactly when paddock has nothing honest to suggest.
    */
-  const suggested = slug(isSpace ? label : target.spaceLabel);
+  const nameSource = isSpace ? label : target.spaceLabel;
+  const suggested = nameSource === null ? "" : slug(nameSource);
   const name = nameEdited ? nameDraft : suggested;
 
   /** A new tab inherits its space's directory; a new space has none to
@@ -193,6 +217,12 @@ export function CreateSheet({
     if (!next) {
       setLabel(""); setKind(SHELL); setNameDraft(""); setNameEdited(false);
       setCwdDraft(""); setCwdEdited(false); setError(null);
+      // `kinds` too, and it was the one that got left out — which falsified the
+      // comment on the read above ("A failed read is SHOWN — the picker then
+      // offers a plain shell and nothing else"). On any open after a successful
+      // one, a failed read showed its error with the STALE list still beside
+      // it: harnesses paddock had just failed to confirm were installed.
+      setKinds([]);
     }
   };
 
@@ -259,7 +289,7 @@ export function CreateSheet({
         className="create-btn"
         // Position carries the scope on screen; an accessible name cannot rely
         // on position, so it says the scope in words.
-        aria-label={isSpace ? "New space" : `New tab in ${target.spaceLabel}`}
+        aria-label={isSpace ? "New space" : `New tab in ${where}`}
       >
         <span aria-hidden="true">+</span>
       </SheetTrigger>

@@ -198,8 +198,6 @@ export function SpaceRow({
             <span className="space-count">{countLabel}</span>
           </>
         )}
-        {/* A SIBLING of the anchor above, never a child of it: a <button>
-            inside an <a> is invalid HTML and unreachable by keyboard. */}
         {/* §16.7's second `+`: on the space row, so its position says it makes
             a tab IN THIS SPACE. A SIBLING of the anchor above, never a child —
             a <button> inside an <a> is invalid HTML and unreachable by
@@ -214,7 +212,12 @@ export function SpaceRow({
             target={{
               kind: "tab",
               spaceId: space.spaceId,
-              spaceLabel: spaceLabel,
+              // `space.label`, NOT the `spaceLabel` the heading uses: that one
+              // falls back to the id so the row has something to show, and
+              // handing the fallback on made a herdr coordinate the agent's
+              // suggested name. The sheet does its own falling back, per
+              // consumer — see `CreateTarget`.
+              spaceLabel: space.label,
               spaceCwd: panes[0]?.cwd ?? null,
             }}
             cwds={cwds}

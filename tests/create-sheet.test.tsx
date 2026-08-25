@@ -560,6 +560,87 @@ test("the header's sheet and a row's sheet are the same component, scoped differ
   await unmount();
 });
 
+test("a failed harness read leaves no stale kinds beside its error", async () => {
+  // `show(false)` reset six pieces of state and not `kinds`, which falsified
+  // the comment on the read itself: "A failed read is SHOWN — the picker then
+  // offers a plain shell and nothing else". On any open AFTER a successful one,
+  // the stale list stayed beside the error, so the picker offered harnesses
+  // paddock had just failed to confirm were installed.
+  let fail = false;
+  const { senders } = recorder({
+    harnesses: async () => {
+      if (fail) throw new Error("manifest read failed");
+      return KINDS;
+    },
+  });
+  const el = await render(
+    <CreateSheet
+      target={{ kind: "tab", spaceId: "w7", spaceLabel: "schema migration", spaceCwd: "/srv/db" }}
+      cwds={["/srv/db"]}
+      onChanged={() => {}}
+      senders={senders}
+      navigate={() => {}}
+    />,
+  );
+  const plus = el.querySelector<HTMLElement>("[data-create]")!;
+  await settle();
+  await click(plus);
+  await settle();
+  expect(picker().querySelectorAll("option").length).toBe(KINDS.length + 1);
+
+  const cancel = [...sheet().querySelectorAll("button")].find((b) => b.textContent === "Cancel");
+  await click(cancel);
+  await settle();
+  fail = true;
+  await click(plus);
+  await settle();
+  expect(sheet().textContent).toContain("manifest read failed");
+  // The shell, and nothing else — which is what the comment promises and what
+  // is honest about what paddock knows.
+  expect([...picker().querySelectorAll("option")].map((o) => (o as HTMLOptionElement).value)).toEqual([""]);
+  await unmount();
+});
+
+test("an UNNAMED space suggests no agent name at all, rather than its herdr coordinate", async () => {
+  // `SpaceRow` renders an unnamed space as its `spaceId` — `w1`, `w3` — because
+  // the row has to say something. Passing that string on as the agent's
+  // suggested NAME writes a herdr coordinate as a name, which is precisely what
+  // `docs/gotchas.md` and `adapter.ts`'s three-rung labelling exist to prevent
+  // ("`w3:p1` is correct and useless") — only from the write side, and durably:
+  // it becomes what the dashboard shows until someone renames it. Unnamed
+  // spaces are the COMMON case, because herdr numbers them by default.
+  //
+  // So the field is left empty, and Submit is already disabled on a blank name
+  // for a harness — the operator is asked for a name exactly when paddock has
+  // nothing honest to suggest.
+  const { senders, calls } = recorder();
+  const el = await render(
+    <CreateSheet
+      target={{ kind: "tab", spaceId: "w7", spaceLabel: null, spaceCwd: "/srv/db" }}
+      cwds={["/srv/db"]}
+      onChanged={() => {}}
+      senders={senders}
+      navigate={() => {}}
+    />,
+  );
+  await settle();
+  await click(el.querySelector("[data-create]"));
+  await settle();
+  // The heading still says WHERE, because the row already shows the id and the
+  // sheet must agree with the row it opened from. Only the NAME is withheld.
+  expect(sheet().textContent).toContain("New tab in w7");
+  await choose("claude");
+  expect(field("name").value).toBe("");
+  expect(submitButton().disabled).toBe(true);
+  // A plain shell has no agent to name, so it is never blocked by this.
+  await choose("");
+  expect(submitButton().disabled).toBe(false);
+  await click(submitButton());
+  await settle();
+  expect(calls).toContain('createTab w7 {"cwd":"/srv/db"}');
+  await unmount();
+});
+
 test("a 200 that says ok:false never becomes a navigation", async () => {
   // `readJson` rejects a non-2xx but validates nothing about a 200's body, so
   // this resolves as a value TypeScript believes is a success. Unguarded it
