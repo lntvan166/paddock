@@ -96,9 +96,9 @@ one, recorded here so they are not reintroduced.
   — a default that is occasionally slow is a default that is slow on exactly
   the agents with the most history.
 
-- **Never render a blank pane while a read is in flight.** `AgentTerminal`
-  seeds its state from a module-level `screenCache` keyed by agent id, so
-  re-opening an agent paints the last screen immediately and the fetch only
+- **Never render a blank pane while a read is in flight.** `PaneTerminal`
+  seeds its state from a module-level `screenCache` keyed by pane id, so
+  re-opening a pane paints the last screen immediately and the fetch only
   replaces it. Measured with CDP at 390×844: a cold deep link went from 13 ms
   with one blank frame to **0 ms with none**. Over a local socket that gap is
   a single frame; over a phone on a ~250 ms link it is the entire impression

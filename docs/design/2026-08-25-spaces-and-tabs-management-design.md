@@ -420,6 +420,17 @@ POST /api/spaces/:id/tabs           {"label"?: string, "cwd"?: string}
 
 backed by `workspace.create` and `tab.create`.
 
+> **Corrected 2026-08-25:** measured false — `tab.create`'s result is an
+> envelope carrying `root_pane` alongside `tab`, so the new pane id is returned
+> directly; see `docs/probes/2026-08-25-structural-events.md`. Do not implement
+> the snapshot re-read described below. Note precisely what was wrong: §14.8 is
+> accurate, `TabInfo` the *type* genuinely has no `pane_id`. It is the
+> inference from that — "therefore the pane must be found by re-reading the
+> snapshot" — that the probe disproves, and it is left standing below rather
+> than deleted because the paragraph reads persuasively enough to pre-empt its
+> own objection, and a reader who meets the reasoning without this line will
+> implement the wrong thing feeling well-informed.
+
 `tab.create` returns `TabInfo`, which carries **no `pane_id`** (§14.8). The new
 pane is therefore resolved by re-reading the snapshot and matching on
 `tab_id` — a documented consequence of the response shape, not a guess. This
