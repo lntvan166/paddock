@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { parseArgs } from "@server/cli";
 import { runStatus } from "@server/lifecycle/commands";
 import { writeState, type Probe } from "@server/lifecycle/state";
+import { glyph } from "@server/term";
 
 const dir = () => mkdtemp(join(tmpdir(), "paddock-status-"));
 const probe = (alive: boolean, args: string | null): Probe =>
@@ -97,6 +98,10 @@ test("status names an untracked instance instead of calling it 'not running'", a
   expect(text).not.toContain("not running");
   expect(text).toContain("0.8.1");
   expect(text).toContain("8787");
+  // The loudest thing `status` can say — something is serving that paddock
+  // cannot decide about or manage — must carry the same kind of marker every
+  // other outcome does, not run unmarked.
+  expect(said[0]).toStartWith(glyph("unknown"));
 });
 
 test("an uptime under a minute reads in seconds, not as 0m", async () => {

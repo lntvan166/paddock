@@ -59,7 +59,7 @@ async function reportUntracked(
 ): Promise<boolean> {
   const found = await listener(port);
   if (found === null) return false;
-  log(`paddock ${found.version} — serving on 127.0.0.1:${port}, but NOT tracked`);
+  log(`${glyph("unknown")} paddock ${found.version} — serving on 127.0.0.1:${port}, but NOT tracked`);
   log("  Nothing on disk describes it, so paddock cannot stop it. Its state");
   log("  file is gone: killed with SIGKILL, or removed by another paddock run");
   log("  on this machine (a bug in versions before 0.8.3).");
