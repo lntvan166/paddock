@@ -30,6 +30,7 @@ function harness(a: Agent = agent(), screen?: string[]) {
       calls.push(`readOutput:${lines}`);
       return { lines: screen ?? ["out"], source: "visible" as const };
     },
+    async readPane() { calls.push("readPane"); return { lines: screen ?? ["out"], source: "recent_unwrapped" as const }; },
     async readDetection() { calls.push("readDetection"); return "Proceed?\n ❯ 1. Yes\n   2. No\n"; },
     async sendOptionKey(_t: string, k: string) { calls.push(`key:${k}`); },
     async sendNavKey(_t: string, k: string) { calls.push(`nav:${k}`); },
@@ -250,6 +251,7 @@ test("a failed action reports ok:false rather than throwing", async () => {
     store, hub: new Hub({ now: () => NOW }),
     actions: {
       async readOutput() { return { lines: [], source: "visible" as const }; },
+      async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
       async readDetection() { return ""; },
       async sendOptionKey() { throw new Error("herdr said no"); },
       async sendNavKey() { throw new Error("herdr said no"); },
@@ -361,6 +363,7 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
     store, hub: new Hub({ now: () => NOW }),
     actions: {
       async readOutput() { return { lines: ["kept"], source: "visible" as const }; },
+      async readPane() { return { lines: ["kept"], source: "recent_unwrapped" as const }; },
       async readDetection() { return ""; },
       async sendOptionKey() {},
       async sendNavKey() { throw new Error("herdr said no"); },

@@ -775,6 +775,26 @@ export function createApp(deps: AppDeps) {
       }
     });
 
+    /**
+     * Output for a pane that has no agent.
+     *
+     * Separate from `/api/agents/:id/output` because the store cannot
+     * validate this id — a shell pane is not in it, by design (§3). The tree
+     * is the authority instead.
+     */
+    app.post("/api/panes/:id/output", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+      const tree = await deps.readTree();
+      const pane = tree.spaces.flatMap((s) => s.tabs).flatMap((t) => t.panes).find((p) => p.paneId === id);
+      if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
+      if (pane.harness !== null) {
+        return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/output" }, 409);
+      }
+      const { lines, source } = await actions.readPane(id);
+      return c.json({ lines, source });
+    });
+
     app.post("/api/agents/:id/answer", async (c) => {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);

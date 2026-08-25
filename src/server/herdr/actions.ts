@@ -135,7 +135,14 @@ export function readSourceFor(state: AgentState): ReadSource {
  * a first paint should ask for. Scrollback is a second, explicit request the
  * UI makes once the operator is already looking at something.
  */
-export function resolveSource(state: AgentState, scrollback: boolean): ReadSource {
+export function resolveSource(state: AgentState | null, scrollback: boolean): ReadSource {
+  // A shell pane is on the NORMAL screen, so it has a real scrollback buffer
+  // and `recent_unwrapped` is ~2ms for 400 lines — measured. That is the exact
+  // opposite of an agent pane, which renders on the alternate screen and costs
+  // ~35ms per line past the viewport. So the cheap source for a shell is the
+  // expensive one for an agent, and the state is what tells them apart.
+  if (state === null) return "recent_unwrapped";
+
   return scrollback ? readSourceFor(state) : "visible";
 }
 
@@ -175,6 +182,13 @@ export interface HerdrActions {
   readOutput(
     target: string, state: AgentState, lines?: number, scrollback?: boolean,
   ): Promise<{ lines: string[]; source: ReadSource }>;
+  /**
+   * Read a pane that has no agent — a plain shell. `HISTORY_LINES` and
+   * `recent_unwrapped` always, because `resolveSource(null, _)` always
+   * chooses scrollback: a shell is on the normal screen, where that source
+   * is ~2ms instead of the ~35ms/line it costs an agent's alternate screen.
+   */
+  readPane(paneId: string): Promise<{ lines: string[]; source: ReadSource }>;
   readDetection(target: string): Promise<string>;
   sendOptionKey(target: string, key: string): Promise<void>;
   /**
@@ -228,6 +242,26 @@ export function createActions(socketPath: string): HerdrActions {
       return {
         lines: text === "" ? [] : text.split("\n").map((l) => l.replace(/\r$/, "")),
         source,
+      };
+    },
+
+    async readPane(paneId) {
+      // `pane.read`, not `agent.read`: the latter returns `agent_not_found`
+      // for a pane with no harness — measured. Note the parameter is
+      // `pane_id` here and `target` there; they are not interchangeable.
+      //
+      // Agents deliberately stay on `agent.read` (design doc §8): it refuses
+      // `recent_unwrapped` on a non-idle agent with `agent_not_idle`, a
+      // herdr-side guard against scrolling a live agent's pane that paddock
+      // would otherwise have to maintain alone.
+      const res = await request<HerdrPaneRead>(socketPath, "pane.read", {
+        pane_id: paneId, source: "recent_unwrapped", lines: HISTORY_LINES,
+        format: "ansi", strip_ansi: false,
+      });
+      const text = res.read.text;
+      return {
+        lines: text === "" ? [] : text.split("\n").map((l) => l.replace(/\r$/, "")),
+        source: "recent_unwrapped" as const,
       };
     },
 

@@ -40,6 +40,7 @@ function harness(state: Agent["state"] = "blocked") {
   const calls: string[] = [];
   const actions = {
     async readOutput() { calls.push("readOutput"); return { lines: ["out"], source: "visible" as const }; },
+    async readPane() { calls.push("readPane"); return { lines: ["out"], source: "recent_unwrapped" as const }; },
     async readDetection() { calls.push("readDetection"); return ""; },
     async sendOptionKey(_t: string, k: string) { calls.push(`key:${k}`); },
     async sendNavKey(_t: string, k: string) { calls.push(`nav:${k}`); },
