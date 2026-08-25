@@ -1,24 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
-import type { RowSenders } from "@web/components/RowActions";
+import { sortSpaces } from "@web/components/space-sort";
 import { SpaceRow } from "@web/components/SpaceRow";
 import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
-
-const COLLAPSED_KEY = "paddock.spaces.collapsed";
 
 /**
  * `load` is injected so the tests can drive this without a network, and so a
  * failure is a value this component renders rather than a thrown promise.
  */
-export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, navigate }: {
+export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate }: {
   onBack: () => void;
   load?: () => Promise<SpaceTree>;
-  /** The row actions' five writes, injected for the same reason `load` is:
-   *  a component test drives a rename or a close without a network. */
-  senders?: RowSenders;
-  /** The create sheet's writes, injected for the same reason. */
+  /** The create sheet's writes, injected for the same reason `load` is: a
+   *  component test drives a create without a network. */
   createSenders?: CreateSenders;
   /** How the create sheet leaves for the pane it just made. Injected so a
    *  test can observe the navigation instead of mutating the hash. */
@@ -28,7 +24,6 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
   const [tree, setTree] = useState<SpaceTree | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
 
   const refresh = useCallback(async () => {
     try {
@@ -51,15 +46,6 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
     const t = setInterval(() => setNow(Date.now()), 5_000);
     return () => clearInterval(t);
   }, []);
-
-  const toggle = (spaceId: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(spaceId)) next.delete(spaceId); else next.add(spaceId);
-      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next])); } catch { /* private mode */ }
-      return next;
-    });
-  };
 
   /**
    * Every working directory already in the tree, once each, in a stable order.
@@ -115,25 +101,8 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
 
       {tree !== null && (
         <ul className="spaces">
-          {tree.spaces.map((s) => (
-            <SpaceRow
-              key={s.spaceId}
-              space={s}
-              // Defaults to OPEN, for the reason App.tsx gives for idleOpen: a
-              // collapsed group shows a count where it could show its
-              // contents, and revealing structure is this screen's whole job.
-              open={!collapsed.has(s.spaceId)}
-              onToggle={() => toggle(s.spaceId)}
-              // Every write refetches, win or lose (§11) — no optimistic
-              // update, because this screen's value is being accurate about
-              // someone else's state rather than about what was asked for.
-              onChanged={() => void refresh()}
-              senders={senders}
-              cwds={cwds}
-              canCreate={canCreate}
-              createSenders={createSenders}
-              navigate={navigate}
-            />
+          {sortSpaces(tree.spaces).map((s) => (
+            <SpaceRow key={s.spaceId} space={s} />
           ))}
         </ul>
       )}
@@ -150,13 +119,4 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
       )}
     </main>
   );
-}
-
-function readCollapsed(): Set<string> {
-  try {
-    const raw = localStorage.getItem(COLLAPSED_KEY);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
-  } catch {
-    return new Set();
-  }
 }

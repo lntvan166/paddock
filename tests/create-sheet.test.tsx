@@ -6,6 +6,7 @@ import { paneHash } from "@shared/route";
 import { RequestFailed } from "@web/api";
 import { CreateSheet, slug, type CreateSenders } from "@web/components/CreateSheet";
 import { LaunchNotice } from "@web/components/LaunchNotice";
+import { Space } from "@web/components/Space";
 import { Spaces } from "@web/components/Spaces";
 import { useLaunch } from "@web/launch";
 import { useStore } from "@web/store";
@@ -127,10 +128,16 @@ afterEach(() => {
   useStore.setState({ spacesAvailable: false });
 });
 
-test("a + sits in the Spaces header and one on every space row", async () => {
+test("the + in the Spaces header makes a space, enabled and named for it", async () => {
   // §16.7: position carries the scope, which is the whole reason neither
-  // control needs a text label. So what is pinned is WHERE they are, not just
-  // that they exist.
+  // control needs a text label. So what is pinned is WHERE it is, not just
+  // that it exists.
+  //
+  // Task 8 removed the per-row `+` this test used to pin alongside the
+  // header one — that half is now `tests/spaces-screen.test.tsx`'s "no row
+  // carries a management control" guard, which asserts it more strongly
+  // (with `spacesAvailable` true, specifically so the guard cannot pass
+  // vacuously) than repeating an exact duplicate here would.
   withTree(true);
   const { senders } = recorder();
   const el = await render(
@@ -142,16 +149,8 @@ test("a + sits in the Spaces header and one on every space row", async () => {
   expect(header).not.toBeNull();
   expect(header!.disabled).toBe(false);
   expect(header!.textContent).toContain("+");
-
-  const rows = [...el.querySelectorAll<HTMLButtonElement>('[data-space-row] [data-create="tab"]')];
-  expect(rows).toHaveLength(TREE.spaces.length);
-  for (const r of rows) {
-    expect(r.disabled).toBe(false);
-    expect(r.textContent).toContain("+");
-  }
   // Position is not an accessible name, so the name says the scope in words.
   expect(header!.getAttribute("aria-label")).toBe("New space");
-  expect(rows[0]!.getAttribute("aria-label")).toBe("New tab in api refactor");
   await unmount();
 });
 
@@ -169,9 +168,12 @@ test("neither + exists when the server does not say it can read a tree", async (
   expect(el.querySelectorAll("[data-create]")).toHaveLength(0);
   // And nothing was read on the operator's behalf either.
   expect(calls).toEqual([]);
-  // The rest of the screen is untouched: the rows and their `⋯` are still here.
+  // The rest of the screen is untouched: the rows are still here. They carry
+  // no control of their own regardless of this capability — Task 8 moved
+  // every row-level control off this screen — so what is pinned is that
+  // turning the capability off costs the list nothing IT still had.
   expect(el.querySelectorAll("[data-space-row]")).toHaveLength(2);
-  expect(el.querySelectorAll("[data-row-actions]").length).toBeGreaterThan(0);
+  expect(el.querySelectorAll("[data-space-row] button")).toHaveLength(0);
   await unmount();
 });
 
@@ -237,10 +239,10 @@ test("a new tab's agent name is pre-filled from its space's label, slugified, an
   withTree(true);
   const { senders } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
   await choose("claude");
 
@@ -275,10 +277,10 @@ test("a harness with an emptied name cannot be submitted", async () => {
   withTree(true);
   const { senders, calls } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
   await choose("claude");
   expect(submitButton().disabled).toBe(false);
@@ -298,10 +300,10 @@ test("a plain shell needs no name — there is no agent to name", async () => {
   withTree(true);
   const { senders } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
   expect(sheet().querySelector('input[data-field="name"]')).toBeNull();
   expect(submitButton().disabled).toBe(false);
@@ -316,10 +318,10 @@ test("cwd defaults to the space's, and every folder in the tree is a quick pick"
   withTree(true);
   const { senders } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
 
   expect(field("cwd").value).toBe("/srv/project");
@@ -357,11 +359,11 @@ test("creating a shell tab navigates to the new pane and refetches, with no agen
   const { state, load } = counted(TREE);
   const nav: string[] = [];
   const el = await render(
-    <Spaces onBack={() => {}} load={load} createSenders={senders} navigate={(h) => nav.push(h)} />,
+    <Space spaceId="w1" onBack={() => {}} load={load} createSenders={senders} navigate={(h) => nav.push(h)} />,
   );
   await settle();
   const before = state.loads;
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
   await typeInto(field("label"), "run-it-again");
   await click(submitButton());
@@ -384,10 +386,10 @@ test("creating a tab with a harness navigates first, then starts the agent", asy
   const { senders, calls } = recorder();
   const nav: string[] = [];
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
   );
   await settle();
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
   await choose("claude");
   await click(submitButton());
@@ -414,10 +416,10 @@ test("a PARTIAL failure still navigates, and says the agent did not start", asyn
   });
   const nav: string[] = [];
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
   );
   await settle();
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
   await choose("claude");
   await click(submitButton());
@@ -444,10 +446,10 @@ test("a 200 whose body says ok:false is a failed start, not a success", async ()
     startAgent: async (paneId) => ({ ok: false, detail: "no manifest for that kind", paneId }),
   });
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
   await choose("codex");
   await click(submitButton());
@@ -514,10 +516,10 @@ test("the sheet reopens blank, never carrying the last attempt's error or draft"
     createTab: async () => { throw new RequestFailed(502, "herdr refused"); },
   });
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
-  const plus = el.querySelector<HTMLButtonElement>('[data-space-row] [data-create="tab"]');
+  const plus = el.querySelector<HTMLButtonElement>('.tab-create [data-create="tab"]');
   await click(plus);
   await settle();
   await typeInto(field("label"), "half-typed");
@@ -688,10 +690,10 @@ test("a 200 with no pane id never becomes a navigation either", async () => {
   });
   const nav: string[] = [];
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
   );
   await settle();
-  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
   await settle();
   await click(submitButton());
   await settle();
