@@ -517,7 +517,19 @@ export interface TreePane {
   /** `agent.list`'s `name`. Null for a shell, and also null for an agent whose
    *  name has been cleared — herdr does not re-derive one. See §14.1. */
   name: string | null;
-  /** `terminal_title_stripped`. A shell's only label. */
+  /**
+   * `terminal_title_stripped`, verbatim — NOT a shell's label, even though it
+   * once served as one.
+   *
+   * For a pane sitting at a prompt, the terminal title IS the prompt
+   * (`operator@dev-box:~`), which labels nothing and puts a hostname on a
+   * screen an operator may hand to someone or screenshot. A pane with no
+   * agent is labelled by its `cwd` instead, falling back to the literal word
+   * "shell" (§16.6) — `SpaceRow`'s `shellLabel`, not this field. `title`
+   * remains an AGENT pane's fallback label when `name` is null, and is still
+   * shown inside the pane's own terminal view, where a prompt is expected
+   * output rather than a label.
+   */
   title: string | null;
   cwd: string;
   /**

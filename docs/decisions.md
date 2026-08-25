@@ -568,3 +568,33 @@ session does not silently re-litigate them.
     and disabling self-update is a precondition for core anyway, so a clean
     refusal is the same direction the project would have to move regardless.
 
+20. **No embedded terminal emulator.** §16.3's shell pane was asked to do one
+    thing: let the operator type into a shell from the phone. xterm.js was
+    considered for it and refused.
+
+    What it would buy is real emulation — cursor addressing, resize, the
+    ability to run a full-screen program (`vim`, `htop`, anything that paints
+    a screen rather than appending lines). What it costs is roughly 80 KB
+    gzipped on top of a measured 102.45 KB bundle, in a project that rejected
+    a 76 KB webfont on the grounds that it would be the single largest payload
+    on a slow mobile link (decision 6), and that ships one JS chunk
+    deliberately because an extra round trip costs more than the bytes it
+    would save at ~250 ms RTT (decision 5). Typing `claude` or `ls` into a
+    shell, and pressing Ctrl-C to stop one, needs neither cursor addressing
+    nor a full-screen program — the two things that actually justify an
+    emulator's weight.
+
+    What shipped instead is `pane.send_text` / `pane.send_keys`, the shell's
+    mirror of the agent path's `agent.prompt` / `agent.send_keys` — wired into
+    the existing reply box and keypad, behind the same closed `NavKey`
+    allowlist recorded in `docs/gotchas.md` (never guess a keystroke; render
+    real labels or fall back to raw output plus free text). That covers what
+    was actually asked: type a command, interrupt one.
+
+    Revisit only on a STATED need to run a full-screen program from a phone —
+    not a general wish for higher fidelity, which is a bottomless ask against
+    a bundle-size budget. And note that lazy-loading xterm.js behind a route
+    guard so only an opened terminal pays for it would not dodge decision 5;
+    it would reopen it, on the same one-screen app the "one chunk" reasoning
+    was written for.
+
