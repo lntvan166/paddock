@@ -11,6 +11,8 @@ import {
   TOKEN_SHAPE_DETAIL,
   type SettingsStore,
 } from "@server/settings/store";
+import type { PushStore } from "@server/push/store";
+import { b64urlDecode } from "@server/push/vapid";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { formatCode } from "@server/tunnel/pairing";
@@ -390,7 +392,53 @@ function validateSettingsPatch(
     patch.publicUrl = u;
   }
 
+  // Only `enabled`. The keypair is never patchable and subscriptions arrive
+  // through their own routes, so this cannot be used to bypass the validation
+  // there — an unknown key inside `push` is refused rather than ignored, for
+  // the same reason every other branch here refuses one.
+  if ("push" in body) {
+    const raw = body.push;
+    if (typeof raw !== "object" || raw === null) {
+      return { ok: false, detail: "push must be an object" };
+    }
+    const pp = raw as Record<string, unknown>;
+    const out: NonNullable<SettingsPatch["push"]> = {};
+    if ("enabled" in pp) {
+      if (typeof pp.enabled !== "boolean") {
+        return { ok: false, detail: "push.enabled must be a boolean" };
+      }
+      out.enabled = pp.enabled;
+    }
+    patch.push = out;
+  }
+
   return { ok: true, patch };
+}
+
+/**
+ * The decoded length of a base64url key, or -1 when it is not base64url at all.
+ *
+ * A corrupt key and a wrong-length key are the same refusal to the caller, so
+ * the throw is folded into the length rather than given its own branch — but it
+ * is NOT swallowed: -1 can never equal 65 or 16, so a malformed value always
+ * takes the 400.
+ */
+function byteLen(b64url: string): number {
+  try {
+    return b64urlDecode(b64url).length;
+  } catch {
+    return -1;
+  }
+}
+
+/** The push half of a settings view. `undefined` — no push store wired — reads
+ *  as off rather than as an error, because a paddock built without push is not
+ *  a paddock with a broken one. */
+function pushView(push: PushStore | undefined): {
+  devices: number; vapidPublicKey: string | null; error: string | null;
+} {
+  if (push === undefined) return { devices: 0, vapidPublicKey: null, error: null };
+  return { devices: push.list().length, vapidPublicKey: push.publicKey(), error: push.error };
 }
 
 export interface AppDeps {
@@ -403,6 +451,9 @@ export interface AppDeps {
   actions?: HerdrActions;
   /** Settings store. Omit in tests that only exercise the agent API. */
   settings?: SettingsStore;
+  /** Push subscriptions and the VAPID keypair. Omit in tests that do not
+   *  exercise push; its absence renders the settings section as "off". */
+  push?: PushStore;
   /** Reads a harness's own session log. Omit in tests that do not exercise it. */
   journal?: JournalReader;
   /** The server-side session id for an agent. Never crosses the socket. */
@@ -1209,9 +1260,53 @@ export function createApp(deps: AppDeps) {
     app.get("/api/settings", (c) => {
       const url = deps.tunnelUrl?.() ?? null;
       return c.json({
-        ...settings.view(now()),
+        ...settings.view(now(), pushView(deps.push)),
         tunnel: url !== null && pairing ? { url, pairedDevices: pairing.pairedCount } : null,
       });
+    });
+
+    /**
+     * Validated at the door, not at send time. A malformed subscription stored
+     * now fails hours later when a notification is due and the operator is
+     * nowhere near the terminal — so `endpoint` must be https and the keys must
+     * be the sizes the crypto requires.
+     */
+    app.post("/api/push/subscribe", async (c) => {
+      const push = deps.push;
+      if (push === undefined) return c.json({ ok: false, detail: "push is not configured" }, 400);
+      const parsed = await strictJsonBody(c);
+      if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
+      const { endpoint, keys } = parsed.body as {
+        endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown };
+      };
+      if (typeof endpoint !== "string" || !endpoint.startsWith("https://")) {
+        return c.json({ ok: false, detail: "endpoint must be an https URL" }, 400);
+      }
+      const p256dh = keys?.p256dh;
+      const auth = keys?.auth;
+      if (typeof p256dh !== "string" || byteLen(p256dh) !== 65) {
+        return c.json({ ok: false, detail: "keys.p256dh must be a 65-byte P-256 point" }, 400);
+      }
+      if (typeof auth !== "string" || byteLen(auth) !== 16) {
+        return c.json({ ok: false, detail: "keys.auth must be 16 bytes" }, 400);
+      }
+      await push.add({ endpoint, p256dh, auth });
+      return c.json({ ok: true });
+    });
+
+    app.post("/api/push/unsubscribe", async (c) => {
+      const push = deps.push;
+      if (push === undefined) return c.json({ ok: false, detail: "push is not configured" }, 400);
+      const parsed = await strictJsonBody(c);
+      if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
+      const { endpoint } = parsed.body as { endpoint?: unknown };
+      if (typeof endpoint !== "string") {
+        return c.json({ ok: false, detail: "endpoint must be a string" }, 400);
+      }
+      // Removing something absent is not an error: a browser that lost its
+      // subscription still deserves a clean "you are unsubscribed".
+      await push.remove(endpoint);
+      return c.json({ ok: true });
     });
 
     /**

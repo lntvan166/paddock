@@ -13,6 +13,9 @@ export interface Settings {
     mutedUntil: number | null;
     cooldownMs: number;
   };
+  /** Push is off until the operator turns it on. The keypair and the device
+   *  list are NOT here — they are state, and they live in push.json. */
+  push: { enabled: boolean };
   publicUrl: string | null;
 }
 
@@ -60,6 +63,7 @@ const defaults = (): Settings => ({
     enabled: false, triggers: ["blocked"], settleMs: { ...DEFAULT_SETTLE_MS },
     mutedUntil: null, cooldownMs: DEFAULT_COOLDOWN_MS,
   },
+  push: { enabled: false },
   publicUrl: null,
 });
 
@@ -204,6 +208,9 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
         MIN_COOLDOWN_MS, Number.MAX_SAFE_INTEGER, "cooldownMs", log,
       ),
     },
+    // Explicitly, like every other field here: a shallow merge is what let a
+    // v1 file load with no settleMs and silently restore the edge-firing bug.
+    push: { enabled: typeof obj(p.push).enabled === "boolean" ? obj(p.push).enabled as boolean : d.push.enabled },
     publicUrl: typeof p.publicUrl === "string" ? p.publicUrl : null,
   };
 }
@@ -267,7 +274,15 @@ export class SettingsStore {
    */
   current(): Settings { return structuredClone(this.#s); }
 
-  view(now: number = Date.now()): SettingsView {
+  /**
+   * `push` is passed IN rather than stored here. The device count, the public
+   * key and any load error belong to `push.json`, and duplicating them into
+   * settings would give two sources for one truth. Only `enabled` — an
+   * operator preference — lives in this store.
+   */
+  view(now: number = Date.now(), push: Omit<SettingsView["push"], "enabled"> = {
+    devices: 0, vapidPublicKey: null, error: null,
+  }): SettingsView {
     const t = this.#s.telegram.token;
     return {
       telegram: {
@@ -280,6 +295,7 @@ export class SettingsStore {
         triggers: [...this.#s.notify.triggers],
         settleMs: { ...this.#s.notify.settleMs },
       },
+      push: { enabled: this.#s.push.enabled, ...push },
       publicUrl: this.#s.publicUrl,
       // The store knows nothing about tunnels and must not learn — routes.ts
       // composes the real value in when `paddock tunnel` supplies deps.pairing.
@@ -292,6 +308,7 @@ export class SettingsStore {
   async patch(p: SettingsPatch): Promise<void> {
     if (p.telegram) this.#s.telegram = { ...this.#s.telegram, ...p.telegram };
     if (p.notify) this.#s.notify = { ...this.#s.notify, ...p.notify };
+    if (p.push) this.#s.push = { ...this.#s.push, ...p.push };
     if (p.publicUrl !== undefined) this.#s.publicUrl = p.publicUrl;
     // An explicit save clears a load fault: the operator has chosen to replace
     // whatever was unparseable.

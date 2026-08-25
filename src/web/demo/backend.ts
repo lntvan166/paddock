@@ -74,6 +74,11 @@ function demoSettings(mutedUntil: number | null = null): SettingsView {
       mutedUntil,
       cooldownMs: 60_000,
     },
+    // No keypair, because the demo is a static bundle with no server behind it
+    // — there is nothing to subscribe TO. A null public key is the honest
+    // answer and renders as "this server has push turned off" rather than an
+    // enable button that could only fail.
+    push: { enabled: false, devices: 0, vapidPublicKey: null, error: null },
     publicUrl: null,
     // No tunnel: a paddock served the ordinary way has none, and the demo must
     // not offer to pair a device it cannot pair.

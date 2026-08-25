@@ -17,6 +17,19 @@ export interface SettingsView {
     mutedUntil: number | null;
     cooldownMs: number;
   };
+  push: {
+    enabled: boolean;
+    /** How many devices will buzz. NOT whether THIS device is subscribed —
+     *  the server knows a set of endpoints and cannot tell which one is the
+     *  browser asking; that question is answered client-side by
+     *  `registration.pushManager.getSubscription()`. */
+    devices: number;
+    /** Rides along so subscribing is one fetch rather than two. The PRIVATE
+     *  key is never a member, exactly as the Telegram token never is. */
+    vapidPublicKey: string | null;
+    /** Non-null when push.json failed to load. Surfaced, never swallowed. */
+    error: string | null;
+  };
   publicUrl: string | null;
   /**
    * Non-null only while `paddock tunnel` is running. The UI renders its
@@ -39,6 +52,10 @@ export interface SettingsPatch {
    *  the server stamps the instant from a client-supplied duration, and so
    *  that "applies immediately" is structural rather than a convention. */
   notify?: Partial<Omit<SettingsView["notify"], "mutedUntil">>;
+  /** Only `enabled`. The keypair is never patchable, and subscriptions arrive
+   *  through their own routes so the validation there cannot be bypassed by
+   *  writing a settings field. */
+  push?: { enabled?: boolean };
   publicUrl?: string | null;
 }
 
