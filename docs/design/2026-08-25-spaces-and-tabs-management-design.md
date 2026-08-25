@@ -392,9 +392,19 @@ Two consequences:
 - **The route keys on pane id.** `App.tsx` currently resolves
   `agents.find(a => a.agentId === openId)` and falls back to the list on a
   miss, which would bounce a shell pane straight back out. The view resolves
-  from the tree when the id is not in `agents`, and `key={paneId}` then stays
-  stable across the shell → agent transition, so nothing remounts and no scroll
-  position is lost.
+  from the tree when the id is not in `agents`.
+
+  **Corrected 2026-08-25, measured false as originally written.** This section
+  claimed `key={paneId}` keeps the view from remounting across the shell →
+  agent transition. It does not: React remounts when the element *type*
+  changes, and `AgentTerminal` is not `PaneTerminal`. A stable key is necessary
+  and not sufficient. What actually holds is narrower — the transcript survives,
+  because `PaneTerminal` seeds synchronously from `pane-cache` and `prunePanes`
+  keeps the open pane; scroll position and revealed history do reset. Making it
+  genuinely remount-free needs ONE component type at that position, which
+  inverts the composition and puts at risk `App.tsx`'s documented reason for
+  keying per agent (stopping a reply typed for one agent landing on another).
+  That trade was considered and refused.
 
 ### 8.1 Hash migration
 
@@ -659,3 +669,102 @@ Each phase ships something usable on its own.
 
 Phases 1–2 are worth shipping alone: they make a space with no agent visible
 for the first time. Phase 3 is the largest and the one carrying refactor risk.
+
+---
+
+## 16. Round two — what the first review of the shipped screen changed
+
+Phases 1–3 shipped and were reviewed against a live herd. Six things came
+back. Two were defects in this document's own reasoning, and they are the more
+interesting ones.
+
+### 16.1 The alias line rebuilt the redundancy §14.7 exists to record
+
+§14.7 measured that an agent's `name` is the **slug** of its workspace label.
+§6's merged row then showed the space label with the pane's identity beneath it
+"only when it differs" — and the implementation compared the two strings for
+**exact equality**. `"shipper block action" !== "shipper-block-action"`, so
+every merged row printed its own title twice, once de-spaced.
+
+The comparison must be **slug-normalised**, not literal. And when the two
+genuinely diverge, the pane's name belongs on the **pane row**, not as a
+subtitle on the space: the space row's job is to identify the space.
+
+The lesson worth keeping: a measurement recorded in §14 is not applied just
+because it is written down. This one was measured, cited, and then not used by
+the code three sections away.
+
+### 16.2 Structure that does not encode structure
+
+A tab's label rendered as a bare uppercase heading between two pane rows, in a
+space whose children carried no visual containment. It read as a section header
+for the whole list rather than as "the tab this pane sits in" — an operator
+reported it as nonsense, correctly.
+
+Two corrections, both about encoding rather than decoration:
+
+- **A space's children are bracketed** — a left rule plus indent, closed at the
+  bottom — so the space is visibly a container and you can see where it ends.
+- **A tab label is a caption on the pane it labels**, below the pane's name in
+  the smallest step of the type scale, not a heading above a group. An unnamed
+  tab renders nothing, as before.
+
+### 16.3 A shell pane was read-only
+
+§8 gave the shell case a transcript and said it "keeps plain text input,
+because a shell's whole purpose is typing into it". No input route was ever
+built, so it shipped read-only.
+
+`pane.send_text {pane_id, text}` and `pane.send_keys {pane_id, keys}` exist and
+are the mirror of the agent path's `agent.prompt` / `agent.send_keys`. The
+keypad and reply box are reused; the key allowlist stays closed, for the reason
+`NavKey` records.
+
+**xterm.js was considered and refused.** It buys real emulation — cursor
+addressing, resize, full-screen programs. It costs roughly 80 KB gzipped on top
+of a 102 KB bundle, in a project that rejected a 76 KB webfont on the grounds
+that it would be the largest payload on a slow link (decision 6), and that
+ships one chunk deliberately (decision 5). Typing `claude` or `ls` into a shell
+needs neither. Revisit only with a reason that names what emulation is for.
+
+### 16.4 Back went to the wrong place, in the wrong clothes
+
+Two separate defects behind one report. A **shell** pane returned to
+`#/spaces` correctly, while an **agent** pane always returned to the dashboard,
+discarding where the operator came from. And the Spaces screen's back control
+was an unclassed `<button>Back</button>` — the only back control in the app not
+using the shared `term-back` treatment with its `‹` chevron.
+
+A pane returns to the surface it was opened from. The control is the shared one.
+
+### 16.5 A control marooned by its container
+
+The Spaces entry point sat at the exact horizontal centre of the header,
+because a `justify-between` row with three children puts the middle one there.
+It belongs grouped with the settings control, so the title owns one end and the
+controls read as one cluster.
+
+### 16.6 A shell's label is not its terminal title
+
+The shell row showed `terminal_title_stripped`, which for a pane sitting at a
+prompt is the prompt itself — `user@host:~`. That is a poor label, and it puts
+the operator's hostname on a screen they may hand to someone or screenshot.
+
+A pane with no agent is labelled by its **cwd**, falling back to the literal
+word `shell`. The terminal title is still visible in the pane's own output,
+where it belongs.
+
+### 16.7 Where the create controls go, when they arrive
+
+Studied from Collie again: its create control is a quiet icon button living
+**inside the section header it creates into** — `+` in the Spaces header for a
+new space, `+` in the tabs rail for a new tab. Position carries the scope, so
+the button needs no label to say what it makes. No floating action button.
+
+paddock adopts the placement and corrects the size: Collie's is 36 px, below
+the 44 px tap target used elsewhere here.
+
+This ships with §7/§9/§10, never before them. The first attempt rendered the
+row actions ahead of the sheet that would fill them, and a permanently
+`disabled` control announcing "Actions for X" is a mislabelled button — worse
+than none. A create control appears in the same change that makes it work.
