@@ -50,11 +50,18 @@ function agent(over: Partial<Agent> = {}): Agent {
 const TREE: SpaceTree = {
   readAt: NOW,
   spaces: [{
-    spaceId: "w1", label: "example-space", tabCount: 1, paneCount: 1,
+    spaceId: "w1", label: "example-space", tabCount: 1, paneCount: 2,
     tabs: [{
       tabId: "w1:t1", label: "docs-cleanup",
       panes: [
         { paneId: "w1:p1", harness: "claude", name: "api-refactor", title: "api-refactor", cwd: "/srv/project", state: "working" },
+        // A SHELL pane, and it is here for the spawn route below. That route
+        // answers 409 on a pane that already holds an agent — the same refusal
+        // its three `/api/panes/:id/*` siblings give — so driving it against
+        // `w1:p1` would exercise the refusal path and assert nothing about the
+        // invariant this file exists for. A harness-less pane is what makes the
+        // route actually reach `startAgent`, which is what must write nothing.
+        { paneId: "w1:p2", harness: null, name: null, title: null, cwd: "/srv/project", state: null },
       ],
     }],
   }],
@@ -252,10 +259,12 @@ test("creating a tab writes nothing to the store and enqueues nothing to the hub
 
 test("starting an agent writes nothing to the store and enqueues nothing to the hub", async () => {
   const { app, store, hub, actionCalls } = harness();
-  const res = await post(app, "/api/panes/w1:p1/agent", { kind: "claude", name: "docs-cleanup" });
+  // `w1:p2`, the SHELL pane — see the fixture's note. `w1:p1` holds an agent
+  // and would answer 409 without ever reaching `startAgent`.
+  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude", name: "docs-cleanup" });
   expect(res.status).toBe(200);
   expect((await res.json()).ok).toBe(true);
-  expect(actionCalls).toEqual(["startAgent:w1:p1:claude:docs-cleanup:null"]);
+  expect(actionCalls).toEqual(["startAgent:w1:p2:claude:docs-cleanup:null"]);
   expect(store.writes).toEqual([]);
   expect(hub.queued).toEqual([]);
 });
@@ -283,7 +292,7 @@ test("all nine management routes together still write nothing and enqueue nothin
   await post(app, "/api/spaces/w1/close");
   await post(app, "/api/spaces", { label: "schema-migration" });
   await post(app, "/api/spaces/w1/tabs", { label: "schema-migration" });
-  await post(app, "/api/panes/w1:p1/agent", { kind: "claude", name: "docs-cleanup" });
+  await post(app, "/api/panes/w1:p2/agent", { kind: "claude", name: "docs-cleanup" });
   await get(app, "/api/harnesses");
   expect(store.writes).toEqual([]);
   expect(hub.queued).toEqual([]);

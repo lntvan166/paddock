@@ -94,6 +94,22 @@ const MAX_TEXT_LEN = 10_000;
 const MAX_LABEL_LEN = 64;
 
 /**
+ * Ceiling on how many `args` an `agent.start` may carry.
+ *
+ * `args` was the one client value on this branch that reached a herdr
+ * parameter with no paddock bound at all — and unlike `text` or a label, it is
+ * forwarded into a SPAWNED PROCESS'S argv. `{"args": ["x".repeat(1e8)]}` was
+ * buffered here and pushed straight at herdr. The total length is bounded by
+ * `MAX_TEXT_LEN` (the same ceiling typed text carries) and the count is
+ * bounded separately, because a hundred thousand empty strings costs nothing
+ * in length and is still a hundred thousand argv entries.
+ *
+ * Refused, never truncated — the same rule as `MAX_LABEL_LEN`, for a stronger
+ * reason: a silently shortened argument is a different command.
+ */
+const MAX_ARGS = 64;
+
+/**
  * Digest of a screen, used to answer "has this changed?" without resending it.
  *
  * Not a cryptographic claim — it only has to change when the screen changes.
@@ -1357,11 +1373,30 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: "args must be an array of strings" }, 400);
       }
       const args = Array.isArray(rawArgs) ? (rawArgs as string[]) : undefined;
+      // Bounded by paddock's policy, like every other client value that
+      // reaches a herdr parameter — see `MAX_ARGS`. Both refusals are here,
+      // before the tree read, so neither can be confused with a 502.
+      if (args !== undefined && args.length > MAX_ARGS) {
+        return c.json({ ok: false, detail: `too many args — at most ${MAX_ARGS}` }, 400);
+      }
+      if (args !== undefined && args.reduce((n, a) => n + a.length, 0) > MAX_TEXT_LEN) {
+        return c.json({ ok: false, detail: "args must be within the length limit" }, 400);
+      }
 
       try {
         const tree = await deps.readTree();
         const pane = findPane(tree, id);
         if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
+        // The same 409 `/api/panes/:id/output`, `/text` and `/key` give, for
+        // the same reason and in the same words. This route used to validate
+        // the pane's existence and then start an agent regardless, which made
+        // a spawn into an occupied pane `agent.start`'s problem — and what
+        // herdr does with that is unmeasured. A fourth pane route answering a
+        // fourth way to the same question is the defect; the three siblings
+        // already settled the answer.
+        if (pane.harness !== null) {
+          return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/… to drive it" }, 409);
+        }
 
         const kinds = await actions.harnessKinds();
         if (!kinds.includes(kind)) {

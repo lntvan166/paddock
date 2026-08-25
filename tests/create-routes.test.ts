@@ -553,11 +553,79 @@ test("a readTree throw for starting an agent becomes ok:false/502, never a bare 
   expect(calls).toEqual([]);
 });
 
+test("a pane that already has an agent is refused with 409, like its three siblings", async () => {
+  // `/api/panes/:id/output`, `/text` and `/key` all answer 409 on a pane whose
+  // `harness` is not null — "this pane has an agent; use /api/agents/:id/…".
+  // This route validated the pane's EXISTENCE and then started an agent
+  // regardless, so a spawn into an occupied pane became `agent.start`'s
+  // problem, and what herdr does with that is unmeasured. A fourth pane route
+  // answering a fourth way to the same question is the inconsistency; 409 is
+  // the answer the other three already give.
+  const { app, calls, readTreeCallCount } = harness(async () => TREE);
+  const res = await post(app, "/api/panes/w1:p1/agent", { kind: "claude", name: "docs-cleanup" });
+  expect(res.status).toBe(409);
+  expect((await res.json() as any).detail).toContain("this pane has an agent");
+  // Distinguishable from a 502 by construction: herdr was never asked, not
+  // even for the installed kinds.
+  expect(calls).toEqual([]);
+  expect(readTreeCallCount()).toBe(1);
+});
+
 test("args must be an array of strings, or the call is refused before anything is sent", async () => {
   const { app, calls } = harness(async () => TREE);
   const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude", name: "docs-cleanup", args: ["ok", 5] });
   expect(res.status).toBe(400);
   expect(calls).toEqual([]);
+});
+
+test("args is bounded by paddock's own policy, in count and in total length", async () => {
+  // `args` was the ONE client value on this branch reaching a herdr parameter
+  // with no paddock bound on it. `MAX_READ_LINES`, `MAX_TEXT_LEN`,
+  // `MAX_LABEL_LEN` and `MAX_WAIT_TIMEOUT_MS` all exist for exactly this
+  // reason, and this one is forwarded into a SPAWNED PROCESS'S argv — so
+  // `{"args": ["x".repeat(1e8)]}` was buffered here and pushed at herdr.
+  //
+  // Refused, never truncated: the same rule as a rename label, and for a
+  // stronger reason — a silently shortened argument is a different command.
+  const long = harness(async () => TREE);
+  const big = await post(long.app, "/api/panes/w1:p2/agent", {
+    kind: "claude", name: "docs-cleanup", args: ["x".repeat(20_000)],
+  });
+  expect(big.status).toBe(400);
+  expect((await big.json() as any).detail).toContain("length limit");
+  expect(long.calls).toEqual([]);
+
+  // Split across many elements, so a per-element bound alone would let it
+  // through — the ceiling is on the TOTAL.
+  const split = harness(async () => TREE);
+  const many = await post(split.app, "/api/panes/w1:p2/agent", {
+    kind: "claude", name: "docs-cleanup", args: Array.from({ length: 8 }, () => "y".repeat(2_000)),
+  });
+  expect(many.status).toBe(400);
+  expect(split.calls).toEqual([]);
+
+  // And a count bound, because 100_000 empty strings is 100_000 argv entries
+  // at no length cost at all.
+  const count = harness(async () => TREE);
+  const lots = await post(count.app, "/api/panes/w1:p2/agent", {
+    kind: "claude", name: "docs-cleanup", args: Array.from({ length: 200 }, () => ""),
+  });
+  expect(lots.status).toBe(400);
+  expect((await lots.json() as any).detail).toContain("too many");
+  expect(count.calls).toEqual([]);
+
+  // An ordinary flag list still goes through untouched.
+  const ok = harness(async () => TREE);
+  const fine = await post(ok.app, "/api/panes/w1:p2/agent", {
+    kind: "claude", name: "docs-cleanup", args: ["--flag", "value"],
+  });
+  expect(fine.status).toBe(200);
+  expect(ok.calls).toEqual([
+    // The `kind` allowlist read, then the start — the refusals above reach
+    // neither, which is the other half of what this asserts.
+    "harnessKinds",
+    `startAgent:w1:p2:claude:docs-cleanup:${JSON.stringify(["--flag", "value"])}`,
+  ]);
 });
 
 // ── GET /api/harnesses ────────────────────────────────────────────────────
