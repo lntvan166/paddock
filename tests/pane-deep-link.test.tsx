@@ -8,7 +8,7 @@ import { App } from "@web/components/App";
 import { applyMessage, useStore, type ClientState } from "@web/store";
 import { digestOf } from "@shared/screen";
 import { prunePanes } from "@web/pane-cache";
-import { agent, render, settle, stubFetch, unmount } from "./support/render";
+import { agent, click, render, settle, stubFetch, typeInto, unmount } from "./support/render";
 
 /**
  * `#/pane/<id>` opened cold, which is paddock's PRIMARY entry path: a
@@ -106,9 +106,18 @@ test("a deep link to an AGENT pane never opens as a shell, even before the snaps
   expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to agents");
 });
 
-test("a deep link to a pane with NO agent opens the shell transcript", async () => {
+test("a deep link to a pane with NO agent opens the shell transcript, with its own keyboard", async () => {
   // The other half: the guard must not have closed the door it was added
   // beside. `harness: null` is still a shell and still opens.
+  //
+  // §16.3 overturned the old assumption this test used to assert (a shell
+  // gets NO controls): `App` now wires `sendPaneText`/`sendPaneKey` into the
+  // shell's `PaneTerminal`, so a deep-linked shell must render a reply box
+  // and — once the pad preference says to show it — the keypad too. `hidden`
+  // is the stored default (`prefs.ts`), so this sets it the same way the
+  // shell-terminal keypad tests do, to prove the element is reachable at all
+  // rather than merely absent-by-default.
+  localStorage.setItem("paddock.term.keypad", "compact");
   useStore.setState({ connect: () => {} });
   location.hash = "#/pane/w9%3Ap1";
 
@@ -123,8 +132,45 @@ test("a deep link to a pane with NO agent opens the shell transcript", async () 
 
   expect(host.querySelector("section.term")).not.toBeNull();
   expect(host.textContent).toContain("operator@dev-box");
-  expect(host.querySelector(".term-reply")).toBeNull();
+  expect(host.querySelector(".term-reply")).not.toBeNull();
+  expect(host.querySelector("[data-keypad]")).not.toBeNull();
   expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to spaces");
+  localStorage.removeItem("paddock.term.keypad");
+});
+
+test("a shell opened through App reaches the real sendPaneText route — App -> PaneTerminal -> api.ts", async () => {
+  // The gap the previous round's route-level curl check could not see: a
+  // curl against `/api/panes/:id/text` proves the SERVER route works, but
+  // says nothing about whether `App.tsx` actually WIRES `sendPaneText` into
+  // the `PaneTerminal` it renders. This mounts the real `App`, types into the
+  // real reply box, and asserts the stubbed `fetch` sees the real route —
+  // the one path nothing else in this suite drives end to end.
+  useStore.setState({ connect: () => {} });
+  location.hash = "#/pane/w9%3Ap1";
+
+  const { fn, calls } = stubFetch({
+    "/api/spaces": () => treeWith(null),
+    // Checked before the broader "/api/panes/" match below — `stubFetch`
+    // matches the first registered key the URL contains, so the more
+    // specific route has to come first or every pane request (including the
+    // opening `/output` read) would hit the generic stub instead.
+    "/text": () => ({ ok: true }),
+    "/api/panes/": () => ({ lines: ["operator@dev-box:/srv/project$ ls"], source: "recent_unwrapped" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<App />);
+  await settle();
+
+  const input = host.querySelector<HTMLInputElement>("#term-reply-input");
+  expect(input).not.toBeNull();
+  await typeInto(input!, "ls");
+  await click(host.querySelector('.term-reply button[type="submit"]'));
+
+  const textCall = calls.find((c) => c.url.includes("/text"));
+  expect(textCall).toBeDefined();
+  expect(textCall!.url).toContain(encodeURIComponent("w9:p1"));
+  expect(textCall!.body).toEqual({ text: "ls" });
 });
 
 test("a shell already on screen keeps its transcript through a live promotion", async () => {

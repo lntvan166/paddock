@@ -12,6 +12,7 @@ import { RATE_MS, readPrefs, writePref, type KeypadPref, type RatePref } from "@
 import { RequestFailed } from "@web/api";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
+import { Keypad } from "@web/components/ui/Keypad";
 
 /**
  * A pane's transcript, and everything that keeps it live.
@@ -188,93 +189,6 @@ export function nextRefreshMs(current: number, changed: boolean, floor: number =
 
 /** Settled lines revealed per tap of "show earlier" from reconstruction. */
 export const HISTORY_PAGE = 200;
-
-/**
- * The keypad, laid out as it is rendered.
- *
- * Only keys herdr accepts appear (verified against herdr 0.8.0 — `pageup`,
- * `home` and friends are rejected with `invalid_key`, so offering them would
- * be a button that always fails). The order puts ↑/↓/Enter where a thumb
- * reaches them, because moving a selection and committing it is the whole
- * reason this pad exists.
- *
- * Lives here, not in `AgentTerminal`, because a shell gets the same pad
- * (§16.3) sending through a different verb (`pane.send_keys` instead of
- * `agent.send_keys`) — one keypad, two senders, rather than a second one that
- * could drift from the first.
- */
-export const PRIMARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
-  { key: "up", label: "↑" },
-  { key: "down", label: "↓" },
-  { key: "enter", label: "⏎ Enter" },
-];
-
-/**
- * Everything else, on a shorter row.
- *
- * The split is by frequency, not by category: answering a prompt from a phone
- * is ↑/↓ to move and Enter to commit, and those three had been sharing equal
- * billing with Space and Tab across three tall rows that took 40% of the
- * viewport — on the screen whose whole job is showing a transcript.
- */
-export const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
-  { key: "esc", label: "Esc" },
-  { key: "left", label: "←" },
-  { key: "right", label: "→" },
-  { key: "tab", label: "Tab" },
-  // Spelled out, not "␣": the symbol renders as a tofu box in several mobile
-  // system fonts, which is a button whose label is a rendering failure.
-  { key: "space", label: "Space" },
-];
-
-export interface KeypadProps {
-  pad: KeypadPref;
-  busy: boolean;
-  onPress: (key: NavKey) => void;
-}
-
-/**
- * The nav keypad, rendered once and shared by both callers that can drive it:
- * `AgentTerminal` (`agent.send_keys`) and this file's own shell composition
- * (`pane.send_keys`). Only the sender differs — `onPress` — which is exactly
- * the asymmetry §16.3 calls out: same control, different verb, decided by
- * the pane's `harness`.
- */
-export function Keypad({ pad, busy, onPress }: KeypadProps) {
-  if (pad === "hidden") return null;
-  return (
-    <div className="term-keys" data-keypad={pad} role="group" aria-label="Send key">
-      <div className="term-keys-primary">
-        {PRIMARY_KEYS.map((k) => (
-          <Button
-            key={k.key} type="button" variant="outline"
-            /* Enter carries the commit — see .term-key-enter. The other two
-               only move a highlight, so they stay quiet. */
-            className={k.key === "enter" ? "term-key term-key-enter" : "term-key"}
-            data-key={k.key}
-            disabled={busy} onClick={() => onPress(k.key)}
-          >
-            {k.label}
-          </Button>
-        ))}
-      </div>
-      {pad === "full" && (
-        <div className="term-keys-secondary">
-          {SECONDARY_KEYS.map((k) => (
-            <Button
-              key={k.key} type="button" variant="outline" className="term-key term-key-sm"
-              data-key={k.key}
-              disabled={busy} onClick={() => onPress(k.key)}
-              aria-label={k.key}
-            >
-              {k.label}
-            </Button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /**
  * One read of a pane's screen.
@@ -760,13 +674,23 @@ export function PaneTerminal({
     if (!onSendText) return;
     setShellBusy(true);
     setShellFeedback(null);
-    const res = await onSendText(text);
-    if (res.ok) {
-      setShellReply("");
-    } else {
-      // Surfaced, never swallowed: a command that did not reach the shell
-      // must not look like it did (§16.3).
-      setShellFeedback({ ok: false, detail: res.detail ?? "Failed." });
+    try {
+      const res = await onSendText(text);
+      if (res.ok) {
+        setShellReply("");
+      } else {
+        // Surfaced, never swallowed: a command that did not reach the shell
+        // must not look like it did (§16.3).
+        setShellFeedback({ ok: false, detail: res.detail ?? "Failed." });
+      }
+    } catch (err) {
+      // `sendPaneText` REJECTS on a refusal — `readJson`'s convention, not
+      // the agent-side actions' "always resolves" one (see its own note in
+      // `api.ts`) — so a real 404/409/502 arrives here as a throw, not as
+      // `res.ok === false`. Caught so it still reaches the operator instead
+      // of becoming an unhandled rejection that looks, from their chair,
+      // exactly like the command landed.
+      setShellFeedback({ ok: false, detail: err instanceof Error ? err.message : String(err) });
     }
     setShellBusy(false);
   };
@@ -775,8 +699,14 @@ export function PaneTerminal({
     if (!onSendKey) return;
     setShellBusy(true);
     setShellFeedback(null);
-    const res = await onSendKey(key);
-    if (!res.ok) setShellFeedback({ ok: false, detail: res.detail ?? "Key failed." });
+    try {
+      const res = await onSendKey(key);
+      if (!res.ok) setShellFeedback({ ok: false, detail: res.detail ?? "Key failed." });
+    } catch (err) {
+      // See `submitShellText`'s note just above: `sendPaneKey` rejects rather
+      // than resolving `ok: false`.
+      setShellFeedback({ ok: false, detail: err instanceof Error ? err.message : String(err) });
+    }
     setShellBusy(false);
   };
 

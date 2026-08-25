@@ -5,7 +5,8 @@ import { StatusDot } from "@web/components/AgentRow";
 import { StateIcon } from "@web/components/ui/StateIcon";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
-import { Keypad, PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
+import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
+import { Keypad } from "@web/components/ui/Keypad";
 import {
   emptyJournal, journalFor, updateJournal, type JournalState,
 } from "@web/pane-cache";
@@ -516,7 +517,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
               can see; they assert nothing about what an option means, which is
               why they work on prompt shapes the parser cannot read.
 
-              The pad itself is `PaneTerminal`'s `Keypad` — shared with the
+              The pad itself is the shared `Keypad` (`ui/Keypad.tsx`) — shared with the
               shell case (§16.3) so the two cannot drift apart. Only `onPress`
               differs: this one calls the agent's own `press`, wired to
               `agent.send_keys`. */}

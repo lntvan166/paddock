@@ -258,13 +258,14 @@ test("sending calls the injected sender with the text verbatim", async () => {
   await settle();
 
   const input = el.querySelector<HTMLInputElement>("#term-reply-input");
-  // Two interior spaces, deliberately: proves the string reaches the sender
-  // exactly as typed, not trimmed or collapsed the way a careless "clean up
-  // the input" pass could do without any test noticing.
-  await typeInto(input!, "echo  hi");
+  // Leading AND trailing spaces, plus a doubled interior one: a value with no
+  // surrounding whitespace cannot tell "sent verbatim" apart from "sent
+  // trimmed", since both would look identical on the wire. This one only
+  // passes if nothing between the input and the sender trims or collapses it.
+  await typeInto(input!, "  echo  hi  ");
   await click(el.querySelector('.term-reply button[type="submit"]'));
 
-  expect(calls).toEqual(["echo  hi"]);
+  expect(calls).toEqual(["  echo  hi  "]);
 });
 
 test("a send failure is surfaced, never swallowed", async () => {

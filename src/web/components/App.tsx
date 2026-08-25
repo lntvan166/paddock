@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isStale, useStore } from "@web/store";
-import { fetchPaneOutput, fetchSpaceTree } from "@web/api";
-import type { SpaceTree, TreePane } from "@shared/types";
+import { fetchPaneOutput, fetchSpaceTree, sendPaneKey, sendPaneText } from "@web/api";
+import type { NavKey, SpaceTree, TreePane } from "@shared/types";
 import { PaneTerminal, SHELL_MIN_REFRESH_MS } from "@web/components/PaneTerminal";
 import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
@@ -187,6 +187,26 @@ export function App() {
     if (openShellId === null) throw new Error("no pane to read");
     return fetchPaneOutput(openShellId);
   }, [openShellId]);
+  /**
+   * The shell's own senders (§16.3), memoised on the id for the same reason
+   * `loadPane` is: a delta that re-renders `App` for an unrelated agent must
+   * not hand `PaneTerminal` a NEW function identity, which it would otherwise
+   * have no way to tell apart from "the operator opened a different pane".
+   *
+   * `pane.send_text` / `pane.send_keys`, not the agent path's `agent.prompt` /
+   * `agent.send_keys` — this pane has no harness, so there is no prompt to
+   * answer, only a shell to type at.
+   */
+  const sendShellText = useCallback((text: string) => {
+    // Unreachable, same as `loadPane` above: only ever handed to a mounted
+    // `PaneTerminal`, which only exists once the pane resolved.
+    if (openShellId === null) throw new Error("no pane to send to");
+    return sendPaneText(openShellId, text);
+  }, [openShellId]);
+  const sendShellKey = useCallback((key: NavKey) => {
+    if (openShellId === null) throw new Error("no pane to send to");
+    return sendPaneKey(openShellId, key);
+  }, [openShellId]);
 
   // A full screen, not an overlay. The terminal needs every row it can get on
   // a phone, and a sheet over a dimmed list spends a third of the viewport
@@ -232,6 +252,8 @@ export function App() {
         onBack={() => { location.hash = "#/spaces"; }}
         load={loadPane}
         minIntervalMs={SHELL_MIN_REFRESH_MS}
+        sendText={sendShellText}
+        sendKey={sendShellKey}
       />
     );
   }
