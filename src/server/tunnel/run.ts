@@ -10,8 +10,8 @@ import {
 import { decide, gateResponse } from "@server/tunnel/gate";
 import { errorCode } from "@server/startup-errors";
 import type { Pairing } from "@server/tunnel/pairing";
-import { human, render, useColour } from "@server/tunnel/display";
-import { warn } from "@server/term";
+import { render, useColour } from "@server/tunnel/display";
+import { duration, warn } from "@server/term";
 
 /**
  * How many cloudflared lines are kept while the display owns the screen.
@@ -455,7 +455,7 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
     // A child that exits 0 unasked is still a tunnel that vanished.
     return outcome.code === 0 ? 1 : outcome.code;
   }
-  console.info(`paddock: --for ${human(deps.deadlineMs ?? 0)} elapsed`);
+  console.info(`paddock: --for ${duration(deps.deadlineMs ?? 0)} elapsed`);
   // The ONE path where the operator asked for this shutdown — so it is also the
   // one path where a failed kill is the difference between exit 0 and exit 1.
   return (await teardown()) ? 0 : 1;

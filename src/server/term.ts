@@ -76,3 +76,36 @@ export function say(line: string): void {
 export function warn(line: string): void {
   console.error(paint(line, useColour(process.env, Boolean(process.stderr.isTTY))));
 }
+
+/**
+ * A span of milliseconds as a person would say it: at most TWO units, largest
+ * first, day-aware.
+ *
+ *   100h 30m  ->  4d 4h
+ *   3h 12m    ->  3h 12m
+ *   45m 20s   ->  45m 20s
+ *   30s       ->  30s
+ *
+ * There were two of these — `human()` in `tunnel/display.ts` and `uptime()` in
+ * `lifecycle/commands.ts` — and BOTH stopped at hours, which is how a tunnel
+ * up for four days came to report `100h 30m`. One bug written twice is why
+ * this lives here rather than being fixed in place.
+ *
+ * Two units and not three: `display.ts` redraws this string once a second in a
+ * live block, and a unit appearing or disappearing changes the block's width.
+ * The second unit is printed even at zero (`4d 0h`, `1h 0m`) for exactly the
+ * same reason — `human()` already behaved this way and it was right to.
+ *
+ * Negative input clamps to `0s`. A clock that has passed its deadline is at
+ * zero, not in the past.
+ */
+export function duration(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86_400);
+  const h = Math.floor((s % 86_400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}

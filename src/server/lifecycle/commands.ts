@@ -9,7 +9,7 @@ import {
 } from "@server/lifecycle/state";
 import { SettingsStore } from "@server/settings/store";
 import { tunnelHint } from "@server/tunnel/preflight";
-import { say } from "@server/term";
+import { duration, say } from "@server/term";
 
 /**
  * What answers on a port, if anything paddock-shaped does.
@@ -80,13 +80,6 @@ export interface StatusOpts {
   now?: () => number;
 }
 
-function uptime(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
 /** Exit code: 0 running, 1 not. That is what makes it usable from a script. */
 /**
  * Remove the state file, reporting a failure instead of throwing it.
@@ -152,7 +145,7 @@ export async function runStatus(o: StatusOpts): Promise<number> {
     case "running":
       log(
         `paddock ${got.state.version} — running ` +
-          `(pid ${got.state.pid}, port ${got.state.port}, up ${uptime(now - got.state.startedAt)})`,
+          `(pid ${got.state.pid}, port ${got.state.port}, up ${duration(now - got.state.startedAt)})`,
       );
       return 0;
   }

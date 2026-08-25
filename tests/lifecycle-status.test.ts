@@ -98,3 +98,23 @@ test("status names an untracked instance instead of calling it 'not running'", a
   expect(text).toContain("0.8.1");
   expect(text).toContain("8787");
 });
+
+test("an uptime under a minute reads in seconds, not as 0m", async () => {
+  // uptime() capped at minutes and printed "0m" for a server 30 seconds old,
+  // which reads as "no uptime recorded" rather than "just started".
+  const d = await dir();
+  const now = Date.now();
+  await writeState(d, { ...s, startedAt: now - 30_000 });
+  const out: string[] = [];
+  await runStatus({ dir: d, probe: probe(true, "paddock"), log: (l) => out.push(l), now: () => now });
+  expect(out.join(" ")).toContain("30s");
+});
+
+test("an uptime over a day rolls into days", async () => {
+  const d = await dir();
+  const now = Date.now();
+  await writeState(d, { ...s, startedAt: now - 361_800_000 });
+  const out: string[] = [];
+  await runStatus({ dir: d, probe: probe(true, "paddock"), log: (l) => out.push(l), now: () => now });
+  expect(out.join(" ")).toContain("4d 4h");
+});

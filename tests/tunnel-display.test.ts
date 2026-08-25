@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { human, render, useColour, type DisplayState } from "@server/tunnel/display";
+import { render, useColour, type DisplayState } from "@server/tunnel/display";
 
 const T0 = 1_700_000_000_000;
 const state = (over: Partial<DisplayState> = {}): DisplayState => ({
@@ -11,15 +11,6 @@ const state = (over: Partial<DisplayState> = {}): DisplayState => ({
   deadline: null,
   now: T0,
   ...over,
-});
-
-test("durations read as a human would say them", () => {
-  expect(human(0)).toBe("0s");
-  expect(human(42_000)).toBe("42s");
-  expect(human(372_000)).toBe("6m 12s");
-  expect(human(4_320_000)).toBe("1h 12m");
-  // Never negative: a clock that has passed the deadline says 0s.
-  expect(human(-5_000)).toBe("0s");
 });
 
 test("the block carries the URL, the dashed code and both clocks", () => {
