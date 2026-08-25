@@ -181,12 +181,12 @@ if (command === "tunnel") {
   // silently, on the one flag whose entire job is bounding how long a public
   // URL lives. `flags` is what tells the two apart.
   if (flags.has("--for") && raw === undefined) {
-    warn("paddock: --for needs a duration (try `45s`, `90m`, `2h`)");
+    warn("paddock: --for needs a duration (try `45s`, `90m`, `2h`, `7d`)");
     process.exit(1);
   }
   const parsed = raw === undefined ? null : parseDuration(raw);
   if (raw !== undefined && parsed === null) {
-    warn(`paddock: --for ${raw} is not a duration (try \`45s\`, \`90m\`, \`2h\`)`);
+    warn(`paddock: --for ${raw} is not a duration (try \`45s\`, \`90m\`, \`2h\`, \`7d\`)`);
     process.exit(1);
   }
   tunnelDeadlineMs = parsed;
