@@ -142,3 +142,26 @@ export function duration(ms: number): string {
   if (m > 0) return `${m}m ${s % 60}s`;
   return `${s}s`;
 }
+
+/**
+ * A fixed-width progress bar as a plain string. Pure, so its edges are
+ * assertable with no terminal — which is the whole reason it lives in this
+ * leaf rather than beside the code that redraws it.
+ *
+ * A `fraction` outside `0..1` is CLAMPED rather than refused: a server that
+ * sends more bytes than its own `content-length` promised must not crash an
+ * update over a cosmetic bar. `NaN` clamps to empty for the same reason.
+ *
+ * Below a `width` of 8 there is no bar that means anything — two brackets and
+ * a couple of cells is a decoration, not a measurement — so it returns the
+ * empty string and the caller prints the percentage alone.
+ */
+export function bar(fraction: number, width: number): string {
+  if (width < 8) return "";
+  const f = Number.isNaN(fraction) ? 0 : Math.min(1, Math.max(0, fraction));
+  const inner = width - 2;
+  const filled = Math.round(inner * f);
+  const head =
+    filled === 0 ? "" : filled >= inner ? "=".repeat(inner) : `${"=".repeat(filled - 1)}>`;
+  return `[${head}${" ".repeat(inner - filled)}]`;
+}
