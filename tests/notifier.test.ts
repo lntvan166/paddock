@@ -75,7 +75,7 @@ test("a transition into a watched state notifies, with name, state and deep link
   expect(h.sent[0]).toContain("api-refactor");
   expect(h.sent[0]).toContain("blocked");
   expect(h.sentMarkup[0]).toEqual({
-    inline_keyboard: [[{ text: "Open in paddock", url: "https://paddock.example.com/#/agent/w1%3Ap1" }]],
+    inline_keyboard: [[{ text: "Open in paddock", url: "https://paddock.example.com/#/pane/w1%3Ap1" }]],
   });
 });
 
@@ -151,8 +151,8 @@ test("a trailing slash on publicUrl does not produce a double slash in the link"
   await Bun.sleep(1);
   expect(sent).toHaveLength(1);
   const url = markup?.inline_keyboard[0]?.[0]?.url;
-  expect(url).toBe("https://paddock.example.com/#/agent/w1%3Ap1");
-  expect(url).not.toContain("//#/agent");
+  expect(url).toBe("https://paddock.example.com/#/pane/w1%3Ap1");
+  expect(url).not.toContain("//#/pane");
 });
 
 /**

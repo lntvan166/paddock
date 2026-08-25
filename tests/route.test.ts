@@ -9,7 +9,9 @@ test("an agent id round-trips through the hash", () => {
   for (const id of ["w1:p1", "w11:p1", "wT:pG"]) {
     expect(agentIdFromHash(agentHash(id))).toBe(id);
   }
-  expect(agentHash("w1:p1")).toBe("#/agent/w1%3Ap1");
+  // agentHash is an alias of paneHash (Task 11): the current emitted form is
+  // #/pane/..., even though the old #/agent/... form still parses forever.
+  expect(agentHash("w1:p1")).toBe("#/pane/w1%3Ap1");
 });
 
 test("the list address and unrelated hashes address no agent", () => {
@@ -36,6 +38,6 @@ test("the URL helpers are importable from shared, so server code may use them", 
   // The notifier builds a deep link and lives under src/server/, which may
   // never import @web/. If these move back, the notifier's link silently
   // stops matching the app it points at.
-  expect(sharedAgentHash("w1:p1")).toBe("#/agent/w1%3Ap1");
+  expect(sharedAgentHash("w1:p1")).toBe("#/pane/w1%3Ap1");
   expect(sharedAgentIdFromHash("#/agent/w1%3Ap1")).toBe("w1:p1");
 });

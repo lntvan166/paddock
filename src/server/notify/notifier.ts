@@ -1,4 +1,4 @@
-import { agentHash } from "@shared/route";
+import { paneHash } from "@shared/route";
 import type { Agent, AgentState, InlineKeyboard, NotifyTrigger } from "@shared/types";
 import type { Delta } from "@server/state/store";
 import { isConfigured, type SettingsStore } from "@server/settings/store";
@@ -50,8 +50,8 @@ export function composeMessage(
   const text = `${a.name} is ${state}`;
   if (publicUrl === null || publicUrl === "") return { text };
   // A free-text field collects a trailing slash, and `${url}/${hash}` would
-  // then produce "https://host//#/agent/...".
-  const url = `${publicUrl.replace(/\/+$/, "")}/${agentHash(a.agentId)}`;
+  // then produce "https://host//#/pane/...".
+  const url = `${publicUrl.replace(/\/+$/, "")}/${paneHash(a.agentId)}`;
   if (!/^https:\/\//i.test(url)) return { text: `${text}\n${url}` };
   return { text, replyMarkup: { inline_keyboard: [[{ text: "Open in paddock", url }]] } };
 }
