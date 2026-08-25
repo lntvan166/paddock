@@ -165,3 +165,61 @@ test("the Spaces screen's own back control uses the shared term-back treatment",
   expect(back?.classList.contains("term-back")).toBe(true);
   expect(back?.getAttribute("aria-label")).toBe("Back to agents");
 });
+
+test("an agent pane opened from a SPACE returns to that space, not the list", async () => {
+  // The defect this closes: the origin was a boolean (`fromSpaces`), so it
+  // could say "came from Spaces" but not WHICH space — every pane opened from
+  // a space screen returned to the plural list.
+  useStore.setState({
+    connect: () => {},
+    agents: [agent({ agentId: "w9:p1", name: "docs-cleanup", workspaceId: "w9", workspaceLabel: "docs-cleanup" })],
+  });
+  location.hash = "#/space/w9";
+
+  const { fn } = stubFetch({
+    "/api/spaces": () => treeWith("claude"),
+    "/output": () => ({ lines: ["out"], source: "visible" }),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<App />);
+  await settle();
+  expect(host.querySelector(".space-screen-head")).not.toBeNull();
+
+  await act(async () => { location.hash = "#/pane/w9%3Ap1"; });
+  await settle();
+
+  // Labelled by the space's own name, never its herdr coordinate.
+  expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to docs-cleanup");
+
+  await click(host.querySelector(".term-back"));
+  expect(location.hash).toBe("#/space/w9");
+});
+
+test("a shell pane opened from a space returns there, labelled generically", async () => {
+  // A shell is deliberately absent from `agents` (§3), so the store has no
+  // `workspaceLabel` for it and `useTreePane` returns a `TreePane` that
+  // carries none either. The destination is still exact; only the WORD is
+  // generic, because the alternative is printing `w9` — a herdr coordinate,
+  // which `docs/gotchas.md` bans on screen as "correct and useless".
+  useStore.setState({ connect: () => {} });
+  location.hash = "#/space/w9";
+
+  const { fn } = stubFetch({
+    "/api/spaces": () => treeWith(null),
+    "/output": () => ({ lines: ["out"], source: "visible" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<App />);
+  await settle();
+
+  await act(async () => { location.hash = "#/pane/w9%3Ap1"; });
+  await settle();
+
+  expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to this space");
+
+  await click(host.querySelector(".term-back"));
+  expect(location.hash).toBe("#/space/w9");
+});

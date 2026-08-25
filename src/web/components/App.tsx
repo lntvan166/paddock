@@ -13,9 +13,15 @@ import { InstallHint } from "@web/components/InstallHint";
 import { paneLabel } from "@web/components/pane-label";
 import { groupAgents, SECTION_DOT, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { Settings } from "@web/components/Settings";
+import { Space } from "@web/components/Space";
+import { LIVE_CREATE_SENDERS } from "@web/components/CreateSheet";
+import { LIVE_SENDERS } from "@web/components/RowActions";
 import { Spaces } from "@web/components/Spaces";
 import { staleAttrs } from "@web/components/staleness";
-import { agentHash, agentIdFromHash, useAgentRoute, useSettingsRoute, useSpacesRoute } from "@web/route";
+import {
+  agentHash, agentIdFromHash, spaceIdFromHash,
+  useAgentRoute, useSettingsRoute, useSpaceRoute, useSpacesRoute,
+} from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { UpdateBar } from "@web/components/UpdateBar";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
@@ -37,41 +43,30 @@ export function App() {
   // this sits in a component that re-renders on a one-second clock.
   const [dismissedVersion, setDismissedVersion] = useState(dismissedRelease);
   /**
-   * Where the currently open pane was navigated FROM — `#/spaces` or
-   * anywhere else — read off the real `hashchange`, not guessed from the
-   * pane's own shape (§16.4).
+   * Where the currently open pane was navigated FROM, as the origin's own
+   * HASH — read off the real `hashchange`, not guessed from the pane's shape
+   * (§16.4).
    *
-   * A ref, and kept here on `App`, deliberately. `App` itself never
-   * unmounts (see the theme effect below); `AgentTerminal` and
-   * `PaneTerminal` do, on exactly the transition this has to survive — a
-   * shell promoted to an agent unmounts the shell's `PaneTerminal` and
-   * mounts `AgentTerminal` under the SAME pane id (one pane, two moments).
-   * Anything stored in either component would be lost at that instant.
+   * A hash string rather than the `fromSpaces` boolean this replaced. The
+   * boolean could say "came from Spaces" but not WHICH space, so every pane
+   * opened from a space screen returned to the plural list. Adding a second
+   * field for the id would have left two fields free to disagree; one cannot.
    *
-   * `hashchange`'s own `oldURL` is the source of truth for "came from",
-   * not a piece of React state that only ever knows the CURRENT hash. A
-   * cold load — a notification tap, a pasted link, a reload — fires no
-   * `hashchange` before this effect ever sees the hash, so the ref simply
-   * has no entry for that pane id, and `backTargetFor` below falls back to
-   * the dashboard. That is the whole mechanism for "no origin, no Spaces".
+   * A ref, and kept on `App`, deliberately: `App` never unmounts, while
+   * `AgentTerminal` and `PaneTerminal` do on exactly the transition this has
+   * to survive — a shell promoted to an agent unmounts one and mounts the
+   * other under the SAME pane id.
    *
-   * DECLARED BEFORE THE ROUTE HOOKS, and that is load-bearing. Effects run in
-   * declaration order, so registering after `useAgentRoute` put this listener
-   * second: the route's `setId` was queued first, and only React 18's batching
-   * kept the re-render from landing between the two handlers. A ref write
-   * schedules no render of its own, so if that queue ever flushed in between,
-   * `backTargetFor` would read the previous pane's origin — or none. Ordering
-   * the registration removes the dependency instead of relying on it.
+   * DECLARED BEFORE THE ROUTE HOOKS, and that is load-bearing — effects run in
+   * declaration order, so this listener must register before `useAgentRoute`'s.
    */
-  const paneOriginRef = useRef<{ paneId: string; fromSpaces: boolean } | null>(null);
+  const paneOriginRef = useRef<{ paneId: string; origin: string } | null>(null);
   useEffect(() => {
     const onHashChange = (e: HashChangeEvent) => {
       const paneId = agentIdFromHash(hashOf(e.newURL));
-      // Only a navigation INTO a pane is worth recording. A change between
-      // two non-pane surfaces (dashboard <-> Settings <-> Spaces) says
-      // nothing about where a future pane visit came from.
+      // Only a navigation INTO a pane is worth recording.
       if (paneId === null) return;
-      paneOriginRef.current = { paneId, fromSpaces: hashOf(e.oldURL) === "#/spaces" };
+      paneOriginRef.current = { paneId, origin: hashOf(e.oldURL) };
     };
     addEventListener("hashchange", onHashChange);
     return () => removeEventListener("hashchange", onHashChange);
@@ -79,6 +74,7 @@ export function App() {
 
   const openId = useAgentRoute();
   const showSettings = useSettingsRoute();
+  const openSpaceId = useSpaceRoute();
   const showSpaces = useSpacesRoute();
 
   useEffect(() => {
@@ -106,22 +102,46 @@ export function App() {
   }, []);
 
   /**
-   * The back destination for the pane addressed by `paneId`, and the label
-   * that goes with it.
+   * The back destination for the pane addressed by `paneId`, and the label that
+   * goes with it.
    *
-   * Applies to BOTH the agent branch and the shell branch below — one rule,
-   * not two literals (§16.4's correction: the old shell branch hard-coded
-   * `#/spaces` regardless of origin, which is a different bug from the old
-   * agent branch always going to `""`, not the "already correct" reference
-   * point the brief assumed).
+   * Applies to BOTH the agent branch and the shell branch below — one rule, not
+   * two literals (§16.4's correction).
+   *
+   * Only a spaces-family origin is honoured. Anything else — the dashboard,
+   * Settings, or no origin at all on a cold deep link — goes to the dashboard.
+   * That is what "no origin, no Spaces" means, and it is why a notification tap
+   * (which fires no `hashchange`) lands back on the list of agents.
    */
   function backTargetFor(paneId: string | null): { hash: string; label: string; ariaLabel: string } {
-    const fromSpaces = paneId !== null
-      && paneOriginRef.current?.paneId === paneId
-      && paneOriginRef.current.fromSpaces;
-    return fromSpaces
-      ? { hash: "#/spaces", label: "‹ Spaces", ariaLabel: "Back to spaces" }
-      : { hash: "", label: "‹ Agents", ariaLabel: "Back to agents" };
+    const origin = paneId !== null && paneOriginRef.current?.paneId === paneId
+      ? paneOriginRef.current.origin
+      : null;
+    if (origin === null) return { hash: "", label: "‹ Agents", ariaLabel: "Back to agents" };
+
+    if (spaceIdFromHash(origin) !== null) {
+      /*
+       * Named where the store can name it, generic where it cannot, and NEVER
+       * the space id.
+       *
+       * `App` has no spaces tree to ask — `useTreePane` resolves one pane and
+       * carries no space label, and it does not even fetch for a pane the store
+       * already holds. What it does have is the agent, and an `Agent` carries
+       * `workspaceLabel`. A shell is deliberately absent from `agents` (§3), so
+       * for those there is no label here and the word stands in.
+       *
+       * The DESTINATION is exact in both cases; only the wording differs. The
+       * alternative was printing `w9`, which `docs/gotchas.md` bans on screen.
+       */
+      const label = agents.find((a) => a.agentId === paneId)?.workspaceLabel ?? null;
+      return label !== null
+        ? { hash: origin, label: `‹ ${label}`, ariaLabel: `Back to ${label}` }
+        : { hash: origin, label: "‹ Space", ariaLabel: "Back to this space" };
+    }
+    if (origin === "#/spaces") {
+      return { hash: "#/spaces", label: "‹ Spaces", ariaLabel: "Back to spaces" };
+    }
+    return { hash: "", label: "‹ Agents", ariaLabel: "Back to agents" };
   }
 
   /**
@@ -283,12 +303,27 @@ export function App() {
   // only unmounting the old instance can.
   if (showSettings) return <Settings onBack={() => { location.hash = ""; }} />;
 
+  // Before `showSpaces` below: belt and braces, not load-bearing.
+  // `useSpacesRoute` matches `"#/spaces"` exactly and `spaceIdFromHash`
+  // requires the trailing slash, so the two routes can never both be true.
+  if (openSpaceId !== null) {
+    return (
+      <Space
+        spaceId={openSpaceId}
+        onBack={() => { location.hash = "#/spaces"; }}
+        senders={LIVE_SENDERS}
+        createSenders={LIVE_CREATE_SENDERS}
+        navigate={(hash) => { location.hash = hash; }}
+      />
+    );
+  }
+
   if (showSpaces) return <Spaces onBack={() => { location.hash = ""; }} />;
 
   if (openAgent) {
     // Back returns to wherever THIS pane was opened from (§16.4) — the
-    // dashboard by default, `#/spaces` only when the real navigation that
-    // opened it came from there.
+    // dashboard by default, a spaces-family hash only when the real
+    // navigation that opened it came from there.
     const back = backTargetFor(openId);
     return (
       <AgentTerminal
@@ -302,9 +337,10 @@ export function App() {
 
   if (shellToRender) {
     // Same origin-aware rule as the agent branch above (§16.4) — NOT a
-    // hard-coded `#/spaces`. A shell reached from Spaces returns there; one
-    // reached cold (a deep link, a reload, a promotion that started cold)
-    // has no recorded origin and returns to the dashboard, same as an agent.
+    // hard-coded `#/spaces`. A shell reached from a space (either level)
+    // returns there; one reached cold (a deep link, a reload, a promotion
+    // that started cold) has no recorded origin and returns to the
+    // dashboard, same as an agent.
     const back = backTargetFor(openId);
     return (
       <PaneTerminal
