@@ -455,3 +455,50 @@ export function compareAgents(a: Agent, b: Agent): number {
   if (a.stateSince !== b.stateSince) return b.stateSince - a.stateSince;
   return a.name.localeCompare(b.name);
 }
+
+/** The herdr session tree, as read at a single instant. */
+export interface SpaceTree {
+  spaces: Space[];
+  /** Server clock when the snapshot was taken. The UI renders "as of 4s ago"
+   *  from this, and the phone's clock is not the server's — the same reason
+   *  SettingsView carries `serverNow`. */
+  readAt: number;
+}
+
+export interface Space {
+  spaceId: string;              // herdr workspace_id
+  label: string | null;
+  tabCount: number;
+  paneCount: number;
+  tabs: Tab[];
+}
+
+export interface Tab {
+  tabId: string;
+  /** herdr returns the tab's NUMBER as a string when no label is set, so an
+   *  unlabelled tab arrives as "1". Null here means exactly that: the
+   *  operator has never named this tab. See §14.7. */
+  label: string | null;
+  panes: TreePane[];
+}
+
+export interface TreePane {
+  paneId: string;
+  /** The harness in this pane ("claude", "codex"), or null for a plain shell.
+   *  This is the ONLY discriminator between the two cases. */
+  harness: string | null;
+  /** `agent.list`'s `name`. Null for a shell, and also null for an agent whose
+   *  name has been cleared — herdr does not re-derive one. See §14.1. */
+  name: string | null;
+  /** `terminal_title_stripped`. A shell's only label. */
+  title: string | null;
+  cwd: string;
+  /**
+   * Null for a shell, and null is the point.
+   *
+   * A shell is not `idle`. It has no triage state at all, and inventing one
+   * would put it in a section it does not belong in. The same discipline as
+   * `stateSinceExact`: do not render a guess as a fact.
+   */
+  state: AgentState | null;
+}
