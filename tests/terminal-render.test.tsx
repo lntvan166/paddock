@@ -4,6 +4,8 @@
 import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
+import { useState } from "react";
+import type { Agent } from "@shared/types";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { digestOf } from "@shared/screen";
 import { agent, click, render, settle, stubFetch, textsOf, unmount } from "./support/render";
@@ -13,7 +15,7 @@ const realFetch = globalThis.fetch;
  *  `tests/settings-view.test.tsx` records: Bun runs every test file in ONE
  *  process, so a key left set here is read as an operator's stored choice by
  *  `tests/prefs.test.ts` and by any later file that calls `readPrefs()`. */
-const PREF_KEYS = ["paddock.term.keypad", "paddock.term.keypad.auto"];
+const PREF_KEYS = ["paddock.term.keypad", "paddock.term.keypad.auto", "paddock.rate"];
 
 afterEach(async () => {
   await unmount();
@@ -436,4 +438,46 @@ test("a blocked agent keeps its state word visible, not only its colour", async 
   await settle();
 
   expect(host.querySelector(".term-title .term-state")?.textContent).toBe("blocked");
+});
+
+test("a state change re-reads the transcript, so a screen is never frozen at the state it opened in", async () => {
+  // Guards `load`'s `agent.state` dependency in `AgentTerminal`, which the body
+  // of that callback never reads: it is there so `PaneTerminal` — which re-reads
+  // whenever `load` changes identity — asks again when the agent moves. Until
+  // now the only thing defending it was a comment, and a comment does not fail a
+  // build. A transcript frozen at the moment the view opened is the thing an
+  // operator is most likely to misread as current.
+  //
+  // The refresh preset is pinned to its slowest so the POLL cannot be what
+  // produces the second read. `frugal` is 3 s; this test finishes in
+  // milliseconds.
+  localStorage.setItem("paddock.rate", "frugal");
+  const { fn, calls } = stubFetch({
+    "/output": () => screenOf(["one line"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  // A wrapper so the flip goes through React the way a delta does: same
+  // element, same position, new `agent` object — never a remount, which would
+  // re-read for a different reason entirely.
+  function Harness() {
+    const [state, setState] = useState<Agent["state"]>("working");
+    return (
+      <>
+        <button type="button" id="flip" onClick={() => setState("idle")}>flip</button>
+        <AgentTerminal agent={agent({ state })} onBack={() => {}} />
+      </>
+    );
+  }
+
+  const host = await render(<Harness />);
+  await settle();
+  const readsOnMount = calls.filter((c) => c.url.includes("/output")).length;
+  expect(readsOnMount).toBeGreaterThan(0);
+
+  await click(host.querySelector("#flip"));
+  await settle();
+
+  expect(calls.filter((c) => c.url.includes("/output")).length).toBeGreaterThan(readsOnMount);
 });

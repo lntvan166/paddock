@@ -13,12 +13,20 @@ import { agent, click, render, settle, stubFetch, typeInto, unmount } from "./su
 
 const realFetch = globalThis.fetch;
 
+/** Every pref this file writes, cleared in `afterEach` rather than at the end
+ *  of a test body: a body that stops early — which is what a FAILING assertion
+ *  does — leaks the pref into every file Bun runs after this one, and the
+ *  failures land furthest from the cause. Same list-and-loop shape as
+ *  `tests/terminal-render.test.tsx`. */
+const PREF_KEYS = ["paddock.term.keypad", "paddock.rate"];
+
 afterEach(async () => {
   await unmount();
   globalThis.fetch = realFetch;
   // The screen cache is keyed by pane id and lives for the page. Left behind,
   // a shell's lines would seed the next test that happens to use the same id.
   prunePanes(new Set());
+  for (const k of PREF_KEYS) localStorage.removeItem(k);
 });
 
 const load = async () => ({
@@ -68,7 +76,6 @@ test("the same two selectors DO match once the pane has an agent", async () => {
 
   expect(el.querySelector("[data-keypad]")).not.toBeNull();
   expect(el.querySelectorAll("[data-prompt-option]")).toHaveLength(2);
-  localStorage.removeItem("paddock.term.keypad");
 });
 
 test("a failed read is shown, never an empty screen", async () => {
@@ -152,7 +159,6 @@ test("a shell is not polled on the agent's cadence", async () => {
   await waitMs(400);
   expect(agentReads).toBeGreaterThan(1);
 
-  localStorage.removeItem("paddock.rate");
 });
 
 test("a 409 is a promotion in flight, not a failure: the transcript stays and the banner does not", async () => {
@@ -222,7 +228,6 @@ test("a successful read clears the error banner even when it brings no new scree
   expect(call).toBeGreaterThan(1);
   expect(el.querySelector(".term-error")).toBeNull();
   expect(el.querySelector(".term-pane")?.textContent).toContain("still here");
-  localStorage.removeItem("paddock.rate");
 });
 
 // §16.3: the shell case was promised plain text input and never got a route
@@ -244,7 +249,6 @@ test("a shell with senders renders a reply box and a keypad", async () => {
   await settle();
   expect(el.querySelector(".term-reply")).not.toBeNull();
   expect(el.querySelector("[data-keypad]")).not.toBeNull();
-  localStorage.removeItem("paddock.term.keypad");
 });
 
 test("sending calls the injected sender with the text verbatim", async () => {
@@ -298,7 +302,6 @@ test("a shell's keypad and reply box never grow prompt options — there is no p
   );
   await settle();
   expect(el.querySelector("[data-prompt-option]")).toBeNull();
-  localStorage.removeItem("paddock.term.keypad");
 });
 
 test("Send RUNS the command, in the default configuration — no stored prefs at all", async () => {
@@ -308,10 +311,13 @@ test("Send RUNS the command, in the default configuration — no stored prefs at
   // tests that show a keypad set `paddock.term.keypad` first, so the only Enter
   // in the app was reachable in the test and not on a first run.
   //
-  // So: nothing is stored, deliberately. `DEFAULTS.keypad` is `hidden`
-  // (`prefs.ts`), which means the assertion below is the ONLY way an operator
-  // opening a shell for the first time can run anything.
-  localStorage.removeItem("paddock.term.keypad");
+  // So: nothing is stored, deliberately — ASSERTED, not arranged. Every pref
+  // this file writes is cleared in `afterEach`, and if some other file ever
+  // leaks one into this process, this line is where that shows up rather than
+  // quietly turning the shipped default into somebody's stored choice.
+  // `DEFAULTS.keypad` is `hidden` (`prefs.ts`), which makes Send the ONLY way
+  // an operator opening a shell for the first time can run anything.
+  expect(localStorage.getItem("paddock.term.keypad")).toBeNull();
   const calls: Array<{ text: string; submit: boolean }> = [];
   const el = await render(
     <PaneTerminal

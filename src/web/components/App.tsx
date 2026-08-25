@@ -36,6 +36,47 @@ export function App() {
   // Read once on mount, not on every render: localStorage is synchronous, and
   // this sits in a component that re-renders on a one-second clock.
   const [dismissedVersion, setDismissedVersion] = useState(dismissedRelease);
+  /**
+   * Where the currently open pane was navigated FROM — `#/spaces` or
+   * anywhere else — read off the real `hashchange`, not guessed from the
+   * pane's own shape (§16.4).
+   *
+   * A ref, and kept here on `App`, deliberately. `App` itself never
+   * unmounts (see the theme effect below); `AgentTerminal` and
+   * `PaneTerminal` do, on exactly the transition this has to survive — a
+   * shell promoted to an agent unmounts the shell's `PaneTerminal` and
+   * mounts `AgentTerminal` under the SAME pane id (one pane, two moments).
+   * Anything stored in either component would be lost at that instant.
+   *
+   * `hashchange`'s own `oldURL` is the source of truth for "came from",
+   * not a piece of React state that only ever knows the CURRENT hash. A
+   * cold load — a notification tap, a pasted link, a reload — fires no
+   * `hashchange` before this effect ever sees the hash, so the ref simply
+   * has no entry for that pane id, and `backTargetFor` below falls back to
+   * the dashboard. That is the whole mechanism for "no origin, no Spaces".
+   *
+   * DECLARED BEFORE THE ROUTE HOOKS, and that is load-bearing. Effects run in
+   * declaration order, so registering after `useAgentRoute` put this listener
+   * second: the route's `setId` was queued first, and only React 18's batching
+   * kept the re-render from landing between the two handlers. A ref write
+   * schedules no render of its own, so if that queue ever flushed in between,
+   * `backTargetFor` would read the previous pane's origin — or none. Ordering
+   * the registration removes the dependency instead of relying on it.
+   */
+  const paneOriginRef = useRef<{ paneId: string; fromSpaces: boolean } | null>(null);
+  useEffect(() => {
+    const onHashChange = (e: HashChangeEvent) => {
+      const paneId = agentIdFromHash(hashOf(e.newURL));
+      // Only a navigation INTO a pane is worth recording. A change between
+      // two non-pane surfaces (dashboard <-> Settings <-> Spaces) says
+      // nothing about where a future pane visit came from.
+      if (paneId === null) return;
+      paneOriginRef.current = { paneId, fromSpaces: hashOf(e.oldURL) === "#/spaces" };
+    };
+    addEventListener("hashchange", onHashChange);
+    return () => removeEventListener("hashchange", onHashChange);
+  }, []);
+
   const openId = useAgentRoute();
   const showSettings = useSettingsRoute();
   const showSpaces = useSpacesRoute();
@@ -62,39 +103,6 @@ export function App() {
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(t);
-  }, []);
-
-  /**
-   * Where the currently open pane was navigated FROM — `#/spaces` or
-   * anywhere else — read off the real `hashchange`, not guessed from the
-   * pane's own shape (§16.4).
-   *
-   * A ref, and kept here on `App`, deliberately. `App` itself never
-   * unmounts (see the theme effect above); `AgentTerminal` and
-   * `PaneTerminal` do, on exactly the transition this has to survive — a
-   * shell promoted to an agent unmounts the shell's `PaneTerminal` and
-   * mounts `AgentTerminal` under the SAME pane id (one pane, two moments).
-   * Anything stored in either component would be lost at that instant.
-   *
-   * `hashchange`'s own `oldURL` is the source of truth for "came from",
-   * not a piece of React state that only ever knows the CURRENT hash. A
-   * cold load — a notification tap, a pasted link, a reload — fires no
-   * `hashchange` before this effect ever sees the hash, so the ref simply
-   * has no entry for that pane id, and `backTargetFor` below falls back to
-   * the dashboard. That is the whole mechanism for "no origin, no Spaces".
-   */
-  const paneOriginRef = useRef<{ paneId: string; fromSpaces: boolean } | null>(null);
-  useEffect(() => {
-    const onHashChange = (e: HashChangeEvent) => {
-      const paneId = agentIdFromHash(hashOf(e.newURL));
-      // Only a navigation INTO a pane is worth recording. A change between
-      // two non-pane surfaces (dashboard <-> Settings <-> Spaces) says
-      // nothing about where a future pane visit came from.
-      if (paneId === null) return;
-      paneOriginRef.current = { paneId, fromSpaces: hashOf(e.oldURL) === "#/spaces" };
-    };
-    addEventListener("hashchange", onHashChange);
-    return () => removeEventListener("hashchange", onHashChange);
   }, []);
 
   /**

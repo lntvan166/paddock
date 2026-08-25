@@ -53,6 +53,10 @@ afterEach(async () => {
   globalThis.fetch = REAL_FETCH;
   location.hash = "";
   prunePanes(new Set());
+  // Here rather than at the end of the one body that sets it: a failing
+  // assertion never reaches the end of a body, and the pref would then be read
+  // as an operator's stored choice by every later file in the process.
+  localStorage.removeItem("paddock.term.keypad");
 });
 
 const treeWith = (harness: string | null) => ({
@@ -142,7 +146,6 @@ test("a deep link to a pane with NO agent opens the shell transcript, with its o
   // the case that still lands on `#/spaces` — a pane actually opened from
   // Spaces.
   expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to agents");
-  localStorage.removeItem("paddock.term.keypad");
 });
 
 test("a shell's header is labelled by the SAME rule as its row, never by its terminal title", async () => {
