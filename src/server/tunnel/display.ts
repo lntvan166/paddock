@@ -87,12 +87,20 @@ const devices = (n: number) =>
   n === 0 ? "no devices yet" : n === 1 ? "1 device" : `${n} devices`;
 
 /**
- * Pure: state in, block out. The loop in `run.ts` only decides WHEN to draw.
+ * Pure: state in, block out. The loop in `run.ts` only decides WHEN to draw,
+ * and whether there is a QR to draw at all.
+ *
+ * ONE block order for both layouts, so the QR does not move when a terminal is
+ * resized. `compact` drops PROSE, never state: the public-tunnel warning and
+ * the `^C` hint go, because they are read once and both survive in
+ * `paddock help` and README.md, while `paired` and `closes in` stay because
+ * they are the two lines that change while an operator watches.
  *
  * Colour decorates and never informs — `tunnel-display.test.ts` asserts that
  * stripping every escape from the coloured render returns the plain one, so a
- * piped log and a terminal read identically. Do not make a distinction that
- * exists only in colour.
+ * piped log and a terminal read identically. That holds with a QR present
+ * because the matrix is the same object in both calls and only the escapes
+ * differ. Do not make a distinction that exists only in colour.
  */
 export function render(s: DisplayState, colour: boolean): string {
   const c = (code: string, text: string) =>
@@ -102,18 +110,26 @@ export function render(s: DisplayState, colour: boolean): string {
     `  ${c("32", "✓")} tunnel up · ${duration(s.now - s.startedAt)} elapsed`,
     `    ${c("36", s.url)}`,
     "",
+  ];
+  if (s.qr !== null) {
+    for (const line of qrLines(s.qr, colour)) lines.push(`    ${line}`);
+    lines.push("");
+  }
+  lines.push(
     `    code ${formatCode(s.code)} · expires in ${duration(s.codeExpiresAt - s.now)}`,
     `    paired: ${devices(s.paired)}`,
-  ];
-  if (s.deadline !== null) lines.push(`    closes in ${duration(s.deadline - s.now)}`);
-  lines.push(
-    "",
-    `  ${c("33", "⚠")} a quick tunnel is public. The code above is the only thing`,
-    "    between this URL and keystroke access to every agent here.",
-    "    For anything lasting, use a named tunnel behind Cloudflare",
-    "    Access — docs/deploy-cloudflare.md",
-    "",
-    `  ${c("2", "^C to close")}`,
   );
+  if (s.deadline !== null) lines.push(`    closes in ${duration(s.deadline - s.now)}`);
+  if (!s.compact) {
+    lines.push(
+      "",
+      `  ${c("33", "⚠")} a quick tunnel is public. The code above is the only thing`,
+      "    between this URL and keystroke access to every agent here.",
+      "    For anything lasting, use a named tunnel behind Cloudflare",
+      "    Access — docs/deploy-cloudflare.md",
+      "",
+      `  ${c("2", "^C to close")}`,
+    );
+  }
   return lines.join("\n");
 }

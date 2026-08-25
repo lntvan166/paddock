@@ -90,3 +90,54 @@ test("colour is off unless stdout is a tty, and NO_COLOR always wins", () => {
   // The convention is that the variable's PRESENCE is the signal.
   expect(useColour({ NO_COLOR: "" }, true)).toBe(false);
 });
+
+const QR = qrMatrix("https://quiet-harbor-8f31.trycloudflare.com/#4F7KQP2M");
+
+test("the QR sits between the URL and the code, in both layouts", () => {
+  // One block order, so the QR does not move when a terminal is resized.
+  for (const compact of [false, true]) {
+    const lines = render(state({ qr: QR, compact }), false).split("\n");
+    const url = lines.findIndex((l) => l.includes("trycloudflare.com"));
+    const qr = lines.findIndex((l) => l.includes("█") || l.includes("▀") || l.includes("▄"));
+    const code = lines.findIndex((l) => l.includes("4F7K-QP2M"));
+    expect(url).toBeGreaterThanOrEqual(0);
+    expect(qr).toBeGreaterThan(url);
+    expect(code).toBeGreaterThan(qr);
+  }
+});
+
+test("compact drops the prose and keeps the state", () => {
+  const lines = render(state({ qr: QR, compact: true, deadline: T0 + 4_320_000 }), false);
+  // Gone: the warning paragraph and the ^C hint.
+  expect(lines).not.toContain("a quick tunnel is public");
+  expect(lines).not.toContain("deploy-cloudflare.md");
+  expect(lines).not.toContain("^C to close");
+  // Kept: the two lines that change while an operator watches.
+  expect(lines).toContain("paired:");
+  expect(lines).toContain("closes in");
+  expect(lines).toContain("4F7K-QP2M");
+  expect(lines).toContain("trycloudflare.com");
+});
+
+test("the full layout keeps everything it kept before", () => {
+  const lines = render(state({ qr: QR, compact: false }), false);
+  expect(lines).toContain("a quick tunnel is public");
+  expect(lines).toContain("deploy-cloudflare.md");
+  expect(lines).toContain("^C to close");
+});
+
+test("compact without a QR is still the trimmed block", () => {
+  // compact is a HEIGHT decision and qr is a width/tty one; they are
+  // independent inputs and must not be entangled.
+  const lines = render(state({ qr: null, compact: true }), false);
+  expect(lines).not.toContain("^C to close");
+  expect(lines).toContain("4F7K-QP2M");
+  expect(lines).not.toMatch(/[█▀▄]/);
+});
+
+test("no QR renders exactly the block that shipped before", () => {
+  const lines = render(state({ qr: null, compact: false }), false);
+  expect(lines).not.toMatch(/[█▀▄]/);
+  expect(lines).toContain("a quick tunnel is public");
+  expect(lines).toContain("^C to close");
+});
