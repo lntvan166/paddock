@@ -782,3 +782,45 @@ This ships with §7/§9/§10, never before them. The first attempt rendered the
 row actions ahead of the sheet that would fill them, and a permanently
 `disabled` control announcing "Actions for X" is a mislabelled button — worse
 than none. A create control appears in the same change that makes it work.
+
+---
+
+## 17. §13's probes, measured (2026-08-25)
+
+Three of §13's five probes were still open when management work began. Two are
+now measured; the third cannot be measured on a working herd and the design
+changes to account for that.
+
+**Probe 5 — `tab.create {focus: false}` does not steal focus.** Measured: the
+session's `focused_pane_id` and `focused_workspace_id` were unchanged across a
+create, and unchanged again after the throwaway tab was closed. So creating
+from a phone cannot yank the desktop out from under someone sitting at it,
+which is what made this worth measuring rather than assuming.
+
+**Probe 1 — an empty label is ACCEPTED, and it is not a clear.** `tab.rename`
+with `label: ""` succeeds and the tab's label becomes the empty string — herdr
+does not treat it as "unset" and does not restore the number. paddock happens
+to render that as unnamed, because `tree.ts`'s `tabLabel` normalises a falsy
+label to `null`, but that is a coincidence of paddock's own normalisation and
+not a herdr behaviour to rely on. What herdr's own TUI shows for an
+empty-string tab label was not measured and cannot be from here.
+
+**Consequence — there is no "clear" for a tab or a space name.** §7's table was
+right to mark them unclearable, for a better reason than it knew: herdr models
+no unset state for them, so the only thing an empty submission does is store an
+empty string, which is worse than the number it replaces. So:
+
+- **Tab and space rename require a non-empty label.** paddock refuses an empty
+  one client-side and server-side, rather than passing it through.
+- **Clear exists only where herdr models it** — `agent.rename` with
+  `name: null`, which genuinely removes the field (§14.1). That control keeps
+  the honest label §7.2 specifies, because clearing an agent's name drops it to
+  paddock's `basename(cwd)` fallback rather than restoring a herdr-derived one.
+
+**Probe 3 — whether the last space may be closed is UNMEASURED, deliberately.**
+Establishing the condition means reducing a working herd to one space, and the
+only herd available is an operator's live session. So `workspace.close` is
+designed to **surface herdr's own refusal verbatim** rather than predict it:
+paddock does not pre-emptively disable the control on a count of one, because
+that would encode a guess about herdr's policy as a fact. If herdr allows it,
+the operator gets what they asked for; if it refuses, they get the reason.
