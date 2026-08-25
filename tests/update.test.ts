@@ -386,14 +386,20 @@ test("a body that ends mid-stream is reported, and the binary survives", async (
   }) as unknown as typeof fetch;
 
   const said: string[] = [];
+  // A recording Progress, not silent(): this is the path that must erase a
+  // half-drawn bar before the failure line prints, and silent() cannot tell
+  // the difference between that call happening and it being deleted.
+  const doneCalls: number[] = [];
   const code = await runUpdate({
     selfPath: h.self, platform: "linux", arch: "x64", current: "0.1.0",
-    fetchImpl, log: (s) => said.push(s), progress: silent(),
+    fetchImpl, log: (s) => said.push(s),
+    progress: { start() {}, advance() {}, done: () => doneCalls.push(1) },
   });
   expect(code).toBe(1);
   expect(said.join("\n")).toContain("download failed");
   expect(await readFile(h.self, "utf8")).toBe("OLD BINARY");
   expect(await readdir(h.dir)).not.toContain(".paddock.new");
+  expect(doneCalls.length).toBeGreaterThan(0);
 });
 
 test("a write that never reaches disk is caught, even though the hasher saw every byte", async () => {
