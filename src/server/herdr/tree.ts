@@ -117,18 +117,28 @@ function tildeise(cwd: string, home: string | undefined): string {
  * to a shell that never sees it.
  *
  * A bare `~` and `~/...` only, and only when there is a home to expand
- * against. Everything else that still begins with `~` after this comes back
- * `null` rather than being forwarded, because forwarding is the defect:
+ * against. Anything that is not ABSOLUTE after that comes back `null` rather
+ * than being forwarded, because forwarding is the defect:
  *
  * - `~operator/...` is another user's home on a real shell. paddock knows ONE
  *   home directory, so resolving it against `$HOME` would silently point at a
  *   different account's path — worse than refusing.
  * - `~/...` with `HOME` unset or `/` has nothing to expand against at all.
+ * - `./relative`, `relative`, `../up` — whether herdr resolves these against
+ *   its OWN process cwd is unmeasured, and the measured answer for the tilde
+ *   was "silently, in the wrong folder". Same class of value: a path whose
+ *   meaning depends on a working directory paddock cannot see. An earlier
+ *   version refused the tilde and forwarded these with a 200, which is the
+ *   same defect wearing a different prefix — and it made both this function's
+ *   own promise and the route's 400 text false in writing.
  *
- * Both used to be returned unchanged, which handed herdr exactly the value
- * this function exists to stop it seeing. A refusal the operator can read
- * beats a folder silently ignored, so the caller gets `null` and turns it into
- * a 400.
+ * The rule, stated once: **refuse an unmeasured value when a measured
+ * alternative already expresses the same intent; relay when there is none.**
+ * An absolute path is that alternative, and every cwd the UI can produce is
+ * already one — the quick picks are the tree's own tilde-ised cwds, and free
+ * text is the operator's own path — so nothing the operator can do regresses.
+ * A refusal they can read beats a folder silently ignored, so the caller gets
+ * `null` and turns it into a 400.
  *
  * Returning `HostPath` is the other half of that guarantee: this is the ONLY
  * function that casts into the brand `CreateOpts.cwd` requires, so a cwd
@@ -136,12 +146,15 @@ function tildeise(cwd: string, home: string | undefined): string {
  * `actions.ts`.
  */
 export function expandHome(cwd: string, home: string | undefined): HostPath | null {
-  if (!cwd) return cwd as HostPath;
   const h = home && home !== "/" ? home.replace(/\/+$/, "") : null;
+  let out = cwd;
   if (h !== null) {
-    if (cwd === "~") return h as HostPath;
-    if (cwd.startsWith("~/")) return `${h}${cwd.slice(1)}` as HostPath;
+    if (cwd === "~") out = h;
+    else if (cwd.startsWith("~/")) out = `${h}${cwd.slice(1)}`;
   }
-  // Still tilde-prefixed: unresolvable here, and never forwarded.
-  return cwd.startsWith("~") ? null : (cwd as HostPath);
+  // ONE gate, and it is the brand's own promise: absolute, or nothing. A value
+  // still tilde-prefixed fails it, and so does `./relative`, `relative` and the
+  // empty string — every shape whose meaning depends on a working directory
+  // paddock cannot see.
+  return out.startsWith("/") ? (out as HostPath) : null;
 }

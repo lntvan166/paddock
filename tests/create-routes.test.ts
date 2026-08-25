@@ -664,12 +664,34 @@ test("a tilde that cannot be resolved is REFUSED 400, never forwarded, on both c
   expect(noHome.readTreeCallCount()).toBe(0);
 });
 
-test("a path with no tilde at all is forwarded, refusal or not", async () => {
-  // The refusal is narrow on purpose: it covers what paddock measured herdr
-  // mishandling and nothing else. Whether herdr accepts a relative cwd is
-  // herdr's business, and its answer arrives verbatim either way.
+test("an absolute path is forwarded verbatim, refusal or not", async () => {
+  // Nothing is done to a path that is already absolute: no normalisation, no
+  // existence check. Whether herdr accepts THIS absolute path is herdr's
+  // business, and its answer arrives verbatim either way.
   const { app, calls } = harness(async () => TREE, { home: "/base/operator" });
-  const res = await post(app, "/api/spaces", { cwd: "./relative" });
+  const res = await post(app, "/api/spaces", { cwd: "/srv/project" });
   expect(res.status).toBe(200);
-  expect(calls).toEqual([`createSpace:${JSON.stringify({ cwd: "./relative" })}`]);
+  expect(calls).toEqual([`createSpace:${JSON.stringify({ cwd: "/srv/project" })}`]);
+});
+
+test("a RELATIVE cwd is refused, the same as a tilde paddock cannot resolve", async () => {
+  // FLIPPED. This asserted a 200 and a forwarded `./relative`, two lines below
+  // the test that asserts a 400 for `~work` — the same class of value, refused
+  // in one shape and forwarded in the other, by the function that exists to
+  // stop it. Whether herdr resolves a relative cwd against its own process cwd
+  // is UNMEASURED; the measured answer for the tilde was "silently, in the
+  // wrong folder", which is the outcome this whole path exists to prevent.
+  //
+  // Refuse an unmeasured value when a measured alternative expresses the same
+  // intent; relay when there is none. An absolute path is that alternative, so
+  // this refuses — and no UI path produces a relative cwd (the quick picks are
+  // the tree's own `~/…` or absolute cwds), so nothing regresses.
+  const { app, calls, readTreeCallCount } = harness(async () => TREE, { home: "/base/operator" });
+  const res = await post(app, "/api/spaces", { cwd: "./relative" });
+  expect(res.status).toBe(400);
+  expect((await res.json() as any).detail).toContain("absolute path");
+  // Same posture as the tilde refusal: returned from outside the `try`, so it
+  // can never be relabelled a 502, and herdr is never asked.
+  expect(calls).toEqual([]);
+  expect(readTreeCallCount()).toBe(0);
 });

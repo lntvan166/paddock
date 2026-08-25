@@ -102,14 +102,38 @@ test("expandHome is the exact inverse of the tilde-ising the tree does", () => {
   expect(expanded(rendered, home)).toBe("/base/operator/work");
 });
 
-test("expandHome leaves alone everything that is not paddock's own tilde", () => {
+test("expandHome leaves an already-absolute path alone", () => {
   const home = "/base/operator";
   expect(expanded("/srv/project", home)).toBe("/srv/project");
-  expect(expanded("./relative", home)).toBe("./relative");
-  expect(expanded("", home)).toBe("");
   // A prefix that is not a path boundary must not be shortened either — the
   // tilde-ising side has the same rule, and this is its inverse.
   expect(expanded("/base/operatorX/y", home)).toBe("/base/operatorX/y");
+});
+
+test("expandHome REFUSES anything that is not absolute after expansion", () => {
+  // FLIPPED. This test used to assert `./relative` and `""` came back
+  // unchanged, under the heading "leaves alone everything that is not
+  // paddock's own tilde" — and the route above it forwarded both with a 200
+  // while refusing `~work` with a 400. Same class of value: a path whose
+  // meaning depends on a working directory paddock cannot see. Whether herdr
+  // resolves `./relative` against its OWN process cwd — silently, in the wrong
+  // folder — is unmeasured, and the whole reason the tilde is refused is that
+  // the measured answer for that shape was "silently, in the wrong folder".
+  //
+  // The rule, sharpened: refuse an unmeasured value when a measured
+  // alternative already expresses the same intent, and relay when there is
+  // none. An absolute path IS that alternative here, and every cwd the UI can
+  // produce is already one (`~/…` quick picks, or free text the operator
+  // typed) — so nothing the operator can do regresses, and `HostPath`'s
+  // promise of "absolute" becomes true rather than aspirational.
+  const home = "/base/operator";
+  expect(expanded("./relative", home)).toBeNull();
+  expect(expanded("relative", home)).toBeNull();
+  expect(expanded("../up", home)).toBeNull();
+  // The empty string too. It cannot be absolute, so the brand cannot honestly
+  // be minted for it; the create routes treat a blank cwd as ABSENT and never
+  // call this with one, so refusing it costs no caller anything.
+  expect(expanded("", home)).toBeNull();
 });
 
 test("expandHome REFUSES a tilde it cannot resolve, rather than forwarding it", () => {

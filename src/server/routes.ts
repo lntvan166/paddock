@@ -285,15 +285,21 @@ function normalizeCreateBody(
   // happens to be.
   const blank = typeof rawCwd !== "string" || rawCwd.trim() === "";
   const cwd = blank ? undefined : expandHome((rawCwd as string).trim(), home);
-  // `null` means the value still begins with `~` and cannot be resolved here —
-  // `~someone/work`, or `~/work` on a server with no HOME. The first version of
-  // this forwarded both unchanged, which handed herdr precisely the value the
-  // line above exists to stop it seeing. Refused instead, with a reason the
-  // operator can read: a 400 beats a pane that quietly comes up in the wrong
-  // folder. Returned from OUTSIDE the create routes' `try`, like every other
-  // deliberate refusal here, so it can never be relabelled as a 502.
+  // `null` means the value is not ABSOLUTE after expansion — `~someone/work`,
+  // `~/work` on a server with no HOME, or `./relative`. The first version of
+  // this forwarded the tilde unchanged, which handed herdr precisely the value
+  // the line above exists to stop it seeing; the second refused the tilde and
+  // still forwarded `./relative` with a 200, while this very message said
+  // "absolute". Both shapes depend on a working directory paddock cannot see,
+  // and an absolute path is the measured alternative that says the same thing —
+  // so both are refused, with a reason the operator can read: a 400 beats a
+  // pane that quietly comes up in the wrong folder. Returned from OUTSIDE the
+  // create routes' `try`, like every other deliberate refusal here, so it can
+  // never be relabelled as a 502.
   if (cwd === null) {
-    return { err: "cwd must be an absolute path — a leading ~ cannot be resolved here" };
+    return {
+      err: "cwd must be an absolute path — a leading ~, or a relative path, cannot be resolved here",
+    };
   }
 
   return { label, cwd };

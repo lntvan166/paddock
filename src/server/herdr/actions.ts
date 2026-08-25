@@ -8,6 +8,12 @@ import type { AgentState, NavKey } from "@shared/types";
  * A path herdr can actually chdir into: absolute, and with paddock's own
  * tilde already undone.
  *
+ * Both halves are enforced, which was not always true: `expandHome` once
+ * guaranteed only the second, refusing a tilde it could not resolve while
+ * forwarding `./relative` — so the sentence above was false in writing about
+ * the word "absolute". It now refuses anything that is not absolute after
+ * expansion, and this doc is a promise again rather than an aspiration.
+ *
  * A BRAND, not a validation helper — the only way to obtain one is
  * `expandHome` in `tree.ts`, which is the single function that casts into it.
  * That is the whole point. `tree.ts` tilde-ises every cwd on the way out so a
