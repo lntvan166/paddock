@@ -829,10 +829,13 @@ export function createApp(deps: AppDeps) {
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
 
       const name = (await jsonBody(c)).name;
-      // Two valid shapes only: `null` (clear) or a non-empty bounded string.
-      // An empty string is refused rather than forwarded — herdr's behaviour
-      // for `name: ""` was never measured, and only `null` and a real string
-      // were, so paddock does not send it anything outside what was checked.
+      // Two valid shapes only: `null` (clear) or a non-empty, non-blank
+      // bounded string. An empty or whitespace-only string is refused rather
+      // than forwarded: no UI path would ever submit one intentionally,
+      // since `null` is already the clear control's payload, so refusing it
+      // forecloses an ambiguous input rather than a real capability. It also
+      // keeps paddock from sending herdr a value that was never measured —
+      // only `null` and a real string were (§14.1, §17).
       if (name !== null && (typeof name !== "string" || name.trim() === "" || name.length > MAX_LABEL_LEN)) {
         return c.json({ ok: false, detail: "name must be null or a non-empty string within the length limit" }, 400);
       }
@@ -1008,17 +1011,24 @@ export function createApp(deps: AppDeps) {
      *
      * `label` is a required, non-empty string. herdr's `tab.rename` ACCEPTS
      * an empty label and stores it as `""` rather than treating it as unset
-     * — measured, §17 — so there is no clear for a tab, and an empty label
-     * is refused with 400 and never forwarded. It is refused BEFORE the
-     * `try` opens, alongside the over-length case: both are client input
-     * errors, not herdr failures.
+     * — measured, §17 — so there is no clear for a tab, and an empty OR
+     * WHITESPACE-ONLY label is refused with 400 and never forwarded.
+     * Whitespace-only was never measured either, and paddock's own
+     * `tabLabel` in `tree.ts` normalises a trimmed-empty label to `null`
+     * (unnamed) while herdr would still be storing the literal whitespace —
+     * exactly the mismatch §17 refuses an empty label to avoid. The check is
+     * `label.trim() === ""`, not `label === ""`, so `" "` is refused too;
+     * the label FORWARDED on success is still the untrimmed original, same
+     * as the agent route below trims only to validate, never to send. It is
+     * refused BEFORE the `try` opens, alongside the over-length case: both
+     * are client input errors, not herdr failures.
      */
     app.post("/api/tabs/:id/name", async (c) => {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
       const id = c.req.param("id");
 
       const label = (await jsonBody(c)).label;
-      if (typeof label !== "string" || label === "" || label.length > MAX_LABEL_LEN) {
+      if (typeof label !== "string" || label.trim() === "" || label.length > MAX_LABEL_LEN) {
         return c.json({ ok: false, detail: "label must be a non-empty string within the length limit" }, 400);
       }
 
@@ -1038,16 +1048,17 @@ export function createApp(deps: AppDeps) {
     /**
      * Rename a space. Same shape as `/api/tabs/:id/name` immediately above,
      * for the same reasons: validated against `deps.readTree` because a
-     * space is not in the store either, and an empty label is refused rather
-     * than forwarded because `workspace.rename` accepts and stores one as
-     * `""` (§17) — there is no clear here either.
+     * space is not in the store either, and an empty OR WHITESPACE-ONLY
+     * label is refused rather than forwarded because `workspace.rename`
+     * accepts and stores one verbatim (§17) — there is no clear here either,
+     * and neither an empty nor a whitespace-only value was ever measured.
      */
     app.post("/api/spaces/:id/name", async (c) => {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
       const id = c.req.param("id");
 
       const label = (await jsonBody(c)).label;
-      if (typeof label !== "string" || label === "" || label.length > MAX_LABEL_LEN) {
+      if (typeof label !== "string" || label.trim() === "" || label.length > MAX_LABEL_LEN) {
         return c.json({ ok: false, detail: "label must be a non-empty string within the length limit" }, 400);
       }
 

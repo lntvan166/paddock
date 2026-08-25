@@ -129,6 +129,16 @@ test("an empty-string agent name is refused 400 and never forwarded", async () =
   expect(calls).toEqual([]);
 });
 
+test("a whitespace-only agent name is refused 400 and never forwarded, same as empty", async () => {
+  // No UI path submits "" or " " intentionally — `null` is already the
+  // clear control's payload — so refusing either forecloses an ambiguous
+  // input rather than a real capability.
+  const { app, calls } = harness(async () => TREE);
+  const res = await post(app, "/api/agents/w1:p1/name", { name: "   " });
+  expect(res.status).toBe(400);
+  expect(calls).toEqual([]);
+});
+
 test("renaming an unknown agent 404s before anything is sent", async () => {
   const { app, calls } = harness(async () => TREE);
   const res = await post(app, "/api/agents/nope/name", { name: "docs-cleanup" });
@@ -164,6 +174,17 @@ test("a valid tab label reaches renameTab verbatim", async () => {
 test("an empty tab label is REFUSED 400 and never forwarded — herdr would store it as \"\", not clear it", async () => {
   const { app, calls } = harness(async () => TREE);
   const res = await post(app, "/api/tabs/w1:t1/name", { label: "" });
+  expect(res.status).toBe(400);
+  expect(calls).toEqual([]);
+});
+
+test("a whitespace-only tab label is REFUSED 400 and never forwarded", async () => {
+  // Unmeasured, and predictable to be wrong if forwarded: paddock's own
+  // `tabLabel` in tree.ts normalises a trimmed-empty label to null (rendered
+  // as unnamed), while herdr would be storing the literal whitespace — the
+  // same mismatch §17 refuses an empty label to avoid.
+  const { app, calls } = harness(async () => TREE);
+  const res = await post(app, "/api/tabs/w1:t1/name", { label: " " });
   expect(res.status).toBe(400);
   expect(calls).toEqual([]);
 });
@@ -227,6 +248,13 @@ test("a valid space label reaches renameSpace verbatim", async () => {
 test("an empty space label is REFUSED 400 and never forwarded — herdr would store it as \"\", not clear it", async () => {
   const { app, calls } = harness(async () => TREE);
   const res = await post(app, "/api/spaces/w1/name", { label: "" });
+  expect(res.status).toBe(400);
+  expect(calls).toEqual([]);
+});
+
+test("a whitespace-only space label is REFUSED 400 and never forwarded", async () => {
+  const { app, calls } = harness(async () => TREE);
+  const res = await post(app, "/api/spaces/w1/name", { label: " " });
   expect(res.status).toBe(400);
   expect(calls).toEqual([]);
 });

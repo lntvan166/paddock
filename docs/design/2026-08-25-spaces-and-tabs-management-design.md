@@ -338,6 +338,7 @@ must be governed by paddock's policy. A label over the bound is **rejected,
 not truncated**, because a silently shortened name is a wrong name.
 
 Empty-string handling for tabs and spaces is **not** assumed; see §13.
+Implemented behaviour, once measured, is recorded in §17.
 
 ### 7.4 Propagation is free
 
@@ -816,6 +817,17 @@ empty string, which is worse than the number it replaces. So:
   `name: null`, which genuinely removes the field (§14.1). That control keeps
   the honest label §7.2 specifies, because clearing an agent's name drops it to
   paddock's `basename(cwd)` fallback rather than restoring a herdr-derived one.
+
+**Implemented (Task 2):** all three routes refuse an empty **or
+whitespace-only** label with 400, never forwarding it. Whitespace-only was
+never measured either, and it is predictable to go wrong the same way an
+empty tab label would: `tree.ts`'s `tabLabel` trims and normalises it to
+`null` (rendered as unnamed) while herdr would be storing the literal
+whitespace. `null` on `POST /api/agents/:id/name` remains the **only** clear
+among the three; `agent.rename {name: ""}` is unmeasured and so is refused
+rather than forwarded, on the same reasoning — no UI path submits `""` or
+`" "` intentionally, since `null` is already the clear control's payload, so
+refusing both forecloses an ambiguous input rather than a real capability.
 
 **Probe 3 — whether the last space may be closed is UNMEASURED, deliberately.**
 Establishing the condition means reducing a working herd to one space, and the
