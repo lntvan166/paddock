@@ -4,7 +4,7 @@ import { AgentStore } from "@server/state/store";
 import type { Child, Tunnel } from "@server/tunnel/cloudflared";
 import { COOKIE_NAME, Pairing } from "@server/tunnel/pairing";
 import {
-  gatedPortInUseMessage, runTunnel, serveGated, type TunnelDeps,
+  gatedPortInUseMessage, runTunnel, serveGated, wantsCompact, wantsQr, type TunnelDeps,
 } from "@server/tunnel/run";
 import { Hub } from "@server/ws/hub";
 
@@ -588,4 +588,27 @@ test("a requested stop whose kill failed still ends the run non-zero", async () 
 
   expect(code).toBe(1);
   expect(c.text()).toContain("the tunnel may still be up");
+});
+
+test("the QR is suppressed for each reason independently", () => {
+  // These four are the whole suppression contract. Each is checked alone so a
+  // change that collapses two of them into one cannot pass by accident.
+  expect(wantsQr({ colour: false, columns: 80, rows: 40 })).toBe(false); // not a tty, or NO_COLOR
+  expect(wantsQr({ colour: true, columns: 36, rows: 40 })).toBe(false);  // too narrow
+  expect(wantsQr({ colour: true, columns: 80, rows: 25 })).toBe(false);  // too short
+  expect(wantsQr({ colour: true, columns: 80, rows: 40 })).toBe(true);
+});
+
+test("37 columns and 26 rows are the exact thresholds", () => {
+  // 29 modules + 4 quiet each side = 37 columns.
+  expect(wantsQr({ colour: true, columns: 37, rows: 26 })).toBe(true);
+  expect(wantsQr({ colour: true, columns: 36, rows: 26 })).toBe(false);
+  expect(wantsQr({ colour: true, columns: 37, rows: 25 })).toBe(false);
+});
+
+test("the prose is dropped below 34 rows and kept at or above it", () => {
+  // 6 state + 7 prose + 19 QR + 1 blank + 1 trailing = 34.
+  expect(wantsCompact(33)).toBe(true);
+  expect(wantsCompact(34)).toBe(false);
+  expect(wantsCompact(80)).toBe(false);
 });

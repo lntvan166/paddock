@@ -10,6 +10,7 @@ import {
 import { decide, gateResponse } from "@server/tunnel/gate";
 import { errorCode } from "@server/startup-errors";
 import type { Pairing } from "@server/tunnel/pairing";
+import { qrMatrix } from "@server/qr";
 import { render, useColour } from "@server/tunnel/display";
 import { duration, warn } from "@server/term";
 
@@ -55,6 +56,13 @@ export interface TunnelDeps {
    */
   env?: Record<string, string | undefined>;
   isTty?: boolean;
+  /**
+   * Terminal dimensions, injected for the same reason `isTty` is: a test that
+   * read `process.stdout.columns` would pass or fail depending on the window
+   * the suite happened to run in.
+   */
+  columns?: number;
+  rows?: number;
   /**
    * How this run's teardown reaches the ONE process-wide signal handler.
    *
@@ -131,6 +139,41 @@ export function gatedPortInUseMessage(port: number, hostname = "127.0.0.1"): str
     "  `paddock tunnel` needs a SECOND loopback port, besides the dashboard's own.",
     `  stop whatever holds it, or move it: PADDOCK_TUNNEL_PORT=${port + 1} paddock tunnel`,
   ].join("\n");
+}
+
+/** 29 modules + a 4-module quiet zone on each side. */
+const QR_COLS = 37;
+/** 6 state lines + 19 QR + 1 blank + 1 trailing. */
+const QR_ROWS = 26;
+/** ...plus the 7 prose lines the full block adds. */
+const FULL_ROWS = 34;
+
+/**
+ * Whether to draw a QR at all.
+ *
+ * `colour` already carries "is a tty" and "NO_COLOR is unset" — see
+ * `useColour` — and both are suppression reasons here for the same underlying
+ * one: the QR's polarity is forced with escapes, so without escapes it would
+ * render inverted against a dark terminal, and an inverted QR is worse than no
+ * QR. A QR in a piped log is noise besides.
+ *
+ * Suppression lives HERE and not in `render`'s colour flag, because
+ * `tunnel-display.test.ts` requires that flag to change escapes and nothing
+ * else. Presence is `DisplayState.qr`; polarity is `colour`.
+ */
+export function wantsQr(o: { colour: boolean; columns: number; rows: number }): boolean {
+  return o.colour && o.columns >= QR_COLS && o.rows >= QR_ROWS;
+}
+
+/**
+ * Whether the terminal is too short for the QR AND the prose.
+ *
+ * Independent of `wantsQr`: this is a height decision and that one is mostly a
+ * width decision, and entangling them makes a resize change what the block says
+ * rather than only how much of it fits.
+ */
+export function wantsCompact(rows: number): boolean {
+  return rows < FULL_ROWS;
 }
 
 /**
@@ -362,6 +405,10 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
   const deadline = deps.deadlineMs != null ? startedAt + deps.deadlineMs : null;
   const tty = deps.isTty ?? Boolean(process.stdout.isTTY);
   const colour = useColour(deps.env ?? process.env, tty);
+  const columns = deps.columns ?? process.stdout.columns ?? 0;
+  const rows = deps.rows ?? process.stdout.rows ?? 0;
+  const qrOn = wantsQr({ colour, columns, rows });
+  const compact = wantsCompact(rows);
 
   let lastCode: string | null = null;
   let lastPaired: number | null = null;
@@ -376,9 +423,11 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
         startedAt,
         deadline,
         now: now(),
-        // Wired for real below, once the QR's own decision exists.
-        qr: null,
-        compact: false,
+        // Recomputed per draw so the QR follows the code when it rotates —
+        // `qrMatrix` memoises on the payload, so this is one encode per
+        // rotation rather than one per second.
+        qr: qrOn ? qrMatrix(`${live.url}/#${deps.pairing.current().code}`) : null,
+        compact,
       },
       colour,
     );

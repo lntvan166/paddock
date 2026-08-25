@@ -109,6 +109,13 @@ That publishes a temporary public URL and a pairing code, and prints both. Nothi
 phone, type the code once, and you are watching the same agents from the sofa.
 `--for 2h` bounds how long it lives (`30m`, `2h`, `7d`); `ctrl+c` ends it.
 
+On a terminal at least 37 columns wide and 26 rows tall, it also draws a QR:
+scan it and the phone opens the dashboard already paired, because the code
+rides in the URL fragment — which browsers never send, so it reaches no access
+log. Below that size the QR is omitted and you type the code, and a terminal
+under 34 rows drops the on-screen warning to make room. The default 80x24 is
+too short for the QR; make the window taller to see it.
+
 It is a try-it path, not a deployment. A quick tunnel cannot have Cloudflare
 Access in front of it, so that pairing code is the only gate there is, and the
 URL is public until you close it — [from your phone](#from-your-phone) has what
