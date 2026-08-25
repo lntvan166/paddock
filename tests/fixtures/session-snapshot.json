@@ -1,0 +1,24 @@
+{
+  "workspaces": [
+    {"workspace_id":"w1","label":"api-refactor","number":1,"active_tab_id":"w1:t1","agent_status":"working","pane_count":1,"tab_count":1,"focused":false},
+    {"workspace_id":"w2","label":"schema-migration","number":2,"active_tab_id":"w2:t1","agent_status":"working","pane_count":2,"tab_count":2,"focused":true},
+    {"workspace_id":"w3","label":"docs-cleanup","number":3,"active_tab_id":"w3:t1","agent_status":"unknown","pane_count":1,"tab_count":1,"focused":false}
+  ],
+  "tabs": [
+    {"tab_id":"w1:t1","workspace_id":"w1","label":"1","number":1,"agent_status":"working","pane_count":1,"focused":false},
+    {"tab_id":"w2:t1","workspace_id":"w2","label":"migrate-up","number":1,"agent_status":"working","pane_count":1,"focused":true},
+    {"tab_id":"w2:t2","workspace_id":"w2","label":"2","number":2,"agent_status":"idle","pane_count":1,"focused":false},
+    {"tab_id":"w3:t1","workspace_id":"w3","label":"1","number":1,"agent_status":"unknown","pane_count":1,"focused":false}
+  ],
+  "panes": [
+    {"pane_id":"w1:p1","workspace_id":"w1","tab_id":"w1:t1","agent":"claude","agent_status":"working","cwd":"/srv/project","focused":false,"terminal_title":"api-refactor","terminal_title_stripped":"api-refactor","revision":3},
+    {"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","agent":"codex","agent_status":"working","cwd":"/srv/project","focused":true,"terminal_title":"migrating","terminal_title_stripped":"migrating","revision":7},
+    {"pane_id":"w2:p2","workspace_id":"w2","tab_id":"w2:t2","agent":"claude","agent_status":"idle","cwd":"/srv/project","focused":false,"terminal_title":"backfill","terminal_title_stripped":"backfill","revision":2},
+    {"pane_id":"w3:p1","workspace_id":"w3","tab_id":"w3:t1","agent_status":"unknown","cwd":"/srv/project","focused":false,"terminal_title":"bash","terminal_title_stripped":"bash","revision":1}
+  ],
+  "agents": [
+    {"pane_id":"w1:p1","workspace_id":"w1","tab_id":"w1:t1","terminal_id":"t_a","agent":"claude","agent_status":"working","cwd":"/srv/project","focused":false,"name":"api-refactor","revision":3},
+    {"pane_id":"w2:p1","workspace_id":"w2","tab_id":"w2:t1","terminal_id":"t_b","agent":"codex","agent_status":"working","cwd":"/srv/project","focused":true,"name":"schema-migration","revision":7},
+    {"pane_id":"w2:p2","workspace_id":"w2","tab_id":"w2:t2","terminal_id":"t_c","agent":"claude","agent_status":"idle","cwd":"/srv/project","focused":false,"name":"schema-migration-2","revision":2}
+  ]
+}
