@@ -1876,6 +1876,168 @@ body {
   cursor: pointer;
 }
 
+/* The row's own `⋯`, and the sheet it opens (RowActions.tsx).
+
+   Visible at rest, never hover- or long-press-gated: §6.1 names an unhinted
+   long-press as the touch equivalent of a hover-only affordance, and the
+   predecessor of this control shipped permanently disabled and was removed
+   for announcing an action it could not perform.
+
+   `flex: none` and a full 2.75rem target, like every other tap target here, so
+   a long space or pane label truncates before this shrinks. No `font-size`:
+   the glyph rides the row's own text size rather than carving out an
+   off-scale exemption for a decoration. */
+.row-actions-btn {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  color: var(--fg-dim);
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* The sheet itself — shadcn's `Sheet`, sized and painted in paddock's tokens.
+   `gap: 0` cancels the component's own `gap-4`: the sections below are
+   separated by hairlines, and a gap on top of them reads as a broken border.
+
+   The home-indicator inset is added HERE rather than by also putting
+   `.safe-bottom` on the element: two rules at equal specificity setting
+   `padding-bottom` is the trap `.settings` documents above, where the later
+   one silently drops the inset. This one carries both the inset and the
+   sheet's own breathing room. */
+.row-actions-sheet {
+  gap: 0;
+  max-height: 85dvh;
+  overflow-y: auto;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  border-radius: 0.75rem 0.75rem 0 0;
+  padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+}
+
+.row-actions-head {
+  padding: 0.9rem 0.9rem 0.6rem;
+  gap: 0.2rem;
+}
+
+/* The row's label, in the same mono voice the row shows it in — the sheet has
+   to be recognisably about the row that opened it. */
+.row-actions-title {
+  font-family: var(--mono);
+  font-size: var(--t-lg);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+/* What these actions reach. A pane row's close takes its whole tab, which is
+   not something the row itself can say. */
+.row-actions-scope {
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
+
+.row-actions-menu {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Full-width rows, left-aligned: this is a list of actions, not a dialog's
+   button bar, and a phone thumb reaches the whole width. */
+.row-actions-menu > button {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.9rem;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--t-md);
+  cursor: pointer;
+}
+
+.row-actions-rename,
+.row-actions-close {
+  padding: 0.75rem 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.row-actions-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.row-actions-rename label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
+
+.row-actions-rename input {
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--fg);
+  font-family: var(--mono);
+  /* 16px, not a scale step: iOS zooms any focused input below it, and a sheet
+     that zooms the page on tap loses the row behind it. */
+  font-size: 16px;
+}
+
+/* What closing actually does, stated before it happens (§10) — the sentence
+   the confirm button is described by. `--fg`, not `--danger`: the words are
+   the warning, and painting prose red on a wash already reserved for failures
+   would make an armed control look like an error that already occurred. */
+.row-actions-consequence {
+  margin: 0 0 0.65rem;
+  font-size: var(--t-md);
+  color: var(--fg);
+}
+
+.row-actions-row {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.row-actions-row > button {
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--t-md);
+  cursor: pointer;
+}
+
+/* Save on an empty label, and any control mid-flight. The only disabled
+   control in this feature, and it is disabled for a measured reason: herdr
+   would STORE an empty label rather than unset it (§17), so the request is one
+   the route refuses. */
+.row-actions-row > button[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Destructive, in the one colour reserved for it. Selectors carry the parent
+   so these beat the two button rules above at equal-or-higher specificity. */
+.row-actions-menu > .row-actions-danger,
+.row-actions-row > .row-actions-danger {
+  color: var(--danger);
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   /* The app's own system stack. shadcn's preset put 'Geist Variable' here and

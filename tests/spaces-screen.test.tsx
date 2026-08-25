@@ -191,16 +191,28 @@ test("a merged row is a link into the pane", async () => {
   await unmount();
 });
 
-test("no row announces an action that does not exist yet", async () => {
-  // Every row used to carry a `disabled` ⋯ labelled "Actions for X". A
-  // control that announces an action and cannot perform it is a mislabelled
-  // control, which CLAUDE.md rates worse than no control. The affordance
-  // comes back WITH the sheet — see the note at the top of SpaceRow.tsx —
-  // and this is what fails if it comes back inert instead.
+test("every row announces the actions that now exist, and none of them is inert", async () => {
+  // FLIPPED, deliberately, by the change that added the sheet. This asserted
+  // that no row contained a ⋯ at all, because the version that existed then
+  // was permanently `disabled` and announced "Actions for X" — a mislabelled
+  // control, which CLAUDE.md rates worse than no control. The affordance came
+  // back WITH the sheet that fills it (see the note at the top of
+  // SpaceRow.tsx), so the assertion inverts: the ⋯ must be present on every
+  // row shape and it must be ENABLED. Its behaviour is covered in
+  // tests/row-actions.test.tsx; what is pinned here is that no row shape
+  // renders it inert or omits it.
   for (const tree of [FLAT, STRUCTURED, SHELL]) {
     const el = await render(<Spaces onBack={() => {}} load={load(tree)} />);
     await settle();
-    expect(el.textContent).not.toContain("⋯");
+    const rows = el.querySelectorAll("[data-space-row], .space-tabs [data-pane-row]");
+    const actions = [...el.querySelectorAll<HTMLButtonElement>("[data-row-actions]")];
+    expect(actions).toHaveLength(rows.length);
+    for (const a of actions) {
+      expect(a.textContent).toContain("⋯");
+      expect(a.disabled).toBe(false);
+    }
+    // Nothing on the row itself is disabled — the only disabled control in
+    // this feature is Save on an empty label, inside the open sheet.
     expect(el.querySelectorAll("button[disabled]")).toHaveLength(0);
     await unmount();
   }

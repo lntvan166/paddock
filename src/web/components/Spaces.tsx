@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
+import type { RowSenders } from "@web/components/RowActions";
 import { SpaceRow } from "@web/components/SpaceRow";
 import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
@@ -10,9 +11,12 @@ const COLLAPSED_KEY = "paddock.spaces.collapsed";
  * `load` is injected so the tests can drive this without a network, and so a
  * failure is a value this component renders rather than a thrown promise.
  */
-export function Spaces({ onBack, load = fetchSpaceTree }: {
+export function Spaces({ onBack, load = fetchSpaceTree, senders }: {
   onBack: () => void;
   load?: () => Promise<SpaceTree>;
+  /** The row actions' five writes, injected for the same reason `load` is:
+   *  a component test drives a rename or a close without a network. */
+  senders?: RowSenders;
 }) {
   const { treeStaleAt } = useStore();
   const [tree, setTree] = useState<SpaceTree | null>(null);
@@ -76,6 +80,11 @@ export function Spaces({ onBack, load = fetchSpaceTree }: {
               // contents, and revealing structure is this screen's whole job.
               open={!collapsed.has(s.spaceId)}
               onToggle={() => toggle(s.spaceId)}
+              // Every write refetches, win or lose (§11) — no optimistic
+              // update, because this screen's value is being accurate about
+              // someone else's state rather than about what was asked for.
+              onChanged={() => void refresh()}
+              senders={senders}
             />
           ))}
         </ul>

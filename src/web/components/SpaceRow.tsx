@@ -1,27 +1,31 @@
 import { paneHash } from "@shared/route";
 import type { Space, TreePane } from "@shared/types";
 import { paneIdentity, paneLabel } from "@web/components/pane-label";
+import { plural, RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
 import { StatusDot } from "@web/components/ui/StatusDot";
 
 /*
- * NOTE FOR THE PLAN THAT ADDS RENAME AND CLOSE.
+ * THE `⋯` AND WHY IT LOOKS LIKE THIS.
  *
- * Every row here carried a `disabled` `⋯` with `aria-label="Actions for X"`,
- * rendered ahead of the sheet that would fill it so the affordance was visible
- * from the start. They are gone. Announcing an action that cannot happen, on
- * every row, is a mislabelled control — and `CLAUDE.md` is explicit that a
- * mislabelled button is worse than none. (It was also already diverging: the
- * sub-row's label read `name ?? paneId` while the row read
+ * Every row carried a `disabled` `⋯` with `aria-label="Actions for X"` once,
+ * rendered ahead of the sheet that would fill it. Those were removed:
+ * announcing an action that cannot happen, on every row, is a mislabelled
+ * control, and `CLAUDE.md` rates that worse than none. They were also already
+ * diverging — the sub-row's label read `name ?? paneId` while the row read
  * `name ?? title ?? paneId`, so a shell announced `w3:p1` under visible text
- * saying "bash".)
+ * saying "bash".
  *
- * The requirement that put them here still stands and carries forward: when
- * the actions exist, they get a VISIBLE control on the row. Do NOT reach for
- * an unhinted long-press — that is the touch equivalent of a hover-only
- * affordance, which the UI rules ban, and it is the first thing the design doc
- * (§6.1) names as what paddock does differently from Collie. Bring the `⋯`
- * back with the sheet, in the same commit, and give it the row's full visible
- * label.
+ * The `⋯` is back, with the sheet that fills it, and the two requirements the
+ * removal note carried forward hold here and must keep holding:
+ *
+ * 1. It is VISIBLE at rest and enabled. Never an unhinted long-press — that
+ *    is the touch equivalent of a hover-only affordance, which the UI rules
+ *    ban, and §6.1 names it as the first thing paddock does differently from
+ *    Collie.
+ * 2. Its accessible name carries the row's FULL VISIBLE LABEL, and that label
+ *    is the one `pane-label.ts` computes (§16.6's rule has one home). Which is
+ *    why the label is built here, once per row shape, and handed to
+ *    `RowActions` rather than derived again inside it.
  */
 
 /**
@@ -49,10 +53,15 @@ function sameLabel(a: string, b: string): boolean {
   return slug(a) === slug(b);
 }
 
-export function SpaceRow({ space, open, onToggle }: {
+export function SpaceRow({ space, open, onToggle, onChanged, senders }: {
   space: Space;
   open: boolean;
   onToggle: () => void;
+  /** Re-read the tree. Called after every write, win or lose — §11's no
+   *  optimistic updates rule, which is why this is a refetch and not a
+   *  local edit of the tree that is already here. */
+  onChanged: () => void;
+  senders?: RowSenders;
 }) {
   const panes = space.tabs.flatMap((t) => t.panes);
   const structured = panes.length > 1 || space.tabs.length > 1;
@@ -89,6 +98,28 @@ export function SpaceRow({ space, open, onToggle }: {
   const countLabel = space.tabCount === 1
     ? plural(space.paneCount, "pane")
     : plural(space.tabCount, "tab");
+
+  // The row's full visible label, for the `⋯`'s accessible name — everything
+  // the row shows, in the order it shows it. On a merged row that includes the
+  // alias, because the alias is on screen: a button announcing only half of
+  // what its row says is the divergence this file's opening note records.
+  const rowLabel = showAlias ? `${spaceLabel} (${alias})` : spaceLabel;
+
+  // What this row's sheet can reach. A structured space's row is the space and
+  // nothing else — its panes and their tabs are reached from the sub-rows
+  // below. A merged row IS the space AND its single pane, so it also offers
+  // that pane's agent, when it has one.
+  //
+  // It deliberately does NOT offer the tab: a 1:1:1 space shows no tab label
+  // anywhere, so renaming it would produce no visible change on this screen —
+  // the same "control that appears to do nothing" defect §7.1 gives as the
+  // reason paddock refuses `pane.rename`.
+  const spaceRenames: RenameTarget[] = [
+    { kind: "space", id: space.spaceId, current: space.label },
+    ...(only !== null && only.harness !== null
+      ? [{ kind: "agent", id: only.paneId, current: only.name } as RenameTarget]
+      : []),
+  ];
 
   // Built once and rendered from either branch: the space's label is the same
   // on both row shapes, and two copies of it would be free to drift.
@@ -148,6 +179,15 @@ export function SpaceRow({ space, open, onToggle }: {
             <span className="space-count">{countLabel}</span>
           </>
         )}
+        {/* A SIBLING of the anchor above, never a child of it: a <button>
+            inside an <a> is invalid HTML and unreachable by keyboard. */}
+        <RowActions
+          label={rowLabel}
+          renames={spaceRenames}
+          close={{ kind: "space", id: space.spaceId, panes }}
+          onChanged={onChanged}
+          senders={senders}
+        />
       </div>
 
       {structured && open && (
@@ -170,6 +210,23 @@ export function SpaceRow({ space, open, onToggle }: {
                       </span>
                       <PaneState pane={p} />
                     </a>
+                    {/* A pane sub-row reaches its own agent and the TAB that
+                        holds it — the tab has no row of its own on this
+                        screen, and its caption is right here. Its close takes
+                        the whole tab, which is what the consequence line has
+                        to say and why the tab's panes go with it. */}
+                    <RowActions
+                      label={paneLabel(p)}
+                      renames={[
+                        ...(p.harness !== null
+                          ? [{ kind: "agent", id: p.paneId, current: p.name } as RenameTarget]
+                          : []),
+                        { kind: "tab", id: t.tabId, current: t.label },
+                      ]}
+                      close={{ kind: "tab", id: t.tabId, panes: t.panes }}
+                      onChanged={onChanged}
+                      senders={senders}
+                    />
                   </li>
                 ))}
               </ul>
@@ -179,16 +236,6 @@ export function SpaceRow({ space, open, onToggle }: {
       )}
     </li>
   );
-}
-
-/**
- * One English plural, formed in one place.
- *
- * Not i18n and not pretending to be: paddock's UI is English. This exists so
- * the count and its noun cannot disagree, which is the defect it replaced.
- */
-function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 /** A shell has no state, so it gets no StatusDot — that component's whole
