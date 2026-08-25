@@ -70,67 +70,75 @@ export function Space({
   const canCreate = spacesAvailable;
 
   /*
-   * Built once and rendered from every branch below — the same rule `SpaceRow`
-   * applies to its own heading, and for the same reason: this header is
-   * identical in all four states, and four copies of it would be four things
-   * free to drift. There is only one route into this screen, so its back
-   * control takes no target.
+   * The screen's shell, defined once and used by every branch below.
+   *
+   * All four states — read failed with nothing held, space gone, still
+   * loading, and the space itself — render the same `<main>`, the same
+   * `<header>`, and the same back control. Only the header's EXTRA content and
+   * the body differ, so those are the two parameters. An earlier draft
+   * inlined the wrapper again for the normal state, which left two literal
+   * copies of it and a comment claiming there was one.
+   *
+   * There is only one route into this screen, so the back control takes no
+   * target.
    */
-  const bare = (children: React.ReactNode) => (
+  const screen = (headerExtra: React.ReactNode, body: React.ReactNode) => (
     <main className="dash mx-auto max-w-2xl safe-bottom">
       <header className="space-screen-head">
         <button type="button" className="term-back" onClick={onBack} aria-label="Back to spaces">
           ‹ Spaces
         </button>
+        {headerExtra}
       </header>
-      {children}
+      {body}
     </main>
   );
 
   // The read failed and nothing is held from a previous one. Said, never
   // rendered as a space that happens to have no tabs.
   if (error !== null && tree === null) {
-    return bare(<p className="error" role="alert">{error}</p>);
+    return screen(null, <p className="error" role="alert">{error}</p>);
   }
 
   // Tree read, no such space. Said explicitly rather than rendered as a space
   // with no tabs, which is indistinguishable from a real one that has none.
   if (tree !== null && space === null) {
-    return bare(
+    return screen(null, (
       <>
         <p className="empty">That space is gone.</p>
+        {/* Both facts, when both are true. The gone-ness was confirmed by a
+            good read, and a LATER read failing does not make it less true —
+            but a failed refetch that renders nothing is the swallowed error
+            this project's rules forbid. */}
+        {error !== null && <p className="error" role="alert">{error}</p>}
         <p><a href="#/spaces">All spaces</a></p>
-      </>,
-    );
+      </>
+    ));
   }
 
   // Still loading: no tree yet, and no error to show.
-  if (tree === null || space === null) return bare(null);
+  if (tree === null || space === null) return screen(null, null);
 
   const spaceRenames: RenameTarget[] = [
     { kind: "space", id: space.spaceId, current: space.label },
   ];
   const panes = space.tabs.flatMap((t) => t.panes);
 
-  return (
-    <main className="dash mx-auto max-w-2xl safe-bottom">
-      <header className="space-screen-head">
-        <button type="button" className="term-back" onClick={onBack} aria-label="Back to spaces">
-          ‹ Spaces
-        </button>
-        <SpacePicker spaces={tree.spaces} currentId={space.spaceId} navigate={navigate} />
-        {/* The SPACE's actions. Its position — in the header, beside the
-            space's own name — is what separates it from the `⋯` on each tab
-            row below. */}
-        <RowActions
-          label={space.label ?? space.spaceId}
-          renames={spaceRenames}
-          close={{ kind: "space", id: space.spaceId, panes }}
-          onChanged={() => void refresh()}
-          senders={senders}
-        />
-      </header>
-
+  return screen(
+    <>
+      <SpacePicker spaces={tree.spaces} currentId={space.spaceId} navigate={navigate} />
+      {/* The SPACE's actions. Its position — in the header, beside the
+          space's own name — is what separates it from the `⋯` on each tab
+          row below. */}
+      <RowActions
+        label={space.label ?? space.spaceId}
+        renames={spaceRenames}
+        close={{ kind: "space", id: space.spaceId, panes }}
+        onChanged={() => void refresh()}
+        senders={senders}
+      />
+    </>,
+    <>
       {error !== null && <p className="error" role="alert">{error}</p>}
 
       <ul className="tabs">
@@ -167,6 +175,6 @@ export function Space({
           </li>
         )}
       </ul>
-    </main>
+    </>,
   );
 }

@@ -1,6 +1,7 @@
 import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
-import { click, render, textsOf, unmount } from "./support/render";
+import { act } from "react";
+import { click, render, settle, textsOf, unmount } from "./support/render";
 import { Space } from "@web/components/Space";
 import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
@@ -10,7 +11,7 @@ afterEach(async () => {
   // Module state, and `bun test` shares a module registry across FILES: a
   // capability left set here would leak into another file's expectations.
   // `tests/create-sheet.test.tsx` carries the same reset for the same reason.
-  useStore.setState({ spacesAvailable: false });
+  useStore.setState({ spacesAvailable: false, treeStaleAt: 0 });
 });
 
 const TREE: SpaceTree = {
@@ -95,4 +96,29 @@ test("back leaves for the list", async () => {
   const host = await render(<Space spaceId="w1" onBack={() => { backs += 1; }} load={load(TREE)} />);
   await click(host.querySelector(".space-screen-head .term-back"));
   expect(backs).toBe(1);
+});
+
+test("a space that's gone still surfaces a LATER read's own failure", async () => {
+  // The gone-ness was confirmed by a first, GOOD read: `w9` really is absent
+  // from a real tree. A second read, triggered the same way the server
+  // triggers one (`treeStaleAt` moving), can still fail on its own account —
+  // and that failure must not be swallowed just because the space was already
+  // known gone. Drives the real refetch path rather than asserting on a
+  // fabricated component state.
+  let calls = 0;
+  const flaky = async () => {
+    calls += 1;
+    if (calls === 1) return TREE;
+    throw new Error("herdr socket refused");
+  };
+  const host = await render(<Space spaceId="w9" onBack={() => {}} load={flaky} />);
+  expect(host.textContent).toContain("gone");
+  expect(host.querySelector("[role='alert']")).toBeNull();
+
+  await act(async () => { useStore.setState({ treeStaleAt: Date.now() }); });
+  await settle();
+
+  expect(calls).toBe(2);
+  expect(host.textContent).toContain("gone");
+  expect(host.querySelector("[role='alert']")?.textContent).toContain("herdr socket refused");
 });
