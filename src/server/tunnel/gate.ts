@@ -1,4 +1,4 @@
-import { COOKIE_NAME, SESSION_MAX_AGE_S } from "@server/tunnel/pairing";
+import { ALPHABET, COOKIE_NAME, SESSION_MAX_AGE_S } from "@server/tunnel/pairing";
 
 export type Decision =
   | { kind: "pass" }
@@ -130,6 +130,37 @@ export function pairingPage(opts: { insecure: boolean }): string {
 </main>
 <script>
   var f = document.getElementById("f"), c = document.getElementById("c"), e = document.getElementById("e");
+  // Groups as you type, so the field looks like the XXXX-XXXX the terminal
+  // showed. The whole value is reformatted on every input event, which is what
+  // makes paste and iOS one-time-code autofill work without a second path.
+  //
+  // The I/L/O mapping MIRRORS normalise() in pairing.ts, which is
+  // authoritative — it is duplicated here only so the field displays what the
+  // server will actually compare. The alphabet is interpolated from the same
+  // constant rather than copied, because a second list is how the two come to
+  // disagree.
+  var A = "${ALPHABET}";
+  function fmt(v) {
+    var up = String(v).toUpperCase(), out = "", ch;
+    for (var i = 0; i < up.length && out.length < 8; i++) {
+      ch = up.charAt(i);
+      if (ch === "I" || ch === "L") ch = "1";
+      else if (ch === "O") ch = "0";
+      if (A.indexOf(ch) !== -1) out += ch;
+    }
+    return out.length > 4 ? out.slice(0, 4) + "-" + out.slice(4) : out;
+  }
+  c.addEventListener("input", function () {
+    // Only when it actually changed: assigning \`value\` moves the caret to the
+    // end, and doing that on every keystroke fights the operator. A four-
+    // character value formats to itself, so backspacing through the dash
+    // leaves the field alone rather than re-inserting it.
+    var next = fmt(c.value);
+    if (next !== c.value) {
+      c.value = next;
+      if (c.setSelectionRange) c.setSelectionRange(next.length, next.length);
+    }
+  });
   f.addEventListener("submit", function (ev) {
     ev.preventDefault();
     e.hidden = true;
