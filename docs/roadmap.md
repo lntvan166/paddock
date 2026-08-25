@@ -18,23 +18,31 @@ surprise.
 - **Adopt a linter.** `make check` currently runs only `bunx tsc --noEmit`;
   there is no linter configured. Add one deliberately, as its own task, rather
   than folding it into an unrelated change.
-- ~~**Web Push, the next increment.**~~ *Superseded, not built.* v2 shipped
-  Telegram notifications instead of Web Push — see
-  `docs/design/2026-08-18-settings-and-telegram-design.md` for the reasoning.
-  In short: Web Push needs a service worker, a VAPID keypair, a permission
-  prompt, and a subscription store, all behind a flag so a broken subscription
-  can never break the dashboard; Telegram needs a bot token and an HTTPS POST
-  and works today on any device already running Telegram. The iOS constraint
-  stays on record here for whoever revisits push, because it does not go away
-  on its own: Safari delivers push only to a PWA that has been added to the
-  Home Screen — never to a page merely open in a tab — so onboarding would
-  have to say so plainly, which is also what would make the missing PWA icons
-  (see "Known v1 gaps" below) load-bearing rather than cosmetic. Also on
-  record for that revisit: `docs/gotchas.md`'s "Deployment and Access" notes
-  that an expired Access session turns a service-worker fetch into an HTML
-  login page, not an error, which constrains what a push payload can assume
-  before a single line of it is written. Telegram sidesteps that constraint
-  entirely — Access gates paddock's own hostname, never `api.telegram.org`.
+- ~~**Web Push, the next increment.**~~ *Retired, then built — see
+  `docs/decisions.md` decision 23 and
+  `docs/design/2026-08-25-web-push-design.md`.* v2 shipped Telegram instead,
+  and that reasoning was not wrong: push needs a service worker, a VAPID
+  keypair, a permission prompt and a subscription store, where Telegram needs
+  a bot token and an HTTPS POST and works on any device already running
+  Telegram. **Telegram stays.** What reopened this was the counter-argument
+  recorded in the entry below — a Telegram tap cannot open the iOS PWA and only
+  push can — and the notifier now fans out to both, neither able to suppress
+  the other.
+
+  Two things this entry claimed that turned out otherwise, kept here because
+  they are the parts a future reader would repeat:
+
+  - **The missing PWA icons were NOT a blocker.** They were already resolved —
+    "Known v1 gaps" below has said so since — and this entry simply never got
+    updated. Safari's requirement is real and stands: push reaches a PWA added
+    to the Home Screen, never a page merely open in a tab, which is why
+    `PushSection` asks for the install before it offers anything else.
+  - **The Access constraint is narrower than recorded.** `docs/gotchas.md`
+    notes that an expired Access session turns a service-worker *fetch* into an
+    HTML login page rather than an error. paddock's worker performs no fetch at
+    all — deliberately, and a test asserts the absence — so the hazard cannot
+    reach the notification. It reaches the *tap*, which lands on an Access
+    login, which is correct.
 - ~~**History on demand in the terminal view.**~~ *Resolved, but not as this
   entry described.* `POST /output` still accepts `{scrollback: true}` and the
   server side is still tested (`tests/actions.test.ts`,
@@ -75,7 +83,10 @@ surprise.
   re-exports them), because `server/notify/notifier.ts` needs the same format
   to build a Telegram message's deep link and the dependency rule forbids
   server code importing from `web/`.
-- **A Telegram tap cannot open the iOS PWA, and only Web Push can.**
+- ~~**A Telegram tap cannot open the iOS PWA, and only Web Push can.**~~
+  *Acted on — this is the argument that reopened the entry above. See
+  `docs/decisions.md` decision 23.* The finding itself is unchanged and worth
+  keeping:
   Investigated in `docs/design/2026-08-19-notifications-and-settings-design.md`
   §9. iOS opens `https://` links in Safari even when the URL is inside an
   installed web app's scope: there are no `url_handlers`, no protocol handlers

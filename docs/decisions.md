@@ -679,3 +679,54 @@ session does not silently re-litigate them.
     who photographed the QR, who could already POST five wrong codes.
 
     See `docs/design/2026-08-25-tunnel-qr-design.md`.
+
+23. **Web Push ships alongside Telegram, reversing a retirement.** v2 retired
+    Web Push and shipped Telegram instead. That reasoning was not wrong and is
+    not being overturned: push needs a service worker, a VAPID keypair, a
+    permission prompt and a subscription store, where Telegram needs a bot token
+    and an HTTPS POST and works on any device that already runs Telegram.
+
+    What changed is that the counter-argument recorded beside it in
+    `docs/roadmap.md` is now being acted on. **A Telegram tap cannot open the
+    iOS PWA and only Web Push can:** iOS opens `https://` links in Safari even
+    within an installed web app's scope — there are no `url_handlers`, no
+    protocol handlers in Safari, and Universal Links need a native app — and
+    Safari keeps a storage container separate from the Home Screen app, so a
+    Telegram tap can mean re-doing a Cloudflare Access login the PWA already
+    holds. That is the entire case, and it is narrow: one thing, one platform,
+    for people who have installed the app.
+
+    **Telegram stays.** It needs no install, works on a desktop, and is the only
+    thing that works at all before someone has added paddock to their Home
+    Screen. The notifier fans out to both, and a failure in either cannot
+    suppress the other — asserted in both directions, because the ORDER is not
+    obvious: a Telegram rejection deliberately gets no retry and propagates out
+    of `#fire`, so push is dispatched BEFORE that await and settled in a
+    `finally`.
+
+    **The payload keeps Telegram's content minimalism, for a different reason.**
+    `composeMessage`'s comment named minimalism as the mitigation for Telegram
+    being able to read messages. Push payloads are encrypted end to end under
+    RFC 8291, so the push service cannot read them and that reason does not
+    transfer — but a notification renders on a LOCK SCREEN, and `a.task` is
+    agent-authored text that may carry a pasted credential. Same restraint, new
+    justification; neither transport inherits the other's.
+
+    **The crypto is hand-rolled, which is the opposite call to the tunnel QR's
+    dependency (decision 22's design).** `web-push` fails the bar that took —
+    MPL-2.0 and five transitive dependencies — and the reason the QR took one
+    does not apply: Reed-Solomon is not in the platform, while ECDH P-256,
+    ECDSA P-256, HKDF and AES-GCM all are. RFC 8291 §5 also publishes a worked
+    example, so the encryption is verified against the standard's own ciphertext
+    rather than against its first run.
+
+    **The service worker registers no `fetch` handler.** See `docs/gotchas.md`:
+    that is what keeps an expired Access session from turning a worker fetch
+    into an HTML login page, and it narrows that hazard to the tap alone.
+
+    **The keypair is generated once and never silently regenerated.** An
+    unreadable `push.json` disables push and says so. A replacement keypair
+    invalidates every subscription in existence with no symptom whatsoever.
+
+    See `docs/design/2026-08-25-web-push-design.md`.
+

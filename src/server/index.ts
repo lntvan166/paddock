@@ -25,7 +25,10 @@ import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/
 import { checkState, recordState, removeOwnState } from "@server/lifecycle/state";
 import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
-import { Notifier, fanOut } from "@server/notify/notifier";
+import { Notifier, fanOut, type NotifierOpts } from "@server/notify/notifier";
+import { PushStore } from "@server/push/store";
+import { sendPush } from "@server/push/send";
+import { buildPushSender } from "@server/index-wiring";
 import { parseArgs, parseDuration, USAGE } from "@server/cli";
 import { HERDR_PROTOCOL, type HerdrSessionSnapshot } from "@shared/herdr-api";
 import type { SpaceTree } from "@shared/types";
@@ -324,12 +327,48 @@ await settings.load();
 if (settings.error) console.error(`[settings] ${settings.error}`);
 
 /**
+ * Push subscriptions and the VAPID keypair, beside settings.json.
+ *
+ * Reported at boot as well as in the settings view: an operator who broke this
+ * file should see it on the terminal they are already looking at, not only
+ * after opening a screen they have no reason to open.
+ */
+const push = await PushStore.load(defaultConfigDir());
+if (push.error) console.error(`[push] ${push.error}`);
+
+/**
  * The live quick-tunnel URL, or null. IN MEMORY ONLY, deliberately: it must
  * reach the notifier so a Telegram deeplink points somewhere the phone can
  * open, and it must NEVER be written to settings.json, where `publicUrl` may
  * already hold the real hostname of a named-tunnel deployment.
  */
 let tunnelUrl: string | null = null;
+
+/**
+ * The push sender, or `undefined` when there is nothing to send with.
+ *
+ * The `enabled` preference is checked ABOVE the fan-out, not inside the
+ * per-device send. Inside, a disabled push would log one "push is off" line
+ * per subscribed device on every notification — noise proportional to how many
+ * phones the operator owns, describing a setting they chose on purpose.
+ *
+ * Read per send rather than captured, like the Telegram branch reads its own
+ * config: a setting changed in the dashboard must take effect without a
+ * restart.
+ *
+ * `undefined` and not a no-op: `NotifierOpts.sendPush` being absent is how the
+ * notifier skips push entirely, rather than calling something that can only
+ * fail.
+ */
+function pushSender(): NotifierOpts["sendPush"] {
+  const fan = buildPushSender(push, async (target, keys, payload) =>
+    sendPush({ target, payload, keys }));
+  if (fan === null) return undefined;
+  return async (payload) => {
+    if (!settings.current().push.enabled) return;
+    await fan(payload);
+  };
+}
 
 const notifier = new Notifier({
   settings,
@@ -346,6 +385,17 @@ const notifier = new Notifier({
     }
     return sendTelegram({ token: s.telegram.token, chatId: s.telegram.chatId, text, replyMarkup });
   },
+  /**
+   * The second transport, or nothing at all.
+   *
+   * `?? undefined` rather than a no-op sender: `buildPushSender` returns null
+   * when there is no keypair, and `NotifierOpts.sendPush` being absent is how
+   * the notifier skips push entirely rather than calling something that can
+   * only fail. The `enabled` preference is read per send, below, for the same
+   * reason the Telegram branch reads its config there — a setting changed in
+   * the dashboard must take effect without a restart.
+   */
+  sendPush: pushSender(),
 });
 
 /**
@@ -592,6 +642,7 @@ const appDeps = {
   actions,
   readTree,
   settings,
+  push,
   // Confined to the DEMO branch: a demo run must never read a real journal
   // off the operator's own disk, the same reasoning that keeps demo mode
   // from opening a real herdr connection.
