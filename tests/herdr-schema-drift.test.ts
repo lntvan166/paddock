@@ -251,10 +251,28 @@ const DECLARED_TAB_FLAGS = {
   agent_status: true, pane_count: true, focused: true,
 } satisfies Record<keyof HerdrTabInfo, true>;
 
+const DECLARED_TAB_FIELDS = Object.keys(DECLARED_TAB_FLAGS) as (keyof HerdrTabInfo)[];
+
+/** paddock models every field TabInfo carries, so nothing is ignored. */
+const IGNORED_TAB_FIELDS = [] as const;
+
 const DECLARED_WORKSPACE_INFO_FLAGS = {
   workspace_id: true, label: true, number: true, active_tab_id: true,
   agent_status: true, pane_count: true, tab_count: true, focused: true,
 } satisfies Record<keyof HerdrWorkspaceInfo, true>;
+
+const DECLARED_WORKSPACE_INFO_FIELDS = Object.keys(
+  DECLARED_WORKSPACE_INFO_FLAGS,
+) as (keyof HerdrWorkspaceInfo)[];
+
+// Fields the installed herdr's `WorkspaceInfo` (session.snapshot shape)
+// carries that paddock deliberately does not model. Named explicitly so a
+// new upstream field shows up here as a decision to make, not a silently
+// ignored column.
+const IGNORED_WORKSPACE_INFO_FIELDS = [
+  "tokens",
+  "worktree",
+] as const;
 
 const DECLARED_PANE_FLAGS = {
   pane_id: true, workspace_id: true, tab_id: true, agent: true,
@@ -262,38 +280,77 @@ const DECLARED_PANE_FLAGS = {
   terminal_title: true, terminal_title_stripped: true, revision: true,
 } satisfies Record<keyof HerdrPaneInfo, true>;
 
+const DECLARED_PANE_FIELDS = Object.keys(DECLARED_PANE_FLAGS) as (keyof HerdrPaneInfo)[];
+
+// Fields the installed herdr's `PaneInfo` (session.snapshot shape) carries
+// that paddock deliberately does not model. `agent_session`, `foreground_cwd`
+// and `terminal_id` are all modelled on `HerdrAgentRaw` — they are not
+// missing from paddock's vocabulary, just not read off this particular
+// object. `display_agent`, `state_labels`, `title` and `tokens` mirror the
+// same fields already ignored on `HerdrAgentRaw` above. `scroll` is new.
+const IGNORED_PANE_FIELDS = [
+  "agent_session",
+  "display_agent",
+  "foreground_cwd",
+  "scroll",
+  "state_labels",
+  "terminal_id",
+  "title",
+  "tokens",
+] as const;
+
 const DECLARED_SNAPSHOT_FLAGS = {
   workspaces: true, tabs: true, panes: true, agents: true,
 } satisfies Record<keyof HerdrSessionSnapshot, true>;
 
-test.skipIf(!HAVE_HERDR)("TabInfo declares every field the installed herdr sends", async () => {
+const DECLARED_SNAPSHOT_FIELDS = Object.keys(
+  DECLARED_SNAPSHOT_FLAGS,
+) as (keyof HerdrSessionSnapshot)[];
+
+// Fields the installed herdr's `SessionSnapshot` carries that paddock
+// deliberately does not model: the four collections are the whole tree, and
+// these are snapshot-level metadata `tree.ts` has no present use for.
+const IGNORED_SNAPSHOT_FIELDS = [
+  "focused_pane_id",
+  "focused_tab_id",
+  "focused_workspace_id",
+  "layouts",
+  "protocol",
+  "version",
+] as const;
+
+test.skipIf(!HAVE_HERDR)("HerdrTabInfo has not drifted from the installed herdr's TabInfo schema", async () => {
   const schema = await liveSchema();
-  const actual = Object.keys(schema.schemas.success_response.$defs.TabInfo.properties);
-  for (const field of Object.keys(DECLARED_TAB_FLAGS)) {
-    expect(actual).toContain(field);
-  }
+  expectNoDrift(
+    Object.keys(schema.schemas.success_response.$defs.TabInfo.properties),
+    DECLARED_TAB_FIELDS,
+    IGNORED_TAB_FIELDS,
+  );
 });
 
-test.skipIf(!HAVE_HERDR)("WorkspaceInfo declares every field the installed herdr sends", async () => {
+test.skipIf(!HAVE_HERDR)("HerdrWorkspaceInfo has not drifted from the installed herdr's WorkspaceInfo (snapshot) schema", async () => {
   const schema = await liveSchema();
-  const actual = Object.keys(schema.schemas.success_response.$defs.WorkspaceInfo.properties);
-  for (const field of Object.keys(DECLARED_WORKSPACE_INFO_FLAGS)) {
-    expect(actual).toContain(field);
-  }
+  expectNoDrift(
+    Object.keys(schema.schemas.success_response.$defs.WorkspaceInfo.properties),
+    DECLARED_WORKSPACE_INFO_FIELDS,
+    IGNORED_WORKSPACE_INFO_FIELDS,
+  );
 });
 
-test.skipIf(!HAVE_HERDR)("PaneInfo models every field paddock reads, and names the rest", async () => {
+test.skipIf(!HAVE_HERDR)("HerdrPaneInfo has not drifted from the installed herdr's PaneInfo schema", async () => {
   const schema = await liveSchema();
-  const actual = Object.keys(schema.schemas.success_response.$defs.PaneInfo.properties);
-  for (const field of Object.keys(DECLARED_PANE_FLAGS)) {
-    expect(actual).toContain(field);
-  }
+  expectNoDrift(
+    Object.keys(schema.schemas.success_response.$defs.PaneInfo.properties),
+    DECLARED_PANE_FIELDS,
+    IGNORED_PANE_FIELDS,
+  );
 });
 
-test.skipIf(!HAVE_HERDR)("SessionSnapshot carries the four collections the tree is built from", async () => {
+test.skipIf(!HAVE_HERDR)("HerdrSessionSnapshot has not drifted from the installed herdr's SessionSnapshot schema", async () => {
   const schema = await liveSchema();
-  const actual = Object.keys(schema.schemas.success_response.$defs.SessionSnapshot.properties);
-  for (const field of Object.keys(DECLARED_SNAPSHOT_FLAGS)) {
-    expect(actual).toContain(field);
-  }
+  expectNoDrift(
+    Object.keys(schema.schemas.success_response.$defs.SessionSnapshot.properties),
+    DECLARED_SNAPSHOT_FIELDS,
+    IGNORED_SNAPSHOT_FIELDS,
+  );
 });
