@@ -12,7 +12,7 @@ import { RATE_MS, readPrefs, writePref, type KeypadPref, type RatePref } from "@
 import { RequestFailed } from "@web/api";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
-import { Keypad } from "@web/components/ui/Keypad";
+import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 
 /**
  * A pane's transcript, and everything that keeps it live.
@@ -904,31 +904,12 @@ export function PaneTerminal({
         </button>
         {controls}
         {/* The shell's own pad collapse, present only when this pane is being
-            driven as a shell (`onSendKey` supplied). Cycles the same three
-            states `AgentTerminal`'s own toggle does — hidden -> compact ->
-            full -> hidden — for the reason recorded there: the pad is 106px
-            of a 390x844 phone. */}
-        {onSendKey && (
-          <button
-            type="button"
-            className="term-keys-toggle"
-            data-state={shellKeypad}
-            aria-expanded={shellKeypad !== "hidden"}
-            onClick={() => {
-              const next: Record<KeypadPref, KeypadPref> = {
-                hidden: "compact", compact: "full", full: "hidden",
-              };
-              const v = next[shellKeypad];
-              setShellKeypad(v);
-              writePref("keypad", v);
-            }}
-          >
-            Keys
-            {shellKeypad !== "hidden" && (
-              <span aria-hidden="true">{shellKeypad === "compact" ? " ·" : " ··"}</span>
-            )}
-          </button>
-        )}
+            driven as a shell (`onSendKey` supplied). The SAME control
+            `AgentTerminal` renders — one `KeypadToggle`, not a second copy of
+            its markup and cycle — so the reasoning behind it has one home
+            instead of living in one file and being referred to from the
+            other. */}
+        {onSendKey && <KeypadToggle pad={shellKeypad} onChange={setShellKeypad} />}
         <button type="button" onClick={() => void open()} disabled={paused || shellBusy} aria-label="Refresh">
           ↻
         </button>

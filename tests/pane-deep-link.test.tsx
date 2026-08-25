@@ -145,6 +145,31 @@ test("a deep link to a pane with NO agent opens the shell transcript, with its o
   localStorage.removeItem("paddock.term.keypad");
 });
 
+test("a shell's header is labelled by the SAME rule as its row, never by its terminal title", async () => {
+  // §16.6 took the terminal title off the row because for a pane at a prompt
+  // that title IS the prompt — `user@host:~` — which labels nothing and puts
+  // the operator's hostname on a screen they may hand over or screenshot. The
+  // header one tap deeper kept reading `title ?? name ?? paneId` from its own
+  // expression, so the same pane had two names and the hostname still reached a
+  // screen (and the region's `aria-label`).
+  useStore.setState({ connect: () => {} });
+  location.hash = "#/pane/w9%3Ap1";
+
+  const { fn } = stubFetch({
+    "/api/spaces": () => treeWith(null),
+    "/api/panes/": () => ({ lines: ["$ ls"], source: "recent_unwrapped" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<App />);
+  await settle();
+
+  // The fixture's pane is `title: "bash", cwd: "/srv/project"`, so the two
+  // rules give different answers and the assertion is not vacuous.
+  expect(host.querySelector(".term-title strong")?.textContent).toBe("project");
+  expect(host.querySelector("section.term")?.getAttribute("aria-label")).toBe("project terminal");
+});
+
 test("a shell opened through App RUNS the command — App -> PaneTerminal -> api.ts -> submit", async () => {
   // The gap the previous round's route-level curl check could not see: a
   // curl against `/api/panes/:id/text` proves the SERVER route works, but

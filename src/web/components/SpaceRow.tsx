@@ -1,5 +1,6 @@
 import { paneHash } from "@shared/route";
 import type { Space, TreePane } from "@shared/types";
+import { paneIdentity, paneLabel } from "@web/components/pane-label";
 import { StatusDot } from "@web/components/ui/StatusDot";
 
 /*
@@ -48,20 +49,6 @@ function sameLabel(a: string, b: string): boolean {
   return slug(a) === slug(b);
 }
 
-/**
- * What to call a pane that has no agent.
- *
- * NOT its terminal title: for a pane sitting at a prompt that title IS the
- * prompt (`operator@dev-box:~`), which labels nothing and puts a hostname on
- * screen. The folder answers the question an unnamed pane actually raises —
- * where is it — and `cwd` arrives already tilde-ised (§16.6).
- */
-function shellLabel(p: TreePane): string {
-  const trimmed = p.cwd.replace(/\/+$/, "");
-  const seg = trimmed.slice(trimmed.lastIndexOf("/") + 1);
-  return seg || "shell";
-}
-
 export function SpaceRow({ space, open, onToggle }: {
   space: Space;
   open: boolean;
@@ -85,10 +72,12 @@ export function SpaceRow({ space, open, onToggle }: {
   // an agent whose name matches its space, so this stays silent for the
   // common case; a bare shell (no name) is identified by its title, which is
   // the one case this exists for.
-  const paneIdentity = only
-    ? (only.name ?? (only.harness === null ? shellLabel(only) : only.title))
-    : null;
-  const showAlias = paneIdentity !== null && !sameLabel(paneIdentity, spaceLabel);
+  //
+  // `paneIdentity` is the shared rule (`pane-label.ts`), the same one the pane
+  // sub-rows below and the terminal header in `App.tsx` use — the three had
+  // drifted into three expressions.
+  const alias = only ? paneIdentity(only) : null;
+  const showAlias = alias !== null && !sameLabel(alias, spaceLabel);
 
   // Why this row is structured at all, said in the unit that explains it.
   //
@@ -106,7 +95,7 @@ export function SpaceRow({ space, open, onToggle }: {
   const heading = (
     <div className="space-heading">
       <span className="space-name">{spaceLabel}</span>
-      {showAlias && <span className="space-alias">{paneIdentity}</span>}
+      {showAlias && <span className="space-alias">{alias}</span>}
     </div>
   );
 
@@ -171,9 +160,7 @@ export function SpaceRow({ space, open, onToggle }: {
                     <a href={paneHash(p.paneId)}>
                       <PaneMarker pane={p} />
                       <span className="pane-heading">
-                        <span className="pane-name">
-                          {p.name ?? (p.harness === null ? shellLabel(p) : p.title) ?? p.paneId}
-                        </span>
+                        <span className="pane-name">{paneLabel(p)}</span>
                         {/* A tab label is a CAPTION on the pane it labels, not
                             a heading above a group of panes — a bare uppercase
                             `<h3>` between rows read as a section header for

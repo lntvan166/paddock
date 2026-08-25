@@ -6,11 +6,11 @@ import { StateIcon } from "@web/components/ui/StateIcon";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
-import { Keypad } from "@web/components/ui/Keypad";
+import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
   emptyJournal, journalFor, updateJournal, type JournalState,
 } from "@web/pane-cache";
-import { readPrefs, writePref, type KeypadPref } from "@web/prefs";
+import { readPrefs, type KeypadPref } from "@web/prefs";
 
 /**
  * An agent's controls, wrapped around the pane transcript every pane has.
@@ -472,53 +472,15 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
         </>
       }
       controls={
-        // Beside Wrap because both are view controls, and because a collapse
-        // button INSIDE the pad would spend the height it exists to reclaim.
-        // Its OWN class: sharing `.term-wrap-toggle` made a selector written
-        // for the wrap control match this one too, by DOM order rather than
-        // by intent. Text rather than a keyboard glyph because this file
-        // already records that a symbol renders as tofu in several mobile
-        // system fonts — the pressed state is carried by `aria-pressed`,
-        // which the stylesheet dims.
+        // The shared `KeypadToggle` (`ui/Keypad.tsx`), which is where the
+        // reasoning for every decision inside it now lives — placement, the
+        // three-state cycle, the text label, and the WCAG 2.5.3 constraint on
+        // its accessible name. It was duplicated verbatim here and in
+        // `PaneTerminal`, with that reasoning present in only one copy.
         //
-        // Three states, cycled: hidden -> compact -> full -> hidden. The pad
-        // is 106px of a 390x844 phone, measured, and its default is now
-        // `hidden` — a parsed prompt renders real option buttons and tapping
-        // one answers in a single tap, so on the commonest blocked screen the
-        // arrows were a duplicate path charging a quarter of the transcript.
-        //
-        // A cycle rather than two controls because this row has 36px and
-        // already carries Wrap and refresh.
-        //
-        // The accessible name stays exactly "Keys". `aria-pressed` is gone
-        // with the boolean it described, and it is NOT replaced by an
-        // aria-label: this file already records that an accessible name which
-        // does not contain the visible label is a WCAG 2.5.3 hazard for voice
-        // control, and "Keys ·" against "Keys: arrows and Enter" is that
-        // hazard. `aria-expanded` carries the part that matters instead — the
-        // pad is a disclosure, which is what that attribute is for — and the
-        // dots are decorative, so they are hidden from the name rather than
-        // being spoken as punctuation. Which of the two open sizes is showing
-        // is audible the way it is visible: the keys themselves appear.
-        <button
-          type="button"
-          className="term-keys-toggle"
-          data-state={keypad}
-          aria-expanded={keypad !== "hidden"}
-          onClick={() => {
-            const next: Record<KeypadPref, KeypadPref> = {
-              hidden: "compact", compact: "full", full: "hidden",
-            };
-            const v = next[keypad];
-            setKeypad(v);
-            writePref("keypad", v);
-          }}
-        >
-          Keys
-          {keypad !== "hidden" && (
-            <span aria-hidden="true">{keypad === "compact" ? " ·" : " ··"}</span>
-          )}
-        </button>
+        // `setKeypad` is the only thing that differs between the two callers,
+        // which is exactly the shape the pad itself already had.
+        <KeypadToggle pad={keypad} onChange={setKeypad} />
       }
       afterControls={
         <>

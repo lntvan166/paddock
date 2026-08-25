@@ -10,6 +10,7 @@ import { BuildStamp } from "@web/components/BuildStamp";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
+import { paneLabel } from "@web/components/pane-label";
 import { groupAgents, SECTION_DOT, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { Settings } from "@web/components/Settings";
 import { Spaces } from "@web/components/Spaces";
@@ -305,10 +306,13 @@ export function App() {
         // make that transition look like a navigation.
         key={shellToRender.paneId}
         paneId={shellToRender.paneId}
-        // `title` before `name`, the reverse of a row in Spaces: a pane with
-        // no agent has no name, and the terminal title is the only label it
-        // has ever had. The id is the last resort and never a guess.
-        title={shellToRender.title ?? shellToRender.name ?? shellToRender.paneId}
+        // The SAME label rule the row in Spaces uses (`pane-label.ts`), not a
+        // second expression. This read `title ?? name ?? paneId`, which for a
+        // pane sitting at a prompt is the prompt — so a shell row read
+        // `project` in the list and its header read the operator's own
+        // `user@host:~`, which is exactly the disclosure §16.6 removed from
+        // the row, and it fed the region's `aria-label` too.
+        title={paneLabel(shellToRender)}
         backLabel={back.ariaLabel}
         onBack={() => { location.hash = back.hash; }}
         load={loadPane}

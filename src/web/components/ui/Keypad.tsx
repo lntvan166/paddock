@@ -1,5 +1,5 @@
 import type { NavKey } from "@shared/types";
-import type { KeypadPref } from "@web/prefs";
+import { writePref, type KeypadPref } from "@web/prefs";
 import { Button } from "@web/components/shadcn/button";
 
 /**
@@ -18,7 +18,7 @@ import { Button } from "@web/components/shadcn/button";
  * composition (`pane.send_keys`, §16.3) — through the same markup, so the two
  * cannot drift apart the way two separate implementations could.
  */
-export const PRIMARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
+const PRIMARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
   { key: "up", label: "↑" },
   { key: "down", label: "↓" },
   { key: "enter", label: "⏎ Enter" },
@@ -32,7 +32,7 @@ export const PRIMARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
  * billing with Space and Tab across three tall rows that took 40% of the
  * viewport — on the screen whose whole job is showing a transcript.
  */
-export const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
+const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
   { key: "esc", label: "Esc" },
   { key: "left", label: "←" },
   { key: "right", label: "→" },
@@ -88,5 +88,74 @@ export function Keypad({ pad, busy, onPress }: KeypadProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The pad's three states, in the order the toggle cycles them.
+ *
+ * A cycle rather than two controls because the row it sits in has 36px and
+ * already carries Wrap and refresh.
+ */
+const NEXT_PAD: Record<KeypadPref, KeypadPref> = {
+  hidden: "compact", compact: "full", full: "hidden",
+};
+
+/**
+ * The pad's own collapse control, shared by both terminals for the same reason
+ * the pad itself is: it was duplicated verbatim in `AgentTerminal` and
+ * `PaneTerminal` — identical markup, identical cycle, identical `writePref` —
+ * differing only in the name of the state variable behind it. And the WCAG
+ * reasoning below existed in ONE of the two copies, while the other pointed at
+ * it with "for the reason recorded there", which is a reference a future editor
+ * of that file will not follow.
+ *
+ * Beside Wrap because both are view controls, and because a collapse button
+ * INSIDE the pad would spend the height it exists to reclaim. Its OWN class:
+ * sharing `.term-wrap-toggle` made a selector written for the wrap control
+ * match this one too, by DOM order rather than by intent. Text rather than a
+ * keyboard glyph because a symbol renders as a tofu box in several mobile
+ * system fonts — the same measurement that spells out "Space" above.
+ *
+ * The pad is 106px of a 390x844 phone, measured, and its default is `hidden`:
+ * a parsed prompt renders real option buttons and tapping one answers in a
+ * single tap, so on the commonest blocked screen the arrows were a duplicate
+ * path charging a quarter of the transcript.
+ *
+ * THE ACCESSIBLE NAME IS EXACTLY "Keys", and it is not replaced by an
+ * `aria-label`: an accessible name that does not contain the visible label is
+ * a WCAG 2.5.3 hazard for voice control, and "Keys ·" against "Keys: arrows
+ * and Enter" is that hazard. `aria-expanded` carries the part that matters —
+ * the pad is a disclosure, which is what that attribute is for — and the dots
+ * are decorative, so they are hidden from the name rather than spoken as
+ * punctuation. Which of the two open sizes is showing is audible the way it is
+ * visible: the keys themselves appear.
+ *
+ * The stored preference is written HERE, because this control is the operator
+ * making a choice. `AgentTerminal`'s auto-reveal on a blocked agent
+ * deliberately does not persist — that is the agent's doing, not a choice —
+ * which is why it sets its own state directly and does not come through here.
+ */
+export function KeypadToggle({ pad, onChange }: {
+  pad: KeypadPref;
+  onChange: (pad: KeypadPref) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="term-keys-toggle"
+      data-state={pad}
+      aria-expanded={pad !== "hidden"}
+      onClick={() => {
+        const v = NEXT_PAD[pad];
+        onChange(v);
+        writePref("keypad", v);
+      }}
+    >
+      Keys
+      {pad !== "hidden" && (
+        <span aria-hidden="true">{pad === "compact" ? " ·" : " ··"}</span>
+      )}
+    </button>
   );
 }
