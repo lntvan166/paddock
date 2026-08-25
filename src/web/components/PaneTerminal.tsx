@@ -2,14 +2,16 @@ import {
   Fragment, useCallback, useEffect, useImperativeHandle, useRef, useState,
   type CSSProperties, type ReactNode, type Ref,
 } from "react";
-import type { OutputResult, PaneOutput } from "@shared/types";
+import type { ActionResult, NavKey, OutputResult, PaneOutput } from "@shared/types";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
 import { mergeSnapshot } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 import { applyPatch, digestOf } from "@shared/screen";
-import { RATE_MS, readPrefs, writePref, type RatePref } from "@web/prefs";
+import { RATE_MS, readPrefs, writePref, type KeypadPref, type RatePref } from "@web/prefs";
 import { RequestFailed } from "@web/api";
+import { Button } from "@web/components/shadcn/button";
+import { Input } from "@web/components/shadcn/input";
 
 /**
  * A pane's transcript, and everything that keeps it live.
@@ -188,6 +190,93 @@ export function nextRefreshMs(current: number, changed: boolean, floor: number =
 export const HISTORY_PAGE = 200;
 
 /**
+ * The keypad, laid out as it is rendered.
+ *
+ * Only keys herdr accepts appear (verified against herdr 0.8.0 — `pageup`,
+ * `home` and friends are rejected with `invalid_key`, so offering them would
+ * be a button that always fails). The order puts ↑/↓/Enter where a thumb
+ * reaches them, because moving a selection and committing it is the whole
+ * reason this pad exists.
+ *
+ * Lives here, not in `AgentTerminal`, because a shell gets the same pad
+ * (§16.3) sending through a different verb (`pane.send_keys` instead of
+ * `agent.send_keys`) — one keypad, two senders, rather than a second one that
+ * could drift from the first.
+ */
+export const PRIMARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
+  { key: "up", label: "↑" },
+  { key: "down", label: "↓" },
+  { key: "enter", label: "⏎ Enter" },
+];
+
+/**
+ * Everything else, on a shorter row.
+ *
+ * The split is by frequency, not by category: answering a prompt from a phone
+ * is ↑/↓ to move and Enter to commit, and those three had been sharing equal
+ * billing with Space and Tab across three tall rows that took 40% of the
+ * viewport — on the screen whose whole job is showing a transcript.
+ */
+export const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
+  { key: "esc", label: "Esc" },
+  { key: "left", label: "←" },
+  { key: "right", label: "→" },
+  { key: "tab", label: "Tab" },
+  // Spelled out, not "␣": the symbol renders as a tofu box in several mobile
+  // system fonts, which is a button whose label is a rendering failure.
+  { key: "space", label: "Space" },
+];
+
+export interface KeypadProps {
+  pad: KeypadPref;
+  busy: boolean;
+  onPress: (key: NavKey) => void;
+}
+
+/**
+ * The nav keypad, rendered once and shared by both callers that can drive it:
+ * `AgentTerminal` (`agent.send_keys`) and this file's own shell composition
+ * (`pane.send_keys`). Only the sender differs — `onPress` — which is exactly
+ * the asymmetry §16.3 calls out: same control, different verb, decided by
+ * the pane's `harness`.
+ */
+export function Keypad({ pad, busy, onPress }: KeypadProps) {
+  if (pad === "hidden") return null;
+  return (
+    <div className="term-keys" data-keypad={pad} role="group" aria-label="Send key">
+      <div className="term-keys-primary">
+        {PRIMARY_KEYS.map((k) => (
+          <Button
+            key={k.key} type="button" variant="outline"
+            /* Enter carries the commit — see .term-key-enter. The other two
+               only move a highlight, so they stay quiet. */
+            className={k.key === "enter" ? "term-key term-key-enter" : "term-key"}
+            data-key={k.key}
+            disabled={busy} onClick={() => onPress(k.key)}
+          >
+            {k.label}
+          </Button>
+        ))}
+      </div>
+      {pad === "full" && (
+        <div className="term-keys-secondary">
+          {SECONDARY_KEYS.map((k) => (
+            <Button
+              key={k.key} type="button" variant="outline" className="term-key term-key-sm"
+              data-key={k.key}
+              disabled={busy} onClick={() => onPress(k.key)}
+              aria-label={k.key}
+            >
+              {k.label}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * One read of a pane's screen.
  *
  * `since` is the digest of the screen the caller is already holding, or null
@@ -277,6 +366,24 @@ export interface PaneTerminalProps {
   paused?: boolean;
   /** Never poll faster than this, whatever the operator's preset allows. */
   minIntervalMs?: number;
+  /**
+   * Type a command into THIS pane, when it has no agent — the shell's own
+   * reply box calls this. Injected exactly like `load`, so the tests need no
+   * network and so the component itself never has to know the route.
+   *
+   * Undefined for an agent pane: `AgentTerminal` renders its OWN reply box
+   * through `afterControls`, wired to `sendText` (`agent.prompt` — answering
+   * a prompt) instead of this (`pane.send_text` — typing at a shell). Same
+   * control, different verb, decided by the pane's `harness` (§16.3).
+   */
+  sendText?: (text: string) => Promise<ActionResult>;
+  /**
+   * Send one nav key to THIS pane, when it has no agent — the mirror of
+   * `sendText` above, for `pane.send_keys` in place of `agent.send_keys`.
+   * Renders the shared `Keypad` when present; `AgentTerminal` still owns its
+   * own keypad instance, wired to its own `sendKey`.
+   */
+  sendKey?: (key: NavKey) => Promise<ActionResult>;
   ref?: Ref<PaneTerminalHandle>;
 }
 
@@ -286,6 +393,7 @@ export function PaneTerminal({
   headerExtra, beforeControls, controls, afterControls,
   revealed: revealedOverride, earlier,
   paused = false, minIntervalMs = 0,
+  sendText: onSendText, sendKey: onSendKey,
   ref,
 }: PaneTerminalProps) {
   // Seeded from the cache, so a re-opened pane has its screen on the first
@@ -325,10 +433,23 @@ export function PaneTerminal({
    */
   const [atTop, setAtTop] = useState(true);
 
-  // Mirrors `paused` for the polling interval, which must read the CURRENT
-  // value without being torn down and rebuilt every time a key press flips it.
+  /**
+   * The shell's own controls (§16.3) — a reply box and a keypad, present only
+   * when `onSendText` is supplied. Held here rather than in a wrapper
+   * component because there is no `ShellTerminal` the way `AgentTerminal`
+   * wraps the agent case: a shell has no agent-only state (no prompt, no
+   * journal, no state dot) to justify one, so this is the whole of it.
+   */
+  const [shellReply, setShellReply] = useState("");
+  const [shellBusy, setShellBusy] = useState(false);
+  const [shellFeedback, setShellFeedback] = useState<ActionResult | null>(null);
+  const [shellKeypad, setShellKeypad] = useState<KeypadPref>(() => readPrefs().keypad);
+
+  // Mirrors `paused` (and, for a shell, its own send) for the polling
+  // interval, which must read the CURRENT value without being torn down and
+  // rebuilt every time a key press flips it.
   const pausedRef = useRef(false);
-  useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => { pausedRef.current = paused || shellBusy; }, [paused, shellBusy]);
 
   // The floor the backoff snaps back to, from the operator's refresh preset
   // and whatever the caller's read costs. A ref for the same reason as
@@ -623,6 +744,42 @@ export function PaneTerminal({
     restore();
   };
 
+  /**
+   * Type a command into the shell. The pad is disabled for the whole round
+   * trip, same as `AgentTerminal.press` — two keys in flight against one
+   * shell can land out of order, and a cursor that jumps two rows on one tap
+   * is worse than one that responds a beat later.
+   *
+   * No `pane.apply(...)` afterwards: `sendText`'s success body is `{ok:
+   * true}` alone (see the prop's own note), so there is no screen to push in
+   * early. The poll — paused only for the duration of this call, via
+   * `pausedRef` above — picks up whatever the command produced on its next
+   * tick.
+   */
+  const submitShellText = async (text: string) => {
+    if (!onSendText) return;
+    setShellBusy(true);
+    setShellFeedback(null);
+    const res = await onSendText(text);
+    if (res.ok) {
+      setShellReply("");
+    } else {
+      // Surfaced, never swallowed: a command that did not reach the shell
+      // must not look like it did (§16.3).
+      setShellFeedback({ ok: false, detail: res.detail ?? "Failed." });
+    }
+    setShellBusy(false);
+  };
+
+  const pressShellKey = async (key: NavKey) => {
+    if (!onSendKey) return;
+    setShellBusy(true);
+    setShellFeedback(null);
+    const res = await onSendKey(key);
+    if (!res.ok) setShellFeedback({ ok: false, detail: res.detail ?? "Key failed." });
+    setShellBusy(false);
+  };
+
   // parseAnsi carries style ACROSS lines, so it must see history and the live
   // screen as one sequence — parsing them separately would drop any colour a
   // scrolled-off line had opened. Slicing the RESULT is safe; slicing the
@@ -756,12 +913,79 @@ export function PaneTerminal({
           {wrap ? "Wrap" : "Exact"}
         </button>
         {controls}
-        <button type="button" onClick={() => void open()} disabled={paused} aria-label="Refresh">
+        {/* The shell's own pad collapse, present only when this pane is being
+            driven as a shell (`onSendKey` supplied). Cycles the same three
+            states `AgentTerminal`'s own toggle does — hidden -> compact ->
+            full -> hidden — for the reason recorded there: the pad is 106px
+            of a 390x844 phone. */}
+        {onSendKey && (
+          <button
+            type="button"
+            className="term-keys-toggle"
+            data-state={shellKeypad}
+            aria-expanded={shellKeypad !== "hidden"}
+            onClick={() => {
+              const next: Record<KeypadPref, KeypadPref> = {
+                hidden: "compact", compact: "full", full: "hidden",
+              };
+              const v = next[shellKeypad];
+              setShellKeypad(v);
+              writePref("keypad", v);
+            }}
+          >
+            Keys
+            {shellKeypad !== "hidden" && (
+              <span aria-hidden="true">{shellKeypad === "compact" ? " ·" : " ··"}</span>
+            )}
+          </button>
+        )}
+        <button type="button" onClick={() => void open()} disabled={paused || shellBusy} aria-label="Refresh">
           ↻
         </button>
       </div>
 
       {afterControls}
+
+      {/* The shell's own controls (§16.3): no prompt to parse and so no
+          option buttons, unlike `AgentTerminal`'s `beforeControls` — a shell
+          gets only the keypad and the reply box, both wired to the pane
+          route (`pane.send_keys` / `pane.send_text`) instead of the agent
+          one. Rendered only when the caller supplied a sender, which is how
+          `App.tsx` tells a shell pane from an agent pane here. */}
+      {onSendText && (
+        <>
+          {shellFeedback && (
+            <p className={shellFeedback.ok ? "term-note ok" : "term-note warn"} role="status">
+              {shellFeedback.ok ? "Sent." : (shellFeedback.detail ?? "Failed.")}
+            </p>
+          )}
+
+          {onSendKey && (
+            <Keypad pad={shellKeypad} busy={shellBusy} onPress={(k) => void pressShellKey(k)} />
+          )}
+
+          <form
+            className="term-reply"
+            onSubmit={(e) => {
+              e.preventDefault();
+              // Sent verbatim: this is typing at a shell, not composing a
+              // reply to a question, so there is nothing here to trim or
+              // reshape beyond leaving an all-whitespace box un-submittable.
+              if (shellReply.trim()) void submitShellText(shellReply);
+            }}
+          >
+            <label className="sr-only" htmlFor="term-reply-input">Type a command</label>
+            <Input
+              id="term-reply-input"
+              value={shellReply}
+              disabled={shellBusy}
+              onChange={(e) => setShellReply(e.target.value)}
+              placeholder="Type a command…"
+            />
+            <Button type="submit" disabled={shellBusy || !shellReply.trim()}>Send</Button>
+          </form>
+        </>
+      )}
     </section>
   );
 }

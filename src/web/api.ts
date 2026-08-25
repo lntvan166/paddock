@@ -16,6 +16,10 @@ export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 /** Agent ids contain a colon (`w1:p1`), so they must be encoded. */
 const url = (id: string, action: string) => `/api/agents/${encodeURIComponent(id)}/${action}`;
 
+/** The pane route's own URL, encoded the same way — a pane id is the same
+ *  string as an agent id, just addressed through `/api/panes/` instead. */
+const paneUrl = (id: string, action: string) => `/api/panes/${encodeURIComponent(id)}/${action}`;
+
 async function request(path: string, body: object, f: Fetch): Promise<Response> {
   return f(path, {
     method: "POST",
@@ -98,7 +102,7 @@ export async function fetchOutput(
  * a message the terminal can show rather than as a value shaped like a screen.
  */
 export async function fetchPaneOutput(id: string, f: Fetch = fetch): Promise<PaneOutput> {
-  return readJson<PaneOutput>(`/api/panes/${encodeURIComponent(id)}/output`, {}, f);
+  return readJson<PaneOutput>(paneUrl(id, "output"), {}, f);
 }
 
 export async function fetchPrompt(id: string, f: Fetch = fetch) {
@@ -183,6 +187,37 @@ export async function sendText(id: string, text: string, f: Fetch = fetch): Prom
   } catch (err) {
     return { ok: false, detail: String(err), lines: [], source: "" };
   }
+}
+
+/**
+ * Type into a pane that has NO agent — the shell case §16.3 promised input
+ * for and never got a route until now.
+ *
+ * `pane.send_text`, not `agent.prompt`: a shell is being typed AT, not
+ * answering a question, and the pane's `harness` (null, here) is what
+ * decides which verb applies. `AgentTerminal`'s `submitReply` is the mirror
+ * image of this same asymmetry on the agent side.
+ *
+ * Uses `readJson`, unlike `sendText`/`sendKey` above: the pane route's whole
+ * success body is `{ok: true}` (see `PaneOutput`'s note on why a shell has
+ * no server-side screen cache to fold a reply into), so there is no partial
+ * "resolve with a failure shape" to preserve. A refusal — unknown pane, a
+ * pane promoted to an agent mid-type, text over the length ceiling — rejects
+ * with the server's own `detail`, the same as every read here; the caller
+ * must catch it and show it, never let a keystroke that did not land look
+ * like it did.
+ */
+export async function sendPaneText(id: string, text: string, f: Fetch = fetch): Promise<ActionResult> {
+  return readJson<ActionResult>(paneUrl(id, "text"), { text }, f);
+}
+
+/**
+ * One navigation key to a pane that has NO agent. Same `NavKey` allowlist and
+ * the same rejection convention as `sendPaneText` above — see its note for
+ * why this differs from the agent-side `sendKey`.
+ */
+export async function sendPaneKey(id: string, key: NavKey, f: Fetch = fetch): Promise<ActionResult> {
+  return readJson<ActionResult>(paneUrl(id, "key"), { key }, f);
 }
 
 /**

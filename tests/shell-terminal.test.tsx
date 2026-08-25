@@ -9,7 +9,7 @@ import { AgentTerminal } from "@web/components/AgentTerminal";
 import { digestOf } from "@shared/screen";
 import { prunePanes, rememberScreen } from "@web/pane-cache";
 import { RequestFailed } from "@web/api";
-import { agent, render, settle, stubFetch, unmount } from "./support/render";
+import { agent, click, render, settle, stubFetch, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 
@@ -223,4 +223,79 @@ test("a successful read clears the error banner even when it brings no new scree
   expect(el.querySelector(".term-error")).toBeNull();
   expect(el.querySelector(".term-pane")?.textContent).toContain("still here");
   localStorage.removeItem("paddock.rate");
+});
+
+// §16.3: the shell case was promised plain text input and never got a route
+// until now. These cover the client half — the injected senders, not the
+// network — the same way `load` above needs no network to test.
+
+test("a shell with senders renders a reply box and a keypad", async () => {
+  // `hidden` is the stored default (prefs.ts), so the pad itself would not
+  // be on screen without this — same setup the agent-side keypad test above
+  // uses to prove the same selector matches something real.
+  localStorage.setItem("paddock.term.keypad", "compact");
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p10" title="bash" onBack={() => {}} load={load}
+      sendText={async () => ({ ok: true })}
+      sendKey={async () => ({ ok: true })}
+    />,
+  );
+  await settle();
+  expect(el.querySelector(".term-reply")).not.toBeNull();
+  expect(el.querySelector("[data-keypad]")).not.toBeNull();
+  localStorage.removeItem("paddock.term.keypad");
+});
+
+test("sending calls the injected sender with the text verbatim", async () => {
+  const calls: string[] = [];
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p11" title="bash" onBack={() => {}} load={load}
+      sendText={async (text) => { calls.push(text); return { ok: true }; }}
+    />,
+  );
+  await settle();
+
+  const input = el.querySelector<HTMLInputElement>("#term-reply-input");
+  // Two interior spaces, deliberately: proves the string reaches the sender
+  // exactly as typed, not trimmed or collapsed the way a careless "clean up
+  // the input" pass could do without any test noticing.
+  await typeInto(input!, "echo  hi");
+  await click(el.querySelector('.term-reply button[type="submit"]'));
+
+  expect(calls).toEqual(["echo  hi"]);
+});
+
+test("a send failure is surfaced, never swallowed", async () => {
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p12" title="bash" onBack={() => {}} load={load}
+      sendText={async () => ({ ok: false, detail: "herdr socket unreachable" })}
+    />,
+  );
+  await settle();
+
+  const input = el.querySelector<HTMLInputElement>("#term-reply-input");
+  await typeInto(input!, "ls");
+  await click(el.querySelector('.term-reply button[type="submit"]'));
+
+  expect(el.textContent).toContain("herdr socket unreachable");
+});
+
+test("a shell's keypad and reply box never grow prompt options — there is no prompt to parse", async () => {
+  // The invariant from the top of this file, re-asserted with senders wired
+  // up: giving the shell a keyboard must not accidentally give it the
+  // agent's option-button UI too.
+  localStorage.setItem("paddock.term.keypad", "full");
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p13" title="bash" onBack={() => {}} load={load}
+      sendText={async () => ({ ok: true })}
+      sendKey={async () => ({ ok: true })}
+    />,
+  );
+  await settle();
+  expect(el.querySelector("[data-prompt-option]")).toBeNull();
+  localStorage.removeItem("paddock.term.keypad");
 });

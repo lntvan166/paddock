@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { answerWithKey, fetchOutput, fetchPaneOutput, RequestFailed, type Fetch } from "@web/api";
+import {
+  answerWithKey, fetchOutput, fetchPaneOutput, RequestFailed, sendPaneKey, sendPaneText, type Fetch,
+} from "@web/api";
 
 // Typed as the real `fetch`, so call sites need no `as any`.
 //
@@ -107,4 +109,40 @@ test("fetchPaneOutput rejects when the pane has an agent", async () => {
   expect(err).toBeInstanceOf(RequestFailed);
   expect((err as RequestFailed).status).toBe(409);
   expect((err as RequestFailed).message).toMatch(/has an agent/);
+});
+
+// §16.3: the shell's own reply box points here, not at `sendText` — which is
+// typed against an agent id and would 404 for a pane the store does not hold.
+test("sendPaneText POSTs to the encoded pane route", async () => {
+  const { fn, seen } = stubFetch(200, { ok: true });
+  const res = await sendPaneText("w3:p1", "ls", fn);
+  expect(seen[0]!.init.method).toBe("POST");
+  expect(seen[0]!.url).toBe("/api/panes/w3%3Ap1/text");
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ text: "ls" });
+  expect(res.ok).toBe(true);
+});
+
+// Unlike the agent-side actions (`sendText`/`sendKey`), the pane route's
+// success body carries no screen to fold a failure into — so a refusal
+// rejects, exactly like every other read in this file, rather than resolving
+// with an `ok: false` shape.
+test("sendPaneText rejects on a non-2xx with the server's detail", async () => {
+  const { fn } = stubFetch(409, {
+    ok: false, detail: "this pane has an agent; use /api/panes/:id/text",
+  });
+  await expect(sendPaneText("w3:p1", "ls", fn)).rejects.toThrow(/has an agent/);
+});
+
+test("sendPaneKey POSTs to the encoded pane route", async () => {
+  const { fn, seen } = stubFetch(200, { ok: true });
+  const res = await sendPaneKey("w3:p1", "enter", fn);
+  expect(seen[0]!.init.method).toBe("POST");
+  expect(seen[0]!.url).toBe("/api/panes/w3%3Ap1/key");
+  expect(JSON.parse(String(seen[0]!.init.body))).toEqual({ key: "enter" });
+  expect(res.ok).toBe(true);
+});
+
+test("sendPaneKey rejects on a non-2xx with the server's detail", async () => {
+  const { fn } = stubFetch(400, { ok: false, detail: "unsupported key: pageup" });
+  await expect(sendPaneKey("w3:p1", "enter", fn)).rejects.toThrow(/unsupported key/);
 });
