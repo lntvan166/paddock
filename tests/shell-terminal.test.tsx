@@ -7,7 +7,8 @@ import { act } from "react";
 import { PaneTerminal, SHELL_MIN_REFRESH_MS } from "@web/components/PaneTerminal";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { digestOf } from "@shared/screen";
-import { prunePanes } from "@web/pane-cache";
+import { prunePanes, rememberScreen } from "@web/pane-cache";
+import { RequestFailed } from "@web/api";
 import { agent, render, settle, stubFetch, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
@@ -151,5 +152,75 @@ test("a shell is not polled on the agent's cadence", async () => {
   await waitMs(400);
   expect(agentReads).toBeGreaterThan(1);
 
+  localStorage.removeItem("paddock.rate");
+});
+
+test("a 409 is a promotion in flight, not a failure: the transcript stays and the banner does not", async () => {
+  // The pane route answers 409 for a pane that HAS an agent, which is exactly
+  // what a shell becomes the moment someone types `claude` into it — and also
+  // what a cold deep link hits when the tree beats the websocket snapshot.
+  // `App` swaps in `AgentTerminal` a beat later; until it does, the screen on
+  // display is still true. Raising the banner here would put an internal route
+  // name in front of the operator for the duration of the promotion.
+  rememberScreen("w3:p6", { lines: ["the shell as it was"], digest: null });
+
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p6" title="bash" onBack={() => {}}
+      load={async () => {
+        throw new RequestFailed(409, "this pane has an agent; use /api/agents/:id/output");
+      }}
+    />,
+  );
+  await settle();
+
+  expect(el.querySelector(".term-pane")?.textContent).toContain("the shell as it was");
+  expect(el.querySelector(".term-error")).toBeNull();
+  expect(el.textContent).not.toContain("/api/agents/:id/output");
+  // Not swallowed either: the pane says it has stopped updating.
+  expect(el.querySelector(".term-stalled")?.textContent).toBe("not updating");
+});
+
+test("any OTHER refusal is still an error, so the guard is about 409 and not about refusals", async () => {
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p7" title="bash" onBack={() => {}}
+      load={async () => { throw new RequestFailed(404, "unknown pane"); }}
+    />,
+  );
+  await settle();
+  expect(el.querySelector(".term-error")?.textContent).toContain("unknown pane");
+});
+
+test("a successful read clears the error banner even when it brings no new screen", async () => {
+  // Once the banner was up, a pane whose digest still matched returned early
+  // without reaching `apply`, so nothing ever called `setError(null)` — a
+  // quiet pane kept claiming "Could not load output" while every read
+  // underneath it was succeeding. A successful revalidation is proof of
+  // exactly the opposite.
+  // Pinned, not assumed: Bun runs every test file in one process, so another
+  // file's stored preset would otherwise decide how long this test waits.
+  localStorage.setItem("paddock.rate", "live");
+  rememberScreen("w3:p8", { lines: ["still here"], digest: "d1" });
+  let call = 0;
+
+  const el = await render(
+    <PaneTerminal
+      paneId="w3:p8" title="bash" onBack={() => {}}
+      load={async () => {
+        call++;
+        if (call === 1) throw new Error("herdr unreachable");
+        return { unchanged: true as const };
+      }}
+    />,
+  );
+  await settle();
+  expect(el.querySelector(".term-error")?.textContent).toContain("herdr unreachable");
+
+  // The poll lands on the 250ms Live floor and answers "nothing changed".
+  await waitMs(400);
+  expect(call).toBeGreaterThan(1);
+  expect(el.querySelector(".term-error")).toBeNull();
+  expect(el.querySelector(".term-pane")?.textContent).toContain("still here");
   localStorage.removeItem("paddock.rate");
 });

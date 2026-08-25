@@ -99,7 +99,33 @@ export function App() {
   // tree is the authority for panes the store does not hold — asked only on
   // that miss, so an agent pane and the dashboard itself cost nothing extra.
   const openTree = useTreePane(openAgent === null ? openId : null, treeStaleAt);
-  const openShell = openTree.pane;
+  /**
+   * A tree-resolved pane the terminal may open as a SHELL.
+   *
+   * `harness` is the only discriminator between the two cases (see
+   * `TreePane` in the shared contract), and consulting it is not a formality.
+   * The tree and the store answer at different times: on a cold deep link —
+   * `#/pane/<id>` tapped from a notification — `agents` is empty until the
+   * websocket snapshot lands, so the tree can resolve an AGENT pane first. A
+   * `PaneTerminal` mounted on it would open the pane route, take its 409, and
+   * put an internal route name on the operator's screen until the snapshot
+   * arrived. So a pane with a harness is not a shell, however early it is
+   * seen; `promoting` below holds the view until the store catches up.
+   */
+  const openShell = openTree.pane !== null && openTree.pane.harness === null
+    ? openTree.pane
+    : null;
+  /**
+   * The tree says this pane has an agent and the store does not have it yet.
+   *
+   * Two situations, one answer: the cold-deep-link race above, and a live
+   * promotion (a shell someone typed `claude` into, whose `pane.agent_detected`
+   * reached the tree before the delta reached the store). Both resolve
+   * themselves within one delta, and both must HOLD rather than fall through
+   * to the dashboard — the pane exists, and dumping the operator out of it
+   * would be a wrong answer where waiting a beat is a right one.
+   */
+  const promoting = openTree.pane !== null && openTree.pane.harness !== null;
   /**
    * The read for the open shell.
    *
@@ -165,11 +191,13 @@ export function App() {
     );
   }
 
-  // The tree read is still in flight. Holding here rather than falling through
-  // is not cosmetic: the dashboard is a full agent list, and rendering it for
-  // the ~20 ms a `session.snapshot` takes makes every tap on a shell pane
-  // blink through the screen the operator just left.
-  if (openId !== null && !openTree.resolved) {
+  // The tree read is still in flight, or it has answered "this pane has an
+  // agent" before the store has the agent to render. Holding here rather than
+  // falling through is not cosmetic: the dashboard is a full agent list, and
+  // rendering it for the ~20 ms a `session.snapshot` takes makes every tap on
+  // a shell pane blink through the screen the operator just left — and in the
+  // promotion case it would evict them from a pane that exists.
+  if (openId !== null && (!openTree.resolved || promoting)) {
     return (
       <main className="dash mx-auto max-w-2xl safe-bottom">
         <p className="px-3 py-6 text-[11px]" style={{ color: "var(--fg-dim)" }}>Opening…</p>

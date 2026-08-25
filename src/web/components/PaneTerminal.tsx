@@ -9,6 +9,7 @@ import { mergeSnapshot } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 import { applyPatch, digestOf } from "@shared/screen";
 import { RATE_MS, readPrefs, writePref, type RatePref } from "@web/prefs";
+import { RequestFailed } from "@web/api";
 
 /**
  * A pane's transcript, and everything that keeps it live.
@@ -347,6 +348,21 @@ export function PaneTerminal({
   useImperativeHandle(ref, () => ({ apply }), [apply]);
 
   /**
+   * A read that succeeded but brought no new screen.
+   *
+   * Clears BOTH signals, and the `error` half is the part that is easy to
+   * miss: once the banner is up, a pane whose digest still matches returns
+   * early without ever reaching `apply`, so nothing cleared it — a quiet pane
+   * kept showing "Could not load output" indefinitely while every read
+   * underneath it was succeeding. A successful revalidation is proof the link
+   * is alive, which is exactly what the banner claims it is not.
+   */
+  const settled = useCallback(() => {
+    setError(null);
+    setStalled(false);
+  }, []);
+
+  /**
    * Applies a read that may be a "nothing changed" answer.
    *
    * `unchanged` must NOT fall through to `apply([])` — that would blank the
@@ -361,7 +377,7 @@ export function PaneTerminal({
     if ("unchanged" in res && res.unchanged) {
       // Nothing moved: wait longer before asking again.
       intervalRef.current = nextRefreshMs(intervalRef.current, false);
-      setStalled(false);
+      settled();
       return true;
     }
 
@@ -393,12 +409,12 @@ export function PaneTerminal({
     const changed = "digest" in res || digest !== digestRef.current;
     intervalRef.current = nextRefreshMs(intervalRef.current, changed, floorRef.current);
     if (!changed) {
-      setStalled(false);
+      settled();
       return true;
     }
     apply(res.lines, digest);
     return true;
-  }, [paneId, apply]);
+  }, [paneId, apply, settled]);
 
   /**
    * The cheap re-read used by the poll: `visible` only, never scrollback.
@@ -439,6 +455,18 @@ export function PaneTerminal({
       // digest still matches whatever it matched then.
       applyResult(await load(null));
     } catch (err) {
+      // A REFUSAL is not a failure. `409` is the pane route's answer for "this
+      // pane has an agent now" — a promotion in flight, from a shell someone
+      // just typed `claude` into, or from a cold deep link whose tree read
+      // beat the websocket snapshot. `App` swaps in `AgentTerminal` a beat
+      // later, and the screen already on display stays true the whole time.
+      // So this is treated exactly as a failed POLL is: keep the transcript,
+      // mark the pane as not updating, and never raise a banner that would
+      // put an internal route name in front of the operator.
+      if (err instanceof RequestFailed && err.status === 409) {
+        setStalled(true);
+        return;
+      }
       // Surfaced where the output would have been. A blank pane that means
       // "the read failed" is indistinguishable from one that means "no
       // output", and this project treats a silent break as the defect.

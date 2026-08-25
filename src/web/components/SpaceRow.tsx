@@ -41,6 +41,15 @@ export function SpaceRow({ space, open, onToggle }: {
   // silent on the very identity the alias exists to surface.
   const actionsLabel = showAlias ? `${spaceLabel} (${paneIdentity})` : spaceLabel;
 
+  // Built once and rendered from either branch: the space's label is the same
+  // on both row shapes, and two copies of it would be free to drift.
+  const heading = (
+    <div className="space-heading">
+      <span className="space-name">{spaceLabel}</span>
+      {showAlias && <span className="space-alias">{paneIdentity}</span>}
+    </div>
+  );
+
   return (
     <li
       data-space-row
@@ -64,17 +73,32 @@ export function SpaceRow({ space, open, onToggle }: {
             <span className="sr-only">{open ? "Collapse" : "Expand"} {spaceLabel}</span>
           </button>
         )}
-        {/* A merged row shows the single pane's state; a structured one shows
-            nothing here, because its panes each carry their own below and a
-            rollup would say the same thing twice. */}
-        {only && <PaneMarker pane={only} />}
-        <div className="space-heading">
-          <span className="space-name">{spaceLabel}</span>
-          {showAlias && <span className="space-alias">{paneIdentity}</span>}
-        </div>
-        {structured
-          ? <span className="space-count">{space.tabCount} tabs</span>
-          : only && <PaneState pane={only} />}
+        {/* A merged row IS its single pane, so the whole row opens it — the
+            same `paneHash` link a structured space's sub-rows already carry.
+            Without it the commonest space shape (six in seven are 1:1:1) had
+            no route into the terminal at all: a pane you could see, name and
+            read a state off, and not open.
+
+            A merged row also shows the single pane's state and marker inside
+            the link; a structured one shows neither here, because its panes
+            each carry their own below and a rollup would say the same thing
+            twice.
+
+            The ⋯ button stays a SIBLING of the anchor, never a child: a
+            <button> inside an <a> is invalid HTML and unreachable by
+            keyboard. */}
+        {only ? (
+          <a href={paneHash(only.paneId)}>
+            <PaneMarker pane={only} />
+            {heading}
+            <PaneState pane={only} />
+          </a>
+        ) : (
+          <>
+            {heading}
+            <span className="space-count">{space.tabCount} tabs</span>
+          </>
+        )}
         {/* Inert here. Plan 2 opens the actions sheet from it. Rendered now so
             the row's layout is settled and the affordance is VISIBLE — an
             unhinted long-press is the touch equivalent of a hover-only

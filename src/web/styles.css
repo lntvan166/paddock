@@ -1691,6 +1691,31 @@ body {
   color: var(--fg-dim);
 }
 
+/* A merged row's whole label block is a link into the terminal — the same
+   treatment `.space-tabs [data-pane-row] a` gives a structured space's
+   sub-rows, so the two row shapes behave identically under a thumb.
+
+   A real flex ITEM, not `display: contents`: contents would leave the anchor
+   with no box, so the gaps between marker, name and state would not be
+   tappable, and it is still the shape several screen readers drop an
+   interactive element over. `flex: 1` and `min-height` instead give the link
+   the row's full height and all of its slack, which is what makes it a
+   phone-sized target. Horizontal padding is the row's own (`.space-head`),
+   so nothing is doubled.
+
+   No colour of its own beyond `inherit`: a row that turns link-blue would be
+   the only blue text in the app. */
+.space-head > a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  color: inherit;
+  text-decoration: none;
+}
+
 .space-count {
   flex: none;
   font-size: var(--t-xs);

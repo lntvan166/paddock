@@ -24,6 +24,25 @@ async function request(path: string, body: object, f: Fetch): Promise<Response> 
   });
 }
 
+/**
+ * A read the server REFUSED, carrying the status it refused with.
+ *
+ * An `Error` subclass rather than a second return shape, so every existing
+ * `catch` and every `rejects.toThrow(/detail/)` keeps working unchanged. The
+ * status is on it because one caller genuinely needs to tell refusals apart:
+ * `409` from the pane route means "this pane has an agent now", which is a
+ * transition rather than a failure — see `PaneTerminal`'s opening read. A
+ * caller that does not care still gets the server's own message.
+ */
+export class RequestFailed extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "RequestFailed";
+    this.status = status;
+  }
+}
+
 /** Pulls `detail` out of a JSON error body, if the body has one. */
 async function detailFrom(res: Response): Promise<string | null> {
   try {
@@ -49,7 +68,7 @@ async function readJson<T>(path: string, body: object, f: Fetch): Promise<T> {
   const res = await request(path, body, f);
   if (!res.ok) {
     const detail = await detailFrom(res);
-    throw new Error(detail ?? `request failed: ${res.status}`);
+    throw new RequestFailed(res.status, detail ?? `request failed: ${res.status}`);
   }
   return (await res.json()) as T;
 }
@@ -178,7 +197,7 @@ export async function fetchSpaceTree(f: Fetch = fetch): Promise<SpaceTree> {
   const res = await f("/api/spaces", { method: "GET" });
   if (!res.ok) {
     const detail = await detailFrom(res);
-    throw new Error(detail ?? `request failed: ${res.status}`);
+    throw new RequestFailed(res.status, detail ?? `request failed: ${res.status}`);
   }
   return (await res.json()) as SpaceTree;
 }
