@@ -112,6 +112,7 @@ export function CreateSheet({
   target, cwds, onChanged,
   senders = LIVE_CREATE_SENDERS,
   navigate = (hash: string) => { location.hash = hash; },
+  variant = "glyph",
 }: {
   target: CreateTarget;
   /** Every cwd already in the tree, offered as quick picks (§9.3). The
@@ -127,6 +128,19 @@ export function CreateSheet({
   /** Injected so a test can observe the navigation rather than mutate the
    *  document's hash. */
   navigate?: (hash: string) => void;
+  /**
+   * How the trigger presents itself.
+   *
+   * `glyph` (the default) is the bare `+` §16.7 puts in a header, where
+   * POSITION carries the scope and no text label is needed. `row` is the same
+   * sheet presented as the last row of the list it adds to — on the space
+   * screen there is no header position that says "a tab in this space", so the
+   * control says it in words instead.
+   *
+   * Existing call sites are untouched by construction: the default is what
+   * they already render.
+   */
+  variant?: "glyph" | "row";
 }) {
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState("");
@@ -286,12 +300,15 @@ export function CreateSheet({
     <Sheet open={open} onOpenChange={show}>
       <SheetTrigger
         data-create={what}
-        className="create-btn"
-        // Position carries the scope on screen; an accessible name cannot rely
-        // on position, so it says the scope in words.
+        className={variant === "row" ? "create-row" : "create-btn"}
+        // Position carries the scope when this is a glyph in a header; an
+        // accessible name cannot rely on position, so it says the scope in
+        // words either way.
         aria-label={isSpace ? "New space" : `New tab in ${where}`}
       >
-        <span aria-hidden="true">+</span>
+        {variant === "row"
+          ? <><span aria-hidden="true">+</span> New tab</>
+          : <span aria-hidden="true">+</span>}
       </SheetTrigger>
       {/* The home-indicator inset is in this rule's own padding-bottom, not a
           second class beside it: two rules at equal specificity setting

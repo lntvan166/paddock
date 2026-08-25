@@ -700,3 +700,22 @@ test("a 200 with no pane id never becomes a navigation either", async () => {
   expect(sheet().textContent).toContain("named no pane");
   await unmount();
 });
+
+test("the row variant says in words what a header's position says silently", async () => {
+  const { senders } = recorder();
+  const host = await render(
+    <CreateSheet
+      variant="row"
+      target={{ kind: "tab", spaceId: "w1", spaceLabel: "api-refactor", spaceCwd: "/srv/project" }}
+      cwds={[]}
+      onChanged={() => {}}
+      senders={senders}
+    />,
+  );
+  const trigger = host.querySelector("[data-create]")!;
+  expect(trigger.className).toContain("create-row");
+  expect(trigger.textContent).toContain("New tab");
+  // The accessible name still carries the scope, exactly as the glyph's does.
+  expect(trigger.getAttribute("aria-label")).toBe("New tab in api-refactor");
+  await unmount();
+});
