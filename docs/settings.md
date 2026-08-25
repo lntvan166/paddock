@@ -59,6 +59,37 @@ button to mint a code for another device — appears in Settings only while
 ordinary way, or a named-tunnel deployment behind it, has no tunnel to pair
 and does not show the section at all.
 
+## Push notifications
+
+Per **device**, not per account: a subscription belongs to the browser it was
+made in, so the control commits immediately and does not take part in Save. The
+device count in that card is how many phones will buzz — it deliberately does
+not say whether *this* one is among them, because the server holds a set of
+endpoints and cannot tell which of them is the browser asking. The browser
+answers that itself.
+
+**On iOS, add paddock to your Home Screen first.** Safari delivers push only to
+an installed web app, never to a page open in a tab — so the card asks for that
+before it offers anything else. paddock detects this from capability rather than
+by inspecting a user agent: `PushManager` simply does not exist in a Safari tab.
+
+The point of push, and the only thing it does that Telegram cannot: a tap opens
+**paddock itself**. iOS opens an `https://` link in Safari even when the URL is
+inside an installed app's scope, so a Telegram tap always lands in the browser —
+and Safari keeps a storage container separate from the Home Screen app, which
+can mean re-doing a Cloudflare Access login the app already holds.
+
+If notifications are **blocked**, the card says so and points at browser
+settings. It cannot ask again: `requestPermission()` prompts once, and a page
+that keeps calling it is a page whose button silently does nothing.
+
+The VAPID keypair and the subscriptions live in `push.json` beside
+`settings.json`, mode `0600`. It is written by paddock and is not meant to be
+hand-edited. **If it becomes unreadable, push turns off and says so** — paddock
+will not mint a replacement keypair, because a new key silently invalidates
+every subscription that exists and every phone simply stops buzzing with nothing
+on screen to explain it.
+
 ## The Telegram token
 
 Written to `~/.config/paddock/settings.json` at file mode `0600`, in a
@@ -81,8 +112,14 @@ the dashboard.
 An agent name, its new state, and a link. Never terminal output, and never the
 agent's task line — that is live agent-authored text which can carry pasted
 secrets, and **Telegram bot messages are not end-to-end encrypted**. Content
-minimalism is the whole mitigation for choosing Telegram over Web Push, so it
-is enforced by a test rather than left to habit.
+minimalism is the mitigation, so it is enforced by a test rather than left to
+habit.
+
+The same restraint applies to a push notification, for a **different** reason.
+A push payload *is* encrypted end to end, so the push service cannot read it —
+but the notification renders on a **lock screen**, visible to anyone near the
+phone. Two transports, one rule, two justifications; neither inherits the
+other's.
 
 Policy is deliberate about the failures that make an alert channel worth
 ignoring:

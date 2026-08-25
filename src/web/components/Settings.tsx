@@ -8,6 +8,7 @@ import { DeviceSection } from "@web/components/settings/DeviceSection";
 import { TunnelSection } from "@web/components/settings/TunnelSection";
 import { TelegramSection } from "@web/components/settings/TelegramSection";
 import { NotifySection } from "@web/components/settings/NotifySection";
+import { PushSection } from "@web/components/settings/PushSection";
 import { InfoSection } from "@web/components/settings/InfoSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
@@ -30,6 +31,10 @@ export function Settings({ onBack }: SettingsProps) {
 
   const [view, setView] = useState<SettingsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Bumped when subscribing or unsubscribing moves `push.devices`. The load
+   *  effect below depends on it, so the count is refetched rather than guessed
+   *  at from the client's own action. */
+  const [reload, setReload] = useState(0);
 
   // Read-only, for the Info band's Updates and Connection cards. `null` while
   // loading — `InfoSection` renders every row regardless, with an em dash for
@@ -136,7 +141,7 @@ export function Settings({ onBack }: SettingsProps) {
       }
     })();
     return () => { live = false; };
-  }, []);
+  }, [reload]);
 
   // Same fetch idiom as `/api/settings` above, including the `res.ok` check:
   // a failure here must be visible rather than leaving the Connection card
@@ -354,6 +359,22 @@ export function Settings({ onBack }: SettingsProps) {
           serverNow={serverNow}
           onMute={(forMs) => void mute(forMs)}
           muting={muting}
+        />
+
+        {/* Per DEVICE, unlike everything above it: a subscription belongs to
+            the browser it was made in, so this card's control commits
+            immediately and does not participate in Save. */}
+        {/* `view?.push?.` and not `view?.push.` — optional at BOTH hops. The
+            load effect above already records what a missing field costs here:
+            the first render to read one threw and blanked the whole settings
+            screen. A response without `push` should degrade to "off", not to
+            nothing. */}
+        <PushSection
+          enabled={view?.push?.enabled ?? false}
+          devices={view?.push?.devices ?? 0}
+          vapidPublicKey={view?.push?.vapidPublicKey ?? null}
+          error={view?.push?.error ?? null}
+          onChanged={() => setReload((n) => n + 1)}
         />
 
         {/* Present only while a tunnel is running: `view.tunnel` is null for

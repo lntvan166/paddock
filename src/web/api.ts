@@ -314,3 +314,21 @@ export async function closeTab(id: string, f: Fetch = fetch): Promise<CloseTabRe
 export async function closeSpace(id: string, f: Fetch = fetch): Promise<CloseSpaceResult> {
   return readJson<CloseSpaceResult>(spaceUrl(id, "close"), {}, f);
 }
+
+/**
+ * Register this browser for push. The endpoint and keys come straight from
+ * `PushSubscription.toJSON()`; the server validates their shapes before storing
+ * one, because a malformed subscription fails hours later at send time.
+ */
+export async function subscribePush(sub: PushSubscriptionJSON, f: Fetch = fetch): Promise<void> {
+  const res = await request("/api/push/subscribe", {
+    endpoint: sub.endpoint,
+    keys: { p256dh: sub.keys?.p256dh, auth: sub.keys?.auth },
+  }, f);
+  if (!res.ok) throw new Error(`subscribe failed (HTTP ${res.status})`);
+}
+
+export async function unsubscribePush(endpoint: string, f: Fetch = fetch): Promise<void> {
+  const res = await request("/api/push/unsubscribe", { endpoint }, f);
+  if (!res.ok) throw new Error(`unsubscribe failed (HTTP ${res.status})`);
+}

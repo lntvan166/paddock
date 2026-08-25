@@ -1,0 +1,185 @@
+import { useCallback, useEffect, useState } from "react";
+import { BellIcon } from "@web/components/ui/icons";
+import { Card } from "@web/components/ui/Card";
+import { subscribePush, unsubscribePush } from "@web/api";
+
+/**
+ * What this browser can do, and what to say when it cannot.
+ *
+ * `unconfigured` is the server's answer, not the browser's: no VAPID keypair
+ * means there is nothing to subscribe TO, which is the demo bundle's case and
+ * also any paddock whose push.json could not be read.
+ */
+type Capability = "ready" | "needs-install" | "unsupported" | "denied" | "unconfigured";
+
+/**
+ * NO user-agent parsing, per CLAUDE.md — and none is needed, because iOS hands
+ * us exactly the signal for free: `window.PushManager` is undefined in a Safari
+ * tab and defined inside an installed PWA. So the "add to Home Screen first"
+ * guidance falls out of a capability check rather than being special-cased for
+ * one platform.
+ */
+function capability(vapidPublicKey: string | null): Capability {
+  if (vapidPublicKey === null) return "unconfigured";
+  // All three, not two. `serviceWorker` is checked because this component
+  // REGISTERS one — without it the subscribe path throws on a browser that has
+  // PushManager but no worker, and the effect below reads it unguarded.
+  const hasPush = typeof window !== "undefined"
+    && "PushManager" in window
+    && "Notification" in window
+    && window.Notification !== undefined
+    && typeof navigator !== "undefined"
+    && "serviceWorker" in navigator;
+  if (!hasPush) {
+    const installed = typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(display-mode: standalone)").matches;
+    return installed ? "unsupported" : "needs-install";
+  }
+  // `requestPermission()` will not ask twice once denied, so offering a button
+  // that silently does nothing is worse than saying where to change it.
+  if (window.Notification.permission === "denied") return "denied";
+  return "ready";
+}
+
+/**
+ * base64url to the bytes `pushManager.subscribe` wants.
+ *
+ * `Uint8Array<ArrayBuffer>` and not a bare `Uint8Array`: under this TypeScript
+ * the latter means `Uint8Array<ArrayBufferLike>`, which `BufferSource` rejects
+ * because it admits `SharedArrayBuffer`. Same narrowing as `push/vapid.ts`.
+ */
+function keyBytes(b64url: string): Uint8Array<ArrayBuffer> {
+  const padded = b64url.replace(/-/g, "+").replace(/_/g, "/")
+    .padEnd(Math.ceil(b64url.length / 4) * 4, "=");
+  const bin = atob(padded);
+  const out = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+export interface PushSectionProps {
+  enabled: boolean;
+  /** How many devices will buzz — NOT whether this one is subscribed. That is
+   *  read from the browser below, because the server holds endpoints and cannot
+   *  tell which of them is the browser currently asking. */
+  devices: number;
+  vapidPublicKey: string | null;
+  /** Non-null when push.json failed to load. Shown, never swallowed. */
+  error: string | null;
+  /** Refetch the settings view: the device count has moved. */
+  onChanged: () => void;
+}
+
+export function PushSection(p: PushSectionProps) {
+  const cap = capability(p.vapidPublicKey);
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  // Whether THIS device is subscribed is a question only the browser can
+  // answer. Read on mount, never assumed from the server's count.
+  useEffect(() => {
+    if (cap !== "ready") return;
+    let live = true;
+    void navigator.serviceWorker.getRegistration()
+      .then((reg) => reg?.pushManager.getSubscription() ?? null)
+      .then((sub) => { if (live) setSubscribed(sub !== null); })
+      .catch(() => { if (live) setSubscribed(false); });
+    return () => { live = false; };
+  }, [cap]);
+
+  const enable = useCallback(async () => {
+    // Only ever from a tap. iOS enforces it, and a prompt on load is the one
+    // guaranteed way to be denied permanently.
+    setBusy(true);
+    setFailure(null);
+    try {
+      const permission = await window.Notification.requestPermission();
+      if (permission !== "granted") {
+        setFailure("Notifications were not allowed. Change it in your browser settings.");
+        return;
+      }
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const sub = await reg.pushManager.subscribe({
+        // Required by every browser: a push that shows nothing is not allowed,
+        // and paddock has no use for a silent one anyway.
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes(p.vapidPublicKey ?? ""),
+      });
+      await subscribePush(sub.toJSON());
+      setSubscribed(true);
+      p.onChanged();
+    } catch (e) {
+      // Reported, never swallowed: a permission flow that fails in silence
+      // leaves the operator tapping a button that appears to do nothing.
+      setFailure((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [p]);
+
+  const disable = useCallback(async () => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager.getSubscription();
+      if (sub) {
+        await unsubscribePush(sub.endpoint);
+        await sub.unsubscribe();
+      }
+      setSubscribed(false);
+      p.onChanged();
+    } catch (e) {
+      setFailure((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [p]);
+
+  const devices = p.devices === 1 ? "1 device" : `${p.devices} devices`;
+
+  return (
+    <Card
+      icon={<BellIcon />}
+      title="Push notifications"
+      subtitle={
+        cap === "ready"
+          ? `Sent to this device's browser. ${devices} subscribed.`
+          : "Sent to an installed paddock, so a tap opens the app itself."
+      }
+      footer={
+        <>
+          {p.error !== null ? <p className="warn">{p.error}</p> : null}
+          {failure !== null ? <p className="warn">{failure}</p> : null}
+          {cap === "needs-install" ? (
+            <p>
+              Add paddock to your Home Screen first, then enable notifications here.
+              A browser tab cannot receive them.
+            </p>
+          ) : null}
+          {cap === "unsupported" ? <p>This browser does not support push notifications.</p> : null}
+          {cap === "denied" ? (
+            <p>
+              Notifications are blocked for this site. Change it in your browser settings —
+              this page cannot ask again.
+            </p>
+          ) : null}
+          {cap === "unconfigured" ? <p>Push is not configured on this server.</p> : null}
+        </>
+      }
+    >
+      {cap === "ready" ? (
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => void (subscribed === true ? disable() : enable())}
+        >
+          {subscribed === true ? "Disable on this device" : "Enable on this device"}
+        </button>
+      ) : null}
+    </Card>
+  );
+}
