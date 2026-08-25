@@ -14,7 +14,7 @@ import { groupAgents, SECTION_DOT, SECTION_ORDER, SECTION_TITLES, SectionHeader 
 import { Settings } from "@web/components/Settings";
 import { Spaces } from "@web/components/Spaces";
 import { staleAttrs } from "@web/components/staleness";
-import { agentHash, useAgentRoute, useSettingsRoute, useSpacesRoute } from "@web/route";
+import { agentHash, agentIdFromHash, useAgentRoute, useSettingsRoute, useSpacesRoute } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { UpdateBar } from "@web/components/UpdateBar";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
@@ -62,6 +62,58 @@ export function App() {
     const t = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(t);
   }, []);
+
+  /**
+   * Where the currently open pane was navigated FROM — `#/spaces` or
+   * anywhere else — read off the real `hashchange`, not guessed from the
+   * pane's own shape (§16.4).
+   *
+   * A ref, and kept here on `App`, deliberately. `App` itself never
+   * unmounts (see the theme effect above); `AgentTerminal` and
+   * `PaneTerminal` do, on exactly the transition this has to survive — a
+   * shell promoted to an agent unmounts the shell's `PaneTerminal` and
+   * mounts `AgentTerminal` under the SAME pane id (one pane, two moments).
+   * Anything stored in either component would be lost at that instant.
+   *
+   * `hashchange`'s own `oldURL` is the source of truth for "came from",
+   * not a piece of React state that only ever knows the CURRENT hash. A
+   * cold load — a notification tap, a pasted link, a reload — fires no
+   * `hashchange` before this effect ever sees the hash, so the ref simply
+   * has no entry for that pane id, and `backTargetFor` below falls back to
+   * the dashboard. That is the whole mechanism for "no origin, no Spaces".
+   */
+  const paneOriginRef = useRef<{ paneId: string; fromSpaces: boolean } | null>(null);
+  useEffect(() => {
+    const onHashChange = (e: HashChangeEvent) => {
+      const paneId = agentIdFromHash(hashOf(e.newURL));
+      // Only a navigation INTO a pane is worth recording. A change between
+      // two non-pane surfaces (dashboard <-> Settings <-> Spaces) says
+      // nothing about where a future pane visit came from.
+      if (paneId === null) return;
+      paneOriginRef.current = { paneId, fromSpaces: hashOf(e.oldURL) === "#/spaces" };
+    };
+    addEventListener("hashchange", onHashChange);
+    return () => removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  /**
+   * The back destination for the pane addressed by `paneId`, and the label
+   * that goes with it.
+   *
+   * Applies to BOTH the agent branch and the shell branch below — one rule,
+   * not two literals (§16.4's correction: the old shell branch hard-coded
+   * `#/spaces` regardless of origin, which is a different bug from the old
+   * agent branch always going to `""`, not the "already correct" reference
+   * point the brief assumed).
+   */
+  function backTargetFor(paneId: string | null): { hash: string; label: string; ariaLabel: string } {
+    const fromSpaces = paneId !== null
+      && paneOriginRef.current?.paneId === paneId
+      && paneOriginRef.current.fromSpaces;
+    return fromSpaces
+      ? { hash: "#/spaces", label: "‹ Spaces", ariaLabel: "Back to spaces" }
+      : { hash: "", label: "‹ Agents", ariaLabel: "Back to agents" };
+  }
 
   /**
    * Evict cached screens and scrollback for agents that no longer exist.
@@ -223,16 +275,26 @@ export function App() {
   if (showSpaces) return <Spaces onBack={() => { location.hash = ""; }} />;
 
   if (openAgent) {
+    // Back returns to wherever THIS pane was opened from (§16.4) — the
+    // dashboard by default, `#/spaces` only when the real navigation that
+    // opened it came from there.
+    const back = backTargetFor(openId);
     return (
       <AgentTerminal
         key={openAgent.agentId}
         agent={openAgent}
-        onBack={() => { location.hash = ""; }}
+        onBack={() => { location.hash = back.hash; }}
+        backLabel={back.ariaLabel}
       />
     );
   }
 
   if (shellToRender) {
+    // Same origin-aware rule as the agent branch above (§16.4) — NOT a
+    // hard-coded `#/spaces`. A shell reached from Spaces returns there; one
+    // reached cold (a deep link, a reload, a promotion that started cold)
+    // has no recorded origin and returns to the dashboard, same as an agent.
+    const back = backTargetFor(openId);
     return (
       <PaneTerminal
         // The pane id, exactly as the agent case above — a shell and an agent
@@ -245,11 +307,8 @@ export function App() {
         // no agent has no name, and the terminal title is the only label it
         // has ever had. The id is the last resort and never a guess.
         title={shellToRender.title ?? shellToRender.name ?? shellToRender.paneId}
-        // Back to Spaces, not to the dashboard: the dashboard lists agents,
-        // and this pane is not one — sending the operator there would be a
-        // door onto a screen that cannot show what they just left.
-        backLabel="Back to spaces"
-        onBack={() => { location.hash = "#/spaces"; }}
+        backLabel={back.ariaLabel}
+        onBack={() => { location.hash = back.hash; }}
         load={loadPane}
         minIntervalMs={SHELL_MIN_REFRESH_MS}
         sendText={sendShellText}
@@ -282,10 +341,20 @@ export function App() {
   // showing a dashboard that will never contain this pane. "No such pane" and
   // "herdr did not answer" are different claims and must not look alike.
   if (openId !== null && openTree.error !== null) {
+    // The same unclassed `<button>Back</button>` §16.4 found on the Spaces
+    // screen, rendered from a different branch — fixed the same way, with
+    // the same origin-aware destination as the two panes above.
+    const back = backTargetFor(openId);
     return (
       <main className="dash mx-auto max-w-2xl safe-bottom">
         <header className="spaces-head">
-          <button type="button" onClick={() => { location.hash = "#/spaces"; }}>Back</button>
+          <button
+            type="button" className="term-back"
+            onClick={() => { location.hash = back.hash; }}
+            aria-label={back.ariaLabel}
+          >
+            {back.label}
+          </button>
           <h2>{openId}</h2>
         </header>
         <p className="error" role="alert">Could not open this pane: {openTree.error}</p>
@@ -382,6 +451,19 @@ export function App() {
       <BuildStamp />
     </main>
   );
+}
+
+/**
+ * The `#...` fragment of a full URL, or `""` if it has none.
+ *
+ * `HashChangeEvent#oldURL`/`newURL` are whole absolute URLs, not bare
+ * hashes — this is the one piece of string surgery that turns one into the
+ * other, kept in one place so `paneOriginRef`'s effect and any future
+ * caller agree on it.
+ */
+function hashOf(url: string): string {
+  const i = url.indexOf("#");
+  return i === -1 ? "" : url.slice(i);
 }
 
 /**

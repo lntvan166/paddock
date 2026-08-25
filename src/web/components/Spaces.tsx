@@ -54,7 +54,12 @@ export function Spaces({ onBack, load = fetchSpaceTree }: {
   return (
     <main className="dash mx-auto max-w-2xl safe-bottom">
       <header className="spaces-head">
-        <button type="button" onClick={onBack}>Back</button>
+        {/* Shared treatment (§16.4): this was the one back control in the
+            app not using it. Labelled for its actual destination — the
+            dashboard, which is all `onBack` here has ever pointed at. */}
+        <button type="button" className="term-back" onClick={onBack} aria-label="Back to agents">
+          ‹ Agents
+        </button>
         <h2>Spaces</h2>
       </header>
 

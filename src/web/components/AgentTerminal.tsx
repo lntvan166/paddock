@@ -48,9 +48,17 @@ const JOURNAL_PAGE_TURNS = 20;
 export interface AgentTerminalProps {
   agent: Agent;
   onBack: () => void;
+  /**
+   * Forwarded straight to `PaneTerminal`'s `backLabel` (§16.4): the caller
+   * knows where `onBack` actually goes — the dashboard or `#/spaces` — and
+   * this is the aria-label that has to agree with it. Omitted, `PaneTerminal`
+   * falls back to its own default ("Back to agents"), which is right for
+   * every caller that has no origin to report.
+   */
+  backLabel?: string;
 }
 
-export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
+export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) {
   const [busy, setBusy] = useState(false);
   /**
    * Which half of the pad is on screen, seeded from the stored preference.
@@ -359,6 +367,7 @@ export function AgentTerminal({ agent, onBack }: AgentTerminalProps) {
       paneId={agent.agentId}
       title={agent.name}
       onBack={onBack}
+      backLabel={backLabel}
       load={load}
       paused={busy}
       revealed={useJournal ? journal.lines : undefined}

@@ -134,7 +134,14 @@ test("a deep link to a pane with NO agent opens the shell transcript, with its o
   expect(host.textContent).toContain("operator@dev-box");
   expect(host.querySelector(".term-reply")).not.toBeNull();
   expect(host.querySelector("[data-keypad]")).not.toBeNull();
-  expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to spaces");
+  // FLIPPED (§16.4): this used to assert "Back to spaces" unconditionally,
+  // which was the bug — a shell hard-coded `#/spaces` regardless of where it
+  // was opened from. This deep link is COLD (no prior hash, no hashchange),
+  // so it has no recorded origin and must return to the dashboard, exactly
+  // like the cold agent pane above. See tests/back-navigation.test.tsx for
+  // the case that still lands on `#/spaces` — a pane actually opened from
+  // Spaces.
+  expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to agents");
   localStorage.removeItem("paddock.term.keypad");
 });
 
