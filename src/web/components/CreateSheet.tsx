@@ -219,6 +219,20 @@ export function CreateSheet({
         ? await senders.createSpace(opts)
         : await senders.createTab(target.spaceId, opts);
       onChanged();
+      // Checked BEFORE `paneId` is read, for the reason `launch.ts` gives on
+      // the same check: `readJson` rejects on a non-2xx status but validates
+      // nothing about a 200's body, so a 200 saying `ok: false` — or one with
+      // no `paneId` at all — would resolve here as a value TypeScript believes
+      // is a success. Unguarded, that navigated to `#/pane/undefined`: a
+      // create the operator is told worked, landing them on a pane that does
+      // not exist. Two files close this path and they must close it the same
+      // way.
+      if (created.ok === false) {
+        throw new Error(created.detail ?? `the ${what} was not created`);
+      }
+      if (typeof created.paneId !== "string" || created.paneId === "") {
+        throw new Error(`the ${what} was created, but herdr named no pane in it`);
+      }
       // Started before the navigate, so `starting <kind>…` is already in the
       // store by the time the pane's screen mounts and reads it.
       if (kind !== SHELL) void launchAgent(created.paneId, kind, name.trim(), senders.startAgent);

@@ -3,6 +3,7 @@ import type {
 } from "@shared/herdr-api";
 import type { Space, SpaceTree, Tab, TreePane } from "@shared/types";
 import { toState } from "@server/herdr/adapter";
+import type { HostPath } from "@server/herdr/actions";
 
 export interface TreeOptions {
   /** The operator's home directory, so `cwd` can be tilde-ised before it
@@ -100,8 +101,9 @@ function tildeise(cwd: string, home: string | undefined): string {
 }
 
 /**
- * `~/work` -> `/base/operator/work`. The EXACT inverse of `tildeise` above,
- * and it lives beside it for that reason.
+ * `~/work` -> `/base/operator/work`, or `null` when the tilde cannot be
+ * resolved here. The EXACT inverse of `tildeise` above, and it lives beside it
+ * for that reason.
  *
  * The tilde is paddock's own convention, invented here so a username never
  * crosses the wire. It therefore has to be undone here too, because it comes
@@ -114,13 +116,32 @@ function tildeise(cwd: string, home: string | undefined): string {
  * the expansion happens before the value reaches herdr rather than being left
  * to a shell that never sees it.
  *
- * A bare `~` and `~/...` only. `~operator/...` (another user's home) is left
- * alone deliberately: paddock knows one home directory, and guessing the
- * layout of the others would be inventing a path.
+ * A bare `~` and `~/...` only, and only when there is a home to expand
+ * against. Everything else that still begins with `~` after this comes back
+ * `null` rather than being forwarded, because forwarding is the defect:
+ *
+ * - `~operator/...` is another user's home on a real shell. paddock knows ONE
+ *   home directory, so resolving it against `$HOME` would silently point at a
+ *   different account's path — worse than refusing.
+ * - `~/...` with `HOME` unset or `/` has nothing to expand against at all.
+ *
+ * Both used to be returned unchanged, which handed herdr exactly the value
+ * this function exists to stop it seeing. A refusal the operator can read
+ * beats a folder silently ignored, so the caller gets `null` and turns it into
+ * a 400.
+ *
+ * Returning `HostPath` is the other half of that guarantee: this is the ONLY
+ * function that casts into the brand `CreateOpts.cwd` requires, so a cwd
+ * cannot reach herdr without passing through here. See `HostPath` in
+ * `actions.ts`.
  */
-export function expandHome(cwd: string, home: string | undefined): string {
-  if (!home || home === "/" || !cwd) return cwd;
-  const h = home.replace(/\/+$/, "");
-  if (cwd === "~") return h;
-  return cwd.startsWith("~/") ? `${h}${cwd.slice(1)}` : cwd;
+export function expandHome(cwd: string, home: string | undefined): HostPath | null {
+  if (!cwd) return cwd as HostPath;
+  const h = home && home !== "/" ? home.replace(/\/+$/, "") : null;
+  if (h !== null) {
+    if (cwd === "~") return h as HostPath;
+    if (cwd.startsWith("~/")) return `${h}${cwd.slice(1)}` as HostPath;
+  }
+  // Still tilde-prefixed: unresolvable here, and never forwarded.
+  return cwd.startsWith("~") ? null : (cwd as HostPath);
 }

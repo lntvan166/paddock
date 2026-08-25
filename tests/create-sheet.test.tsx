@@ -559,3 +559,48 @@ test("the header's sheet and a row's sheet are the same component, scoped differ
   expect(calls).toContain('createTab w7 {"cwd":"/srv/db"}');
   await unmount();
 });
+
+test("a 200 that says ok:false never becomes a navigation", async () => {
+  // `readJson` rejects a non-2xx but validates nothing about a 200's body, so
+  // this resolves as a value TypeScript believes is a success. Unguarded it
+  // navigated to `#/pane/undefined` — a create reported as working, landing on
+  // a pane that does not exist. `launch.ts` already refuses the same shape on
+  // the spawn side; the create side has to match.
+  withTree(true);
+  const { senders } = recorder({
+    createSpace: async () => ({ ok: false, detail: "herdr had no room", spaceId: "", tabId: "", paneId: "" }),
+  });
+  const nav: string[] = [];
+  const el = await render(
+    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
+  );
+  await settle();
+  await click(el.querySelector('.spaces-head [data-create="space"]'));
+  await settle();
+  await click(submitButton());
+  await settle();
+  expect(nav).toEqual([]);
+  expect(sheet().textContent).toContain("herdr had no room");
+  await unmount();
+});
+
+test("a 200 with no pane id never becomes a navigation either", async () => {
+  withTree(true);
+  const { senders } = recorder({
+    // The shape a malformed 200 actually has: `ok` true, `paneId` missing.
+    createTab: async (spaceId) => ({ ok: true, tabId: `${spaceId}:t9` } as never),
+  });
+  const nav: string[] = [];
+  const el = await render(
+    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
+  );
+  await settle();
+  await click(el.querySelector('[data-space-row] [data-create="tab"]'));
+  await settle();
+  await click(submitButton());
+  await settle();
+  expect(nav).toEqual([]);
+  expect(nav.join("")).not.toContain("undefined");
+  expect(sheet().textContent).toContain("named no pane");
+  await unmount();
+});

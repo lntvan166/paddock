@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { compress } from "hono/compress";
-import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
+import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { expandHome } from "@server/herdr/tree";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
@@ -258,7 +258,7 @@ function findSpace(tree: SpaceTree, id: string): Space | undefined {
 function normalizeCreateBody(
   body: Record<string, unknown>,
   home: string | undefined,
-): { label?: string; cwd?: string; err?: string } {
+): { label?: string; cwd?: HostPath; err?: string } {
   const rawLabel = body.label;
   if (rawLabel !== undefined && typeof rawLabel !== "string") {
     return { err: "label must be a string" };
@@ -283,9 +283,18 @@ function normalizeCreateBody(
   // is checked BEFORE this, against what the client sent, so the bound is on
   // the operator's input rather than on however long this machine's home path
   // happens to be.
-  const cwd = typeof rawCwd === "string" && rawCwd.trim() !== ""
-    ? expandHome(rawCwd.trim(), home)
-    : undefined;
+  const blank = typeof rawCwd !== "string" || rawCwd.trim() === "";
+  const cwd = blank ? undefined : expandHome((rawCwd as string).trim(), home);
+  // `null` means the value still begins with `~` and cannot be resolved here —
+  // `~someone/work`, or `~/work` on a server with no HOME. The first version of
+  // this forwarded both unchanged, which handed herdr precisely the value the
+  // line above exists to stop it seeing. Refused instead, with a reason the
+  // operator can read: a 400 beats a pane that quietly comes up in the wrong
+  // folder. Returned from OUTSIDE the create routes' `try`, like every other
+  // deliberate refusal here, so it can never be relabelled as a 502.
+  if (cwd === null) {
+    return { err: "cwd must be an absolute path — a leading ~ cannot be resolved here" };
+  }
 
   return { label, cwd };
 }

@@ -7,6 +7,15 @@ import {
 } from "@server/herdr/actions";
 import { HERDR_TIMEOUT_MS } from "@server/herdr/socket";
 import { createApp } from "@server/routes";
+import { expandHome } from "@server/herdr/tree";
+
+/**
+ * A cwd as `CreateOpts` requires it — minted through the ONE function allowed
+ * to, which is the point of the `HostPath` brand: nothing can hand herdr a raw
+ * client string without going through the tilde expansion. An absolute path
+ * never comes back null, so the assertion is safe here.
+ */
+const hostPath = (p: string) => expandHome(p, "/base/operator")!;
 import { AgentStore } from "@server/state/store";
 import { Hub } from "@server/ws/hub";
 import type { Agent, SpaceTree } from "@shared/types";
@@ -117,7 +126,7 @@ test("createSpace makes exactly ONE herdr call — no snapshot re-read to find t
 test("createSpace always sends focus:false", async () => {
   const { path, seen, stop } = await fakeHerdr(() => workspaceCreated());
   try {
-    await createActions(path).createSpace({ label: "api-refactor", cwd: "/srv/project" });
+    await createActions(path).createSpace({ label: "api-refactor", cwd: hostPath("/srv/project") });
     expect(seen[0].params.focus).toBe(false);
     expect(seen[0].params.label).toBe("api-refactor");
     expect(seen[0].params.cwd).toBe("/srv/project");
@@ -594,11 +603,18 @@ test("an absolute cwd is forwarded untouched, and so is one on a server with no 
   await post(withHome.app, "/api/spaces", { cwd: "/srv/project" });
   expect(withHome.calls).toEqual([`createSpace:${JSON.stringify({ cwd: "/srv/project" })}`]);
 
-  // No home to expand against leaves the value alone rather than inventing
-  // one — the same thing `tildeise` does in that case.
+  // FLIPPED. This asserted that `~/work` on a server with no HOME was
+  // forwarded unchanged, "the same thing `tildeise` does in that case". That
+  // was wrong for the inbound direction and it is the whole reason this
+  // function exists: `tildeise` declining to act leaves a real absolute path
+  // alone, whereas forwarding a tilde hands herdr the one value measured to
+  // produce a pane in the wrong folder with nothing said. With no home there
+  // is nothing to expand against, so it is refused instead — see the refusal
+  // test below.
   const noHome = harness(async () => TREE);
-  await post(noHome.app, "/api/spaces", { cwd: "~/work" });
-  expect(noHome.calls).toEqual([`createSpace:${JSON.stringify({ cwd: "~/work" })}`]);
+  const res2 = await post(noHome.app, "/api/spaces", { cwd: "~/work" });
+  expect(res2.status).toBe(400);
+  expect(noHome.calls).toEqual([]);
 });
 
 test("the cwd length ceiling is measured against what the CLIENT sent, not the expansion", async () => {
@@ -609,4 +625,51 @@ test("the cwd length ceiling is measured against what the CLIENT sent, not the e
   const res = await post(app, "/api/spaces", { cwd: `~/${"a".repeat(10_001)}` });
   expect(res.status).toBe(400);
   expect(calls).toEqual([]);
+});
+
+test("a tilde that cannot be resolved is REFUSED 400, never forwarded, on both create routes", async () => {
+  // The whole point of the expansion is that herdr was measured to neither
+  // expand nor refuse a `~` — it silently starts the pane in the home
+  // directory. A value that is STILL tilde-prefixed after expansion is
+  // therefore the exact input the expansion exists to stop, and forwarding it
+  // would leave the defect inside its own fix.
+  const home = "/base/operator";
+
+  // Another user's home. Resolving it against $HOME would point at a
+  // different account's path — worse than refusing.
+  const other = harness(async () => TREE, { home });
+  const res = await post(other.app, "/api/spaces", { cwd: "~someone/work" });
+  expect(res.status).toBe(400);
+  expect((await res.json() as any).detail).toContain("absolute path");
+  expect(other.calls).toEqual([]);
+
+  // `~work` as well: on a real shell that is user `work`'s home, not a
+  // relative name, so reading it either way is a guess. The rule is the simple
+  // one — still tilde-prefixed after expansion means refused.
+  const bare = harness(async () => TREE, { home });
+  expect((await post(bare.app, "/api/spaces", { cwd: "~work" })).status).toBe(400);
+  expect(bare.calls).toEqual([]);
+
+  // Nothing to expand against. The tab route shares `normalizeCreateBody`, so
+  // it is asserted on the other shape rather than on a second copy of the
+  // first.
+  const noHome = harness(async () => TREE);
+  const tab = await post(noHome.app, "/api/spaces/w1/tabs", { cwd: "~/work" });
+  expect(tab.status).toBe(400);
+  expect((await tab.json() as any).detail).toContain("absolute path");
+  // Refused BEFORE the space id was even validated: no tree read, no herdr
+  // call. That is also what keeps this 400 distinguishable from the 502 the
+  // catch produces — the refusal returns from outside the `try` entirely.
+  expect(noHome.calls).toEqual([]);
+  expect(noHome.readTreeCallCount()).toBe(0);
+});
+
+test("a path with no tilde at all is forwarded, refusal or not", async () => {
+  // The refusal is narrow on purpose: it covers what paddock measured herdr
+  // mishandling and nothing else. Whether herdr accepts a relative cwd is
+  // herdr's business, and its answer arrives verbatim either way.
+  const { app, calls } = harness(async () => TREE, { home: "/base/operator" });
+  const res = await post(app, "/api/spaces", { cwd: "./relative" });
+  expect(res.status).toBe(200);
+  expect(calls).toEqual([`createSpace:${JSON.stringify({ cwd: "./relative" })}`]);
 });

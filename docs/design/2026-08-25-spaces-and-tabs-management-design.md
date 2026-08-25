@@ -487,6 +487,18 @@ a filesystem path on a phone keyboard; that is the thing to improve on. No
 directory browsing — that needs a filesystem-listing endpoint, which is a
 security surface of its own and out of scope.
 
+**Say the round trip out loud: those quick picks are the tree's own
+TILDE-ISED cwds coming back.** `tree.ts` rewrites every `cwd` as `~/…` on the
+way out so a username never crosses the wire, so a pick the operator taps
+arrives at the create route as `~/project`, not as an absolute path — and
+herdr was measured (2026-08-25, live) to neither expand nor refuse a leading
+`~`: it starts the pane in the home directory and says nothing. So the tilde
+paddock invented has to be undone by paddock, server-side, before the value
+reaches herdr: `expandHome` in `tree.ts` is the exact inverse of `tildeise`
+and sits beside it, it is the ONLY function that mints the `HostPath` brand
+`CreateOpts.cwd` requires, and a tilde it cannot resolve (`~someone/…`, or
+`~/…` with no `HOME`) is refused with a 400 rather than forwarded.
+
 ---
 
 ## 10. Close

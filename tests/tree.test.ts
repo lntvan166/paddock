@@ -71,16 +71,27 @@ test("a pane whose tab is missing from the snapshot is dropped, not orphaned", (
   expect(spaces.map((s) => s.spaceId)).not.toContain("w9");
 });
 
+/**
+ * `expandHome` widened back to a plain string.
+ *
+ * Its return type is the `HostPath` BRAND — the mechanism that stops a future
+ * cwd-accepting route reaching herdr without expanding first — and a branded
+ * value cannot be compared to a string literal. Widening here rather than
+ * casting each assertion: the brand is a compile-time guarantee about who may
+ * mint a value, and these tests are about what the value IS.
+ */
+const expanded = (cwd: string, home?: string): string | null => expandHome(cwd, home);
+
 test("expandHome is the exact inverse of the tilde-ising the tree does", () => {
   // The tilde only exists because paddock put it there, and it comes back:
   // the create sheet offers the tree's own cwds as quick picks. Measured live,
   // herdr neither expands nor refuses one — the pane came up in the home
   // directory with nothing saying the chosen folder was ignored.
   const home = "/base/operator";
-  expect(expandHome("~/work", home)).toBe("/base/operator/work");
-  expect(expandHome("~", home)).toBe("/base/operator");
+  expect(expanded("~/work", home)).toBe("/base/operator/work");
+  expect(expanded("~", home)).toBe("/base/operator");
   // A trailing slash on HOME must not double up.
-  expect(expandHome("~/work", "/base/operator/")).toBe("/base/operator/work");
+  expect(expanded("~/work", "/base/operator/")).toBe("/base/operator/work");
   // Round trip, through the real tilde-ising: whatever the tree renders is
   // what a quick pick sends back, so this has to arrive as what herdr said.
   const snap = { ...(snapshot as any), panes: (snapshot as any).panes.map((p: any) =>
@@ -88,20 +99,36 @@ test("expandHome is the exact inverse of the tilde-ising the tree does", () => {
   const t = toSpaceTree(snap as HerdrSessionSnapshot, NOW, { home });
   const rendered = t.spaces.find((s) => s.spaceId === "w3")!.tabs[0]!.panes[0]!.cwd;
   expect(rendered).toBe("~/work");
-  expect(expandHome(rendered, home)).toBe("/base/operator/work");
+  expect(expanded(rendered, home)).toBe("/base/operator/work");
 });
 
 test("expandHome leaves alone everything that is not paddock's own tilde", () => {
   const home = "/base/operator";
-  expect(expandHome("/srv/project", home)).toBe("/srv/project");
-  // Another user's home. paddock knows ONE home directory; guessing the
-  // layout of the others would be inventing a path.
-  expect(expandHome("~someone/work", home)).toBe("~someone/work");
-  // A relative path that merely starts with a tilde character is not `~/`.
-  expect(expandHome("~work", home)).toBe("~work");
-  // No home, and the degenerate `/` home, both leave the value untouched —
-  // the same cases `tildeise` declines to act on.
-  expect(expandHome("~/work", undefined)).toBe("~/work");
-  expect(expandHome("~/work", "/")).toBe("~/work");
-  expect(expandHome("", home)).toBe("");
+  expect(expanded("/srv/project", home)).toBe("/srv/project");
+  expect(expanded("./relative", home)).toBe("./relative");
+  expect(expanded("", home)).toBe("");
+  // A prefix that is not a path boundary must not be shortened either — the
+  // tilde-ising side has the same rule, and this is its inverse.
+  expect(expanded("/base/operatorX/y", home)).toBe("/base/operatorX/y");
+});
+
+test("expandHome REFUSES a tilde it cannot resolve, rather than forwarding it", () => {
+  // The first version of this returned both of these unchanged, which handed
+  // herdr exactly the value the function exists to stop it seeing: measured
+  // live, herdr neither expands nor refuses a `~`, it silently starts the pane
+  // in the home directory. Null is the refusal the route turns into a 400.
+  const home = "/base/operator";
+  // Another user's home on a real shell. Resolving it against $HOME would
+  // point at a different account's path, which is worse than refusing.
+  expect(expanded("~someone/work", home)).toBeNull();
+  expect(expanded("~someone", home)).toBeNull();
+  // `~work` too, and NOT because it looks relative: on a real shell a leading
+  // `~` followed by a name IS a user-home reference, so treating it as a plain
+  // relative path is the same silent mis-resolution in a smaller disguise. The
+  // rule is the simple one — anything still tilde-prefixed is refused.
+  expect(expanded("~work", home)).toBeNull();
+  // Nothing to expand against: no HOME, and the degenerate `/` home.
+  expect(expanded("~/work", undefined)).toBeNull();
+  expect(expanded("~/work", "/")).toBeNull();
+  expect(expanded("~", undefined)).toBeNull();
 });
