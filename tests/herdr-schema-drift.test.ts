@@ -1,12 +1,17 @@
 import { expect, test } from "bun:test";
 import type {
+  HerdrAgentManifest,
+  HerdrAgentManifests,
   HerdrAgentRaw,
+  HerdrAgentStarted,
   HerdrPaneInfo,
   HerdrPaneRead,
   HerdrPaneReadResult,
   HerdrSessionSnapshot,
   HerdrStatusChanged,
+  HerdrTabCreated,
   HerdrTabInfo,
+  HerdrWorkspaceCreated,
   HerdrWorkspaceInfo,
   HerdrWorkspaceRaw,
 } from "@shared/herdr-api";
@@ -359,4 +364,141 @@ test.skipIf(!HAVE_HERDR)("HerdrSessionSnapshot has not drifted from the installe
     DECLARED_SNAPSHOT_FIELDS,
     IGNORED_SNAPSHOT_FIELDS,
   );
+});
+
+// `HerdrAgentManifest` models one entry of `server.agent_manifests`'s
+// `manifests[]`. Unlike the four envelopes below, its upstream shape IS a
+// named `$def` — `AgentManifestInfo` — so it gets the same bidirectional
+// treatment as every payload type above.
+const DECLARED_AGENT_MANIFEST_FLAGS = {
+  agent: true,
+} satisfies Record<keyof HerdrAgentManifest, true>;
+
+const DECLARED_AGENT_MANIFEST_FIELDS = Object.keys(
+  DECLARED_AGENT_MANIFEST_FLAGS,
+) as (keyof HerdrAgentManifest)[];
+
+// Fields the installed herdr's `AgentManifestInfo` carries that paddock
+// deliberately does not model (protocol 20). paddock reads only `agent` —
+// the harness name §9.3 uses to build the kind allowlist at runtime, never
+// hardcoded. Everything else here is metadata about herdr's own
+// update-checking machinery (cached remote version, last-checked timestamp,
+// update errors/results, override shadowing, source and its kind, a
+// warning string) that paddock has no present use for. Named explicitly so
+// a new field upstream is a decision to make, not a silently dropped
+// column — this is the live protocol-20 property list, not a transcription
+// from the task brief that first proposed this type, which undercounted it
+// (8 properties; the live schema has 10).
+const IGNORED_AGENT_MANIFEST_FIELDS = [
+  "active_version",
+  "cached_remote_version",
+  "local_override_shadowing_remote",
+  "remote_last_checked_unix",
+  "remote_update_error",
+  "remote_update_result",
+  "source",
+  "source_kind",
+  "warning",
+] as const;
+
+test.skipIf(!HAVE_HERDR)("HerdrAgentManifest has not drifted from the installed herdr's AgentManifestInfo schema", async () => {
+  // `agent` is the whole reason paddock reads this. A rename here would make
+  // §9.3's kind allowlist come back empty on every machine, silently — no
+  // kinds to start, with no error anywhere.
+  const schema = await liveSchema();
+  expectNoDrift(
+    Object.keys(schema.schemas.success_response.$defs.AgentManifestInfo.properties),
+    DECLARED_AGENT_MANIFEST_FIELDS,
+    IGNORED_AGENT_MANIFEST_FIELDS,
+  );
+});
+
+// `HerdrTabCreated`, `HerdrWorkspaceCreated`, `HerdrAgentStarted` and
+// `HerdrAgentManifests` are the ENVELOPES for `tab.create`, `workspace.create`,
+// `agent.start` and `server.agent_manifests`. Checked against the live
+// protocol-20 schema while writing this: none of the four is a named `$def`
+// anywhere in `herdr api schema --json` — they exist only as anonymous
+// members of `success_response.$defs.ResponseResult`'s `oneOf`, found (as
+// `HerdrPaneRead`'s own test above already does for `pane_read`) by matching
+// on `properties.type.const`. Unlike `pane_read`, none of these four was
+// re-derived that way here: they were measured from live creates instead —
+// `docs/probes/2026-08-25-structural-events.md` — and that measurement, not
+// this schema, is the source of truth cited below. Recorded as an explicit
+// gap in `docs/roadmap.md`'s "Known v3 gaps", alongside the same honest
+// treatment already given to `agent.send_keys` / `agent.prompt` /
+// `agent.wait`: known, but not drift-tested against a live schema.
+//
+// §9.1 originally read `TabInfo` — a real `$def` with no `pane_id` — and
+// concluded from that alone that `tab.create`'s whole response has no pane
+// id, prescribing a snapshot re-read to find the new pane. A probe measured
+// that false: the pane arrives on the envelope as `root_pane`. That is the
+// same mistake as the `result.text` bug this repo already shipped — reading
+// a `$defs` entry as though it were the whole response — so this file does
+// not invent a `$defs.TabCreated`/`$defs.WorkspaceCreated`/`$defs.AgentStarted`
+// lookup that doesn't exist just to keep the same bidirectional test shape a
+// row further down; a test that reads `undefined` off a schema and passes
+// would be worse than no test.
+//
+// What CAN be pinned at compile time, and is pinned below: each envelope's
+// own field set (so adding or removing a member is a `make check` failure in
+// THIS file, even with no live comparison), and that each member already
+// under the guarantee above — `tab`, `root_pane`, `workspace`, `agent`,
+// `manifests` — stays typed as the SAME guarded interface, not an inline
+// duplicate shape that could silently diverge from it.
+const DECLARED_TAB_CREATED_FLAGS = {
+  type: true,
+  tab: true,
+  root_pane: true,
+} satisfies Record<keyof HerdrTabCreated, true>;
+
+const DECLARED_WORKSPACE_CREATED_FLAGS = {
+  type: true,
+  workspace: true,
+  tab: true,
+  root_pane: true,
+} satisfies Record<keyof HerdrWorkspaceCreated, true>;
+
+const DECLARED_AGENT_STARTED_FLAGS = {
+  type: true,
+  agent: true,
+} satisfies Record<keyof HerdrAgentStarted, true>;
+
+const DECLARED_AGENT_MANIFESTS_FLAGS = {
+  type: true,
+  manifests: true,
+} satisfies Record<keyof HerdrAgentManifests, true>;
+
+// Compile-time only, and this is the reason it must not be deleted as
+// "unused": each generic parameter's constraint forces the corresponding
+// envelope type to stay assignable to a shape built from the already-guarded
+// payload interfaces. If a member's declared type in
+// `scripts/gen-herdr-types.ts` ever changed away from `HerdrTabInfo` /
+// `HerdrPaneInfo` / `HerdrWorkspaceInfo` / `HerdrAgentRaw` /
+// `HerdrAgentManifest[]`, this call stops compiling — a `make check`
+// failure, not a `bun test` one (Bun strips types without checking them).
+function pinsGuardedMembers<
+  _TabCreated extends { tab: HerdrTabInfo; root_pane: HerdrPaneInfo },
+  _WorkspaceCreated extends {
+    workspace: HerdrWorkspaceInfo;
+    tab: HerdrTabInfo;
+    root_pane: HerdrPaneInfo;
+  },
+  _AgentStarted extends { agent: HerdrAgentRaw },
+  _AgentManifests extends { manifests: HerdrAgentManifest[] },
+>(): void {}
+pinsGuardedMembers<HerdrTabCreated, HerdrWorkspaceCreated, HerdrAgentStarted, HerdrAgentManifests>();
+
+test("HerdrTabCreated/HerdrWorkspaceCreated/HerdrAgentStarted/HerdrAgentManifests declare exactly the fields pinned in this file (no live $def exists to compare against — see the comment above)", () => {
+  // No `HAVE_HERDR` guard: unlike every `expectNoDrift` test in this file,
+  // this one compares this file against itself, not against a live herdr,
+  // so it runs even where herdr is not installed (e.g. CI).
+  expect(Object.keys(DECLARED_TAB_CREATED_FLAGS).sort()).toEqual(["root_pane", "tab", "type"]);
+  expect(Object.keys(DECLARED_WORKSPACE_CREATED_FLAGS).sort()).toEqual([
+    "root_pane",
+    "tab",
+    "type",
+    "workspace",
+  ]);
+  expect(Object.keys(DECLARED_AGENT_STARTED_FLAGS).sort()).toEqual(["agent", "type"]);
+  expect(Object.keys(DECLARED_AGENT_MANIFESTS_FLAGS).sort()).toEqual(["manifests", "type"]);
 });

@@ -198,6 +198,46 @@ export interface HerdrSessionSnapshot {
   agents: HerdrAgentRaw[];
 }
 
+/** \`tab.create\` result. An ENVELOPE: the new tab AND its first pane.
+ *
+ * §9.1 originally said \`tab.create\` returns a bare \`TabInfo\` with no
+ * \`pane_id\`, and prescribed re-reading the snapshot to find the new pane.
+ * Measured false — the pane arrives here as \`root_pane\`. \`TabInfo\` the TYPE
+ * genuinely has no pane id; reading a \`\$defs\` entry as the whole response is
+ * the same mistake that produced the \`result.text\` bug.
+ */
+export interface HerdrTabCreated {
+  type: "tab_created";
+  tab: HerdrTabInfo;
+  root_pane: HerdrPaneInfo;
+}
+
+/** \`workspace.create\` result. Same envelope shape, one level up. */
+export interface HerdrWorkspaceCreated {
+  type: "workspace_created";
+  workspace: HerdrWorkspaceInfo;
+  tab: HerdrTabInfo;
+  root_pane: HerdrPaneInfo;
+}
+
+/** \`agent.start\` result. */
+export interface HerdrAgentStarted {
+  type: "agent_started";
+  agent: HerdrAgentRaw;
+}
+
+/** \`server.agent_manifests\` result — the harnesses THIS machine has.
+ *
+ * The kind allowlist is derived from this at runtime and never hardcoded:
+ * \`AgentStartParams.kind\` is a plain string in protocol 20, so the only
+ * defensible allowlist is what is actually installed (§9.3).
+ */
+export interface HerdrAgentManifest { agent: string }
+export interface HerdrAgentManifests {
+  type: "agent_manifest_status";
+  manifests: HerdrAgentManifest[];
+}
+
 export interface HerdrRequest { id: string; method: string; params: object }
 export type HerdrResponse =
   | { id: string; result: Record<string, unknown> }
