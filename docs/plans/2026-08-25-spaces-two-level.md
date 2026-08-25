@@ -745,7 +745,7 @@ import { paneHash } from "@shared/route";
 import type { Tab, TreePane } from "@shared/types";
 import { paneLabel } from "@web/components/pane-label";
 import { RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
-import { StatusDot } from "@web/components/ui/StatusDot";
+import { NO_AGENT, StateMarker } from "@web/components/ui/StateMarker";
 
 /**
  * One tab as a row, with its panes under it only when it holds more than one.
@@ -799,7 +799,7 @@ export function TabRow({ tab, onChanged, senders }: {
             keyboard. */}
         {root !== null ? (
           <a href={paneHash(root.paneId)}>
-            {!split && <PaneMarker pane={root} />}
+            {!split && <StateMarker state={root.state} />}
             <span className="tab-heading">
               <span className="tab-name">{tabName}</span>
             </span>
@@ -827,7 +827,7 @@ export function TabRow({ tab, onChanged, senders }: {
           {tab.panes.map((p) => (
             <li key={p.paneId} data-pane-row data-state={p.state ?? "none"}>
               <a href={paneHash(p.paneId)}>
-                <PaneMarker pane={p} />
+                <StateMarker state={p.state} />
                 <span className="pane-heading">
                   <span className="pane-name">{paneLabel(p)}</span>
                 </span>
@@ -841,17 +841,17 @@ export function TabRow({ tab, onChanged, senders }: {
   );
 }
 
-/** A shell has no state, so it gets no StatusDot — that component's whole
- *  contract is that a dot MEANS one of four states. */
-function PaneMarker({ pane }: { pane: TreePane }) {
-  if (pane.state === null) return <span className="dot-none" aria-hidden="true" />;
-  return <StatusDot state={pane.state} />;
-}
-
-/** Colour is never the only channel — StatusDot is aria-hidden, so the state
- *  has to be readable as text right here. */
+/**
+ * Colour is never the only channel — the marker is `aria-hidden`, so the state
+ * has to be readable as text right here.
+ *
+ * The MARKER is not defined in this file: `ui/StateMarker.tsx` owns the rule
+ * that a null state gets `.dot-none` rather than a `StatusDot`, because this
+ * surface, the space rows and the space picker all need it. Only the class name
+ * below is this surface's own, which is why this much stays local.
+ */
 function PaneState({ pane }: { pane: TreePane }) {
-  return <span className="pane-state">{pane.state ?? "no agent"}</span>;
+  return <span className="pane-state">{pane.state ?? NO_AGENT}</span>;
 }
 ```
 
@@ -998,7 +998,7 @@ import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
 } from "@web/components/shadcn/sheet";
 import { sortSpaces, spaceState } from "@web/components/space-sort";
-import { StatusDot } from "@web/components/ui/StatusDot";
+import { NO_AGENT, StateMarker } from "@web/components/ui/StateMarker";
 
 /**
  * Switching space, from the space screen's own header title.
@@ -1065,13 +1065,16 @@ export function SpacePicker({ spaces, currentId, navigate = (hash) => { location
                   aria-current={here ? "true" : undefined}
                   onClick={() => choose(s)}
                 >
-                  {state === null
-                    ? <span className="dot-none" aria-hidden="true" />
-                    : <StatusDot state={state} surfaceVar="--surface" />}
+                  {/* `StateMarker`, not a local null-check: the rule that a
+                      null state gets `.dot-none` rather than a `StatusDot`
+                      lives in one place now (`ui/StateMarker.tsx`), because
+                      this picker, the space rows and the tab rows all need it
+                      and three copies would be three things free to drift. */}
+                  <StateMarker state={state} surfaceVar="--surface" />
                   <span className="space-name">{s.label ?? s.spaceId}</span>
                   {/* Colour is never the only channel: StatusDot is
                       aria-hidden, so the state is said in words here. */}
-                  <span className="space-state">{state ?? "no agent"}</span>
+                  <span className="space-state">{state ?? NO_AGENT}</span>
                   <span className="space-count">{s.paneCount}</span>
                 </button>
               </li>
@@ -1875,7 +1878,7 @@ this file no longer renders is worse than none.
 import { spaceHash } from "@shared/route";
 import type { Space } from "@shared/types";
 import { spaceState } from "@web/components/space-sort";
-import { StatusDot } from "@web/components/ui/StatusDot";
+import { NO_AGENT, StateMarker } from "@web/components/ui/StateMarker";
 
 /**
  * One space, as a row in the list — and nothing else.
@@ -1902,13 +1905,13 @@ export function SpaceRow({ space }: { space: Space }) {
   return (
     <li data-space-row data-space-id={space.spaceId} data-state={state ?? "none"}>
       <a href={spaceHash(space.spaceId)}>
-        {state === null
-          ? <span className="dot-none" aria-hidden="true" />
-          : <StatusDot state={state} />}
+        {/* `StateMarker` carries the null-state rule for every surface that
+            shows one — see `ui/StateMarker.tsx`. */}
+        <StateMarker state={state} />
         <span className="space-name">{label}</span>
         {/* Colour is never the only channel: StatusDot is aria-hidden, and this
             palette spends red and green on the two states that matter most. */}
-        <span className="space-state">{state ?? "no agent"}</span>
+        <span className="space-state">{state ?? NO_AGENT}</span>
         {/* A bare number, in mono, because it is a quantity to compare down a
             column rather than a sentence to read. The pluralised
             "2 tabs"/"1 pane" phrasing went with the merged row that needed to
