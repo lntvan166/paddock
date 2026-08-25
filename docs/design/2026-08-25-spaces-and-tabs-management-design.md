@@ -234,6 +234,25 @@ rendered as "as of 4 s ago" beside a refresh control. This also closes the
 
 ## 6. The Spaces screen
 
+> **SUPERSEDED 2026-08-25** by
+> `docs/design/2026-08-25-spaces-two-level-redesign.md`. The screen is a
+> two-level drill-down: `#/spaces` lists spaces only, `#/space/<id>` lists one
+> space's tabs and is where rename, close and create live.
+>
+> The measurement this section argues from is correct and still worth reading —
+> six of seven spaces held one tab and one pane, so a three-level browser
+> really would have spent two levels rendering one child each. The conclusion
+> drawn from it was wrong. It counted **children per space** and never counted
+> **controls per row**: with eleven spaces each carrying a link, a `⋯` and a
+> `+`, the shipped screen put 33 tap targets on one viewport while fitting all
+> eleven rows without a scroll. The second level's value was never vertical
+> space; it is that management affordances belong on the screen where you have
+> already chosen what you are managing.
+>
+> Read the successor for the layout. §6.1 below still binds, minus its "no
+> horizontal scroll rails" contrast — the rail is still refused, for the
+> measurement in the successor's §5.2.
+
 Route `#/spaces`, hash-routed like `#/settings`.
 
 **Layout: one adaptive vertical outline.** Not a drill-down, and not
