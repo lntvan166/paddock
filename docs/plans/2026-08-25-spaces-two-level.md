@@ -609,7 +609,12 @@ Expected: PASS, and no other test in those three files regresses.
 - [ ] **Step 7: Run the whole suite**
 
 Run: `make test`
-Expected: 1455 + 3 = **1458 pass, 0 fail**. Any other failure is a real
+Expected: **exactly 3 more passing than the branch head you started from, and
+0 fail.** Do not expect an absolute number: Tasks 1 and 2 run before this one
+and add 10 tests between them, so the baseline is whatever `git stash`-free
+`make test` reported before your edits — record that number first, then compare.
+(The branch was at 1455 when the plan was written, so the figure you should see
+here is 1468.) Any other failure is a real
 regression from one of these three edits — do not adjust the failing test to
 match; find what the edit broke.
 
