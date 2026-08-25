@@ -24,6 +24,17 @@ export interface HubOptions {
    *  running executable cannot change while the process runs, and `update`
    *  refuses inside a keg, so there is nothing to re-read. */
   managedBy?: ManagedBy | null;
+  /**
+   * Whether the server can read a session tree — the capability behind
+   * `GET /api/spaces`, forwarded so the client can decline to offer a control
+   * that would always error (see `ServerMessage`'s `spaces`).
+   *
+   * A GETTER, unlike `managedBy`: the composition root builds the hub before
+   * it knows whether it has a tree reader, and a value captured here would be
+   * captured too early. The hub still learns nothing about herdr — it forwards
+   * a boolean somebody else decided.
+   */
+  spaces?: () => boolean;
 }
 
 /**
@@ -48,6 +59,7 @@ export class Hub {
   private readonly build: () => string | null;
   private readonly latestKnown: () => string | null;
   private readonly managedBy: ManagedBy | null;
+  private readonly spaces: () => boolean;
 
   constructor(opts: HubOptions = {}) {
     this.coalesceMs = opts.coalesceMs ?? 100;
@@ -56,6 +68,7 @@ export class Hub {
     this.build = opts.build ?? (() => null);
     this.latestKnown = opts.latestKnown ?? (() => null);
     this.managedBy = opts.managedBy ?? null;
+    this.spaces = opts.spaces ?? (() => false);
   }
 
   get clientCount(): number {
@@ -127,6 +140,7 @@ export class Hub {
     this.sendTo(client, {
       type: "snapshot", hostId, agents, serverTime: this.now(),
       build: this.build(), latestKnown: this.latestKnown(), managedBy: this.managedBy,
+      spaces: this.spaces(),
     });
   }
 

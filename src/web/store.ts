@@ -37,6 +37,20 @@ export interface ClientState {
    * changed.
    */
   treeStaleAt: number;
+  /**
+   * Whether the server said it can read a session tree at all.
+   *
+   * Gates the Spaces control in the header. `--demo` has no herdr session, so
+   * `GET /api/spaces` 404s honestly there and the control would always error —
+   * which `routes.ts` already records as a defect class, from `/ack`'s Dismiss
+   * button. A CAPABILITY, never a demo flag and never a device check: nothing
+   * in the client knows what `--demo` is.
+   *
+   * Starts `false`, and a snapshot that omits the field leaves it alone: "this
+   * server does not say it has a tree" and "it has none" get the same answer,
+   * because the wrong one in that direction is a button that errors.
+   */
+  spacesAvailable: boolean;
 }
 
 /**
@@ -101,6 +115,21 @@ export function backoffMs(attempt: number, rand: () => number = Math.random): nu
   return Math.round(base * (0.5 + rand() * 0.5));
 }
 
+/**
+ * The tree-reading capability, from a snapshot that may not mention it.
+ *
+ * `undefined` is left alone rather than read as `false`, the same distinction
+ * `trackManagedBy` draws: a frame that does not say is not a frame that denies.
+ * The initial value is already `false`, so a server which never says stays
+ * without the control either way.
+ */
+function trackSpaces(
+  state: ClientState, spaces: boolean | undefined,
+): Partial<ClientState> {
+  if (spaces === undefined) return {};
+  return { spacesAvailable: spaces };
+}
+
 export function applyMessage(state: ClientState, msg: ServerMessage): ClientState {
   if (msg.type === "snapshot") {
     return {
@@ -108,6 +137,7 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
       ...trackBuild(state, msg.build),
       ...trackLatestKnown(state, msg.latestKnown),
       ...trackManagedBy(state, msg.managedBy),
+      ...trackSpaces(state, msg.spaces),
       hostId: msg.hostId,
       agents: msg.agents,
       lastMessageAt: msg.serverTime,
@@ -235,6 +265,7 @@ export const useStore = create<Store>((set, get) => {
     latestKnown: null,
     managedBy: null,
     treeStaleAt: 0,
+    spacesAvailable: false,
     connect,
   };
 });

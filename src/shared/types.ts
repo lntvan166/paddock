@@ -324,6 +324,28 @@ export type ServerMessage =
        * distinguishes them.
        */
       managedBy?: ManagedBy | null;
+      /**
+       * Whether this server can read a session tree at all — the capability
+       * behind `GET /api/spaces`, and therefore behind the Spaces control in
+       * the header.
+       *
+       * On the wire because the CLIENT cannot know it. In `--demo` there is no
+       * herdr session to read, so `/api/spaces` 404s honestly — and the header
+       * offered the button anyway, which is a control that always errors, in
+       * the mode README screenshots come from. `routes.ts` records the same
+       * defect class for `/ack`'s Dismiss button.
+       *
+       * A CAPABILITY, not a demo flag: nothing in the client branches on
+       * `--demo`, and this stays true of the browser-only demo backend too,
+       * which simply does not send the field. Absent therefore means "this
+       * server does not say it has a tree", and the control is not offered —
+       * an absent control being strictly better than one that errors.
+       *
+       * Snapshot only. It cannot change while the process runs, so putting it
+       * on the heartbeat would be twenty bytes every twenty seconds to restate
+       * a constant.
+       */
+      spaces?: boolean;
     }
   | { type: "delta"; upserted: Agent[]; removedIds: string[]; serverTime: number }
   /**

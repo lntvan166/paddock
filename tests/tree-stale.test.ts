@@ -8,7 +8,7 @@ const NOW = 1_700_000_000_000;
 const base = (): ClientState => ({
   agents: [], hostId: null, connected: true, lastMessageAt: NOW,
   build: null, updateAvailable: false, latestKnown: null, managedBy: null,
-  treeStaleAt: 0,
+  treeStaleAt: 0, spacesAvailable: false,
 });
 
 test("a tree-stale frame does not crash the delta fall-through", () => {

@@ -262,3 +262,26 @@ test("with nothing injected, managedBy is null rather than undefined", () => {
   hub.sendHeartbeat();
   expect((sent[0] as Record<string, unknown>).managedBy).toBeNull();
 });
+
+test("a snapshot states whether a session tree can be read, so the client can decline to offer Spaces", () => {
+  // A GETTER, unlike managedBy: the composition root builds the hub before it
+  // knows whether it has a tree reader, so a value captured at construction
+  // would be captured too early — and would read `false` on a real server.
+  let hasTree = false;
+  const hub = new Hub({ now: () => NOW, spaces: () => hasTree });
+  const { client, sent } = fakeClient();
+
+  hub.sendSnapshot(client, "dev-box", []);
+  expect((sent[0] as Record<string, unknown>).spaces).toBe(false);
+
+  hasTree = true;
+  hub.sendSnapshot(client, "dev-box", []);
+  expect((sent[1] as Record<string, unknown>).spaces).toBe(true);
+});
+
+test("a hub told nothing about a tree does not claim one", () => {
+  const hub = new Hub({ now: () => NOW });
+  const { client, sent } = fakeClient();
+  hub.sendSnapshot(client, "dev-box", []);
+  expect((sent[0] as Record<string, unknown>).spaces).toBe(false);
+});

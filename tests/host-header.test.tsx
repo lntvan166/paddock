@@ -31,6 +31,27 @@ test("the settings button is the entry point to #/settings", async () => {
   expect(calls).toEqual(["#/settings"]);
 });
 
+test("no Spaces control when there is no tree to show — a control that always errors is worse", async () => {
+  // `--demo` has no herdr session, so `GET /api/spaces` 404s honestly and the
+  // Spaces screen can only render its error state. The header offered the
+  // button regardless, in the mode README screenshots come from. `routes.ts`
+  // records the same defect class for `/ack`'s Dismiss button.
+  //
+  // Capability, never a demo flag and never anything about the device: `null`
+  // here is the server having said it has no tree.
+  const host = await render(
+    <HostHeader
+      hostId="dev-box" agents={[]}
+      onOpenSettings={() => {}}
+      onOpenSpaces={null}
+    />,
+  );
+
+  expect(host.querySelector('button[aria-label="Spaces"]')).toBeNull();
+  // The rest of the header is untouched — this hides one control, not a row.
+  expect(host.querySelector('button[aria-label="Settings"]')).not.toBeNull();
+});
+
 test("the spaces button is the entry point to #/spaces", async () => {
   const calls: string[] = [];
   const host = await render(

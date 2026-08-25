@@ -25,7 +25,7 @@ import { readPrefs, themeAttr } from "@web/prefs";
 export function App() {
   const {
     agents, hostId, connected, lastMessageAt, updateAvailable, latestKnown, managedBy,
-    treeStaleAt, connect,
+    treeStaleAt, spacesAvailable, connect,
   } = useStore();
   const [now, setNow] = useState(() => Date.now());
   // Expanded by default. Collapsed, idle agents render as chips that carry a
@@ -398,7 +398,10 @@ export function App() {
         <HostHeader
           hostId={hostId} agents={agents}
           onOpenSettings={() => { location.hash = "#/settings"; }}
-          onOpenSpaces={() => { location.hash = "#/spaces"; }}
+          // `null` when this server has no session tree to read — `--demo`,
+          // most of all. The alternative shipped: a header control whose only
+          // possible outcome was the Spaces screen's own error state.
+          onOpenSpaces={spacesAvailable ? () => { location.hash = "#/spaces"; } : null}
         />
 
         {SECTION_ORDER.map((key) => {

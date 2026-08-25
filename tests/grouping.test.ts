@@ -68,7 +68,7 @@ test("triage order survives a delta, not just the snapshot", () => {
   // existing key keeps its ORIGINAL position. So "A blocked ten minutes ago,
   // B goes blocked now" rendered [A, B] — oldest first — for the rest of the
   // session. Grouping must re-sort, or this reverts.
-  const empty: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null, managedBy: null, treeStaleAt: 0 };
+  const empty: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null, managedBy: null, treeStaleAt: 0, spacesAvailable: false };
   const withSnapshot = applyMessage(empty, {
     type: "snapshot",
     hostId: "dev-box",

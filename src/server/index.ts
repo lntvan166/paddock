@@ -307,7 +307,14 @@ const updateChecks = scheduleUpdateChecks(
  */
 const managedBy = await detectManagedBy(process.execPath);
 
-const hub = new Hub({ build: currentBuildId, latestKnown: () => latestKnown, managedBy });
+// `spaces` is a getter because `readTree` is assigned below, in the non-demo
+// branch: the header must not offer a Spaces control on a server that has no
+// tree to show it (a control that always errors is worse than an absent one),
+// and a value captured here would be captured before that decision was made.
+const hub = new Hub({
+  build: currentBuildId, latestKnown: () => latestKnown, managedBy,
+  spaces: () => readTree !== undefined,
+});
 
 const settings = new SettingsStore(defaultConfigDir());
 await settings.load();

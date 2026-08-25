@@ -29,10 +29,22 @@ export function HostHeader({
    * App.tsx" convention as AgentCard/AgentRow's `onSelect`.
    */
   onOpenSettings: () => void;
-  /** The only route into `#/spaces`. REQUIRED for the same reason
-   *  `onOpenSettings` is: an optional prop makes a dropped call site a
-   *  silent no-op instead of a compile error. */
-  onOpenSpaces: () => void;
+  /**
+   * The only route into `#/spaces`, or `null` when there is no tree to show.
+   *
+   * REQUIRED, like `onOpenSettings`, for the same reason: an optional prop
+   * makes a dropped call site a silent no-op instead of a compile error. But
+   * `null` is a legitimate value, and it is the CAPABILITY answer — in `--demo`
+   * there is no herdr session, `GET /api/spaces` 404s honestly, and the button
+   * rendered here unconditionally was a control that always errored, in the
+   * mode README screenshots come from. `routes.ts` records the same defect
+   * class for `/ack`'s Dismiss button.
+   *
+   * Derived from the capability the server states, NEVER from a demo flag and
+   * never from anything about the device. An absent control is worse than a
+   * working one and far better than a broken one.
+   */
+  onOpenSpaces: (() => void) | null;
   /**
    * `latestKnown` was here, REQUIRED so that an edit which stopped passing it
    * would be a type error rather than a silently absent line. The line it fed
@@ -95,7 +107,10 @@ export function HostHeader({
             gives the row two ends: the title owns the left, the controls
             read as one cluster on the right. */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Same shape and focus treatment as the settings button beside it —
+          {/* Offered only when the server says it can read a session tree —
+              see `onOpenSpaces` above.
+
+              Same shape and focus treatment as the settings button beside it —
               a real button, not a hover-revealed affordance, since this is the
               only route into #/spaces and must be reachable by touch on the
               first tap.
@@ -105,14 +120,16 @@ export function HostHeader({
               assume — and a tofu box on the only route into #/spaces is a
               button whose label is a rendering failure. `aria-label` carries
               the name either way; the icon is `aria-hidden`. */}
-          <button
-            type="button"
-            className="host-spaces-btn tap shrink-0"
-            aria-label="Spaces"
-            onClick={onOpenSpaces}
-          >
-            <SpacesIcon className="host-btn-glyph" />
-          </button>
+          {onOpenSpaces !== null && (
+            <button
+              type="button"
+              className="host-spaces-btn tap shrink-0"
+              aria-label="Spaces"
+              onClick={onOpenSpaces}
+            >
+              <SpacesIcon className="host-btn-glyph" />
+            </button>
+          )}
           {/* A real button, not a hover-revealed affordance — the only route
               into #/settings, so it must be reachable by touch on the first
               tap, not discoverable only with a mouse. */}

@@ -4,7 +4,7 @@ import type { Agent, ServerMessage } from "@shared/types";
 import { wsUrlFrom } from "@web/store";
 
 const NOW = 1_700_000_000_000;
-const EMPTY: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null, managedBy: null, treeStaleAt: 0 };
+const EMPTY: ClientState = { agents: [], hostId: null, connected: false, lastMessageAt: null, build: null, updateAvailable: false, latestKnown: null, managedBy: null, treeStaleAt: 0, spacesAvailable: false };
 
 function agent(over: Partial<Agent> = {}): Agent {
   return {
@@ -210,4 +210,37 @@ test("a message with no managedBy field at all leaves the prior value alone", ()
   let s = applyMessage(EMPTY, { type: "heartbeat", serverTime: NOW, managedBy: "homebrew" });
   s = applyMessage(s, { type: "heartbeat", serverTime: NOW + 1 });
   expect(s.managedBy).toBe("homebrew");
+});
+
+// ── the tree-reading capability ────────────────────────────────────────────
+// The header must not offer a Spaces control on a server that has no tree to
+// read: in `--demo` `GET /api/spaces` 404s honestly, so the button could only
+// ever reach an error state.
+
+test("a snapshot saying it can read a tree turns the capability on", () => {
+  const next = applyMessage(EMPTY, {
+    type: "snapshot", hostId: "dev-box", agents: [], serverTime: 1, spaces: true,
+  });
+  expect(next.spacesAvailable).toBe(true);
+});
+
+test("a snapshot saying it cannot leaves the control unoffered", () => {
+  const on = applyMessage(EMPTY, {
+    type: "snapshot", hostId: "dev-box", agents: [], serverTime: 1, spaces: true,
+  });
+  const next = applyMessage(on, {
+    type: "snapshot", hostId: "dev-box", agents: [], serverTime: 2, spaces: false,
+  });
+  expect(next.spacesAvailable).toBe(false);
+});
+
+test("a snapshot that does not mention it says nothing — and the default is not to offer", () => {
+  // The browser-only demo backend sends exactly this shape. "Does not say" and
+  // "denies" are different claims (the same distinction `managedBy` draws), but
+  // both end with no control, because the wrong answer in that direction is a
+  // button that errors.
+  const next = applyMessage(EMPTY, {
+    type: "snapshot", hostId: "dev-box", agents: [], serverTime: 1,
+  });
+  expect(next.spacesAvailable).toBe(false);
 });
