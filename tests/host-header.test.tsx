@@ -45,6 +45,13 @@ test("the spaces button is the entry point to #/spaces", async () => {
   expect(button).not.toBeNull();
   await click(button);
   expect(calls).toEqual(["#/spaces"]);
+
+  // The label is DRAWN, not written. This button carried `▦` (U+25A6), whose
+  // coverage in mobile system fonts paddock does not get to assume — and
+  // AgentTerminal already records what a tofu box costs: a button whose label
+  // is a rendering failure, here on the only route into #/spaces.
+  expect(button!.querySelector("svg")).not.toBeNull();
+  expect(button!.textContent).toBe("");
 });
 
 test("the summary counts by section, so it cannot contradict the section headers", async () => {

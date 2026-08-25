@@ -1,10 +1,11 @@
 /**
- * Eight hand-written glyphs, one per settings card.
+ * Nine hand-written glyphs: one per settings card, plus the Spaces entry point
+ * in `HostHeader`.
  *
  * Icon libraries are tens of kilobytes of tree-shaken JavaScript for what is a
  * few hundred bytes of path data here, on a project whose bundle is deliberately
  * ONE chunk because at high RTT an extra round trip costs more than the bytes it
- * saves. These eight are hand-written instead.
+ * saves. These nine are hand-written instead.
  *
  * `currentColor` throughout, so a glyph is never a colour that has to be
  * redefined per theme, and `aria-hidden` throughout, because every one of them
@@ -57,4 +58,28 @@ export function RefreshIcon({ className }: IconProps) {
 
 export function PlugIcon({ className }: IconProps) {
   return <Svg className={className}><path d="M9 2v6M15 2v6" /><path d="M6 8h12v3a6 6 0 0 1-12 0z" /><path d="M12 17v5" /></Svg>;
+}
+
+/**
+ * The Spaces entry point in the host header.
+ *
+ * Drawn rather than written. This button carried `▦` (U+25A6 SQUARE WITH
+ * ORTHOGONAL CROSSHATCH FILL), a codepoint with patchy coverage in mobile
+ * system fonts — and `AgentTerminal.tsx` already records what that costs from
+ * the `␣` it spells out as "Space": a symbol that renders as a tofu box is a
+ * button whose label is a rendering failure. This one is the ONLY route into
+ * `#/spaces`, so it is the worst place in the app to gamble on font coverage.
+ *
+ * Four cells rather than a terminal outline: it has to be distinguishable from
+ * `TerminalIcon`, and what the screen shows is a grid of spaces, not a shell.
+ */
+export function SpacesIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="3" y="3" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
+      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
+    </Svg>
+  );
 }

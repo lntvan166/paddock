@@ -1559,6 +1559,11 @@ body {
 /* The one entry point into #/spaces, sized and bordered exactly like
    `.host-settings-btn` beside it — two controls in the same header that look
    like two different systems is worse than one that is merely plain. */
+/* No font-size here, unlike `.host-settings-btn`: this button's label is a
+   DRAWN glyph (`SpacesIcon`), sized by `.host-btn-glyph` below, so there is no
+   text in it to scale. It carried `font-size: 1rem` for `▦`, and that
+   codepoint's coverage in mobile system fonts is not something paddock gets to
+   assume — see the comment on SpacesIcon. */
 .host-spaces-btn {
   min-height: 2.5rem;
   min-width: 2.5rem;
@@ -1566,11 +1571,21 @@ body {
   border-radius: 0.4rem;
   background: var(--surface);
   color: var(--fg);
-  /* Off the --t-* scale, like `.host-settings-btn`: this sizes the ▦ GLYPH,
-     not text. */
-  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
   cursor: pointer;
+}
+
+/* The icon components are authored at 24px so they fill a settings card's
+   tile. In a 2.5rem header button that is too much ink, so the box is sized
+   here rather than by adding a size prop nine glyphs would have to carry.
+   `currentColor` means the button's own `color` still paints it, in both
+   themes, with no second definition. */
+.host-btn-glyph {
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 .spaces-head {
@@ -1722,27 +1737,6 @@ body {
   color: var(--fg-dim);
   font-variant-numeric: tabular-nums;
 }
-
-/* Inert (`disabled`) in this task — a later plan wires it to a rename/close
-   sheet. Visible at rest regardless: a hover-only affordance does not exist
-   on a touch screen, which is the whole reason it is rendered now rather than
-   behind a long-press. */
-.row-more {
-  flex: none;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: 0;
-  color: var(--fg-dim);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.row-more:disabled { opacity: 0.5; cursor: default; }
 
 .space-tabs {
   list-style: none;

@@ -2,6 +2,27 @@ import { paneHash } from "@shared/route";
 import type { Space, TreePane } from "@shared/types";
 import { StatusDot } from "@web/components/ui/StatusDot";
 
+/*
+ * NOTE FOR THE PLAN THAT ADDS RENAME AND CLOSE.
+ *
+ * Every row here carried a `disabled` `⋯` with `aria-label="Actions for X"`,
+ * rendered ahead of the sheet that would fill it so the affordance was visible
+ * from the start. They are gone. Announcing an action that cannot happen, on
+ * every row, is a mislabelled control — and `CLAUDE.md` is explicit that a
+ * mislabelled button is worse than none. (It was also already diverging: the
+ * sub-row's label read `name ?? paneId` while the row read
+ * `name ?? title ?? paneId`, so a shell announced `w3:p1` under visible text
+ * saying "bash".)
+ *
+ * The requirement that put them here still stands and carries forward: when
+ * the actions exist, they get a VISIBLE control on the row. Do NOT reach for
+ * an unhinted long-press — that is the touch equivalent of a hover-only
+ * affordance, which the UI rules ban, and it is the first thing the design doc
+ * (§6.1) names as what paddock does differently from Collie. Bring the `⋯`
+ * back with the sheet, in the same commit, and give it the row's full visible
+ * label.
+ */
+
 /**
  * One space, and its panes only when there is something to show.
  *
@@ -35,11 +56,17 @@ export function SpaceRow({ space, open, onToggle }: {
   // the one case this exists for.
   const paneIdentity = only ? (only.name ?? only.title) : null;
   const showAlias = paneIdentity !== null && paneIdentity !== spaceLabel;
-  // The visible label, in full, so the ⋯ button's accessible name never
-  // diverges from what the row actually shows — WCAG's "label in name": an
-  // aria-label built from spaceLabel alone would go accessible-name-only
-  // silent on the very identity the alias exists to surface.
-  const actionsLabel = showAlias ? `${spaceLabel} (${paneIdentity})` : spaceLabel;
+
+  // Why this row is structured at all, said in the unit that explains it.
+  //
+  // This read `${space.tabCount} tabs`, which was wrong in both halves. A
+  // space reaches this branch on EITHER count, so a single tab split into
+  // several panes (`pane.split` is an ordinary thing to do) rendered
+  // "1 tabs" — a number that does not explain the sub-rows under it, and a
+  // plural that does not agree with it.
+  const countLabel = space.tabCount === 1
+    ? plural(space.paneCount, "pane")
+    : plural(space.tabCount, "tab");
 
   // Built once and rendered from either branch: the space's label is the same
   // on both row shapes, and two copies of it would be free to drift.
@@ -84,9 +111,9 @@ export function SpaceRow({ space, open, onToggle }: {
             each carry their own below and a rollup would say the same thing
             twice.
 
-            The ⋯ button stays a SIBLING of the anchor, never a child: a
-            <button> inside an <a> is invalid HTML and unreachable by
-            keyboard. */}
+            Whatever gets added beside this anchor stays a SIBLING of it,
+            never a child: a <button> inside an <a> is invalid HTML and
+            unreachable by keyboard. */}
         {only ? (
           <a href={paneHash(only.paneId)}>
             <PaneMarker pane={only} />
@@ -96,14 +123,9 @@ export function SpaceRow({ space, open, onToggle }: {
         ) : (
           <>
             {heading}
-            <span className="space-count">{space.tabCount} tabs</span>
+            <span className="space-count">{countLabel}</span>
           </>
         )}
-        {/* Inert here. Plan 2 opens the actions sheet from it. Rendered now so
-            the row's layout is settled and the affordance is VISIBLE — an
-            unhinted long-press is the touch equivalent of a hover-only
-            control, which the UI rules ban. */}
-        <button type="button" className="row-more" disabled aria-label={`Actions for ${actionsLabel}`}>⋯</button>
       </div>
 
       {structured && open && (
@@ -121,7 +143,6 @@ export function SpaceRow({ space, open, onToggle }: {
                       <span className="pane-name">{p.name ?? p.title ?? p.paneId}</span>
                       <PaneState pane={p} />
                     </a>
-                    <button type="button" className="row-more" disabled aria-label={`Actions for ${p.name ?? p.paneId}`}>⋯</button>
                   </li>
                 ))}
               </ul>
@@ -131,6 +152,16 @@ export function SpaceRow({ space, open, onToggle }: {
       )}
     </li>
   );
+}
+
+/**
+ * One English plural, formed in one place.
+ *
+ * Not i18n and not pretending to be: paddock's UI is English. This exists so
+ * the count and its noun cannot disagree, which is the defect it replaced.
+ */
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 /** A shell has no state, so it gets no StatusDot — that component's whole

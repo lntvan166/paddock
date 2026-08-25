@@ -35,6 +35,19 @@ const SHELL: SpaceTree = {
   }],
 };
 
+// One tab, two panes — `pane.split`. Structured, and NOT because of its tabs:
+// the row's count has to explain the sub-rows under it.
+const SPLIT: SpaceTree = {
+  readAt: 1_700_000_000_000,
+  spaces: [{
+    spaceId: "w4", label: "flaky-test-fix", tabCount: 1, paneCount: 2,
+    tabs: [{ tabId: "w4:t1", label: null, panes: [
+      { paneId: "w4:p1", harness: "claude", name: "flaky-test-fix", title: "t", cwd: "/srv/project", state: "working" },
+      { paneId: "w4:p2", harness: null, name: null, title: "bash", cwd: "/srv/project", state: null },
+    ] }],
+  }],
+};
+
 const load = (t: SpaceTree) => async () => t;
 
 test("a 1:1:1 space renders as ONE row with nothing to expand", async () => {
@@ -72,7 +85,7 @@ test("a failed read is surfaced, never rendered as an empty session", async () =
   await unmount();
 });
 
-test("a merged row is a link into the pane, with the ⋯ button beside it and not inside", async () => {
+test("a merged row is a link into the pane", async () => {
   // The commonest space shape — six in seven are 1:1:1 — used to render no
   // anchor at all, so the only route into a shell's terminal was typing its
   // hash by hand. A structured space's sub-rows had carried the same link
@@ -86,13 +99,37 @@ test("a merged row is a link into the pane, with the ⋯ button beside it and no
   expect(link!.getAttribute("href")).toBe("#/pane/w3%3Ap1");
   // The label the operator reads is INSIDE the target they tap.
   expect(link!.textContent).toContain("bash");
+  await unmount();
+});
 
-  // A <button> inside an <a> is invalid HTML and unreachable by keyboard, so
-  // the actions control is a sibling. Asserted structurally rather than by
-  // eye, because nesting it would still look correct.
-  const more = el.querySelector(".row-more")!;
-  expect(link!.contains(more)).toBe(false);
-  expect(more.closest("a")).toBeNull();
+test("no row announces an action that does not exist yet", async () => {
+  // Every row used to carry a `disabled` ⋯ labelled "Actions for X". A
+  // control that announces an action and cannot perform it is a mislabelled
+  // control, which CLAUDE.md rates worse than no control. The affordance
+  // comes back WITH the sheet — see the note at the top of SpaceRow.tsx —
+  // and this is what fails if it comes back inert instead.
+  for (const tree of [FLAT, STRUCTURED, SHELL]) {
+    const el = await render(<Spaces onBack={() => {}} load={load(tree)} />);
+    await settle();
+    expect(el.textContent).not.toContain("⋯");
+    expect(el.querySelectorAll("button[disabled]")).toHaveLength(0);
+    await unmount();
+  }
+});
+
+test("a structured space says the count that explains its shape, and says it grammatically", async () => {
+  // "1 tabs" was wrong twice: wrong grammar, and the wrong unit for a space
+  // that is structured because ONE tab holds several panes — an ordinary
+  // result of `pane.split`.
+  const el = await render(<Spaces onBack={() => {}} load={load(STRUCTURED)} />);
+  await settle();
+  expect(el.querySelector(".space-count")!.textContent).toBe("2 tabs");
+  await unmount();
+
+  const split = await render(<Spaces onBack={() => {}} load={load(SPLIT)} />);
+  await settle();
+  expect(split.querySelector(".space-count")!.textContent).toBe("2 panes");
+  expect(split.textContent).not.toContain("1 tabs");
   await unmount();
 });
 

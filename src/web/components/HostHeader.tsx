@@ -1,5 +1,6 @@
 import { sectionFor, type Agent, type Section } from "@shared/types";
 import { Mark } from "@web/components/Mark";
+import { SpacesIcon } from "@web/components/ui/icons";
 
 /**
  * The host label is only worth screen space when it distinguishes something.
@@ -89,14 +90,20 @@ export function HostHeader({
         {/* Same shape and focus treatment as the settings button beside it —
             a real button, not a hover-revealed affordance, since this is the
             only route into #/spaces and must be reachable by touch on the
-            first tap. */}
+            first tap.
+
+            A DRAWN glyph, not a codepoint. This was `▦` (U+25A6), whose
+            coverage in mobile system fonts is not something paddock gets to
+            assume — and a tofu box on the only route into #/spaces is a
+            button whose label is a rendering failure. `aria-label` carries
+            the name either way; the icon is `aria-hidden`. */}
         <button
           type="button"
           className="host-spaces-btn tap shrink-0"
           aria-label="Spaces"
           onClick={onOpenSpaces}
         >
-          ▦
+          <SpacesIcon className="host-btn-glyph" />
         </button>
         {/* A real button, not a hover-revealed affordance — the only route
             into #/settings, so it must be reachable by touch on the first

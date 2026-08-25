@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isStale, useStore } from "@web/store";
 import { fetchPaneOutput, fetchSpaceTree } from "@web/api";
 import type { SpaceTree, TreePane } from "@shared/types";
@@ -118,22 +118,67 @@ export function App() {
   /**
    * The tree says this pane has an agent and the store does not have it yet.
    *
-   * Two situations, one answer: the cold-deep-link race above, and a live
-   * promotion (a shell someone typed `claude` into, whose `pane.agent_detected`
-   * reached the tree before the delta reached the store). Both resolve
-   * themselves within one delta, and both must HOLD rather than fall through
-   * to the dashboard — the pane exists, and dumping the operator out of it
-   * would be a wrong answer where waiting a beat is a right one.
+   * Two situations that look identical from here and are NOT the same:
+   *
+   * - **A cold deep link.** `#/pane/<id>` tapped from a notification, `agents`
+   *   still empty until the websocket snapshot lands, nothing rendered yet.
+   * - **A live promotion.** The operator is WATCHING a shell and types
+   *   `claude` into it. `hub.sendTreeStale()` goes out immediately while the
+   *   agent delta waits on `coalesceMs` plus the supervisor's `refresh()`
+   *   round trip, so the tree flips first — reliably, not occasionally.
+   *
+   * Both must hold rather than fall through to the dashboard: the pane exists,
+   * and dumping the operator out of it would be a wrong answer where waiting a
+   * beat is a right one. But only the first has nothing on screen to keep.
+   * `retainedShell` below is what tells them apart.
    */
   const promoting = openTree.pane !== null && openTree.pane.harness !== null;
+  /**
+   * The last shell this browser actually PAINTED, and its pane id.
+   *
+   * A latch, not a cache. `promoting` used to pre-empt the shell branch
+   * unconditionally, which meant a live promotion replaced a transcript the
+   * operator was reading with a bare "Opening…" for the few hundred
+   * milliseconds the delta took to arrive. `PaneTerminal`'s 409 handling
+   * exists for exactly this moment and does the right thing — it keeps the
+   * transcript and marks the pane stalled — so the hold was overriding a
+   * better answer that was already there.
+   *
+   * Set in an effect rather than during render, and that ordering is safe:
+   * the effect can only have missed a paint that never happened, which is
+   * precisely the cold-deep-link case that SHOULD get the hold.
+   */
+  const paintedShell = useRef<TreePane | null>(null);
+  useEffect(() => {
+    if (openShell !== null) { paintedShell.current = openShell; return; }
+    // Navigated elsewhere. The latch is a claim about ONE pane being on
+    // screen, so it must not outlive that pane — otherwise coming back to the
+    // id later would skip a hold it has earned.
+    if (paintedShell.current !== null && paintedShell.current.paneId !== openId) {
+      paintedShell.current = null;
+    }
+  }, [openShell, openId]);
+  /**
+   * The shell to keep rendering through a promotion: same pane, same key, same
+   * `PaneTerminal` instance, so nothing remounts and the transcript survives.
+   * The pane route answers 409 from here on, and that path is already written
+   * to show the stalled marker OVER the retained screen rather than a banner
+   * carrying an internal route name.
+   */
+  const retainedShell = promoting && paintedShell.current?.paneId === openId
+    ? paintedShell.current
+    : null;
+  const shellToRender = openShell ?? retainedShell;
   /**
    * The read for the open shell.
    *
    * Memoised on the id alone, so a delta that re-renders `App` does not hand
    * `PaneTerminal` a new `load` — which it reads as "ask again", the mechanism
-   * `AgentTerminal` uses deliberately when an agent's state moves.
+   * `AgentTerminal` uses deliberately when an agent's state moves. Derived
+   * from `shellToRender`, not `openShell`: a retained shell is still being
+   * polled, and a `load` that threw would look like a dead pane.
    */
-  const openShellId = openShell?.paneId ?? null;
+  const openShellId = shellToRender?.paneId ?? null;
   const loadPane = useCallback(() => {
     // Unreachable: this is only ever handed to `PaneTerminal`, which is only
     // rendered when the pane resolved. Thrown rather than defaulted to "",
@@ -167,19 +212,19 @@ export function App() {
     );
   }
 
-  if (openShell) {
+  if (shellToRender) {
     return (
       <PaneTerminal
         // The pane id, exactly as the agent case above — a shell and an agent
         // are one pane at two moments, and typing `claude` into this one turns
         // it into the other under the SAME id. Keying on anything else would
         // make that transition look like a navigation.
-        key={openShell.paneId}
-        paneId={openShell.paneId}
+        key={shellToRender.paneId}
+        paneId={shellToRender.paneId}
         // `title` before `name`, the reverse of a row in Spaces: a pane with
         // no agent has no name, and the terminal title is the only label it
         // has ever had. The id is the last resort and never a guess.
-        title={openShell.title ?? openShell.name ?? openShell.paneId}
+        title={shellToRender.title ?? shellToRender.name ?? shellToRender.paneId}
         // Back to Spaces, not to the dashboard: the dashboard lists agents,
         // and this pane is not one — sending the operator there would be a
         // door onto a screen that cannot show what they just left.
@@ -192,11 +237,17 @@ export function App() {
   }
 
   // The tree read is still in flight, or it has answered "this pane has an
-  // agent" before the store has the agent to render. Holding here rather than
-  // falling through is not cosmetic: the dashboard is a full agent list, and
-  // rendering it for the ~20 ms a `session.snapshot` takes makes every tap on
-  // a shell pane blink through the screen the operator just left — and in the
-  // promotion case it would evict them from a pane that exists.
+  // agent" before the store has the agent to render — AND there is nothing on
+  // screen to keep. Holding here rather than falling through is not cosmetic:
+  // the dashboard is a full agent list, and rendering it for the ~20 ms a
+  // `session.snapshot` takes makes every tap on a shell pane blink through the
+  // screen the operator just left — and in the promotion case it would evict
+  // them from a pane that exists.
+  //
+  // `shellToRender` has already returned above when a painted shell is being
+  // promoted, so reaching this line with `promoting` true means nothing was
+  // ever drawn for this pane. That is the cold deep link, and it still holds
+  // here, and it still never falls through to the dashboard.
   if (openId !== null && (!openTree.resolved || promoting)) {
     return (
       <main className="dash mx-auto max-w-2xl safe-bottom">

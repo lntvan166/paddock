@@ -23,6 +23,11 @@ import { agent, render, settle, stubFetch, unmount } from "./support/render";
  * the pane route answered 409, and the operator read
  * "this pane has an agent; use /api/agents/:id/output" — an internal route
  * name — until the snapshot arrived.
+ *
+ * The same tree-before-store ordering also happens on a LIVE promotion, and
+ * there the right answer is the opposite one: something is already on screen,
+ * so it must be kept rather than held over. The two are the same condition and
+ * different cases, which is why both are pinned here.
  */
 
 const REAL_CONNECT = useStore.getState().connect;
@@ -120,4 +125,55 @@ test("a deep link to a pane with NO agent opens the shell transcript", async () 
   expect(host.textContent).toContain("operator@dev-box");
   expect(host.querySelector(".term-reply")).toBeNull();
   expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to spaces");
+});
+
+test("a shell already on screen keeps its transcript through a live promotion", async () => {
+  // The other half of the hold, and the case it used to get wrong. The
+  // operator is WATCHING a shell and types `claude` into it. `tree-stale` is
+  // sent immediately by the hub while the agent delta waits on `coalesceMs`
+  // plus the supervisor's `refresh()` round trip, so the tree reliably flips
+  // first — and `promoting` then replaced a live transcript with a bare
+  // "Opening…" for as long as that took.
+  //
+  // `PaneTerminal`'s 409 handling exists for exactly this moment and keeps the
+  // transcript while marking the pane stalled, so the hold was overriding a
+  // better answer that was already written. It now applies only where nothing
+  // has been painted, which is the cold link above.
+  useStore.setState({ connect: () => {} });
+  location.hash = "#/pane/w9%3Ap1";
+
+  let harness: string | null = null;
+  const { fn } = stubFetch({
+    "/api/spaces": () => treeWith(harness),
+    "/api/panes/": () => ({ lines: ["operator@dev-box:/srv/project$ ls"], source: "recent_unwrapped" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<App />);
+  await settle();
+  // Painted as a shell first — that is what makes this a promotion rather than
+  // a cold link.
+  expect(host.textContent).toContain("operator@dev-box");
+
+  harness = "claude";
+  await act(async () => {
+    useStore.setState((s) => applyMessage(s, { type: "tree-stale", serverTime: Date.now() }));
+  });
+  await settle();
+
+  // Same pane, same key, same instance: the transcript is still the transcript.
+  expect(host.textContent).toContain("operator@dev-box");
+  expect(host.textContent).not.toContain("Opening…");
+  expect(host.querySelector("section.term")).not.toBeNull();
+
+  // And the promotion still completes: one delta later the agent's own view
+  // takes over, with the controls a shell never gets.
+  await act(async () => {
+    useStore.setState((s) => applyMessage(s, {
+      type: "snapshot", hostId: "dev-box", serverTime: Date.now(),
+      agents: [agent({ agentId: "w9:p1", name: "docs-cleanup" })],
+    }));
+  });
+  await settle();
+  expect(host.querySelector(".term-reply")).not.toBeNull();
 });

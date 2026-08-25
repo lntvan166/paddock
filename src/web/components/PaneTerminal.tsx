@@ -130,9 +130,29 @@ const REFRESH_BACKOFF = 2;
  * agent output landing in one block.
  *
  * The CEILING and the doubling are untouched, so a shell nobody is typing in
- * still climbs to `MAX_REFRESH_MS` and costs almost nothing — see
- * `applyResult` for how "changed" is decided on a route that has no
- * server-side revalidation to answer it.
+ * still climbs to `MAX_REFRESH_MS` — see `applyResult` for how "changed" is
+ * decided on a route that has no server-side revalidation to answer it.
+ *
+ * WHAT THIS REASONING DOES NOT COVER, recorded rather than left implied. All
+ * of the above is about herdr work per second. It says nothing about bytes to
+ * the phone or DOM nodes on it, and there the two paths are NOT the same
+ * order:
+ *
+ * - An agent at the ceiling sends its digest and gets `unchanged` back — 38 B,
+ *   nothing parsed, nothing re-rendered.
+ * - A shell at the ceiling has no server-side revalidation to ask for, so it
+ *   ships a full `recent_unwrapped` body — 400 lines of unstripped ANSI —
+ *   every 10 s, and `parseAnsi` walks all of it before `digestOf` concludes
+ *   nothing changed. A quiet shell is therefore CHEAP for herdr and NOT cheap
+ *   for the link or the device, which is the opposite of the agent case and
+ *   the exact bargain the 4x floor was chosen against.
+ *
+ * The cheap fix is known and deliberately not taken here: give
+ * `POST /api/panes/:id/output` the same client-supplied digest the agent route
+ * already takes, and let it answer 304-style. It needs no new state — the
+ * digest arrives in the request — and it would make a quiet shell cost what a
+ * quiet agent costs. Recorded as follow-up work; do not read this comment as
+ * a claim that it has been done.
  */
 export const SHELL_MIN_REFRESH_MS = 1_000;
 
@@ -417,7 +437,18 @@ export function PaneTerminal({
   }, [paneId, apply, settled]);
 
   /**
-   * The cheap re-read used by the poll: `visible` only, never scrollback.
+   * The re-read used by the poll. What it costs depends entirely on which
+   * route `load` is bound to, and the two are not comparable:
+   *
+   * - **An agent** (`POST /api/agents/:id/output`) asks for `visible`, never
+   *   scrollback, and sends `digestRef.current` so the server can answer
+   *   `unchanged` — 38 B on a quiet pane.
+   * - **A shell** (`POST /api/panes/:id/output`) asks for
+   *   `recent_unwrapped` at `HISTORY_LINES` (400 lines, ANSI, unstripped) on
+   *   EVERY poll, with no server-side revalidation to answer against, and the
+   *   digest is compared here instead. So "unchanged" still stops the screen
+   *   from being replaced and still backs the interval off — but the bytes
+   *   were already shipped and re-parsed. See `SHELL_MIN_REFRESH_MS`.
    *
    * A failed poll does NOT clear the screen and does NOT raise the error
    * banner — the last good output is still the best thing to show. It is not
@@ -436,17 +467,23 @@ export function PaneTerminal({
   }, [load, applyResult]);
 
   /**
-   * The opening read. `visible` only — the live viewport, which is exactly
-   * what the terminal shows.
+   * The opening read. Identical to the poll's read, minus the `since` digest —
+   * whatever `load` asks for, it asks for the same thing here.
    *
-   * This used to make a SECOND, scrollback read for `idle` agents to add
-   * history. That was removed, because the poll asks for `visible` and the two
-   * sources return different content: the digest could never match, and
-   * suppressing the poll to avoid the pane oscillating left it frozen. The
-   * justification given at the time — "an idle agent by definition is not
-   * producing output" — is simply false. `idle` means READY FOR INPUT, and a
-   * pane changes whenever anyone types at the desk. An operator watching a
-   * frozen screen has no way to tell it from a quiet one.
+   * For an AGENT that is `visible` only: the live viewport, which is exactly
+   * what the terminal shows. It used to make a SECOND, scrollback read for
+   * `idle` agents to add history. That was removed, because the poll asks for
+   * `visible` and the two sources return different content: the digest could
+   * never match, and suppressing the poll to avoid the pane oscillating left
+   * it frozen. The justification given at the time — "an idle agent by
+   * definition is not producing output" — is simply false. `idle` means READY
+   * FOR INPUT, and a pane changes whenever anyone types at the desk. An
+   * operator watching a frozen screen has no way to tell it from a quiet one.
+   *
+   * For a SHELL there is no such split to get wrong: `resolveSource(null, _)`
+   * answers `recent_unwrapped` for every read of a shell, so the opening read
+   * and the poll ask for the same 400 lines from the same real scrollback
+   * buffer, and the digest can always match.
    */
   const open = useCallback(async () => {
     try {
