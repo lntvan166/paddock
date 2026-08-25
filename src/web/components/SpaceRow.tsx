@@ -1,5 +1,6 @@
 import { paneHash } from "@shared/route";
 import type { Space, TreePane } from "@shared/types";
+import { CreateSheet, slug, type CreateSenders } from "@web/components/CreateSheet";
 import { paneIdentity, paneLabel } from "@web/components/pane-label";
 import { plural, RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
 import { StatusDot } from "@web/components/ui/StatusDot";
@@ -47,13 +48,21 @@ import { StatusDot } from "@web/components/ui/StatusDot";
  * Deliberately loose. A false negative hides an alias on a row whose labels
  * differ only in punctuation, which costs nothing. A false positive is visible
  * noise on nearly every row, which is the defect this replaces.
+ *
+ * `slug` is imported rather than spelled again here. It was a private helper
+ * inside this function until the create sheet needed the SAME rule to pre-fill
+ * an agent's name from its space's label — the same §14.7 measurement, read
+ * from the other direction. Two copies of it would be free to drift, and the
+ * defect §16.1 records is exactly what one copy drifting looks like.
  */
 function sameLabel(a: string, b: string): boolean {
-  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return slug(a) === slug(b);
 }
 
-export function SpaceRow({ space, open, onToggle, onChanged, senders }: {
+export function SpaceRow({
+  space, open, onToggle, onChanged, senders,
+  cwds = [], canCreate = false, createSenders, navigate,
+}: {
   space: Space;
   open: boolean;
   onToggle: () => void;
@@ -62,6 +71,16 @@ export function SpaceRow({ space, open, onToggle, onChanged, senders }: {
    *  local edit of the tree that is already here. */
   onChanged: () => void;
   senders?: RowSenders;
+  /** The cwds already in the WHOLE tree, for the create sheet's quick picks.
+   *  Computed once in `Spaces`, not per row: a row's sheet offers every folder
+   *  in use, not only the ones in its own space. */
+  cwds?: string[];
+  /** Whether the `+` exists at all — the tree-reading capability, decided in
+   *  `Spaces` from the store. Defaults to false so a caller that does not pass
+   *  it gets no control rather than one that errors. */
+  canCreate?: boolean;
+  createSenders?: CreateSenders;
+  navigate?: (hash: string) => void;
 }) {
   const panes = space.tabs.flatMap((t) => t.panes);
   const structured = panes.length > 1 || space.tabs.length > 1;
@@ -181,6 +200,29 @@ export function SpaceRow({ space, open, onToggle, onChanged, senders }: {
         )}
         {/* A SIBLING of the anchor above, never a child of it: a <button>
             inside an <a> is invalid HTML and unreachable by keyboard. */}
+        {/* §16.7's second `+`: on the space row, so its position says it makes
+            a tab IN THIS SPACE. A SIBLING of the anchor above, never a child —
+            a <button> inside an <a> is invalid HTML and unreachable by
+            keyboard, which is the same trap `RowActions` carries a note about.
+
+            The space's cwd is its FIRST pane's. `Space` carries none of its
+            own, and herdr's own workspace cwd is not in the tree; the pane the
+            operator can see is the honest answer to "where is this space",
+            and a null one asks herdr for its default rather than guessing. */}
+        {canCreate && (
+          <CreateSheet
+            target={{
+              kind: "tab",
+              spaceId: space.spaceId,
+              spaceLabel: spaceLabel,
+              spaceCwd: panes[0]?.cwd ?? null,
+            }}
+            cwds={cwds}
+            onChanged={onChanged}
+            senders={createSenders}
+            navigate={navigate}
+          />
+        )}
         <RowActions
           label={rowLabel}
           renames={spaceRenames}

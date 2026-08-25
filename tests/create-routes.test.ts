@@ -263,6 +263,10 @@ function harness(
     createTab?: (spaceId: string, opts: { label?: string; cwd?: string }) => Promise<{ tabId: string; paneId: string }>;
     startAgent?: (paneId: string, kind: string, name: string, args?: string[]) => Promise<void>;
     harnessKinds?: () => Promise<string[]>;
+    /** The operator's home directory, for the tilde expansion the create
+     *  routes apply to `cwd`. Absent in every other test here, which is the
+     *  documented no-op case. */
+    home?: string;
   } = {},
 ) {
   const calls: string[] = [];
@@ -277,6 +281,7 @@ function harness(
     hub: new Hub({ now: () => NOW }),
     now: () => NOW,
     readTree: countedReadTree,
+    home: overrides.home,
     actions: {
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
@@ -564,4 +569,44 @@ test("GET /api/harnesses surfaces a herdr failure as 502 with its own message", 
   const body = await res.json();
   expect(body.ok).toBe(false);
   expect(body.detail).toContain("manifest read failed");
+});
+
+test("a tilde-ised cwd is EXPANDED before it reaches herdr, in both create routes", async () => {
+  // Measured on a live herd: `workspace.create {cwd: "~/Documents/…"}` is
+  // neither expanded nor refused — the new pane came up in the HOME directory
+  // with nothing anywhere saying the folder the operator picked had been
+  // ignored. The tilde is paddock's own invention (`tildeise` in `tree.ts`, so
+  // a username never crosses the wire) and the create sheet's quick picks are
+  // the tree's own tilde-ised cwds coming back, so paddock has to undo what
+  // paddock did.
+  const home = "/base/operator";
+  const space = harness(async () => TREE, { home });
+  await post(space.app, "/api/spaces", { cwd: "~/work/project" });
+  expect(space.calls).toEqual([`createSpace:${JSON.stringify({ cwd: "/base/operator/work/project" })}`]);
+
+  const tab = harness(async () => TREE, { home });
+  await post(tab.app, "/api/spaces/w1/tabs", { cwd: "~" });
+  expect(tab.calls).toEqual([`createTab:w1:${JSON.stringify({ cwd: "/base/operator" })}`]);
+});
+
+test("an absolute cwd is forwarded untouched, and so is one on a server with no HOME", async () => {
+  const withHome = harness(async () => TREE, { home: "/base/operator" });
+  await post(withHome.app, "/api/spaces", { cwd: "/srv/project" });
+  expect(withHome.calls).toEqual([`createSpace:${JSON.stringify({ cwd: "/srv/project" })}`]);
+
+  // No home to expand against leaves the value alone rather than inventing
+  // one — the same thing `tildeise` does in that case.
+  const noHome = harness(async () => TREE);
+  await post(noHome.app, "/api/spaces", { cwd: "~/work" });
+  expect(noHome.calls).toEqual([`createSpace:${JSON.stringify({ cwd: "~/work" })}`]);
+});
+
+test("the cwd length ceiling is measured against what the CLIENT sent, not the expansion", async () => {
+  // Otherwise the bound would move with the length of this machine's home
+  // path: the same request would be accepted on one box and refused on
+  // another.
+  const { app, calls } = harness(async () => TREE, { home: "/base/operator" });
+  const res = await post(app, "/api/spaces", { cwd: `~/${"a".repeat(10_001)}` });
+  expect(res.status).toBe(400);
+  expect(calls).toEqual([]);
 });

@@ -98,3 +98,29 @@ function tildeise(cwd: string, home: string | undefined): string {
   if (cwd === h) return "~";
   return cwd.startsWith(`${h}/`) ? `~${cwd.slice(h.length)}` : cwd;
 }
+
+/**
+ * `~/work` -> `/base/operator/work`. The EXACT inverse of `tildeise` above,
+ * and it lives beside it for that reason.
+ *
+ * The tilde is paddock's own convention, invented here so a username never
+ * crosses the wire. It therefore has to be undone here too, because it comes
+ * BACK: the create sheet offers the cwds already in the tree as quick picks
+ * (§9.3), and every one of them is tilde-ised. Measured on a live herd —
+ * `workspace.create {cwd: "~/Documents/…"}` does not expand the tilde and does
+ * not refuse it either: the new pane came up in the HOME directory, with
+ * nothing anywhere saying the folder the operator picked had been ignored.
+ * That is the silent-wrong-outcome class this codebase exists to refuse, so
+ * the expansion happens before the value reaches herdr rather than being left
+ * to a shell that never sees it.
+ *
+ * A bare `~` and `~/...` only. `~operator/...` (another user's home) is left
+ * alone deliberately: paddock knows one home directory, and guessing the
+ * layout of the others would be inventing a path.
+ */
+export function expandHome(cwd: string, home: string | undefined): string {
+  if (!home || home === "/" || !cwd) return cwd;
+  const h = home.replace(/\/+$/, "");
+  if (cwd === "~") return h;
+  return cwd.startsWith("~/") ? `${h}${cwd.slice(1)}` : cwd;
+}

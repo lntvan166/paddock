@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
+import { expandHome } from "@server/herdr/tree";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
@@ -256,6 +257,7 @@ function findSpace(tree: SpaceTree, id: string): Space | undefined {
  */
 function normalizeCreateBody(
   body: Record<string, unknown>,
+  home: string | undefined,
 ): { label?: string; cwd?: string; err?: string } {
   const rawLabel = body.label;
   if (rawLabel !== undefined && typeof rawLabel !== "string") {
@@ -273,7 +275,17 @@ function normalizeCreateBody(
   if (typeof rawCwd === "string" && rawCwd.length > MAX_TEXT_LEN) {
     return { err: "cwd must be within the length limit" };
   }
-  const cwd = typeof rawCwd === "string" && rawCwd.trim() !== "" ? rawCwd : undefined;
+  // Expanded HERE, not forwarded verbatim. The tilde in `~/project` is
+  // paddock's own invention (`tildeise`), and the create sheet's quick picks
+  // are the tree's own tilde-ised cwds coming back — measured live, herdr
+  // neither expands nor refuses one: the pane came up in the home directory
+  // with nothing saying the chosen folder had been ignored. The length ceiling
+  // is checked BEFORE this, against what the client sent, so the bound is on
+  // the operator's input rather than on however long this machine's home path
+  // happens to be.
+  const cwd = typeof rawCwd === "string" && rawCwd.trim() !== ""
+    ? expandHome(rawCwd.trim(), home)
+    : undefined;
 
   return { label, cwd };
 }
@@ -492,6 +504,15 @@ export interface AppDeps {
    * from fake agents.
    */
   readTree?: () => Promise<SpaceTree>;
+  /**
+   * The operator's home directory, so a tilde-ised `cwd` coming BACK from the
+   * client can be expanded before it reaches herdr — see `expandHome` in
+   * `tree.ts`, which is the same value `toSpaceTree` uses to tilde-ise it on
+   * the way out. Optional and absent in tests that do not exercise a path: an
+   * absent home leaves the value untouched, which is the same thing
+   * `tildeise` does.
+   */
+  home?: string;
 }
 
 export function createApp(deps: AppDeps) {
@@ -1214,7 +1235,7 @@ export function createApp(deps: AppDeps) {
     app.post("/api/spaces", async (c) => {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
 
-      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c));
+      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c), deps.home);
       if (err) return c.json({ ok: false, detail: err }, 400);
 
       try {
@@ -1245,7 +1266,7 @@ export function createApp(deps: AppDeps) {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
       const id = c.req.param("id");
 
-      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c));
+      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c), deps.home);
       if (err) return c.json({ ok: false, detail: err }, 400);
 
       try {

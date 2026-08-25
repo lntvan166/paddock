@@ -146,6 +146,10 @@ const OFF_SCALE = [
   // the middle of an 80px target and read as an empty button.
   '.term-key[data-key="right"]',
   "[data-expand]",    // sizes the ▸/▾ chevron GLYPH, not text
+  // Sizes the `+` GLYPH the create controls carry (§16.7), not text. On the
+  // 13px prose step a `+` sat in the middle of a 44px target and read as an
+  // empty button — the same defect the arrow keys above record.
+  ".create-btn",
 ];
 
 interface Rule { sel: string; body: string }

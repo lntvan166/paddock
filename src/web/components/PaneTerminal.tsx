@@ -13,6 +13,7 @@ import { RequestFailed } from "@web/api";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
+import { LaunchNotice } from "@web/components/LaunchNotice";
 
 /**
  * A pane's transcript, and everything that keeps it live.
@@ -884,6 +885,16 @@ export function PaneTerminal({
             )}
         </div>
       )}
+
+      {/* What became of a spawn asked for from the create sheet, on the pane
+          it was asked for (§9.2). Mounted HERE, once, rather than in either
+          branch of `App.tsx`: this component renders the shell view directly
+          and the agent view through `AgentTerminal`, and a failed start leaves
+          a shell while a successful one leaves an agent — so putting it in the
+          caller would need two copies and would still have to know which of
+          the two it was looking at. Renders nothing unless a launch belongs to
+          THIS pane. */}
+      <LaunchNotice paneId={paneId} />
 
       {beforeControls}
 
