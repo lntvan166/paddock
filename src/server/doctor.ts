@@ -6,7 +6,7 @@ import {
 import { findCloudflared } from "@server/tunnel/cloudflared";
 import { ProtocolMismatchError, request } from "@server/herdr/socket";
 import { HERDR_PROTOCOL } from "@shared/herdr-api";
-import { say } from "@server/term";
+import { glyph, say } from "@server/term";
 
 /** What was learned about herdr, or that nothing was. */
 export type DoctorProbe =
@@ -30,7 +30,7 @@ export function doctorReport(
   probe: DoctorProbe,
   extra: { cloudflared: string | null } = { cloudflared: null },
 ): DoctorReport {
-  if (probe.kind === "unreachable") return { code: 2, text: probe.message };
+  if (probe.kind === "unreachable") return { code: 2, text: `${glyph("unknown")} ${probe.message}` };
   // DIRECTIONAL, matching `checkProtocol`. Only an OLDER herdr is incompatible:
   // it genuinely lacks what this paddock reads. A newer one is reported below
   // and scored 0, because `install.sh` reads this code and herdr moving ahead
@@ -43,7 +43,10 @@ export function doctorReport(
   // "herdr reports undefined" — the code and the text disagreeing, which is
   // exactly what this file must never do.
   if (typeof probe.protocol !== "number" || !Number.isFinite(probe.protocol)) {
-    return { code: 1, text: new ProtocolMismatchError(expected, probe.protocol).message };
+    return {
+      code: 1,
+      text: `${glyph("no")} ${new ProtocolMismatchError(expected, probe.protocol).message}`,
+    };
   }
 
   if (probe.protocol < expected) {
@@ -53,10 +56,13 @@ export function doctorReport(
     // cloudflared is appended here either: this branch is herdr's own message
     // about the one problem worth reporting, and an unrelated line about an
     // optional binary would bury the finding an operator actually needs.
-    return { code: 1, text: new ProtocolMismatchError(expected, probe.protocol).message };
+    return {
+      code: 1,
+      text: `${glyph("no")} ${new ProtocolMismatchError(expected, probe.protocol).message}`,
+    };
   }
   const lines = [
-    "paddock: herdr looks compatible",
+    `${glyph("yes")} paddock: herdr looks compatible`,
     `  paddock expects  ${expected}`,
     `  herdr reports    ${probe.protocol}`,
   ];

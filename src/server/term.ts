@@ -50,9 +50,42 @@ export function useColour(env: Record<string, string | undefined>, isTty: boolea
  * backtick cannot pair with another on a later line and swallow everything
  * between them. The `+` leaves an empty ` `` ` alone — it names no command.
  */
+/**
+ * The three answers any diagnostic command can give. `unknown` is the one that
+ * earns its place: `runStatus`'s `unreadable` and `doctorReport`'s exit code 2
+ * both mean "could not decide", and both used to be typeset identically to the
+ * outcomes they are NOT.
+ */
+export type Outcome = "yes" | "no" | "unknown";
+
+/**
+ * The glyph, not the colour, is what carries the distinction.
+ *
+ * This file's rule is that colour decorates and never informs — a piped log
+ * must read identically to a terminal. A glyph survives escape-stripping, so
+ * `NO_COLOR`, a pipe, a CI log, a screenshot in an issue and a colourblind
+ * reader all keep the three-way distinction that `paint` merely decorates.
+ */
+export function glyph(o: Outcome): string {
+  return o === "yes" ? "✓" : o === "no" ? "✗" : "⚠";
+}
+
+const GLYPH_COLOUR: Record<string, string | undefined> = {
+  "✓": "32",
+  "✗": "31",
+  "⚠": "33",
+};
+
 export function paint(line: string, colour: boolean): string {
   if (!colour) return line;
-  return line.replace(/`[^`\n]+`/g, (span) => `\x1b[1;36m${span}\x1b[0m`);
+  const spans = line.replace(/`[^`\n]+`/g, (span) => `\x1b[1;36m${span}\x1b[0m`);
+  // A LEADING glyph only, per line — `m` for doctor's multi-line report. A
+  // glyph mid-sentence is prose ("the ✓ means compatible") and colouring it
+  // would be colour informing rather than decorating.
+  return spans.replace(
+    /^([ \t]*)([✓✗⚠])/gm,
+    (_m, pad: string, g: string) => `${pad}\x1b[${GLYPH_COLOUR[g]}m${g}\x1b[0m`,
+  );
 }
 
 /**

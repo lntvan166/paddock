@@ -133,3 +133,20 @@ test("the cloudflared line is omitted when herdr is the problem", () => {
   expect(bad.code).toBe(1);
   expect(bad.text).not.toContain("cloudflared");
 });
+
+// The exit code already said which of three answers this was; the text did
+// not. install.sh branches on the code and never reads the text, so the
+// wording is free — but an operator reading the terminal gets the same
+// three-way distinction the installer has always had.
+test("the report's glyph matches its exit code", () => {
+  expect(doctorReport(19, { kind: "answered", protocol: 19 }).text).toStartWith("✓");
+  expect(doctorReport(19, { kind: "answered", protocol: 16 }).text).toStartWith("✗");
+  expect(doctorReport(19, { kind: "unreachable", message: "no herdr socket at /nope" }).text)
+    .toStartWith("⚠");
+});
+
+test("a newer herdr is ✓, matching its exit code of 0", () => {
+  const r = doctorReport(19, { kind: "answered", protocol: 20 });
+  expect(r.code).toBe(0);
+  expect(r.text).toStartWith("✓");
+});

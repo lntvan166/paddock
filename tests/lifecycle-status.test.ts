@@ -118,3 +118,35 @@ test("an uptime over a day rolls into days", async () => {
   await runStatus({ dir: d, probe: probe(true, "paddock"), log: (l) => out.push(l), now: () => now });
   expect(out.join(" ")).toContain("4d 4h");
 });
+
+// Five outcomes that used to be five identical greys. The glyph is the part
+// that survives a pipe, so it is what is asserted.
+test("each status outcome carries its own glyph", async () => {
+  const running = await dir();
+  await writeState(running, s);
+  const out: string[] = [];
+  await runStatus({ dir: running, probe: probe(true, "paddock"), log: (l) => out.push(l) });
+  expect(out[0]).toStartWith("✓");
+
+  const nothing: string[] = [];
+  await runStatus({ dir: await dir(), probe: probe(false, null), log: (l) => nothing.push(l) });
+  expect(nothing[0]).toStartWith("✗");
+});
+
+// The distinction runStatus's own comment insists on: "could not read the
+// state" is not "nothing is running", and must not be typeset as if it were.
+//
+// Malformed JSON is NOT this case: checkState deliberately maps it to "none"
+// (see state.ts's own comment on that branch), so it is triggered here the
+// same way the pre-existing "distinct from absence" test above does — an
+// ENOTDIR on the state file's parent, a real I/O failure.
+test("an unreadable state is ⚠, not ✗ — it is undetermined, not absent", async () => {
+  const parent = await dir();
+  const blocker = join(parent, "blocker");
+  await writeFile(blocker, "not a directory");
+  const d = join(blocker, "child");
+  const out: string[] = [];
+  const code = await runStatus({ dir: d, probe: probe(false, null), log: (l) => out.push(l) });
+  expect(code).toBe(1);
+  expect(out[0]).toStartWith("⚠");
+});

@@ -9,7 +9,7 @@ import {
 } from "@server/lifecycle/state";
 import { SettingsStore } from "@server/settings/store";
 import { tunnelHint } from "@server/tunnel/preflight";
-import { duration, say } from "@server/term";
+import { duration, glyph, say } from "@server/term";
 
 /**
  * What answers on a port, if anything paddock-shaped does.
@@ -116,37 +116,30 @@ export async function runStatus(o: StatusOpts): Promise<number> {
     case "none":
       if (o.port !== undefined &&
           await reportUntracked(o.port, o.listener ?? httpListener, log)) return 1;
-      log("paddock — not running");
+      log(`${glyph("no")} paddock — not running`);
       return 1;
     case "unreadable":
-      // Distinct from "none" on purpose: "I could not read the state" and
-      // "nothing is running" are different facts, and reporting the first as
-      // the second is the guess this module refuses to make. The file is
-      // left in place — we could not even read it, so deleting it would
-      // destroy the one clue an operator has. Exit non-zero: this is not a
-      // confirmed "not running", it is "don't know", which must not look
-      // like success to a caller scripting on the exit code.
-      log(`paddock — could not read state (${got.error})`);
+      // ⚠ and not ✗, deliberately. "I could not read the state" and "nothing
+      // is running" are different facts, and reporting the first as the second
+      // is the guess this module refuses to make. The file is left in place —
+      // we could not even read it, so deleting it would destroy the one clue
+      // an operator has. Exit non-zero: this is "don't know", which must not
+      // look like success to a caller scripting on the exit code.
+      log(`${glyph("unknown")} paddock — could not read state (${got.error})`);
       return 1;
     case "stale":
       // Say it once. A crash left this behind and silently tidying it up hides
       // that anything happened.
-      log(
-        `paddock — not running (stale state for pid ${got.state.pid}, cleared)`,
-      );
+      log(`${glyph("no")} paddock — not running (stale state for pid ${got.state.pid}, cleared)`);
       await clearState(o.dir, log);
       return 1;
     case "mismatch":
-      log(
-        `paddock — not running (pid ${got.state.pid} is now: ${got.actual ?? "unknown"})`,
-      );
+      log(`${glyph("no")} paddock — not running (pid ${got.state.pid} is now: ${got.actual ?? "unknown"})`);
       await clearState(o.dir, log);
       return 1;
     case "running":
-      log(
-        `paddock ${got.state.version} — running ` +
-          `(pid ${got.state.pid}, port ${got.state.port}, up ${duration(now - got.state.startedAt)})`,
-      );
+      log(`${glyph("yes")} paddock ${got.state.version} — running`);
+      log(`    pid ${got.state.pid} · port ${got.state.port} · up ${duration(now - got.state.startedAt)}`);
       return 0;
   }
 }
