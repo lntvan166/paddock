@@ -1,6 +1,6 @@
 import { sectionFor, type Agent, type Section } from "@shared/types";
 import { Mark } from "@web/components/Mark";
-import { SpacesIcon } from "@web/components/ui/icons";
+import { SettingsIcon, SpacesIcon } from "@web/components/ui/icons";
 
 /**
  * The host label is only worth screen space when it distinguishes something.
@@ -132,14 +132,20 @@ export function HostHeader({
           )}
           {/* A real button, not a hover-revealed affordance — the only route
               into #/settings, so it must be reachable by touch on the first
-              tap, not discoverable only with a mouse. */}
+              tap, not discoverable only with a mouse.
+
+              A DRAWN glyph, like its neighbour. This was `⚙` (U+2699) at a
+              hand-picked 1rem, one of two controls in the same cluster (§16.5)
+              rendering its label by two different systems — and a codepoint
+              whose weight and baseline vary by platform in a way a 24px path
+              does not. */}
           <button
             type="button"
             className="host-settings-btn tap shrink-0"
             aria-label="Settings"
             onClick={onOpenSettings}
           >
-            ⚙
+            <SettingsIcon className="host-btn-glyph" />
           </button>
         </div>
       </div>

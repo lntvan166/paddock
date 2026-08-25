@@ -139,7 +139,6 @@ const T_STEPS = ["--t-xs", "--t-md", "--t-lg", "--t-xl"];
 const OFF_SCALE = [
   ".term-pane",         // agent output, sized by columns visible
   ".detail .output",    // ditto
-  ".host-settings-btn", // sizes the gear GLYPH, not text
   ".pair-code code",    // read off one screen and typed into another
   '.tile[data-size="sm"]', // initials scale with the circle, not the page
   '.tile[data-size="md"]',

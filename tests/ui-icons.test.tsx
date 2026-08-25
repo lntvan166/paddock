@@ -6,12 +6,25 @@ import { render, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
+// EVERY glyph in the module, not just the settings cards'. This list was a
+// closed eight while `icons.tsx` had nine — the ninth being `SpacesIcon`, on
+// the only route into the new screen, with none of the invariants below guarded.
+// A list that has to be extended by hand is extended by hand: add the name here
+// in the same change that adds the glyph.
 const NAMES = [
   "MonitorIcon", "ActivityIcon", "TerminalIcon", "BellIcon",
   "SendIcon", "LinkIcon", "RefreshIcon", "PlugIcon",
+  "SpacesIcon", "SettingsIcon",
 ] as const;
 
-test("there is one glyph per settings card", () => {
+test("every icon the module exports is in the list the tests below walk", async () => {
+  // What actually stops the list going stale: a glyph added to `icons.tsx` and
+  // not added above fails HERE rather than silently going unguarded.
+  const exported = Object.keys(icons).filter((k) => k.endsWith("Icon")).sort();
+  expect(exported).toEqual([...NAMES].sort());
+});
+
+test("there is one glyph per settings card, plus the two header controls", () => {
   for (const n of NAMES) expect(typeof (icons as Record<string, unknown>)[n]).toBe("function");
 });
 

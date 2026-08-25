@@ -29,6 +29,12 @@ test("the settings button is the entry point to #/settings", async () => {
   expect(button).not.toBeNull();
   await click(button);
   expect(calls).toEqual(["#/settings"]);
+
+  // Drawn, like the Spaces control it now sits beside (§16.5 made them one
+  // cluster). It was a `⚙` codepoint at a hand-picked pixel size, which is a
+  // second rendering system inside one group of two buttons.
+  expect(button!.querySelector("svg")).not.toBeNull();
+  expect(button!.textContent).toBe("");
 });
 
 test("no Spaces control when there is no tree to show — a control that always errors is worse", async () => {

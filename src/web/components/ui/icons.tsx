@@ -1,11 +1,11 @@
 /**
- * Nine hand-written glyphs: one per settings card, plus the Spaces entry point
- * in `HostHeader`.
+ * Ten hand-written glyphs: one per settings card, plus the two header controls
+ * in `HostHeader` — Spaces and Settings.
  *
  * Icon libraries are tens of kilobytes of tree-shaken JavaScript for what is a
  * few hundred bytes of path data here, on a project whose bundle is deliberately
  * ONE chunk because at high RTT an extra round trip costs more than the bytes it
- * saves. These nine are hand-written instead.
+ * saves. These ten are hand-written instead.
  *
  * `currentColor` throughout, so a glyph is never a colour that has to be
  * redefined per theme, and `aria-hidden` throughout, because every one of them
@@ -80,6 +80,28 @@ export function SpacesIcon({ className }: IconProps) {
       <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
       <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
       <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
+    </Svg>
+  );
+}
+
+/**
+ * The Settings entry point in the host header.
+ *
+ * Drawn, for the reason `SpacesIcon` above is drawn — and now also for
+ * consistency: §16.5 grouped these two controls into one cluster, so the round
+ * that made them neighbours is the round that has to stop one of them being a
+ * `⚙` codepoint at a hand-picked pixel size while the other is a glyph. Two
+ * controls in the same header that look like two different systems is worse
+ * than one that is merely plain.
+ *
+ * A gear, six teeth: recognisable at 18px, where more teeth close the gaps
+ * between them into a ring.
+ */
+export function SettingsIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 2.5v3M12 18.5v3M4.25 7.25l2.6 1.5M17.15 15.25l2.6 1.5M4.25 16.75l2.6-1.5M17.15 8.75l2.6-1.5" />
     </Svg>
   );
 }

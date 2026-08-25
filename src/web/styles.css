@@ -845,9 +845,10 @@ body {
 /* A glyph key gets a glyph-sized glyph.
    These are 44px-tall targets that were drawing a 16px arrow in the middle of
    ~80px of nothing, which reads as a big empty button rather than as an arrow.
-   Deliberately off the --t-* scale, like `.host-settings-btn`: this sizes a
-   SYMBOL, not text, and putting it on the text scale is what made it look
-   lost. Listed in tokens.test.ts's OFF_SCALE
+   Deliberately off the --t-* scale: this sizes a SYMBOL, not text, and putting
+   it on the text scale is what made it look lost. (`.host-settings-btn` used to
+   be cited here as the precedent; it is a drawn glyph now and no longer on this
+   list.) Listed in tokens.test.ts's OFF_SCALE
    with that reason. */
 .term-key[data-key="up"],
 .term-key[data-key="down"],
@@ -1165,6 +1166,10 @@ body {
    grows it further under `(pointer: coarse)` — the same layered convention
    as everything else in this file: no device detection, just capability
    media queries. */
+/* No font-size, same as `.host-spaces-btn` below: this button's label is a
+   DRAWN glyph (`SettingsIcon`), sized by `.host-btn-glyph`, so there is no text
+   in it to scale. It carried `font-size: 1rem` for `⚙` and an OFF_SCALE
+   exemption to go with it — both gone with the codepoint. */
 .host-settings-btn {
   min-height: 2.5rem;
   min-width: 2.5rem;
@@ -1172,10 +1177,9 @@ body {
   border-radius: 0.4rem;
   background: var(--surface);
   color: var(--fg);
-  /* Off the --t-* scale on purpose: this sizes the ⚙ GLYPH, not text. Putting
-     it on the text scale would shrink the only icon in the header to the size
-     of a caption. */
-  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
   cursor: pointer;
 }
@@ -1568,9 +1572,9 @@ body {
 /* The one entry point into #/spaces, sized and bordered exactly like
    `.host-settings-btn` beside it — two controls in the same header that look
    like two different systems is worse than one that is merely plain. */
-/* No font-size here, unlike `.host-settings-btn`: this button's label is a
-   DRAWN glyph (`SpacesIcon`), sized by `.host-btn-glyph` below, so there is no
-   text in it to scale. It carried `font-size: 1rem` for `▦`, and that
+/* No font-size here, exactly like `.host-settings-btn`: this button's label is
+   a DRAWN glyph (`SpacesIcon`), sized by `.host-btn-glyph` below, so there is
+   no text in it to scale. It carried `font-size: 1rem` for `▦`, and that
    codepoint's coverage in mobile system fonts is not something paddock gets to
    assume — see the comment on SpacesIcon. */
 .host-spaces-btn {
@@ -1589,7 +1593,7 @@ body {
 
 /* The icon components are authored at 24px so they fill a settings card's
    tile. In a 2.5rem header button that is too much ink, so the box is sized
-   here rather than by adding a size prop nine glyphs would have to carry.
+   here rather than by adding a size prop ten glyphs would have to carry.
    `currentColor` means the button's own `color` still paints it, in both
    themes, with no second definition. */
 .host-btn-glyph {
@@ -1681,7 +1685,9 @@ body {
 
 /* The scan target, same voice as an agent's name on the dashboard: an
    identifier you match, set in mono. Truncated rather than wrapped — a name
-   that wraps pushes the ⋯ button off a narrow phone. ALWAYS the space's own
+   that wraps pushes the row's trailing content (the pane count, or the state
+   text on a merged row) off a narrow phone. The `⋯` this used to cite is gone;
+   see SpaceRow.tsx's note for the plan that brings it back. ALWAYS the space's own
    label, on every row shape: a merged row used to show its pane's identity
    here instead, which hid the space's label on most rows (six of seven are
    1:1:1) — and a later plan's workspace.rename writes exactly this field, so
