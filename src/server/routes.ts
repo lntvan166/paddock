@@ -241,6 +241,44 @@ function findSpace(tree: SpaceTree, id: string): Space | undefined {
 }
 
 /**
+ * Shared validation for the two create bodies, `{label?, cwd?}`.
+ *
+ * Unlike `MAX_LABEL_LEN` on a RENAME, an empty or whitespace-only label (or
+ * cwd) here is normalised to ABSENT rather than refused: the rename routes
+ * refuse a blank value because the operator is replacing a name that
+ * already exists and herdr models no "unset" for it (§17) — but a CREATE
+ * has nothing existing to protect, and herdr is happy to pick its own
+ * default (a tab's number, a space's own default cwd) for a field that
+ * was never sent. Refusing a blank create label would only be refusing
+ * something herdr already handles; the length ceilings still apply,
+ * because a client-supplied value reaching a herdr parameter is governed
+ * by paddock's own policy either way (same reasoning as `MAX_READ_LINES`).
+ */
+function normalizeCreateBody(
+  body: Record<string, unknown>,
+): { label?: string; cwd?: string; err?: string } {
+  const rawLabel = body.label;
+  if (rawLabel !== undefined && typeof rawLabel !== "string") {
+    return { err: "label must be a string" };
+  }
+  if (typeof rawLabel === "string" && rawLabel.length > MAX_LABEL_LEN) {
+    return { err: "label must be within the length limit" };
+  }
+  const label = typeof rawLabel === "string" && rawLabel.trim() !== "" ? rawLabel : undefined;
+
+  const rawCwd = body.cwd;
+  if (rawCwd !== undefined && typeof rawCwd !== "string") {
+    return { err: "cwd must be a string" };
+  }
+  if (typeof rawCwd === "string" && rawCwd.length > MAX_TEXT_LEN) {
+    return { err: "cwd must be within the length limit" };
+  }
+  const cwd = typeof rawCwd === "string" && rawCwd.trim() !== "" ? rawCwd : undefined;
+
+  return { label, cwd };
+}
+
+/**
  * A request body as an object, or a 400 reason — and the one place the
  * settings routes require `content-type: application/json`, for the CSRF
  * reason spelled out below.
@@ -1152,6 +1190,164 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`spaces: could not close \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Create a space (herdr's workspace). Body: `{label?, cwd?}`.
+     *
+     * The only create route with no `:id` to validate against the tree —
+     * there is nothing existing to check — but `deps.readTree`'s ABSENCE
+     * still 404s honestly, same capability gate every action route uses:
+     * a paddock with no session tree (`--demo`) cannot create anything in
+     * one either.
+     *
+     * `workspace.create`'s own envelope carries the new space's id AND its
+     * first tab AND its first pane — `actions.createSpace` reads all three
+     * straight off it. No `deps.readTree()` call happens here at all, which
+     * is what keeps the whole create path's snapshot-read count at zero for
+     * this route: §9.1's correction removed a re-read that was never
+     * needed, and the surest way to keep it removed is a route that has no
+     * tree read to begin with.
+     */
+    app.post("/api/spaces", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+
+      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c));
+      if (err) return c.json({ ok: false, detail: err }, 400);
+
+      try {
+        const created = await actions.createSpace({ label, cwd });
+        return c.json({ ok: true, ...created });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        warn(`spaces: could not create a space: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Create a tab in an existing space. Body: `{label?, cwd?}`. Same shape
+     * as `/api/tabs/:id/close` etc.: 404 when `deps.readTree` is absent,
+     * 404 for an unknown space id, and the deliberate outcomes `return`ed
+     * from INSIDE the `try` so the `catch` cannot relabel a client error as
+     * a 502.
+     *
+     * The single `await deps.readTree()` below is the ONLY snapshot read
+     * this route makes, and it exists to validate the space id — never to
+     * find the new tab or pane afterward. `tab.create`'s own envelope
+     * carries `root_pane` alongside `tab` (§9.1's correction, measured in
+     * `docs/probes/2026-08-25-structural-events.md`), so the new pane's id
+     * is read straight off that response.
+     */
+    app.post("/api/spaces/:id/tabs", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c));
+      if (err) return c.json({ ok: false, detail: err }, 400);
+
+      try {
+        const tree = await deps.readTree();
+        const space = findSpace(tree, id);
+        if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
+        const created = await actions.createTab(id, { label, cwd });
+        return c.json({ ok: true, ...created });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        warn(`spaces: could not create a tab in \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Start a coding agent in an existing pane. Body: `{kind, name?, args?}`.
+     *
+     * `kind` is checked against `actions.harnessKinds()` — the harnesses
+     * THIS machine actually has installed (`server.agent_manifests`) — and
+     * refused with 400 BEFORE `agent.start` is ever called when it is not
+     * on that list. The allowlist is never hardcoded (§9.3):
+     * `AgentStartParams.kind` is a plain string in protocol 20, not an
+     * enum, so the only defensible allowlist is what is measured installed.
+     *
+     * A herdr failure inside `agent.start` gets its OWN inner `catch`,
+     * distinct from the outer one: by the time that call runs, the pane
+     * already exists (found on the tree read just above) and already held
+     * a plain shell before this request arrived. A failed start is
+     * therefore neither success nor nothing — the operator is not left
+     * wondering whether the pane they were looking at vanished — so the
+     * `detail` says which half landed, the same distinction
+     * `/api/panes/:id/text` draws with "typed, but not run".
+     */
+    app.post("/api/panes/:id/agent", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      const body = await jsonBody(c);
+      const kind = body.kind;
+      if (typeof kind !== "string" || kind.trim() === "") {
+        return c.json({ ok: false, detail: "kind must be a non-empty string" }, 400);
+      }
+      const rawName = body.name;
+      if (rawName !== undefined && rawName !== null && typeof rawName !== "string") {
+        return c.json({ ok: false, detail: "name must be a string or null" }, 400);
+      }
+      if (typeof rawName === "string" && rawName.length > MAX_LABEL_LEN) {
+        return c.json({ ok: false, detail: "name must be within the length limit" }, 400);
+      }
+      const name = typeof rawName === "string" && rawName.trim() !== "" ? rawName : null;
+
+      const rawArgs = body.args;
+      if (
+        rawArgs !== undefined
+        && !(Array.isArray(rawArgs) && rawArgs.every((a) => typeof a === "string"))
+      ) {
+        return c.json({ ok: false, detail: "args must be an array of strings" }, 400);
+      }
+      const args = Array.isArray(rawArgs) ? (rawArgs as string[]) : undefined;
+
+      try {
+        const tree = await deps.readTree();
+        const pane = findPane(tree, id);
+        if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
+
+        const kinds = await actions.harnessKinds();
+        if (!kinds.includes(kind)) {
+          return c.json({ ok: false, detail: `unsupported kind: ${kind}` }, 400);
+        }
+
+        try {
+          await actions.startAgent(id, kind, name, args);
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e);
+          warn(`panes: agent did not start in \`${id}\`: ${detail}`);
+          return c.json(
+            { ok: false, detail: `shell exists, but the agent did not start: ${detail}`, paneId: id },
+            502,
+          );
+        }
+        return c.json({ ok: true, paneId: id });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        warn(`panes: could not start an agent in \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * The harness kinds THIS machine has installed — `server.agent_manifests`,
+     * for the create sheet's picker. A GET is right here: no parameters at
+     * all, so nothing lands in a query string (unlike every other write
+     * route in this file, this one reads nothing client-supplied).
+     */
+    app.get("/api/harnesses", async (c) => {
+      try {
+        const kinds = await actions.harnessKinds();
+        return c.json({ ok: true, kinds });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        warn(`harnesses: could not read installed kinds: ${detail}`);
         return c.json({ ok: false, detail }, 502);
       }
     });

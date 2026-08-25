@@ -1,6 +1,18 @@
 import { request } from "@server/herdr/socket";
-import type { HerdrPaneRead } from "@shared/herdr-api";
+import type {
+  HerdrAgentManifests, HerdrPaneRead, HerdrTabCreated, HerdrWorkspaceCreated,
+} from "@shared/herdr-api";
 import type { AgentState, NavKey } from "@shared/types";
+
+/** The `{label?, cwd?}` a create route forwards to `createSpace`/`createTab`.
+ *  Both fields are already normalised by the ROUTE before this is called: an
+ *  empty or whitespace-only label/cwd arrives here as `undefined`, never as
+ *  `""` — see routes.ts's `normalizeCreateBody` for why a create treats a
+ *  blank value as ABSENT rather than refusing it, unlike rename. */
+export interface CreateOpts {
+  label?: string;
+  cwd?: string;
+}
 
 export type ReadSource = "detection" | "visible" | "recent_unwrapped";
 
@@ -174,6 +186,39 @@ export function historyTimeoutMs(): number {
 }
 
 /**
+ * herdr's own readiness budget for `agent.start`, sent explicitly as that
+ * call's own `timeout_ms` field rather than left to herdr's implicit
+ * default.
+ *
+ * Pinned to exactly what herdr documents as its own default — 30s (design
+ * doc §9.2; measured against protocol 19 in
+ * docs/design/2026-08-19-notifications-and-settings-design.md §10) — so a
+ * future upstream default change cannot silently change what paddock
+ * blocks for. herdr enforces a bound on this field itself: strictly greater
+ * than 3000ms and no more than 300000ms. 30_000 sits comfortably inside it.
+ */
+export const AGENT_START_TIMEOUT_MS = 30_000;
+
+/**
+ * Margin added on top of `AGENT_START_TIMEOUT_MS` for the TRANSPORT-level
+ * ceiling passed as `request()`'s own fourth argument.
+ *
+ * Same reasoning as `WAIT_TRANSPORT_MARGIN_MS` above: herdr legitimately
+ * blocks on readiness for up to `AGENT_START_TIMEOUT_MS`, and `request()`
+ * defaults its own socket ceiling to `HERDR_TIMEOUT_MS` (10s) whenever it is
+ * called with no fourth argument — far short of the 30s herdr was just told
+ * it may take. `historyTimeoutMs()` above is the existing precedent for
+ * this exact pattern: a per-call override, passed as `request`'s fourth
+ * argument, for a herdr call whose own budget exceeds the transport
+ * default.
+ */
+const AGENT_START_TRANSPORT_MARGIN_MS = 5_000;
+
+export function agentStartTimeoutMs(): number {
+  return AGENT_START_TIMEOUT_MS + AGENT_START_TRANSPORT_MARGIN_MS;
+}
+
+/**
  * The line count for a read. A history read ignores the caller entirely; a
  * live read clamps them, as it always has.
  */
@@ -266,6 +311,53 @@ export interface HerdrActions {
    * try/catch instead.
    */
   closeSpace(spaceId: string): Promise<void>;
+  /**
+   * Create a space (herdr's workspace). The ids come back DIRECTLY off
+   * `workspace.create`'s own envelope — `result.workspace.workspace_id`,
+   * `result.tab.tab_id`, `result.root_pane.pane_id` — never by re-reading
+   * the session tree afterward (§9.1's correction: that re-read was
+   * prescribed against a response shape that turned out false, measured in
+   * `docs/probes/2026-08-25-structural-events.md`). The route calling this
+   * makes no tree read of its own either, for the same reason.
+   *
+   * `focus: false` always — measured (§17 probe 5) not to steal the
+   * desktop's focus, and paddock must not start doing so from a phone.
+   */
+  createSpace(opts: CreateOpts): Promise<{ spaceId: string; tabId: string; paneId: string }>;
+  /**
+   * Create a tab in an existing space. Same envelope reasoning as
+   * `createSpace`, one level down — `tab.create`'s result carries
+   * `root_pane` alongside `tab`, so the new pane's id needs no second
+   * herdr call to find. The route calling this validates the space id
+   * against `deps.readTree` BEFORE this runs; that is the only tree read
+   * the whole create path makes.
+   */
+  createTab(spaceId: string, opts: CreateOpts): Promise<{ tabId: string; paneId: string }>;
+  /**
+   * Start a coding agent in an existing pane (`agent.start`). Requires a
+   * per-call timeout override — see `agentStartTimeoutMs()` — because it
+   * blocks on readiness for up to `AGENT_START_TIMEOUT_MS`, far past
+   * `HERDR_TIMEOUT_MS`.
+   *
+   * `name`, unlike `renameAgent`'s, is never forwarded as `null`: the
+   * measured shape of `agent.start`'s params
+   * (`docs/design/2026-08-19-notifications-and-settings-design.md` §10) is
+   * `{name, kind, pane_id, args?, timeout_ms?}` — `name` carries no `?`,
+   * so it is required, and whether herdr accepts `null` for it was never
+   * measured and this task is not authorised to spawn a live agent to find
+   * out. Defaulting an absent name to `kind` itself is the one choice that
+   * needs no such measurement: it is always a valid non-empty string.
+   */
+  startAgent(
+    paneId: string, kind: string, name: string | null, args?: string[],
+  ): Promise<void>;
+  /**
+   * The harness kinds this machine actually has installed
+   * (`server.agent_manifests`). The route calling this derives its `kind`
+   * allowlist from the result at runtime — never hardcoded (§9.3):
+   * `AgentStartParams.kind` is a plain string in protocol 20, not an enum.
+   */
+  harnessKinds(): Promise<string[]>;
 }
 
 /** Binds the socket path once so routes can take an injectable object. */
@@ -422,6 +514,46 @@ export function createActions(socketPath: string): HerdrActions {
       // asked for; if it refuses, the calling route's catch relays the
       // reason verbatim rather than paddock predicting it.
       await request(socketPath, "workspace.close", { workspace_id: spaceId });
+    },
+
+    async createSpace(opts) {
+      const res = await request<HerdrWorkspaceCreated>(socketPath, "workspace.create", {
+        label: opts.label, cwd: opts.cwd,
+        // Never steals the desktop's focus — measured, §17 probe 5.
+        focus: false,
+      });
+      // Straight off the envelope. No `session.snapshot` call here — that
+      // is exactly the re-read §9.1's correction removes.
+      return {
+        spaceId: res.workspace.workspace_id,
+        tabId: res.tab.tab_id,
+        paneId: res.root_pane.pane_id,
+      };
+    },
+
+    async createTab(spaceId, opts) {
+      const res = await request<HerdrTabCreated>(socketPath, "tab.create", {
+        workspace_id: spaceId, label: opts.label, cwd: opts.cwd,
+        focus: false,
+      });
+      return { tabId: res.tab.tab_id, paneId: res.root_pane.pane_id };
+    },
+
+    async startAgent(paneId, kind, name, args) {
+      await request(socketPath, "agent.start", {
+        pane_id: paneId, kind,
+        // See the interface doc above: `name` is required, not nullable —
+        // an absent one falls back to `kind` rather than `null`, since
+        // `null`'s acceptance here was never measured.
+        name: name ?? kind,
+        args,
+        timeout_ms: AGENT_START_TIMEOUT_MS,
+      }, agentStartTimeoutMs());
+    },
+
+    async harnessKinds() {
+      const res = await request<HerdrAgentManifests>(socketPath, "server.agent_manifests", {});
+      return res.manifests.map((m) => m.agent);
     },
   };
 }

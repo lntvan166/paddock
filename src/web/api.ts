@@ -1,6 +1,7 @@
 import type {
-  ActionResult, CloseSpaceResult, CloseTabResult, HistoryResult, KeyResult, NavKey, OutputResult,
-  PaneOutput, ParsedPrompt, SpaceTree,
+  ActionResult, CloseSpaceResult, CloseTabResult, CreateSpaceResult, CreateTabResult,
+  HarnessesResult, HistoryResult, KeyResult, NavKey, OutputResult,
+  PaneOutput, ParsedPrompt, SpaceTree, StartAgentResult,
 } from "@shared/types";
 
 /**
@@ -313,4 +314,55 @@ export async function closeTab(id: string, f: Fetch = fetch): Promise<CloseTabRe
  */
 export async function closeSpace(id: string, f: Fetch = fetch): Promise<CloseSpaceResult> {
   return readJson<CloseSpaceResult>(spaceUrl(id, "close"), {}, f);
+}
+
+/**
+ * Create a space (herdr's workspace). `label`/`cwd` are both optional — an
+ * absent or blank label is not a client concern to guard against here, the
+ * server treats it as "let herdr pick its own default" rather than an
+ * error (unlike rename, where the label being replaced already exists).
+ *
+ * Uses `readJson`, same as `closeTab`/`closeSpace`: a refusal (an
+ * over-length label/cwd, or herdr declining) rejects with the server's
+ * `detail` for the caller to render.
+ */
+export async function createSpace(
+  opts: { label?: string; cwd?: string } = {}, f: Fetch = fetch,
+): Promise<CreateSpaceResult> {
+  return readJson<CreateSpaceResult>("/api/spaces", opts, f);
+}
+
+/** Create a tab in an existing space. Same shape as `createSpace`, one
+ *  level down. */
+export async function createTab(
+  spaceId: string, opts: { label?: string; cwd?: string } = {}, f: Fetch = fetch,
+): Promise<CreateTabResult> {
+  return readJson<CreateTabResult>(spaceUrl(spaceId, "tabs"), opts, f);
+}
+
+/**
+ * Start a coding agent in an existing pane. A REJECTED response here does
+ * not mean nothing happened — the pane the operator is looking at is real
+ * either way, and the server's `detail` says so explicitly when only the
+ * agent failed to start (mirrors `sendPaneText`'s "typed, but not run").
+ */
+export async function startAgent(
+  paneId: string, kind: string, name?: string | null, args?: string[], f: Fetch = fetch,
+): Promise<StartAgentResult> {
+  return readJson<StartAgentResult>(paneUrl(paneId, "agent"), { kind, name, args }, f);
+}
+
+/**
+ * The harness kinds this machine actually has installed, for the create
+ * sheet's picker. A GET with no body, same reasoning as `fetchSpaceTree`:
+ * there is no payload to keep out of an access log, and a non-2xx response
+ * rejects rather than resolving with a value shaped like success.
+ */
+export async function fetchHarnessKinds(f: Fetch = fetch): Promise<HarnessesResult> {
+  const res = await f("/api/harnesses", { method: "GET" });
+  if (!res.ok) {
+    const detail = await detailFrom(res);
+    throw new RequestFailed(res.status, detail ?? `request failed: ${res.status}`);
+  }
+  return (await res.json()) as HarnessesResult;
 }

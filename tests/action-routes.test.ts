@@ -43,6 +43,10 @@ function harness(a: Agent = agent(), screen?: string[]) {
     async renameSpace(_id: string, label: string) { calls.push(`renameSpace:${label}`); },
     async closeTab(id: string) { calls.push(`closeTab:${id}`); },
     async closeSpace(id: string) { calls.push(`closeSpace:${id}`); },
+    async createSpace() { return { spaceId: "w9", tabId: "w9:t1", paneId: "w9:p1" }; },
+    async createTab() { return { tabId: "w1:t9", paneId: "w1:p9" }; },
+    async startAgent() {},
+    async harnessKinds() { return ["claude"]; },
   };
   const hub = new Hub({ now: () => NOW });
   const app = createApp({
@@ -265,6 +269,9 @@ test("a failed action reports ok:false rather than throwing", async () => {
       async sendReply() {}, async waitUntilUnblocked() {},
       async renameAgent() {}, async renameTab() {}, async renameSpace() {},
       async closeTab() {}, async closeSpace() {},
+      async createSpace() { return { spaceId: "w9", tabId: "w9:t1", paneId: "w9:p1" }; },
+      async createTab() { return { tabId: "w1:t9", paneId: "w1:p9" }; },
+      async startAgent() {}, async harnessKinds() { return ["claude"]; },
       async sendPaneText() {}, async sendPaneKey() {},
     },
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
@@ -380,6 +387,9 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
       async sendReply() {}, async waitUntilUnblocked() {},
       async renameAgent() {}, async renameTab() {}, async renameSpace() {},
       async closeTab() {}, async closeSpace() {},
+      async createSpace() { return { spaceId: "w9", tabId: "w9:t1", paneId: "w9:p1" }; },
+      async createTab() { return { tabId: "w1:t9", paneId: "w1:p9" }; },
+      async startAgent() {}, async harnessKinds() { return ["claude"]; },
       async sendPaneText() {}, async sendPaneKey() {},
     },
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),

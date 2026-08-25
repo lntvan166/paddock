@@ -75,6 +75,10 @@ function harness(
         calls.push(`closeSpace:${spaceId}`);
         if (overrides.closeSpace) await overrides.closeSpace(spaceId);
       },
+      async createSpace() { return { spaceId: "w9", tabId: "w9:t1", paneId: "w9:p1" }; },
+      async createTab() { return { tabId: "w1:t9", paneId: "w1:p9" }; },
+      async startAgent() {},
+      async harnessKinds() { return ["claude"]; },
     },
     health: () => ({
       ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW,
