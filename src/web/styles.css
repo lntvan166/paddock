@@ -1644,11 +1644,26 @@ body {
   cursor: pointer;
 }
 
+/* Holds the space's label and, on a merged row, its pane's alias
+   underneath it — a column so the two stack rather than compete for the
+   same line. `flex: 1` / `min-width: 0` live here rather than on
+   `.space-name` alone, now that there can be two lines to shrink together. */
+.space-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* The scan target, same voice as an agent's name on the dashboard: an
    identifier you match, set in mono. Truncated rather than wrapped — a name
-   that wraps pushes the ⋯ button off a narrow phone. */
+   that wraps pushes the ⋯ button off a narrow phone. ALWAYS the space's own
+   label, on every row shape: a merged row used to show its pane's identity
+   here instead, which hid the space's label on most rows (six of seven are
+   1:1:1) — and a later plan's workspace.rename writes exactly this field, so
+   a row that never showed it would make that rename look like it did
+   nothing. */
 .space-name {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1657,6 +1672,23 @@ body {
   letter-spacing: -0.02em;
   font-size: var(--t-lg);
   font-weight: 600;
+}
+
+/* The merged pane's own identity, shown only when it differs from
+   `.space-name` above (SpaceRow.tsx computes `showAlias`) — a shell has no
+   name, so its title is the one thing that identifies it, and the space
+   label alone would leave it unlabelled in every practical sense. Smaller
+   and dimmer than the name it sits under: it is a clarification, not a
+   second identity competing with the space's own. */
+.space-alias {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
 }
 
 .space-count {

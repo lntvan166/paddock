@@ -19,6 +19,28 @@ export function SpaceRow({ space, open, onToggle }: {
   const structured = panes.length > 1 || space.tabs.length > 1;
   const only = !structured ? panes[0] ?? null : null;
 
+  // The SPACE's own label, unconditionally — same as a structured row. A
+  // merged row used to show the pane's identity here instead, which hid the
+  // space's label on six spaces out of seven (most spaces are 1:1:1). A later
+  // plan adds workspace.rename, which writes exactly this field: on a shell
+  // pane (no name, no matching title) renaming the space would have produced
+  // no visible change at all — the same "control that appears to do
+  // nothing" defect the design doc cites as the reason paddock refuses
+  // pane.rename (§7.1), recreated in mirror image.
+  const spaceLabel = space.label ?? space.spaceId;
+  // The merged pane's own identity, shown as a SECONDARY string and only
+  // when it says something the space label does not. Most merged rows have
+  // an agent whose name matches its space, so this stays silent for the
+  // common case; a bare shell (no name) is identified by its title, which is
+  // the one case this exists for.
+  const paneIdentity = only ? (only.name ?? only.title) : null;
+  const showAlias = paneIdentity !== null && paneIdentity !== spaceLabel;
+  // The visible label, in full, so the ⋯ button's accessible name never
+  // diverges from what the row actually shows — WCAG's "label in name": an
+  // aria-label built from spaceLabel alone would go accessible-name-only
+  // silent on the very identity the alias exists to surface.
+  const actionsLabel = showAlias ? `${spaceLabel} (${paneIdentity})` : spaceLabel;
+
   return (
     <li
       data-space-row
@@ -39,24 +61,17 @@ export function SpaceRow({ space, open, onToggle }: {
             onClick={onToggle}
           >
             <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-            <span className="sr-only">{open ? "Collapse" : "Expand"} {space.label ?? space.spaceId}</span>
+            <span className="sr-only">{open ? "Collapse" : "Expand"} {spaceLabel}</span>
           </button>
         )}
         {/* A merged row shows the single pane's state; a structured one shows
             nothing here, because its panes each carry their own below and a
             rollup would say the same thing twice. */}
         {only && <PaneMarker pane={only} />}
-        {/* A merged row IS its one pane, so it shows the PANE's own identity —
-            same fallback chain as a sub-row's `.pane-name` — not the space's
-            label. Usually the two strings agree (an agent's name is commonly
-            set to match its space), but a bare shell has no agent name at
-            all, and showing the space label there would silently hide the
-            one thing the row is actually about ("bash", not "docs-cleanup").
-            Falls back to the space label only when the pane has neither a
-            name nor a title to offer. */}
-        <span className="space-name">
-          {only ? (only.name ?? only.title ?? space.label ?? space.spaceId) : (space.label ?? space.spaceId)}
-        </span>
+        <div className="space-heading">
+          <span className="space-name">{spaceLabel}</span>
+          {showAlias && <span className="space-alias">{paneIdentity}</span>}
+        </div>
         {structured
           ? <span className="space-count">{space.tabCount} tabs</span>
           : only && <PaneState pane={only} />}
@@ -64,7 +79,7 @@ export function SpaceRow({ space, open, onToggle }: {
             the row's layout is settled and the affordance is VISIBLE — an
             unhinted long-press is the touch equivalent of a hover-only
             control, which the UI rules ban. */}
-        <button type="button" className="row-more" disabled aria-label={`Actions for ${space.label ?? space.spaceId}`}>⋯</button>
+        <button type="button" className="row-more" disabled aria-label={`Actions for ${actionsLabel}`}>⋯</button>
       </div>
 
       {structured && open && (
