@@ -25,6 +25,7 @@ import {
   type NotifyTrigger,
   type SettingsPatch,
   type SpaceTree,
+  type TreePane,
 } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 import type { HerdrAgentSession } from "@shared/herdr-api";
@@ -206,6 +207,13 @@ function clearJournalMiss(agentId: string): void {
 async function jsonBody(c: Context): Promise<Record<string, unknown>> {
   const body: unknown = await c.req.json().catch(() => null);
   return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+}
+
+/** Every `/api/panes/:id/*` route validates the same way against the tree —
+ *  the store cannot do it, since a shell pane is deliberately absent from it
+ *  (§3). Factored so the three call sites can't drift on how a pane is found. */
+function findPane(tree: SpaceTree, id: string): TreePane | undefined {
+  return tree.spaces.flatMap((s) => s.tabs).flatMap((t) => t.panes).find((p) => p.paneId === id);
 }
 
 /**
@@ -799,7 +807,7 @@ export function createApp(deps: AppDeps) {
       const id = c.req.param("id");
       try {
         const tree = await deps.readTree();
-        const pane = tree.spaces.flatMap((s) => s.tabs).flatMap((t) => t.panes).find((p) => p.paneId === id);
+        const pane = findPane(tree, id);
         if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
         if (pane.harness !== null) {
           return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/output" }, 409);
@@ -809,6 +817,78 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not read pane \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Type into a pane with no agent — the shell case §8 promised plain text
+     * input for and no route ever delivered (§16.3).
+     *
+     * Validation and error shape are `/api/panes/:id/output`'s, verbatim: the
+     * 404 (no `readTree`, or unknown pane) and 409 (pane has a harness — use
+     * `/api/agents/:id/text` instead) outcomes are deliberate and `return`
+     * inside the `try`, so they can never be relabelled a 502. The bad-input
+     * 400 for an oversized body is checked before the `try` even opens, same
+     * as the agent route.
+     */
+    app.post("/api/panes/:id/text", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      const text = (await jsonBody(c)).text;
+      // Refused, not truncated — a silently shortened command is a DIFFERENT
+      // command, potentially a destructive one. Same ceiling the agent-side
+      // `/text` route uses, for the same reason.
+      if (typeof text !== "string" || text.trim() === "" || text.length > MAX_TEXT_LEN) {
+        return c.json({ ok: false, detail: "text must be a non-empty string within the length limit" }, 400);
+      }
+
+      try {
+        const tree = await deps.readTree();
+        const pane = findPane(tree, id);
+        if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
+        if (pane.harness !== null) {
+          return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/text" }, 409);
+        }
+        await actions.sendPaneText(id, text);
+        return c.json({ ok: true });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        warn(`panes: could not send text to pane \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Send one key to a pane with no agent. Reuses `isNavKey`'s allowlist
+     * rather than a second one: the reasoning that closes it on the agent
+     * side (a closed set the UI cannot smuggle a control sequence past)
+     * applies identically here, and a bare shell is if anything a larger
+     * lever than an agent's prompt. A key outside the allowlist is refused
+     * with 400 and never reaches herdr.
+     */
+    app.post("/api/panes/:id/key", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      const key = (await jsonBody(c)).key;
+      if (!isNavKey(key)) {
+        return c.json({ ok: false, detail: `unsupported key: ${String(key)}` }, 400);
+      }
+
+      try {
+        const tree = await deps.readTree();
+        const pane = findPane(tree, id);
+        if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
+        if (pane.harness !== null) {
+          return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/key" }, 409);
+        }
+        await actions.sendPaneKey(id, key);
+        return c.json({ ok: true });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        warn(`panes: could not send key to pane \`${id}\`: ${detail}`);
         return c.json({ ok: false, detail }, 502);
       }
     });

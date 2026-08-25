@@ -57,6 +57,8 @@ function harness(
       async sendOptionKey() {},
       async sendNavKey() {},
       async sendReply() {},
+      async sendPaneText() {},
+      async sendPaneKey() {},
       async waitUntilUnblocked() {},
     },
     health: () => ({

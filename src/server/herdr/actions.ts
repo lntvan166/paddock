@@ -203,6 +203,20 @@ export interface HerdrActions {
    */
   sendNavKey(target: string, key: NavKey): Promise<void>;
   sendReply(target: string, text: string): Promise<void>;
+  /**
+   * Type into a pane with no agent — the mirror of `sendReply`'s
+   * `agent.prompt`, for a shell. Parameter is `pane_id`, not `target`: the
+   * agent-side methods take `target`, and the two are not interchangeable —
+   * measured, and already the cause of one shipped bug in this repo.
+   */
+  sendPaneText(paneId: string, text: string): Promise<void>;
+  /**
+   * Send one navigation key to a pane with no agent — the mirror of
+   * `sendNavKey`. The route reuses `isNavKey`'s allowlist rather than trusting
+   * a second one: a bare shell is, if anything, a larger lever than an
+   * agent's prompt, so the same closed set applies.
+   */
+  sendPaneKey(paneId: string, key: NavKey): Promise<void>;
   waitUntilUnblocked(target: string, timeoutMs?: number): Promise<void>;
 }
 
@@ -298,6 +312,17 @@ export function createActions(socketPath: string): HerdrActions {
 
     async sendReply(target, text) {
       await request(socketPath, "agent.prompt", { target, text });
+    },
+
+    async sendPaneText(paneId, text) {
+      // `pane.send_text`, the mirror of the agent path's `agent.prompt`.
+      // Parameter is `pane_id`, not `target` — measured; they are not
+      // interchangeable.
+      await request(socketPath, "pane.send_text", { pane_id: paneId, text });
+    },
+
+    async sendPaneKey(paneId, key) {
+      await request(socketPath, "pane.send_keys", { pane_id: paneId, keys: [key] });
     },
 
     async waitUntilUnblocked(target, timeoutMs) {

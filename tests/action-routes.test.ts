@@ -35,6 +35,8 @@ function harness(a: Agent = agent(), screen?: string[]) {
     async sendOptionKey(_t: string, k: string) { calls.push(`key:${k}`); },
     async sendNavKey(_t: string, k: string) { calls.push(`nav:${k}`); },
     async sendReply(_t: string, text: string) { calls.push(`reply:${text}`); },
+    async sendPaneText(_p: string, text: string) { calls.push(`paneText:${text}`); },
+    async sendPaneKey(_p: string, k: string) { calls.push(`paneKey:${k}`); },
     async waitUntilUnblocked() { calls.push("wait"); },
   };
   const hub = new Hub({ now: () => NOW });
@@ -256,6 +258,7 @@ test("a failed action reports ok:false rather than throwing", async () => {
       async sendOptionKey() { throw new Error("herdr said no"); },
       async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
+      async sendPaneText() {}, async sendPaneKey() {},
     },
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
   });
@@ -368,6 +371,7 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
       async sendOptionKey() {},
       async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
+      async sendPaneText() {}, async sendPaneKey() {},
     },
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
   });

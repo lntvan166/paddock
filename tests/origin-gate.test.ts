@@ -45,6 +45,8 @@ function harness(state: Agent["state"] = "blocked") {
     async sendOptionKey(_t: string, k: string) { calls.push(`key:${k}`); },
     async sendNavKey(_t: string, k: string) { calls.push(`nav:${k}`); },
     async sendReply(_t: string, text: string) { calls.push(`reply:${text}`); },
+    async sendPaneText(_p: string, text: string) { calls.push(`paneText:${text}`); },
+    async sendPaneKey(_p: string, k: string) { calls.push(`paneKey:${k}`); },
     async waitUntilUnblocked() { calls.push("wait"); },
   };
   const app = createApp({
