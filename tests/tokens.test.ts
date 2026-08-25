@@ -304,3 +304,18 @@ test("an ancestor's font shorthand cannot outrank a glyph size it contains", asy
   }
   expect(offenders, "move the font-size into the ancestor-scoped rule so it wins").toEqual([]);
 });
+
+test("the no-state marker is a complete shape, not a dashed circle", async () => {
+  // A 7px circle with a 1.5px border has a ~17px border centreline, and a
+  // dashed border sets dash and gap at roughly twice the border width — so
+  // ~2.9 periods have to close a ring whose four sides are each stroked with
+  // an independent dash phase. It rendered as four unequal arcs: an incomplete
+  // circle. Shape is the channel that survives at this size, not border-style.
+  const css = await Bun.file("src/web/styles.css").text();
+  const rule = rules(css).find((r) => r.sel === ".dot-none");
+  expect(rule).toBeDefined();
+  expect(rule!.body).toContain("border-style: solid");
+  expect(rule!.body).not.toContain("dashed");
+  // A square, so it cannot be mistaken for `idle`'s hollow ring.
+  expect(rule!.body).not.toContain("9999px");
+});

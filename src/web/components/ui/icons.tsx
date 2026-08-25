@@ -87,21 +87,27 @@ export function SpacesIcon({ className }: IconProps) {
 /**
  * The Settings entry point in the host header.
  *
- * Drawn, for the reason `SpacesIcon` above is drawn — and now also for
- * consistency: §16.5 grouped these two controls into one cluster, so the round
- * that made them neighbours is the round that has to stop one of them being a
- * `⚙` codepoint at a hand-picked pixel size while the other is a glyph. Two
- * controls in the same header that look like two different systems is worse
- * than one that is merely plain.
+ * Drawn, for the reason `SpacesIcon` above is drawn, and grouped with it by
+ * §16.5 — two controls in the same cluster must not look like two systems.
  *
- * A gear, six teeth: recognisable at 18px, where more teeth close the gaps
- * between them into a ring.
+ * This was a gear, and it was not one: a circle at the centre with six
+ * DETACHED ticks in the annulus and no outer rim, which is the standard
+ * brightness glyph. The comment it replaced records how that happened — it
+ * worried that more teeth would close the gaps into a ring, and removed the
+ * rim to keep them distinct. That fixed the density and left the metaphor
+ * behind.
+ *
+ * Sliders rather than restoring the rim, because the header renders at 18px:
+ * a gear at that size has a 3.9px annulus holding 1.1px teeth, and rendered it
+ * collapses into a blob. These two tracks have no detail inside a ring at all,
+ * and their smallest feature is a 3.2px knob.
  */
 export function SettingsIcon({ className }: IconProps) {
   return (
     <Svg className={className}>
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 2.5v3M12 18.5v3M4.25 7.25l2.6 1.5M17.15 15.25l2.6 1.5M4.25 16.75l2.6-1.5M17.15 8.75l2.6-1.5" />
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2.1" />
+      <circle cx="10" cy="17" r="2.1" />
     </Svg>
   );
 }

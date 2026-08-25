@@ -1839,18 +1839,25 @@ body {
 }
 
 /* A shell has no triage state at all — it is not `idle`, which is why it gets
-   no `StatusDot`. Same geometry as `.dot` (a ring is the same size as a disc;
-   hollowing must not also move it) but DASHED rather than solid, so a shell
-   is never mistaken for the one real state that happens to render as a
-   hollow ring. */
+   no `StatusDot`. Same 7px footprint as `.dot`, because hollowing a marker
+   must not also move it.
+
+   A SQUARE, not a dashed ring. Dashed was the first attempt at "not idle" and
+   it does not survive this size: the border centreline is ~17px round, a
+   dashed border sets dash and gap at roughly twice the 1.5px border width, so
+   ~2.9 periods have to close a circle whose four sides are stroked with
+   independent dash phases. It rendered as four unequal arcs — an incomplete
+   circle, which is how an operator reported it. Shape is the channel that
+   survives what a border-style does not, which is what `StateIcon`'s own
+   comment already says. */
 .dot-none {
   width: 7px;
   height: 7px;
   flex-shrink: 0;
   box-sizing: border-box;
-  border-radius: 9999px;
+  border-radius: 1.5px;
   border-width: 1.5px;
-  border-style: dashed;
+  border-style: solid;
   border-color: var(--fg-dim);
   background: var(--bg);
 }

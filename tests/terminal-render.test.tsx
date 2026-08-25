@@ -481,3 +481,21 @@ test("a state change re-reads the transcript, so a screen is never frozen at the
 
   expect(calls.filter((c) => c.url.includes("/output")).length).toBeGreaterThan(readsOnMount);
 });
+
+test("the blocked pill says its word without an illegible glyph", async () => {
+  // lucide scales stroke with size, so at size=11 the stroke was 0.92px, the
+  // circle 9.2px, and the "!" inside it a 1.8px bar over a sub-pixel dot. It
+  // was also redundant: only `blocked` ever renders this pill, so there is no
+  // green pill to confuse it with and the pill itself is the shape channel.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["out"]),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+
+  const pill = host.querySelector(".term-title .term-state")!;
+  expect(pill.textContent).toContain("blocked");
+  expect(pill.querySelector("svg")).toBeNull();
+});
