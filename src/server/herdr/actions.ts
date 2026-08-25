@@ -141,6 +141,9 @@ export function resolveSource(state: AgentState | null, scrollback: boolean): Re
   // opposite of an agent pane, which renders on the alternate screen and costs
   // ~35ms per line past the viewport. So the cheap source for a shell is the
   // expensive one for an agent, and the state is what tells them apart.
+  //
+  // Reached in production from `readPane` below, which asks rather than
+  // hardcoding: this is the one place the rule is written down.
   if (state === null) return "recent_unwrapped";
 
   return scrollback ? readSourceFor(state) : "visible";
@@ -183,10 +186,10 @@ export interface HerdrActions {
     target: string, state: AgentState, lines?: number, scrollback?: boolean,
   ): Promise<{ lines: string[]; source: ReadSource }>;
   /**
-   * Read a pane that has no agent — a plain shell. `HISTORY_LINES` and
-   * `recent_unwrapped` always, because `resolveSource(null, _)` always
-   * chooses scrollback: a shell is on the normal screen, where that source
-   * is ~2ms instead of the ~35ms/line it costs an agent's alternate screen.
+   * Read a pane that has no agent — a plain shell. `HISTORY_LINES`, and the
+   * source it gets from `resolveSource(null, true)`, which is always
+   * `recent_unwrapped`: a shell is on the normal screen, where that source is
+   * ~2ms instead of the ~35ms/line it costs an agent's alternate screen.
    */
   readPane(paneId: string): Promise<{ lines: string[]; source: ReadSource }>;
   readDetection(target: string): Promise<string>;
@@ -254,14 +257,27 @@ export function createActions(socketPath: string): HerdrActions {
       // `recent_unwrapped` on a non-idle agent with `agent_not_idle`, a
       // herdr-side guard against scrolling a live agent's pane that paddock
       // would otherwise have to maintain alone.
+      //
+      // The source is ASKED FOR, not hardcoded. `resolveSource` is where the
+      // "a shell reads from scrollback" rule lives, and the `state: null`
+      // branch exists for exactly this call site — hardcoding the answer here
+      // left the rule written down twice, with only a test reaching the copy
+      // that is supposed to be authoritative.
+      const source = resolveSource(null, true);
+      // The default 10s ceiling, deliberately — NOT `historyTimeoutMs()`.
+      // That override exists because an agent's alternate screen is recovered
+      // by physically scrolling the pane, 11-14s in every measurement. A
+      // shell is on the normal screen with a real buffer: 400 lines came back
+      // in 2ms. A 25s ceiling here would buy nothing and would turn a wedged
+      // socket into a 25s hang on a path that answers instantly when healthy.
       const res = await request<HerdrPaneRead>(socketPath, "pane.read", {
-        pane_id: paneId, source: "recent_unwrapped", lines: HISTORY_LINES,
+        pane_id: paneId, source, lines: HISTORY_LINES,
         format: "ansi", strip_ansi: false,
       });
       const text = res.read.text;
       return {
         lines: text === "" ? [] : text.split("\n").map((l) => l.replace(/\r$/, "")),
-        source: "recent_unwrapped" as const,
+        source,
       };
     },
 

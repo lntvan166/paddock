@@ -1,7 +1,8 @@
 import type {
   HerdrAgentRaw, HerdrPaneInfo, HerdrSessionSnapshot, HerdrTabInfo,
 } from "@shared/herdr-api";
-import type { AgentState, Space, SpaceTree, Tab, TreePane } from "@shared/types";
+import type { Space, SpaceTree, Tab, TreePane } from "@shared/types";
+import { toState } from "@server/herdr/adapter";
 
 /**
  * Shape one `session.snapshot` into the tree the Spaces screen renders.
@@ -71,11 +72,4 @@ function toPane(p: HerdrPaneInfo, agent: HerdrAgentRaw | undefined): TreePane {
     // not belong in.
     state: p.agent ? toState(p.agent_status) : null,
   };
-}
-
-/** Same narrowing `adapter.ts` applies: an unrenderable status is not a state. */
-function toState(status: string): AgentState | null {
-  return status === "blocked" || status === "done" || status === "working" || status === "idle"
-    ? status
-    : null;
 }

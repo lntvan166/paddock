@@ -101,8 +101,16 @@ export class Hub {
    * Sent immediately rather than through the coalescing buffer: it carries no
    * payload to merge, and a structural change is rare enough that batching
    * buys nothing.
+   *
+   * NOT `queue*`, which is what it was called while it sat directly beneath a
+   * `queue()` that really does coalesce. The distinction is load-bearing, not
+   * naming hygiene: this frame reliably BEATS the agent delta describing the
+   * same herdr event, because the delta waits on `coalesceMs` plus the
+   * supervisor's `refresh()` round trip. `App.tsx` has to reason about that
+   * ordering (a live promotion is seen as "the tree moved" before it is seen
+   * as "there is an agent"), and a name promising a queue hid it.
    */
-  queueTreeStale(): void {
+  sendTreeStale(): void {
     const msg: ServerMessage = { type: "tree-stale", serverTime: this.now() };
     for (const client of [...this.clients]) this.sendTo(client, msg);
   }

@@ -19,7 +19,17 @@ function cleanTitle(title: string | null | undefined): string {
   return (title ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 }
 
-function toState(status: string): AgentState | null {
+/**
+ * The one narrowing from herdr's `agent_status` to a state paddock can render.
+ *
+ * Exported because `herdr/tree.ts` needs exactly this rule and held a
+ * byte-identical copy of it. Two copies is a divergence waiting for herdr's
+ * fifth status: one file would learn it and the other would not, and the
+ * difference is user-visible — the same pane would show a state on the
+ * dashboard and none in Spaces. Both callers live in `src/server/herdr/`, so
+ * sharing crosses no dependency boundary.
+ */
+export function toState(status: string): AgentState | null {
   if (status === "blocked" || status === "done" || status === "working" || status === "idle") {
     return status;
   }

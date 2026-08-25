@@ -32,7 +32,7 @@ test("the hub sends one tree-stale frame per call", () => {
   const hub = new Hub({ now: () => NOW });
   hub.add({ send: (d) => sent.push(d) });
   sent.length = 0; // ignore anything `add` may emit on join
-  hub.queueTreeStale();
+  hub.sendTreeStale();
   const frames = sent.map((s) => JSON.parse(s)).filter((f) => f.type === "tree-stale");
   expect(frames).toHaveLength(1);
 });

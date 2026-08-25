@@ -218,6 +218,12 @@ test.skipIf(!HAVE_HERDR)("HerdrPaneReadResult has not drifted from the installed
   );
 });
 
+// `pane.read` needs no test of its own, and its absence is not an omission:
+// herdr shares the `PaneReadResult` `$def` between `agent.read` and
+// `pane.read`, so the two tests above already pin both methods' payload and
+// envelope. Recorded because the design's §5 checklist names `pane.read`
+// explicitly, and a reader looking for that test and not finding it would
+// otherwise add a redundant second copy of this one.
 test.skipIf(!HAVE_HERDR)("HerdrPaneRead has not drifted from the installed agent.read response envelope", async () => {
   // The variant of ResponseResult discriminated by `type: "pane_read"`. If
   // herdr ever renamed `read`, or moved `text` up onto the envelope, this is

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { answerWithKey, fetchOutput, fetchPaneOutput, type Fetch } from "@web/api";
+import { answerWithKey, fetchOutput, fetchPaneOutput, RequestFailed, type Fetch } from "@web/api";
 
 // Typed as the real `fetch`, so call sites need no `as any`.
 //
@@ -89,9 +89,22 @@ test("fetchPaneOutput rejects on a 404 with the server's detail", async () => {
 
 // The 409 the route answers for a pane that HAS an agent. A refusal, but still
 // a read: it must reject rather than resolve with a body shaped like output.
+//
+// The STATUS is the load-bearing part, not the message. `PaneTerminal` rides
+// out a promotion by matching `err instanceof RequestFailed && err.status ===
+// 409` and keeping the transcript on screen; any other error clears it and
+// raises a banner carrying this internal route name. Asserting only the
+// detail string would leave a change that dropped `status` — or threw a plain
+// Error — green while the operator read "/api/agents/:id/output".
 test("fetchPaneOutput rejects when the pane has an agent", async () => {
   const { fn } = stubFetch(409, {
     ok: false, detail: "this pane has an agent; use /api/agents/:id/output",
   });
-  await expect(fetchPaneOutput("w3:p1", fn)).rejects.toThrow(/has an agent/);
+  const err = await fetchPaneOutput("w3:p1", fn).then(
+    () => { throw new Error("unreachable: a 409 must reject"); },
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(RequestFailed);
+  expect((err as RequestFailed).status).toBe(409);
+  expect((err as RequestFailed).message).toMatch(/has an agent/);
 });

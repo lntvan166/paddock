@@ -368,7 +368,25 @@ export class Supervisor {
     // workspace/tab event (which matches none of the branches further down)
     // still reports it, and so pane_agent_detected/pane_closed/pane_exited
     // report it in addition to their existing handling, not instead of it.
-    if (TREE_STALE_EVENTS.includes(e.event)) this.opts.onTreeStale?.();
+    if (TREE_STALE_EVENTS.includes(e.event)) {
+      // A structural event is herdr talking to us, so it is liveness like any
+      // other. A pure workspace/tab event matches none of the branches below
+      // and would otherwise return without ever advancing this — leaving
+      // `/api/health`'s `lastEventAt` frozen while the browser, which counts a
+      // `tree-stale` frame as liveness in `applyMessage`, reads the link as
+      // healthy. The two must not disagree about the same event.
+      this.eventAt = this.now();
+      // Guarded HERE rather than trusting the callee. This call sits ahead of
+      // the `pane_closed` branch that produces a removal delta to the
+      // notifier, so a throw from a future `onTreeStale` would swallow that
+      // delta — the exact "notifications silently stop while everything looks
+      // fine" failure mode. Logged, never silenced.
+      try {
+        this.opts.onTreeStale?.();
+      } catch (err) {
+        console.error("herdr: onTreeStale failed", err);
+      }
+    }
 
     if (e.event === EVENT_AGENT_DETECTED) {
       this.eventAt = this.now();
