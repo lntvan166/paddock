@@ -19,7 +19,13 @@ import { EMBEDDED } from "@server/embedded";
 import { allowWrite, hostOf, refusalReason } from "@server/origin";
 import { warn } from "@server/term";
 import type { JournalReader } from "@server/journal/read";
-import { isNavKey, type HealthBody, type NotifyTrigger, type SettingsPatch } from "@shared/types";
+import {
+  isNavKey,
+  type HealthBody,
+  type NotifyTrigger,
+  type SettingsPatch,
+  type SpaceTree,
+} from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
 import type { HerdrAgentSession } from "@shared/herdr-api";
 
@@ -410,6 +416,12 @@ export interface AppDeps {
    * comparison still applies, only DNS-rebinding cover is absent.
    */
   publicHosts?: () => readonly string[];
+  /**
+   * Reads herdr's whole session tree. Absent in --demo, exactly like
+   * `actions`: the route then 404s honestly rather than synthesising a tree
+   * from fake agents.
+   */
+  readTree?: () => Promise<SpaceTree>;
 }
 
 export function createApp(deps: AppDeps) {
@@ -483,6 +495,29 @@ export function createApp(deps: AppDeps) {
   app.get("/api/agents", (c) =>
     c.json({ hostId: deps.store.hostId, agents: deps.store.snapshot() }),
   );
+
+  /**
+   * The whole herdr session, read on demand.
+   *
+   * A GET, and that does not breach "never put payloads in a GET query
+   * string": this request has no parameters at all. The tree is deliberately
+   * NOT held in `state/store.ts` — see the design doc §5.2.
+   *
+   * An empty tree and a broken herdr must never look alike, so a failure is a
+   * 502 carrying herdr's own message rather than `{spaces: []}`.
+   */
+  app.get("/api/spaces", async (c) => {
+    if (!deps.readTree) {
+      return c.json({ ok: false, detail: "herdr is not connected; no tree to read" }, 404);
+    }
+    try {
+      return c.json(await deps.readTree());
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      warn(`spaces: could not read the herdr session: ${detail}`);
+      return c.json({ ok: false, detail }, 502);
+    }
+  });
 
   // Registered unconditionally, OUTSIDE the `deps.actions` block below:
   // acknowledging touches only paddock's own store and the hub, and spec §7 is

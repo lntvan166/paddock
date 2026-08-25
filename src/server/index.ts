@@ -12,6 +12,7 @@ import {
 } from "@server/herdr/socket";
 import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
+import { toSpaceTree } from "@server/herdr/tree";
 import { AgentStore } from "@server/state/store";
 import { Supervisor } from "@server/supervisor";
 import { createJournalReader, defaultRoots, type JournalReader } from "@server/journal/read";
@@ -26,7 +27,8 @@ import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, fanOut } from "@server/notify/notifier";
 import { parseArgs, parseDuration, USAGE } from "@server/cli";
-import { HERDR_PROTOCOL } from "@shared/herdr-api";
+import { HERDR_PROTOCOL, type HerdrSessionSnapshot } from "@shared/herdr-api";
+import type { SpaceTree } from "@shared/types";
 import { Pairing } from "@server/tunnel/pairing";
 import { preflight, tunnelHint } from "@server/tunnel/preflight";
 import { runTunnel } from "@server/tunnel/run";
@@ -357,6 +359,10 @@ let demo: DemoSource | null = null;
 // touches only paddock's own store, so dismissing a finished agent works in
 // `--demo` too — which is the mode README screenshots come from.
 let actions: HerdrActions | undefined;
+// Same reasoning as `actions` immediately above: demo has no herdr session to
+// read, so `GET /api/spaces` stays unset and 404s honestly rather than
+// synthesising a tree out of the seeded demo agents.
+let readTree: (() => Promise<SpaceTree>) | undefined;
 // Health reads the stream itself rather than a cached boolean: a flag can go
 // stale (and did — a failed reopen left it saying `true` with no stream at
 // all), whereas `stream.connected` cannot disagree with reality.
@@ -403,6 +409,10 @@ if (DEMO) {
     request: <T,>(method: string, params?: object) => request<T>(socketPath, method, params),
     openStream: (subs: Subscription[]) => herdrStream.open(subs),
   };
+  readTree = async () => toSpaceTree(
+    (await client.request<{ snapshot: HerdrSessionSnapshot }>("session.snapshot", {})).snapshot,
+    Date.now(),
+  );
   supervisor = new Supervisor({
     client,
     store,
@@ -569,6 +579,7 @@ const appDeps = {
   publicHosts,
   hub,
   actions,
+  readTree,
   settings,
   // Confined to the DEMO branch: a demo run must never read a real journal
   // off the operator's own disk, the same reasoning that keeps demo mode
