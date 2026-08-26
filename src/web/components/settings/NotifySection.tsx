@@ -17,6 +17,10 @@ export interface NotifySectionProps {
    *  A SLOT rather than an import, so this card keeps knowing nothing about
    *  service workers, permission prompts or `PushManager`. */
   pushControl?: React.ReactNode;
+  /** Withhold push from a device currently showing the agent's pane, until it
+   *  stops showing it. Push only — see the doc comment on
+   *  `SettingsView["notify"].skipWhileViewing`. */
+  skipWhileViewing: boolean; setSkipWhileViewing: (v: boolean) => void;
   triggers: NotifyTrigger[]; toggleTrigger: (t: NotifyTrigger) => void;
   cooldownMs: number; setCooldownMs: (v: number) => void;
   publicUrl: string; setPublicUrl: (v: string) => void;
@@ -52,6 +56,7 @@ function muteLabel(mutedUntil: number, serverNow: number): string {
 
 export function NotifySection({
   telegramOn, setTelegramOn, pushOn, setPushOn, pushDevices, pushControl,
+  skipWhileViewing, setSkipWhileViewing,
   triggers, toggleTrigger, cooldownMs, setCooldownMs,
   publicUrl, setPublicUrl, settleMs, setSettleMs, mutedUntil, serverNow, onMute, muting,
 }: NotifySectionProps) {
@@ -106,6 +111,28 @@ export function NotifySection({
           </span>
         </label>
       </div>
+
+      {/* NOT inside `.notify-transports` above — this governs one of those two
+          transports rather than being a third one, and the "exactly two"
+          checkboxes there is itself an assertion (see notify-card.test.tsx)
+          that a third would mean a transport with nothing to deliver to.
+          Same `notify-transport` markup for a matching look, different
+          group. */}
+      <label className="notify-transport">
+        <Checkbox
+          checked={skipWhileViewing}
+          aria-label="Skip push for the agent I'm watching"
+          onCheckedChange={(v) => setSkipWhileViewing(v === true)}
+        />
+        <span>
+          Skip push for the agent I&apos;m watching
+          <small>
+            While a device has this agent&apos;s pane open, push to that
+            device waits until you leave it. Other devices and Telegram are
+            unaffected.
+          </small>
+        </span>
+      </label>
 
       {/* Only 1h / 4h / 8h, plus Unmute while muted — deliberately no
           "mute indefinitely" button. the transport checkboxes above are already that

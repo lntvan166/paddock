@@ -464,6 +464,13 @@ function validateSettingsPatch(
       out.cooldownMs = cooldownMs;
     }
 
+    if ("skipWhileViewing" in nn) {
+      if (typeof nn.skipWhileViewing !== "boolean") {
+        return { ok: false, detail: "notify.skipWhileViewing must be a boolean" };
+      }
+      out.skipWhileViewing = nn.skipWhileViewing;
+    }
+
     patch.notify = out;
   }
 
