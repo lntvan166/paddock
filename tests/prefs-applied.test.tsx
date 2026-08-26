@@ -72,7 +72,12 @@ test("wrap is read through @web/prefs, not a local localStorage key", async () =
   const host = await render(<AgentTerminal agent={agent()} onBack={() => {}} />);
   await settle();
 
-  expect(host.querySelector(".term-wrap-toggle")?.getAttribute("aria-pressed")).toBe("false");
+  // Asserted on the PANE, not on a control. This used to read the wrap
+  // button's `aria-pressed`, which was a proxy: it proved the toggle agreed
+  // with the pref, not that the pref reached the screen. The button has moved
+  // to Settings, and the better observable was available all along —
+  // `data-wrap` is what `styles.css` actually keys the two layouts off.
+  expect(host.querySelector(".term-pane")?.getAttribute("data-wrap")).toBe("off");
 });
 
 test("fontPx is applied to the terminal pane as a CSS custom property", async () => {

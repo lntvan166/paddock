@@ -99,7 +99,10 @@ test("the transcript, the wrap toggle and Refresh are the pane's own, not the ag
   await settle();
 
   expect(el.querySelectorAll(".term-pane")).toHaveLength(1);
-  expect(el.querySelectorAll(".term-wrap-toggle")).toHaveLength(1);
+  // Wrap is a Settings control now, not a terminal one — see
+  // `tests/terminal-render.test.tsx` for why this asserts absence rather than
+  // being deleted.
+  expect(el.querySelectorAll(".term-wrap-toggle")).toHaveLength(0);
   expect(el.querySelector('[aria-label="Refresh"]')).not.toBeNull();
   // ...and none of the agent's controls came with them.
   expect(el.querySelectorAll(".term-reply")).toHaveLength(0);
