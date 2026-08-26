@@ -4,6 +4,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { Settings } from "@web/components/Settings";
+import { THEMES } from "@web/prefs";
 import { click, render, settle, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
@@ -224,4 +225,16 @@ test("an existing publicUrl is shown in the field, not silently wiped on the nex
 
   const url = host.querySelector('input[name="publicUrl"]') as HTMLInputElement;
   expect(url.value).toBe("https://paddock.example.com");
+});
+
+test("the theme picker offers every registered theme", async () => {
+  // The registry is the one source. A picker with its own hardcoded list is
+  // how the options and the stylesheet drift apart — which is the whole reason
+  // THEMES moved into prefs.ts.
+  const host = await render(<Settings />);
+  await settle();
+  const select = host.querySelector('select[data-field="theme"]') as HTMLSelectElement | null;
+  expect(select, "Appearance renders a select, not a segmented control").not.toBeNull();
+  expect([...select!.options].map((o) => o.value)).toEqual(THEMES.map((t) => t.id));
+  expect([...select!.options].map((o) => o.textContent)).toEqual(THEMES.map((t) => t.label));
 });

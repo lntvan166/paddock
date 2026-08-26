@@ -2,8 +2,8 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { DeviceSection } from "@web/components/settings/DeviceSection";
-import { readPrefs } from "@web/prefs";
-import { click, render, textsOf, unmount } from "./support/render";
+import { THEMES, readPrefs } from "@web/prefs";
+import { click, render, selectOption, textsOf, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
@@ -19,23 +19,36 @@ test("each group is its own card", async () => {
   expect(textsOf(host, ".card-title")).toEqual(["Appearance", "Live updates", "Terminal"]);
 });
 
-test("theme is a segmented control, not a select", async () => {
-  // A native select on iOS opens a full-screen wheel for three values.
+test("theme is a select, because there are more than three of them", async () => {
+  // This test asserted the OPPOSITE, on the reasoning that "a native select on
+  // iOS opens a full-screen wheel for three values". That reasoning was right,
+  // and it is exactly why the answer changes at seven: the wheel is heavy for
+  // three options and correct for seven, where a segmented control would give
+  // each theme about 50px of a 390px phone.
+  //
+  // The Live-updates card still uses `Segmented`, and should: it has three.
   const h = harness();
   const host = await render(<DeviceSection prefs={h.prefs} setPref={h.setPref as never} />);
-  const group = host.querySelector("[role='radiogroup'][aria-label='Theme']");
-  expect(group).not.toBeNull();
-  expect(host.querySelector("select[name='theme']")).toBeNull();
+  expect(host.querySelector("select[data-field='theme']")).not.toBeNull();
+  expect(host.querySelector("[role='radiogroup'][aria-label='Theme']")).toBeNull();
+  expect(host.querySelector("[role='radiogroup'][aria-label='Refresh rate']")).not.toBeNull();
+});
+
+test("the theme select offers every registered theme, in registry order", async () => {
+  const h = harness();
+  const host = await render(<DeviceSection prefs={h.prefs} setPref={h.setPref as never} />);
+  const select = host.querySelector("select[data-field='theme']") as HTMLSelectElement;
+  expect([...select.options].map((o) => o.value)).toEqual(THEMES.map((t) => t.id));
 });
 
 test("choosing a theme writes the preference immediately", async () => {
-  // "This device" is localStorage-immediate: there is no Save to press.
+  // "This device" is localStorage-immediate: there is no Save to press. The
+  // control changed from a segmented group to a select; the guarantee did not.
   const h = harness();
   const host = await render(<DeviceSection prefs={h.prefs} setPref={h.setPref as never} />);
-  const dark = [...host.querySelectorAll("[aria-label='Theme'] [role='radio']")]
-    .find((n) => (n.textContent ?? "").includes("Dark")) as HTMLButtonElement;
-  await click(dark);
-  expect(h.written).toEqual([["theme", "dark"]]);
+  const select = host.querySelector("select[data-field='theme']") as HTMLSelectElement;
+  await selectOption(select, "dracula");
+  expect(h.written).toEqual([["theme", "dracula"]]);
 });
 
 test("wrap is a switch, and reports the next value", async () => {

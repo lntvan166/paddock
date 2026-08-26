@@ -160,3 +160,28 @@ export async function typeInto(node: HTMLInputElement, value: string): Promise<v
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
+
+/**
+ * Pick an option in a `<select>`, the way React sees it.
+ *
+ * A sibling of `typeInto`, and simpler for the reason that function's own note
+ * records: a `select` takes a different branch in React's event plumbing and
+ * responds to a bare `change`, where a text input needs `focusin` and `keyup`.
+ *
+ * The native value setter is used rather than `node.value = …` for the same
+ * reason `typeInto` uses it — React tracks the last value it wrote on the DOM
+ * node, and assigning through the instance property leaves that tracker in
+ * step, so the subsequent event is discarded as "no change".
+ *
+ * Async and `act`-wrapped because the DISPATCH is what has to be inside `act`:
+ * that is when the controlled element's `onChange` runs.
+ */
+export async function selectOption(node: HTMLSelectElement, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+  if (!setter) throw new Error("no native value setter on HTMLSelectElement.prototype");
+  await act(async () => {
+    setter.call(node, value);
+    node.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
