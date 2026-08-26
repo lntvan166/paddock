@@ -349,9 +349,16 @@ test("the header spends its width on the agent's name, not on labels", async () 
   expect(host.querySelectorAll(".term-title .term-state").length).toBe(0);
   expect(host.querySelector(".term-header")?.textContent).not.toContain("Agents");
 
-  // Wrap and Keys are separate controls. Sharing a class made a selector
-  // written for one silently match the other, by DOM order rather than intent.
-  expect(host.querySelectorAll(".term-wrap-toggle").length).toBe(1);
+  // Keys is the bar's only toggle now. Wrap moved to Settings' Terminal card,
+  // where an identical control had always also lived — the bar and the settings
+  // screen were two doors onto one global pref, and the bar's was the one an
+  // operator had to look at while reading a transcript.
+  //
+  // The class assertion stays as a TOMBSTONE rather than being deleted: it
+  // pinned a real defect (Wrap and Keys once shared a class, so a selector
+  // written for one silently matched the other by DOM order), and asserting the
+  // removed control is absent is what stops it being reintroduced by habit.
+  expect(host.querySelectorAll(".term-wrap-toggle").length).toBe(0);
   expect(host.querySelectorAll(".term-keys-toggle").length).toBe(1);
   // No aria-label: the visible text IS the accessible name. An aria-label that
   // does not contain the visible label is a WCAG 2.5.3 hazard for voice

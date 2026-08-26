@@ -8,7 +8,7 @@ import { groupLines } from "@web/lines";
 import { mergeSnapshot } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 import { applyPatch, digestOf } from "@shared/screen";
-import { RATE_MS, readPrefs, writePref, type KeypadPref, type RatePref } from "@web/prefs";
+import { RATE_MS, readPrefs, type KeypadPref, type RatePref } from "@web/prefs";
 import { RequestFailed } from "@web/api";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
@@ -60,9 +60,17 @@ function styleFor(s: AnsiSpan): CSSProperties | undefined {
  * Wrap everything and the majority of long lines fold into nonsense; wrap
  * nothing and half the transcript needs sideways scrolling to read a sentence.
  *
- * So the operator decides, per pane, at any moment. The stored value is owned
- * by `@web/prefs` (key `paddock.term.wrap`) — this component reads and writes
- * through it rather than touching `localStorage` directly.
+ * So the operator decides — in Settings, under Terminal. The stored value is
+ * owned by `@web/prefs` (key `paddock.term.wrap`) and this component READS it;
+ * it no longer writes.
+ *
+ * It said "per pane, at any moment", and both halves were wrong. The pref was
+ * always a single global key, so it was never per-pane; and the control that
+ * made it feel momentary was a SECOND door onto the same switch, sitting in the
+ * transcript's own control bar. Settings already had the first door. What this
+ * costs is honest to state: recovering from a folded table is now a trip to
+ * Settings rather than one tap, and that one-tap property is part of why
+ * wrapping defaults to on.
  */
 
 /** Distance from the bottom, in px, still counted as "following the tail". */
@@ -338,7 +346,15 @@ export function PaneTerminal({
   // A poll that failed while output is already on screen. Distinct from
   // `error`, which means the read failed with nothing to show.
   const [stalled, setStalled] = useState(false);
-  const [wrap, setWrap] = useState(() => readPrefs().wrap);
+  // Read, never written here any more. The toggle lives in Settings' Terminal
+  // card, which is where it always ALSO lived — this component carried a second
+  // control writing the same global pref, so the bar and the settings screen
+  // were two doors onto one switch.
+  //
+  // Still read on every mount rather than hoisted: a change in Settings applies
+  // the next time a pane opens, which is the same cadence `fontPx` beside it
+  // has always had.
+  const wrap = readPrefs().wrap;
   // Read once: Settings is a separate full-screen view (App.tsx unmounts this
   // component to show it), so there is no live pref change to react to while
   // a pane stays open.
@@ -926,14 +942,6 @@ export function PaneTerminal({
           header exists to tell you. Down here they are also next to the keypad
           that `Keys` collapses, which is where a control for a thing belongs. */}
       <div className="term-controls" role="group" aria-label="View">
-        <button
-          type="button"
-          className="term-wrap-toggle"
-          aria-pressed={wrap}
-          onClick={() => { const v = !wrap; setWrap(v); writePref("wrap", v); }}
-        >
-          {wrap ? "Wrap" : "Exact"}
-        </button>
         {controls}
         {/* The shell's own pad collapse, present only when this pane is being
             driven as a shell (`onSendKey` supplied). The SAME control

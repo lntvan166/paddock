@@ -67,8 +67,14 @@ export interface Prefs {
  * of the lines too long for a phone, 57% are STRUCTURED — box drawing, or
  * table rows whose columns carry meaning positionally — and 43% are prose or
  * code that reflows perfectly. Wrapping is the default because reading is the
- * common case, and a folded table is recoverable with one tap whereas
- * scrolling every prose line is a permanent tax. This is the rationale
+ * common case, and a folded table is recoverable whereas scrolling every prose
+ * line is a permanent tax.
+ *
+ * "with one tap" was true when the terminal's own control bar carried a second
+ * toggle for this key. It does not any more — Settings' Terminal card is the
+ * one place it is set — so recovery is a trip rather than a tap. The default
+ * still holds for the same reason; the asymmetry it rests on is just smaller
+ * than it was. This is the rationale
  * `AgentTerminal.tsx`'s own former `readWrap()` carried; it must survive the
  * move here; see `readPrefs()` below for how "never stored" (default `true`)
  * is kept distinct from "explicitly turned off" (`"0"`, default `false`).
