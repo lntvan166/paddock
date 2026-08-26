@@ -1,4 +1,5 @@
 import { fetchSpaceTree } from "@web/api";
+import { BackIcon } from "@web/components/ui/icons";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
 import { RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
 import { SpacePicker } from "@web/components/SpacePicker";
@@ -76,7 +77,7 @@ export function Space({
     <main className="screen">
       <header className="space-screen-head screen-chrome">
         <button type="button" className="term-back" onClick={onBack} aria-label="Back to spaces">
-          ‹ Spaces
+          <BackIcon className="term-back-glyph" /> Spaces
         </button>
         {headerExtra}
       </header>

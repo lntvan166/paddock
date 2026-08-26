@@ -1,6 +1,6 @@
 import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
-import { RATE_MS, readPrefs, writePref } from "@web/prefs";
+import { RATE_MS, THEMES, readPrefs, writePref } from "@web/prefs";
 
 /**
  * Bun runs every test file in one process (tests/support/dom.ts documents
@@ -202,5 +202,23 @@ test("a pad size stored by an older build is still honoured", () => {
   for (const stored of ["full", "compact"] as const) {
     localStorage.setItem("paddock.term.keypad", stored);
     expect(readPrefs().keypad).toBe(stored);
+  }
+});
+
+test("an unknown stored theme falls back to the default", () => {
+  // A build that offered a theme since removed leaves its id in storage. That
+  // value must not reach `data-theme`, where it matches no block and renders
+  // the bare :root palette — which looks like a bug, where "your theme went
+  // away" looks like a change.
+  localStorage.setItem("paddock.theme", "solarized-nope");
+  expect(readPrefs().theme).toBe("system");
+});
+
+test("every theme in the registry round-trips through storage", () => {
+  // Guards the guard: a theme added to THEMES but not handled by readPrefs's
+  // validation would silently read back as "system" for anyone who picked it.
+  for (const t of THEMES) {
+    writePref("theme", t.id);
+    expect(readPrefs().theme).toBe(t.id);
   }
 });

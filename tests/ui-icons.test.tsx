@@ -16,7 +16,7 @@ const NAMES = [
   "SendIcon", "LinkIcon", "RefreshIcon", "PlugIcon",
   // `AgentsIcon` joined when navigation moved to the bottom `TabBar`:
   // Agents, Spaces and Settings are the three destinations now.
-  "AgentsIcon", "SpacesIcon", "SettingsIcon", "KeyboardIcon", "BackspaceIcon",
+  "BackIcon", "AgentsIcon", "SpacesIcon", "SettingsIcon", "KeyboardIcon", "BackspaceIcon",
 ] as const;
 
 test("every icon the module exports is in the list the tests below walk", async () => {

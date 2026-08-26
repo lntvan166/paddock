@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useKeyboardInset } from "@web/keyboard-inset";
 import { paneHash } from "@shared/route";
 import type { CreateSpaceResult, CreateTabResult } from "@shared/types";
 import { createSpace, createTab, fetchHarnessKinds, startAgent } from "@web/api";
@@ -143,6 +144,10 @@ export function CreateSheet({
   variant?: "glyph" | "row";
 }) {
   const [open, setOpen] = useState(false);
+  // Hold the sheet above the on-screen keyboard while it is open. Tracked only
+  // while open — see the hook's note on why a page-lifetime listener would be
+  // wrong. Absent `visualViewport`, this does nothing at all.
+  useKeyboardInset(open);
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState(SHELL);
   const [kinds, setKinds] = useState<string[]>([]);

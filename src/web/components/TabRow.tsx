@@ -41,6 +41,32 @@ export function TabRow({ tab, onChanged, senders }: {
    */
   const tabName = tab.label ?? (root ? paneLabel(root) : tab.tabId);
 
+  /**
+   * The agent running in this tab, shown under its name — and ONLY when it
+   * says something the tab's own label does not.
+   *
+   * The two are different facts and the row used to carry just the first: a
+   * tab named for the WORK ("migrate-up") stopped telling you which agent was
+   * doing it. `.tab-heading` was already a column flex with one child, which
+   * is where this goes.
+   *
+   * Null in three cases, each for its own reason:
+   *  - No tab label. `tabName` already fell back to the pane's own label, so a
+   *    subtitle would repeat it verbatim. `paneIdentity` is nullable for
+   *    exactly this — see `pane-label.ts`, which states the rule for the
+   *    merged space row and it is the same rule here.
+   *  - No harness. A pane without one is labelled by its FOLDER, and printing
+   *    a folder as "the agent" is a claim the tree cannot support.
+   *  - A split tab. Its panes are listed individually below, so one name in
+   *    the header would be picking a winner among them — the same reason
+   *    `StateMarker` is gated on `!split` above.
+   */
+  const agentLine = (() => {
+    if (split || root === null || root.harness === null) return null;
+    const name = paneLabel(root);
+    return name === tabName ? null : name;
+  })();
+
   const renames: RenameTarget[] = [
     ...(root !== null && root.harness !== null
       ? [{ kind: "agent", id: root.paneId, current: root.name } as RenameTarget]
@@ -59,6 +85,7 @@ export function TabRow({ tab, onChanged, senders }: {
             {!split && <StateMarker state={root.state} />}
             <span className="tab-heading">
               <span className="tab-name">{tabName}</span>
+              {agentLine && <span className="tab-agent">{agentLine}</span>}
             </span>
             {split
               ? <span className="tab-count">{tab.panes.length} panes</span>

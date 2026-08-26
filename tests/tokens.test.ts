@@ -39,8 +39,23 @@ test("--mono is defined once on bare :root, not per theme", async () => {
   expect([...text.matchAll(/--mono:/g)]).toHaveLength(1);
 });
 
-test("dark overrides are guarded so a manual light toggle wins", async () => {
-  expect(await css()).toContain(':root:not([data-theme="light"])');
+test("dark overrides are guarded so any pinned theme wins", async () => {
+  // The guarantee is unchanged — a theme the operator pinned beats the OS
+  // preference — but the guard states it more generally than it used to.
+  //
+  // It was `:root:not([data-theme="light"])`, which names one special case.
+  // Once named themes exist that is wrong: `dracula` is not `light`, so the
+  // guard still matched and the system-dark palette applied underneath every
+  // theme, leaving each theme block to win only by appearing later in the
+  // file. `:not([data-theme])` says the actual rule: system dark applies when
+  // nothing is pinned at all.
+  //
+  // Verified in a browser across the full matrix, because happy-dom does not
+  // evaluate prefers-color-scheme: on a dark OS, `light` gives #ffffff and a
+  // pinned theme with no block yet also gives #ffffff rather than half of the
+  // dark palette.
+  expect(await css()).toContain(":root:not([data-theme])");
+  expect(await css()).not.toContain(':root:not([data-theme="light"])');
 });
 
 test("an explicit dark toggle is honoured", async () => {
@@ -98,15 +113,38 @@ test("the state palette is traffic-light, and never paints a state in the tap co
   expect(map).not.toContain("--accent");
 });
 
+/**
+ * The three routes a colour must exist on for paddock's OWN palette: bare
+ * `:root`, the system-dark media query, and the explicit dark toggle. Named
+ * themes are checked separately and far more thoroughly by
+ * `tests/themes.test.ts`, which computes contrast rather than counting.
+ */
+async function paddockRoutes(): Promise<{ bare: string; media: string; toggle: string }> {
+  const text = await css();
+  const cut = (from: number) => text.slice(from, text.indexOf("}", from));
+  const mediaAt = text.indexOf(":root:not([data-theme]) {");
+  const toggleAt = text.indexOf(':root[data-theme="dark"] {');
+  return {
+    bare: cut(text.indexOf("\n:root {")),
+    media: cut(mediaAt),
+    toggle: cut(toggleAt),
+  };
+}
+
 test("red is defined in every theme route, not only the light one", async () => {
   // The standing rule: a colour defined only inside a media query leaves a
   // manual theme toggle painting with a value nobody chose. `--danger` arrived
   // last and is the one most likely to have been added in one place.
-  const text = await Bun.file("src/web/styles.css").text();
-  const bare = text.slice(text.indexOf(":root {"), text.indexOf("}", text.indexOf(":root {")));
+  //
+  // Asserted PER ROUTE rather than by counting occurrences, which is what this
+  // test used to do. A global count of 3 was a correct reading of the file
+  // while light and dark were the only palettes; every named theme that tunes
+  // its red for its own ground adds one, so the count says nothing while the
+  // per-route check says exactly what the rule means.
+  const { bare, media, toggle } = await paddockRoutes();
   expect(bare).toContain("--danger:");
-  // Once for the guarded media query, once for the explicit dark toggle.
-  expect([...text.matchAll(/--danger:/g)]).toHaveLength(3);
+  expect(media).toContain("--danger:");
+  expect(toggle).toContain("--danger:");
 });
 
 test("the alert wash is defined in every theme route", async () => {
@@ -114,11 +152,12 @@ test("the alert wash is defined in every theme route", async () => {
   // query leaves a manual theme toggle painting with a value nobody chose.
   // Hand-picked per theme rather than color-mix(), so the value can be read
   // off the file.
-  const text = await css();
-  const bare = text.slice(text.indexOf(":root {"), text.indexOf("}", text.indexOf(":root {")));
+  // Per route, for the same reason as `--danger` above: a named theme sets its
+  // own wash, so an occurrence count no longer states the rule.
+  const { bare, media, toggle } = await paddockRoutes();
   expect(bare).toContain("--danger-wash:");
-  // Once bare, once for the guarded media query, once for the explicit toggle.
-  expect([...text.matchAll(/--danger-wash:/g)]).toHaveLength(3);
+  expect(media).toContain("--danger-wash:");
+  expect(toggle).toContain("--danger-wash:");
 });
 
 

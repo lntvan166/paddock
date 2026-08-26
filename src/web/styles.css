@@ -147,6 +147,18 @@
      the gutter was introduced to remove. */
   --edge: 2px;
 
+  /* The inset INSIDE a control — a button's text from its border, a value from
+     its field's edge. Distinct from --gutter, which is where a BAND starts
+     against the screen; a control sits inside a band and cannot take the same
+     inset without its label touching its own edge.
+
+     One value, because there were five: 9.6px on inputs and small buttons,
+     11.2px on a prompt option, 12.8px on the update bar's button, 14.4px on
+     the settings and push buttons. Each was reasonable alone, and together
+     they meant two buttons a thumb's width apart wore different amounts of
+     air. */
+  --pad-control: 0.75rem;
+
   /* ── Radius ─────────────────────────────────────────────────────────────
      Two steps and a pill. There were ten values.
 
@@ -248,9 +260,16 @@
   --radius: var(--r-md);
 }
 
-/* System dark, unless the user explicitly chose light. */
+/* System dark, unless the operator pinned ANY theme.
+
+   `:not([data-theme])`, not `:not([data-theme="light"])`. The old guard named
+   one special case; this states the rule. With named themes the old form still
+   matched — `dracula` is not `light` — so these values applied underneath
+   every theme, and each theme block won only by appearing later in the file.
+   Correctness by source order survives exactly until someone reorders the
+   file. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme]) {
     --bg: #08090a;
     --surface: #12141a;
     --border: #1f2126;
@@ -281,6 +300,90 @@
   --danger-wash: #2a1416;
   --accent-wash: #33210f;
   --accent-fg: #14161a;
+}
+
+/* ── Named themes ─────────────────────────────────────────────────────────
+   Chrome plus, where necessary, a tuned state colour. The MEANING is fixed in
+   every theme — red is an agent that has stopped and needs a person — and only
+   the hex may move, purely so it stays legible on that theme's own ground.
+   That distinction is the whole design: see
+   docs/design/2026-08-26-theme-picker-design.md.
+
+   Three of the values below deliberately differ from the canonical palette,
+   because the canonical value fails AA here. Each is noted where it appears.
+
+   Every ratio in this comment block is asserted by tests/themes.test.ts
+   against that theme's own --bg — do not hand-edit a value without re-running
+   it. Nothing here touches --term-bg/--term-fg (the agent's own escapes assume
+   a dark terminal) or --tile-* (they carry their own grounds at documented
+   ratios); the audit refuses a block that does. */
+
+:root[data-theme="dracula"] {
+  --bg: #282a36;
+  --surface: #343746;
+  --border: #44475a;
+  --fg: #f8f8f2;          /* 13.36 */
+  /* Lightened from Dracula's own comment colour #6272a4, which is 4.38. */
+  --fg-dim: #a2add0;      /* 6.39 */
+  --accent: #bd93f9;      /* 5.90 */
+  --accent-fg: #20222c;   /* 6.56 on accent */
+  --accent-wash: #322a44;
+  --danger-wash: #3a2430;
+  /* Lightened from Dracula red #ff5555, which is 4.31. */
+  --danger: #ff6e6e;      /* 5.23 */
+  --warn: #ffb86c;        /* 8.36 */
+  --ok: #69ff94;          /* 11.08 */
+}
+
+:root[data-theme="gruvbox-dark"] {
+  --bg: #282828;
+  --surface: #32302f;
+  --border: #504945;
+  --fg: #ebdbb2;          /* 10.75 */
+  --fg-dim: #bdae93;      /* 6.77 */
+  --accent: #fe8019;      /* 5.84 */
+  --accent-fg: #241f1a;   /* 6.47 on accent */
+  --accent-wash: #3a2e1f;
+  --danger-wash: #3a2422;
+  /* THE tuned value this design exists for. Gruvbox's own bright red #fb4934
+     measures 4.29 here — below AA, on the state that matters most. Same hue,
+     lightened until it clears, and still visibly red against #fe8019. */
+  --danger: #fd7166;      /* 5.43 */
+  --warn: #fabd2f;        /* 8.69 */
+  --ok: #b8bb26;          /* 7.14 */
+}
+
+:root[data-theme="gruvbox-light"] {
+  --bg: #fbf1c7;
+  --surface: #f2e5bc;
+  --border: #d5c4a1;
+  --fg: #3c3836;          /* 10.22 */
+  --fg-dim: #665c54;      /* 5.74 */
+  --accent: #af3a03;      /* 5.40 */
+  --accent-fg: #ffffff;   /* 6.12 on accent */
+  --accent-wash: #f2e0b8;
+  --danger-wash: #f5dfc8;
+  /* Gruvbox's DARK variants, not its bright ones: on a cream ground the bright
+     yellow and green measure 4.33 and 4.48. */
+  --danger: #9d0006;      /* 7.60 */
+  --warn: #79600a;        /* 5.30 */
+  --ok: #4c6a04;          /* 5.49 */
+}
+
+:root[data-theme="nord"] {
+  --bg: #2e3440;
+  --surface: #3b4252;
+  --border: #4c566a;
+  --fg: #eceff4;          /* 10.84 */
+  --fg-dim: #b8c2d4;      /* 6.96 */
+  --accent: #88c0d0;      /* 6.24 */
+  --accent-fg: #232830;   /* 7.40 on accent */
+  --accent-wash: #333c4a;
+  --danger-wash: #3b2f36;
+  /* Nord's own nord11 #bf616a measures 3.73 and is replaced. */
+  --danger: #ff7b72;      /* 4.95 */
+  --warn: #ebcb8b;        /* 8.00 */
+  --ok: #a3be8c;          /* 6.13 */
 }
 
 /* System fonts only. A webfont would be the single largest payload on a slow
@@ -443,18 +546,59 @@ body {
 /* The section eyebrow. Same gutter as the rows it introduces — it used to be
    `px-3` against the card's 20px, so even the label was out of line with what
    it labelled. */
+/* One height whether or not the section folds — and on a PHONE those were
+   27px apart.
+   `Idle` is collapsible, so its label is a `.tap` button, and `.tap` carries
+   `min-height: 2.75rem` inside `@media (pointer: coarse)`. That floor does not
+   apply to a desktop pointer, so every screenshot taken on a laptop showed
+   48px while the target device rendered 68px: 1rem of padding, plus a 44px
+   button, plus 0.5rem. `Working` has no button and stayed at 41px.
+
+   Separation from the section above is a MARGIN, not padding: padding adds to
+   `min-height` and would put the collapsible one back above 44. */
 .sec-head {
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 1rem var(--gutter) 0.5rem;
+  min-height: 2.75rem;
+  margin-top: 0.5rem;
+  padding: 0 var(--gutter);
   color: var(--fg-dim);
 }
 
-/* The dashboard's own header. Was `px-3 py-2.5` inline. */
+/* The dashboard's own header: title and summary on ONE baseline, the same
+   shape `.spaces-head` uses. `flex-wrap` is the safety valve — the worst case
+   (a non-default host id plus all four sections) measures 350px in 358px of
+   room, and eight pixels is not a margin worth promising. It wraps rather than
+   hyphenating the wordmark, which is the defect the two-row layout existed to
+   avoid. */
 .host-head {
-  padding: 0.75rem var(--gutter);
+  display: flex;
+  /* `center`, not `baseline`. The summary sits at the far end of the row now
+     rather than beside the title, and across that distance a shared baseline
+     reads as two things at different heights — the 17px title and the 13px
+     sentence have different cap heights, so their baselines align while their
+     visual centres do not. Adjacent, baseline was right; apart, centre is. */
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.625rem;
+  min-height: 2.75rem;
+  padding: 0.5rem var(--gutter);
   border-bottom: 1px solid var(--border);
+}
+
+/* Larger and heavier than it was — this is the screen's name, and with the
+   summary beside it rather than beneath, --t-xl is the step the scale reserves
+   for "a screen's own title, and nothing else". `.spaces-head h2` takes the
+   same step, so the two list screens now agree on how a title looks. */
+.host-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--t-xl);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* The collapsed-Idle chip row, aligned with the rows it stands in for. */
@@ -627,8 +771,17 @@ body {
    screen whose whole job is answering that question at a glance.
    The counts INSIDE it are part of the sentence, not a data readout, so this
    stays sans and does not take `.ident`. */
+/* Pushed to the trailing edge, the same shape `.spaces-head` uses: the title
+   owns the left, the reading off the list owns the right. Beside the title it
+   read as part of the name; at the far end it reads as what it is, a count of
+   what the screen below holds.
+
+   `margin-left: auto` rather than `justify-content: space-between` on the
+   header, because the row wraps — with space-between, a wrapped summary would
+   be pushed to the right of its own line instead of sitting under the title
+   where it belongs. */
 .host-summary {
-  margin-top: 0.25rem;
+  margin: 0 0 0 auto;
   font-size: var(--t-md);
   color: var(--fg-dim);
 }
@@ -710,11 +863,10 @@ body {
    responsive sizing. Scoped to every `.card-row` input rather than just that
    one field, so Chat id / Cooldown / Public URL get the same breathing
    room instead of each needing its own rule. */
-.card-row input:not([type="checkbox"]),
-.card-row select {
+.card-row input:not([type="checkbox"]) {
   min-height: 2.75rem;
   min-width: 7rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   /* 16px is not a taste decision. iOS Safari zooms the viewport when a focused
      input's font-size is below 16px, and leaves you zoomed afterwards — which
      is what an operator hits every time they tap the Telegram token or the
@@ -725,6 +877,51 @@ body {
   border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
+}
+
+/* ── A settings row's value, not a form field ─────────────────────────────
+   The row already says "Theme" on its left. A bordered box repeats that
+   framing — you get a label AND a field, where the value alone is the answer —
+   and it puts a second heavy rectangle directly above Live updates' filled
+   Segmented control, so the two compete.
+
+   So: no border, no ground, the value in the dim voice, and a chevron. The
+   same treatment `.spaces-refresh` takes for the same reason — a value that
+   happens to be tappable, where the accent is spent on the control that MAKES
+   something rather than the one that reports a choice.
+
+   `font-size: 16px` is NOT free to change, and it is the one thing to leave
+   alone here. iOS Safari zooms the viewport when a focused field is under
+   16px and leaves you zoomed afterwards; a select is subject to that rule
+   exactly as an input is. The 13px prose step would sit better beside the
+   label and is not available.
+
+   The chevron is drawn from two gradients in `currentColor` rather than a
+   background-image or a codepoint: it follows the theme with no per-theme
+   rule, and `appearance: none` is what removes the platform's own arrow so
+   there are not two. Focus is untouched — the shared `:focus-visible` rule
+   already lists `select`, so the ring still lands on this.
+
+   This is the app's ONLY `.card-row select`. If a second one arrives that is
+   genuinely a form field rather than a settings value, give it a class rather
+   than widening this rule back out. */
+.card-row select {
+  min-height: 2.75rem;
+  padding: 0 1.1rem 0 0;
+  font-size: 16px;
+  text-align: right;
+  border: 0;
+  color: var(--fg-dim);
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: transparent;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 9px) center, calc(100% - 4px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
 }
 
 /* A one-line explanation below a `.card-row`. Replaces both `.settings-hint`
@@ -951,12 +1148,16 @@ body {
   }
 }
 
+/* No vertical padding, for the reason `.term-controls` gives below: the back
+   control is already a 2.75rem tap target, so 44px IS this bar's height. The
+   0.75rem it added top and bottom made a 69px title bar on a screen whose job
+   is showing the agent's output. */
 .term-header {
   flex: none;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem var(--gutter);
+  padding: 0 var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
@@ -981,7 +1182,30 @@ body {
    while everything below it started at 12px — the largest single contributor
    to the ragged left edge down this screen. The 44px target is kept by
    `min-height` plus the header's own row height, not by padding. */
-.term-back { font-weight: 600; min-height: 2.75rem; padding: 0; }
+/* A drawn chevron sits where `‹` used to. `display: flex` so the path centres
+   in the 44px target instead of sitting on a text baseline, and `margin-left`
+   pulls back the optical gap the 24px viewBox leaves around a 10px-wide
+   glyph — an SVG's box is square, so without this the arrow reads as inset
+   from the gutter the rest of the header lines up on. */
+.term-back {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 600;
+  min-height: 2.75rem;
+  padding: 0;
+  /* -0.4375rem is 7px, and 7px is MEASURED, not chosen: an SVG's box is square
+     while a chevron is not, so the painted stroke sits 7px inside a 22px box.
+     Without this the arrow's ink starts at 19px while every other line on the
+     screen starts at the 16px gutter — which is the "space on the left" this
+     replaced the `‹` codepoint to fix, and which a padding rule cannot reach
+     because the gap is inside the glyph. Re-measure if the path changes. */
+  margin-left: -0.4375rem;
+}
+
+/* 22px, matching the tab bar's glyphs — the back control is the same kind of
+   thing at the other end of the screen, and at 24px it crowded the title. */
+.term-back-glyph { width: 22px; height: 22px; }
 
 /* `center`, not `baseline`: the state is a DOT now, and an empty flex item has
    no text baseline — its bottom margin edge would be aligned to the agent
@@ -1110,12 +1334,25 @@ body {
    rendered as `sche…`; the header's job is identity and it has 390px to do it
    in. This row carries the border that separates the pane from the panel, since
    it is now the panel's top edge. */
+/* NO vertical padding, and that is the rule rather than a tightening.
+   Every child of this band is already a 2.75rem tap target — the `Keys`
+   toggle and the refresh button both carry `min-height: 2.75rem` — so 44px IS
+   the band's height. The 0.5rem it used to add top and bottom made the row
+   61px without making one pixel of it more tappable, on the screen whose whole
+   job is showing as much of the agent's output as it can.
+
+   Reported from use as "the padding in the Keys line is still large", and
+   measured before changing: 8px + 44px + 8px + 1px border.
+
+   The bands BELOW keep theirs, because theirs does a different job — it
+   separates stacked rows of controls from each other, where this one was only
+   separating a control from a border. */
 .term-controls {
   flex: none;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem var(--gutter);
+  padding: 0 var(--gutter);
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
@@ -1306,22 +1543,24 @@ body {
 .term-key:active { background: var(--border); }
 .term-key:disabled { opacity: 0.5; }
 
-/* Matches `.term-keys` above it, with a little more at the very bottom: this
-   is the last band before the screen edge, and the extra is thumb clearance
-   rather than rhythm. */
+/* The input is already 2.75rem, so no padding is needed above it — same rule
+   as `.term-header` and `.term-controls`. What is kept is the 0.5rem BELOW:
+   this is the last band before the screen edge, and on a phone with no home
+   indicator `env(safe-area-inset-bottom)` is 0, which would sit the field flat
+   against the glass. That half is thumb clearance, not rhythm. */
 .term-reply {
   flex: none;
   display: flex;
   gap: 0.5rem;
   background: var(--surface);
-  padding: 0.5rem var(--gutter) 0.75rem;
+  padding: 0 var(--gutter) 0.5rem;
 }
 
 .term-reply input {
   flex: 1;
   min-width: 0;
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   /* 16px for the same reason as `.card-row input`: below it, iOS zooms on
      focus. This is the field an operator types a reply to a blocked agent
      into, so a zoom here lands mid-conversation. */
@@ -1338,7 +1577,7 @@ body {
 
 .term-reply button {
   min-height: 2.75rem;
-  padding: 0 0.9rem;
+  padding: 0 var(--pad-control);
   border: 0;
   /* 0.4rem, matching every other control in the app. Still FILLED rather than
      bordered like `.settings-actions button`: this is the committing action,
@@ -1529,7 +1768,7 @@ body {
 
 .term-option {
   min-height: 2.75rem;
-  padding: 0.5rem 0.7rem;
+  padding: 0.5rem var(--pad-control);
   border: 1px solid var(--border);
   /* 0.4rem to match `.card-row input` and the rest of the card vocabulary.
      0.5rem here was the terminal's own radius, from before that vocabulary
@@ -1584,7 +1823,7 @@ body {
 .term-selected {
   flex: none;
   margin: 0;
-  padding: 0.4rem 0.7rem;
+  padding: 0.4rem var(--pad-control);
   font-size: var(--t-xs);
   color: var(--fg);
   overflow-wrap: anywhere;
@@ -1616,7 +1855,7 @@ body {
 
 .update-bar button {
   min-height: 2.75rem;
-  padding: 0 0.8rem;
+  padding: 0 var(--pad-control);
   border: 0;
   border-radius: var(--r-sm);
   /* An opacity treatment rather than a palette colour: this is a scrim over
@@ -1814,8 +2053,18 @@ body {
   /* 4.5rem, not 4rem: the 16px below needs a touch more room for a two-digit
      value plus padding. */
   width: 4.5rem;
+  /* CENTRED. The value here is one or two digits in a 72px box, and left
+     aligned it sat against the border with the rest of the field empty —
+     which reads as a broken input rather than a small number. Reported as
+     "the number box in wait…s is missing padding": the padding was there, the
+     alignment was what left the gap all on one side.
+
+     `.card-row input` is deliberately NOT centred. Those hold a URL, a chat id
+     and a millisecond count — values long enough to fill their field, where
+     centring a value that sometimes wraps and sometimes does not is worse. */
+  text-align: center;
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   /* 16px: iOS zooms a focused input below it, same as `.card-row input`.
      This rule declared `font-size: 16px` here AND `font-size: 0.8rem` as its
      last property, so the second one won and the field zoomed on every tap —
@@ -1853,7 +2102,7 @@ body {
 
 .settings-actions button {
   min-height: 2.75rem;
-  padding: 0 0.9rem;
+  padding: 0 var(--pad-control);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--surface);
@@ -1922,7 +2171,7 @@ body {
   position: sticky;
   top: 0.5rem;
   margin: 0.5rem 0;
-  padding: 0.55rem 0.8rem;
+  padding: 0.5rem var(--pad-control);
   border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--ok);
@@ -2319,6 +2568,21 @@ body {
   flex-direction: column;
 }
 
+/* The agent under the tab name. Mono like the name above it, because both are
+   identifiers you match against something else — the two-voice rule, not a
+   decorative choice. Dim and one step down, so the row reads as "this tab,
+   running that agent" rather than as two titles competing. */
+.tab-agent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+}
+
 .tab-name {
   min-width: 0;
   overflow: hidden;
@@ -2635,7 +2899,19 @@ body {
    sheet's own breathing room. */
 .row-actions-sheet {
   gap: 0;
-  max-height: 85dvh;
+  /* Held above the keyboard. `--kb-inset` is published by `useKeyboardInset`
+     while a sheet is open and is 0 (absent) otherwise, so this is a no-op on a
+     desktop and on any browser without `visualViewport`.
+
+     BOTH lines are needed and they do different jobs. `bottom` lifts the sheet
+     off the keyboard; `max-height` stops it growing taller than the space that
+     is left, which without it would put the sheet's top off the screen instead
+     — trading a hidden field for a hidden heading.
+
+     Reported from a phone: creating a space or a tab put the name field under
+     the keyboard, "so I only blind type". */
+  bottom: var(--kb-inset, 0px);
+  max-height: calc(85dvh - var(--kb-inset, 0px));
   overflow-y: auto;
   background: var(--bg);
   border-top: 1px solid var(--border);
@@ -2706,7 +2982,7 @@ body {
 
 .row-actions-rename input {
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2735,7 +3011,7 @@ body {
 
 .row-actions-row > button {
   min-height: 2.75rem;
-  padding: 0 0.9rem;
+  padding: 0 var(--pad-control);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2823,7 +3099,7 @@ body {
 .create-form input,
 .create-form select {
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2848,7 +3124,7 @@ body {
 
 .create-cwds > button {
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2909,7 +3185,7 @@ body {
 .launch-failed > button {
   align-self: flex-start;
   min-height: 2.75rem;
-  padding: 0 0.7rem;
+  padding: 0 var(--pad-control);
   background: none;
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
@@ -3017,7 +3293,7 @@ body {
 .push-device-btn {
   min-height: 2.75rem;
   justify-self: start;
-  padding: 0 0.9rem;
+  padding: 0 var(--pad-control);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--surface);

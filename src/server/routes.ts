@@ -594,6 +594,23 @@ export interface AppDeps {
    */
   readTree?: () => Promise<SpaceTree>;
   /**
+   * Ask the supervisor to re-read herdr now, rather than at the next healing
+   * pass. Used by the agent rename route, and deliberately by nothing else.
+   *
+   * WHY IT HAS TO EXIST: measured against the live herdr schema, `tab.renamed`
+   * and `workspace.renamed` are EVENTS — paddock subscribes to both, which is
+   * why renaming a tab or a space reaches the Spaces screen immediately.
+   * Renaming an AGENT is a method with no event beside it. herdr never
+   * announces it, so no subscription can carry it and the dashboard would sit
+   * on the old name for up to `reconcileMs` (30s).
+   *
+   * This does NOT cross the §3 invariant. A management route still never
+   * writes to the store or enqueues to the hub — it asks the component that
+   * owns the store to re-read its source, exactly as the healing timer does,
+   * and the delta reaches browsers by the one path it always has.
+   */
+  reconcile?: () => Promise<unknown>;
+  /**
    * The operator's home directory, so a tilde-ised `cwd` coming BACK from the
    * client can be expanded before it reaches herdr — see `expandHome` in
    * `tree.ts`, which is the same value `toSpaceTree` uses to tilde-ise it on
@@ -979,6 +996,18 @@ export function createApp(deps: AppDeps) {
 
       try {
         await actions.renameAgent(agent.agentId, name);
+        // herdr emits no event for this, so ask for a re-read rather than let
+        // the dashboard sit on the old name until the healing pass. Failure
+        // here is logged and swallowed ON PURPOSE: the rename itself landed,
+        // and answering 502 would tell the operator their change did not
+        // happen — inviting them to do it again — when the only thing that
+        // failed is a follow-up read the 30s timer will repeat anyway.
+        try {
+          await deps.reconcile?.();
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          warn(`agents: renamed \`${agent.agentId}\` but could not reconcile: ${detail}`);
+        }
         return c.json({ ok: true });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);

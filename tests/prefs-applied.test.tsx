@@ -8,7 +8,7 @@ import { RATE_MS, readPrefs, themeAttr, writePref } from "@web/prefs";
 import { AgentTerminal, floorFor } from "@web/components/AgentTerminal";
 import { Settings } from "@web/components/Settings";
 import { digestOf } from "@shared/screen";
-import { agent, click, render, settle, stubFetch, typeInto, unmount } from "./support/render";
+import { agent, click, render, selectOption, settle, stubFetch, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 // Bun runs every test file in one process (tests/support/dom.ts documents
@@ -113,21 +113,20 @@ test("choosing a theme in Settings applies it immediately, with no remount", asy
   await settle();
   await settle();
 
-  const themeOption = (label: string) =>
-    [...host.querySelectorAll("[aria-label='Theme'] [role='radio']")]
-      .find((n) => (n.textContent ?? "").includes(label)) as HTMLButtonElement;
+  // Driven through the select the Appearance card now renders. The control
+  // changed; what this test proves did not — that the attribute is applied by
+  // `Settings.tsx` itself, with no remount to re-run an effect upstream.
+  const select = host.querySelector("select[data-field='theme']") as HTMLSelectElement;
+  expect(select, "Appearance renders a theme select").not.toBeNull();
 
-  const dark = themeOption("Dark");
-  expect(dark).not.toBeUndefined();
-
-  await click(dark);
+  await selectOption(select, "dark");
   await settle();
 
   expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
 
   // "system" must DELETE the attribute, not set it to the literal string —
   // the same distinction `themeAttr` makes for App.tsx's mount-time apply.
-  await click(themeOption("System"));
+  await selectOption(select, "system");
   await settle();
 
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);

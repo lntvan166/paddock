@@ -825,6 +825,19 @@ const appDeps = {
   hub,
   actions,
   readTree,
+  /**
+   * Re-read herdr now, for the one route that needs it.
+   *
+   * `supervisor` is null in `--demo` (there is no herdr to re-read) and until
+   * the real one is constructed, so this is optional-chained rather than
+   * captured — a demo rename simply has nothing to reconcile against, which
+   * is the same honest 404-shaped answer every other herdr-backed route gives
+   * there.
+   *
+   * Read through the binding rather than bound once, because `supervisor` is
+   * assigned after this object is built.
+   */
+  reconcile: async () => { await supervisor?.reconcile(); },
   // The SAME value `toSpaceTree` tilde-ises with, above. One home directory,
   // read once, used in both directions — a second source for it would let the
   // outbound tilde and the inbound expansion disagree.

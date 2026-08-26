@@ -1,5 +1,5 @@
 /**
- * Thirteen hand-written glyphs: one per settings card, the three in the
+ * Fourteen hand-written glyphs: one per settings card, the three in the
  * bottom `TabBar` — Agents, Spaces and Settings — and the terminal's own two,
  * `KeyboardIcon` and `BackspaceIcon`.
  *
@@ -77,6 +77,17 @@ export function PlugIcon({ className }: IconProps) {
  * Four cells rather than a terminal outline: it has to be distinguishable from
  * `TerminalIcon`, and what the screen shows is a grid of spaces, not a shell.
  */
+/** Back. A DRAWN chevron, not `‹` (U+2039).
+ *
+ *  The third codepoint this project has replaced for the same reason as `▦`
+ *  and `⚙`: a text glyph's weight and side bearing vary by platform, where a
+ *  stroked path does not. Reported as "the back arrow is thin and has space on
+ *  its left" — the thinness is a 600-weight text glyph against these 2px
+ *  strokes, and the space is U+2039's own left bearing. */
+export function BackIcon({ className }: IconProps) {
+  return <Svg className={className}><path d="M15 5l-7 7 7 7" /></Svg>;
+}
+
 /** The agent list. Three rows with a leading marker each — the dashboard's own
  *  shape, which is what the tab opens. */
 export function AgentsIcon({ className }: IconProps) {

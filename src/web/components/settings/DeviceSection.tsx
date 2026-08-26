@@ -1,16 +1,10 @@
-import { RATE_MS, type Prefs, type RatePref, type ThemePref } from "@web/prefs";
+import { RATE_MS, THEMES, type Prefs, type RatePref, type ThemePref } from "@web/prefs";
 import { Card } from "@web/components/ui/Card";
 import { Segmented } from "@web/components/ui/Segmented";
 import { Toggle } from "@web/components/ui/Toggle";
 import { ActivityIcon, MonitorIcon, TerminalIcon } from "@web/components/ui/icons";
 
 const RATE_LABELS: Record<RatePref, string> = { live: "Live", balanced: "Balanced", frugal: "Frugal" };
-
-const THEMES: { value: ThemePref; label: string }[] = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-];
 
 interface DeviceSectionProps {
   prefs: Prefs;
@@ -25,12 +19,25 @@ export function DeviceSection({ prefs, setPref }: DeviceSectionProps) {
         title="Appearance"
         subtitle="Follow this device, or pin one."
       >
-        <Segmented
-          label="Theme"
-          value={prefs.theme}
-          options={THEMES}
-          onChange={(v) => setPref("theme", v)}
-        />
+        {/* A `<select>`, not `Segmented`. Segmented holds three options well
+            and seven badly, and `.card-row select` is already styled — on iOS
+            this renders as the native wheel.
+
+            No swatch previews, deliberately: `setPref` applies `themeAttr`
+            synchronously, so changing the selection repaints the whole app at
+            once. The operator sees the theme itself, which is strictly better
+            than a chip of it — and it is why this needs no Save, like every
+            other "This device" setting. */}
+        <label className="card-row">
+          <span>Theme</span>
+          <select
+            data-field="theme"
+            value={prefs.theme}
+            onChange={(e) => setPref("theme", e.target.value as ThemePref)}
+          >
+            {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </label>
       </Card>
 
       <Card

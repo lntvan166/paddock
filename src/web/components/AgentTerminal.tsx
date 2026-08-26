@@ -4,6 +4,7 @@ import { answerWithKey, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendTex
 import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
+import { RowActions } from "@web/components/RowActions";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
@@ -393,6 +394,27 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       paused={busy}
       revealed={useJournal ? journal.lines : undefined}
       earlier={earlier}
+      /* The `⋯`, at the header's trailing edge. Rename only — `RowActions`
+         takes `close` optionally now, and this screen cannot offer one: a
+         close needs the tab that would be closed plus the panes it takes with
+         it, so its consequence can be counted off the tree already on screen
+         (§10). The terminal never reads the tree for an agent, so it has
+         neither, and stating a consequence paddock has not counted is the one
+         thing §10 forbids. Closing stays where the structure is visible.
+
+         `onChanged` is deliberately a no-op. Every other caller refetches the
+         TREE because that is what their screen renders; this header renders
+         `agent.name` from the store, and an agent rename now reaches the store
+         on its own — the route asks the supervisor to re-read, because herdr
+         emits no event for it. Refetching a tree here would be work for a
+         screen that does not read one. */
+      headerActions={
+        <RowActions
+          label={agent.name}
+          renames={[{ kind: "agent", id: agent.agentId, current: agent.name }]}
+          onChanged={() => {}}
+        />
+      }
       headerExtra={
         <>
           {/* Blocked renders a PILL instead of the dot; every other state keeps

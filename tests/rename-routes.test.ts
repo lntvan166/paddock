@@ -40,6 +40,7 @@ function harness(
   readTree?: () => Promise<SpaceTree>,
   overrides: {
     renameAgent?: (target: string, name: string | null) => Promise<void>;
+    reconcile?: () => Promise<void>;
     renameTab?: (tabId: string, label: string) => Promise<void>;
     renameSpace?: (spaceId: string, label: string) => Promise<void>;
   } = {},
@@ -50,6 +51,10 @@ function harness(
   const app = createApp({
     store,
     hub: new Hub({ now: () => NOW }),
+    async reconcile() {
+      calls.push("reconcile");
+      if (overrides.reconcile) await overrides.reconcile();
+    },
     now: () => NOW,
     readTree,
     actions: {
@@ -105,7 +110,10 @@ test("a valid agent name reaches renameAgent verbatim", async () => {
   const res = await post(app, "/api/agents/w1:p1/name", { name: "schema-migration" });
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true });
-  expect(calls).toEqual(["renameAgent:w1:p1:schema-migration"]);
+  // `reconcile` follows the rename, in that order: herdr emits no event for an
+  // agent rename, so paddock asks for a re-read rather than leaving the
+  // dashboard on the old name until the 30s healing pass.
+  expect(calls).toEqual(["renameAgent:w1:p1:schema-migration", "reconcile"]);
 });
 
 test("`name: null` on the agent route SUCCEEDS and forwards null — the one real clear", async () => {
@@ -113,7 +121,7 @@ test("`name: null` on the agent route SUCCEEDS and forwards null — the one rea
   const res = await post(app, "/api/agents/w1:p1/name", { name: null });
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true });
-  expect(calls).toEqual(["renameAgent:w1:p1:null"]);
+  expect(calls).toEqual(["renameAgent:w1:p1:null", "reconcile"]);
 });
 
 test("an over-length agent name is refused 400, not truncated, and never forwarded", async () => {
@@ -308,4 +316,43 @@ test("a readTree throw for /api/spaces/:id/name becomes ok:false/502, never a ba
   expect(body.ok).toBe(false);
   expect(body.detail).toContain("herdr socket refused");
   expect(calls).toEqual([]);
+});
+
+test("renaming an agent reconciles, because herdr announces no such event", async () => {
+  // Measured against the live herdr schema: `tab.renamed` and
+  // `workspace.renamed` are EVENTS, and paddock subscribes to both — which is
+  // why renaming a tab or a space reaches the Spaces screen at once. Renaming
+  // an AGENT is a method with no event beside it, so nothing tells paddock the
+  // name moved and the dashboard waits out the 30s healing reconcile.
+  //
+  // Reported from a phone: "rename agent does not make dashboard auto sync new
+  // name". Asking the supervisor to re-read is the only path herdr leaves
+  // open, and it keeps the §3 invariant intact — the store is still written
+  // only by the supervisor, never by a management route.
+  const { app, calls } = harness(async () => TREE);
+  const res = await app.request("/api/agents/w1:p1/name", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "api-refactor" }),
+  });
+  expect(res.status).toBe(200);
+  expect(calls).toEqual(["renameAgent:w1:p1:api-refactor", "reconcile"]);
+});
+
+test("a reconcile that fails does not fail the rename that already worked", async () => {
+  // The rename LANDED — herdr accepted it. Reporting 502 because the follow-up
+  // read failed would tell the operator their change did not happen, which is
+  // false, and would invite them to do it twice. The healing timer is still
+  // there to catch up.
+  const { app, calls } = harness(async () => TREE, {
+    reconcile: async () => { throw new Error("herdr went away"); },
+  });
+  const res = await app.request("/api/agents/w1:p1/name", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "api-refactor" }),
+  });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ ok: true });
+  expect(calls).toContain("reconcile");
 });

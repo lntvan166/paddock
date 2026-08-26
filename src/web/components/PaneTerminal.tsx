@@ -1,3 +1,4 @@
+import { BackIcon } from "@web/components/ui/icons";
 import { plural } from "@web/format";
 import {
   Fragment, useCallback, useEffect, useImperativeHandle, useRef, useState,
@@ -275,6 +276,11 @@ export interface PaneTerminalProps {
   backLabel?: string;
   /** Rendered inside `.term-title`, after the name: a state dot, a pill. */
   headerExtra?: ReactNode;
+  /** Rendered at the header's trailing edge, OUTSIDE `.term-title`: the `⋯`
+   *  menu. Outside because `.term-title` is `flex: 1` and truncates the name
+   *  inside it — a control placed there would be squeezed by a long name
+   *  rather than holding its 44px. */
+  headerActions?: ReactNode;
   /** Between the transcript and the view controls: feedback, prompt options. */
   beforeControls?: ReactNode;
   /** Inside the view-controls row, between Wrap and Refresh. */
@@ -332,7 +338,7 @@ export interface PaneTerminalProps {
 export function PaneTerminal({
   paneId, title, onBack, load,
   backLabel = "Back to agents",
-  headerExtra, beforeControls, controls, afterControls,
+  headerExtra, headerActions, beforeControls, controls, afterControls,
   revealed: revealedOverride, earlier,
   paused = false, minIntervalMs = 0,
   sendText: onSendText, sendKey: onSendKey,
@@ -835,11 +841,17 @@ export function PaneTerminal({
   return (
     <section className="term" aria-label={`${title} terminal`}>
       <header className="term-header">
-        {/* Glyph only. `aria-label` already carried the meaning for assistive
-            tech, so the word was spending ~55px of a 390px header on something
-            only sighted users read — and they read the ‹ just as well. */}
+        {/* Glyph only, and that part is unchanged: `aria-label` already carries
+            the meaning for assistive tech, so the word was spending ~55px of a
+            390px header on something only sighted users read.
+
+            A DRAWN chevron, though. This was `‹` (U+2039) — reported as thin
+            with space on its left, which is exactly what a text glyph gives
+            you: 600-weight strokes against the app's 2px paths, plus the
+            codepoint's own left side bearing that no padding rule can remove.
+            The same fix `▦` and `⚙` already got. */}
         <button type="button" className="term-back" onClick={onBack} aria-label={backLabel}>
-          ‹
+          <BackIcon className="term-back-glyph" />
         </button>
         <div className="term-title">
           <strong>{title}</strong>
@@ -848,6 +860,7 @@ export function PaneTerminal({
               not look current. */}
           {stalled && <span className="term-stalled" role="status">not updating</span>}
         </div>
+        {headerActions}
       </header>
 
       {/* Offered when there is something to show AND the operator has scrolled

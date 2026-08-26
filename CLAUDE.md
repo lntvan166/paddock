@@ -115,6 +115,13 @@ Full detail in `docs/architecture.md`. The rules that must not be broken:
 - **Never define a colour only inside a media query.** Tokens on bare `:root`, then
   redefined under `prefers-color-scheme` and `[data-theme]` so a manual toggle wins
   both directions.
+- **A theme changes hue, never meaning.** Named themes live in
+  `:root[data-theme="…"]` blocks and set chrome; a state colour may be tuned
+  only so it stays legible on that theme's ground. `tests/themes.test.ts`
+  asserts AA per theme — including for state colours a theme INHERITS, which is
+  how one drops below AA unnoticed. Never re-theme `--term-bg`/`--term-fg` or
+  the tile hues. Adding a theme is a palette plus a green test run; see
+  `docs/decisions.md` decision 25.
 - **No hover-only affordances** — invisible on touch.
 - **Respect `prefers-reduced-motion`** and `env(safe-area-inset-bottom)`.
 
