@@ -134,6 +134,23 @@ export class Notifier {
   /** In-flight settle windows. At most one per agent — `#arm` cancels before
    *  it sets, and a timer callback only ever removes its OWN entry. */
   #pending = new Map<string, { state: NotifyTrigger; timer: TimerHandle; attempts: number }>();
+  /**
+   * Episodes withheld because every subscribed device was already showing the
+   * agent, waiting for a viewer to leave.
+   *
+   * DEFERRED, NOT DROPPED, and that is the whole reason this map exists: look
+   * at an agent as it blocks, pocket the phone ten seconds later without
+   * answering, and dropping would mean nothing ever tells you. The same
+   * defer-not-drop rule the cooldown follows, for the same reason — losing a
+   * real event to prevent a duplicate one is the worse trade.
+   *
+   * Holds the AGENT, not just its id, matching what the retry path already
+   * closes over: a rename between deferral and fire shows the old name, which
+   * is already true of a retry and not worth a second mechanism.
+   */
+  #deferred = new Map<string, {
+    agent: Agent; state: NotifyTrigger; episode: number; attempts: number;
+  }>();
   lastError: string | null = null;
 
   constructor(private o: NotifierOpts) {}
@@ -167,6 +184,29 @@ export class Notifier {
   dispose(): void {
     for (const p of this.#pending.values()) this.#clearTimer(p.timer);
     this.#pending.clear();
+    this.#deferred.clear();
+  }
+
+  /**
+   * Look again at an agent whose viewers may have gone away.
+   *
+   * Called from `state/presence.ts`'s change events — a navigation, a
+   * backgrounded page, a closed socket, or a TTL expiry. It ASSERTS NOTHING
+   * itself: it re-arms at zero delay and `#fire` re-reads triggers, mute,
+   * presence and the cooldown. That is deliberate — a release is a reason to
+   * re-decide, not a decision.
+   */
+  reconsider(agentId: string): void {
+    const d = this.#deferred.get(agentId);
+    if (d === undefined) return;
+    // The state moved on, or this pane's episode is over. Arming either would
+    // cancel a LIVE timer to install a send that then declines to fire, which
+    // is how the operator loses the notification they were waiting for.
+    if (this.#lastSeen.get(agentId) !== d.state || this.#episode.get(agentId) !== d.episode) {
+      this.#deferred.delete(agentId);
+      return;
+    }
+    this.#arm(d.agent, d.state, 0, d.attempts, d.episode);
   }
 
   #cancel(agentId: string): void {
@@ -186,6 +226,7 @@ export class Notifier {
     // A send that was already in flight for the removed agent resumes with no
     // episode to match, so it writes nothing — which is what removal means.
     this.#episode.delete(agentId);
+    this.#deferred.delete(agentId);
   }
 
   #see(a: Agent): void {
@@ -215,6 +256,9 @@ export class Notifier {
     // the state it is about to announce, and drop the send — silently, with
     // no error and nothing on `/api/health`, for the rest of the pane's life.
     this.#lastNotified.delete(a.agentId);
+    // The episode this deferral belonged to is over. Left in place, a later
+    // `reconsider` would announce a state the agent has already left.
+    this.#deferred.delete(a.agentId);
     if (!isTrigger(a.state)) return;
 
     const s = this.o.settings.current();
@@ -291,7 +335,12 @@ export class Notifier {
     // Dropped, never queued: a pile delivered when mute lifts describes
     // agents unblocked hours earlier. Read HERE rather than when the timer
     // was armed, so muting during a settle window still silences.
-    if (s.notify.mutedUntil !== null && now < s.notify.mutedUntil) return;
+    if (s.notify.mutedUntil !== null && now < s.notify.mutedUntil) {
+      // A deferral held for this agent is discarded with the notification, or
+      // mute lifting would deliver exactly the pile this rule prevents.
+      this.#deferred.delete(a.agentId);
+      return;
+    }
 
     // WHO IS ALREADY LOOKING. Decided here, above the cooldown stamp, and the
     // position is the point: a withheld push makes no request at all, so there
@@ -307,9 +356,13 @@ export class Notifier {
     // roster is not suppression, and reading it as "every device is viewing"
     // would silence push for an operator with no devices to silence.
     const pushWithheld = roster.size > 0 && [...roster].every((k) => skip.has(k));
-    // Task 5 replaces this with the deferral. Returning here is already
-    // correct for "withhold"; what it lacks is the memory to fire later.
-    if (pushWithheld && !telegramReady) return;
+    if (pushWithheld && !telegramReady) {
+      this.#deferred.set(a.agentId, { agent: a, state, episode, attempts });
+      return;
+    }
+    // Something is about to be delivered, so this episode is no longer waiting
+    // on a viewer.
+    this.#deferred.delete(a.agentId);
 
     const since = now - (this.#lastSentAt.get(a.agentId) ?? Number.NEGATIVE_INFINITY);
     if (since < s.notify.cooldownMs) {

@@ -571,7 +571,15 @@ const notifier = new Notifier({
    * the dashboard must take effect without a restart.
    */
   sendPush: pushSender(),
+  viewers: (agentId) => presence.viewers(agentId),
+  // A synchronous read of what `push.json` already stores — see
+  // `StoredSubscription.deviceKey` for why it is not hashed here.
+  pushDeviceKeys: () => push.deviceKeys(),
 });
+
+// A viewer leaving is what releases a withheld notification. Includes TTL
+// expiry, which the presence store emits as an ordinary change.
+presence.onChange((agentId) => notifier.reconsider(agentId));
 
 /**
  * The protocol the LIVE herdr reported, or null before it answered.

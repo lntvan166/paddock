@@ -149,3 +149,144 @@ test("a notifier with no presence getters behaves as it does today", async () =>
   await settleBlocked(n);
   expect(push).toHaveLength(1);
 });
+
+test("a withheld notification fires when the viewer leaves", async () => {
+  // The failure this exists to prevent: look at an agent as it blocks, pocket
+  // the phone ten seconds later without answering, and nothing ever tells you.
+  const push: PushPayload[] = [];
+  let looking = true;
+  const n = buildNotifier({
+    sendPush: async (p) => { push.push(p); },
+    viewers: () => (looking ? new Set([PHONE]) : new Set()),
+    pushDeviceKeys: () => new Set([PHONE]),
+    cooldownMs: 0,
+  });
+  await settleBlocked(n);
+  expect(push).toEqual([]);
+
+  looking = false;
+  n.reconsider("w1:p1");
+  await Bun.sleep(5);
+  expect(push).toHaveLength(1);
+  expect(push[0]!.name).toBe("flaky-test-fix");
+});
+
+test("a withheld send does not spend the cooldown", async () => {
+  // If the withheld path stamped `#lastSentAt`, this deferral would wait out a
+  // full cooldown after the viewer left — a minute of silence, by default, for
+  // a send that never happened. The clock is frozen at NOW, so a spent
+  // cooldown means the assertion below sees nothing.
+  const push: PushPayload[] = [];
+  let looking = true;
+  const n = buildNotifier({
+    sendPush: async (p) => { push.push(p); },
+    viewers: () => (looking ? new Set([PHONE]) : new Set()),
+    pushDeviceKeys: () => new Set([PHONE]),
+    cooldownMs: 60_000,
+  });
+  await settleBlocked(n);
+  looking = false;
+  n.reconsider("w1:p1");
+  await Bun.sleep(5);
+  expect(push).toHaveLength(1);
+});
+
+test("an agent that unblocked while you watched it notifies nobody later", async () => {
+  const push: PushPayload[] = [];
+  const n = buildNotifier({
+    sendPush: async (p) => { push.push(p); },
+    viewers: () => new Set([PHONE]),
+    pushDeviceKeys: () => new Set([PHONE]),
+    cooldownMs: 0,
+  });
+  await settleBlocked(n);
+  // Answered on the spot: the episode is over and the deferral has nothing
+  // true left to say.
+  n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
+  await Bun.sleep(5);
+  n.reconsider("w1:p1");
+  await Bun.sleep(5);
+  expect(push).toEqual([]);
+});
+
+test("blocked, watched, unblocked and blocked again fires once", async () => {
+  // The episode trap. A deferral from the FIRST blocked episode must not fire
+  // against the second, and must not double up with it.
+  const push: PushPayload[] = [];
+  let looking = true;
+  const n = buildNotifier({
+    sendPush: async (p) => { push.push(p); },
+    viewers: () => (looking ? new Set([PHONE]) : new Set()),
+    pushDeviceKeys: () => new Set([PHONE]),
+    cooldownMs: 0,
+  });
+  await settleBlocked(n);              // deferred, episode 1
+  n.observe({ upserted: [agent({ state: "working" })], removedIds: [] });
+  await Bun.sleep(5);
+  looking = false;
+  n.observe({ upserted: [agent({ state: "blocked" })], removedIds: [] });
+  await Bun.sleep(5);                  // episode 2 sends: nobody is looking
+  n.reconsider("w1:p1");               // episode 1's deferral, now void
+  await Bun.sleep(5);
+  expect(push).toHaveLength(1);
+});
+
+test("a deferral is dropped when the agent goes away", async () => {
+  const push: PushPayload[] = [];
+  const n = buildNotifier({
+    sendPush: async (p) => { push.push(p); },
+    viewers: () => new Set([PHONE]),
+    pushDeviceKeys: () => new Set([PHONE]),
+    cooldownMs: 0,
+  });
+  await settleBlocked(n);
+  n.observe({ upserted: [], removedIds: ["w1:p1"] });
+  n.reconsider("w1:p1");
+  await Bun.sleep(5);
+  expect(push).toEqual([]);
+});
+
+test("reconsider for an agent with nothing deferred does nothing", async () => {
+  const push: PushPayload[] = [];
+  const n = buildNotifier({ sendPush: async (p) => { push.push(p); } });
+  n.reconsider("w1:p1");
+  await Bun.sleep(5);
+  expect(push).toEqual([]);
+});
+
+test("mute discards a deferral rather than queuing it", async () => {
+  // `mutedUntil` drops rather than queues — a pile delivered when mute lifts
+  // describes agents unblocked hours earlier. A deferral surviving mute would
+  // be exactly that pile, one entry at a time.
+  const push: PushPayload[] = [];
+  let looking = true;
+  let muted = false;
+  const store = {
+    current: () => ({
+      telegram: { token: "", chatId: "" },
+      notify: {
+        telegram: true, triggers: ["blocked"], settleMs: { blocked: 0, done: 0 },
+        mutedUntil: muted ? NOW + 60_000 : null, cooldownMs: 0, skipWhileViewing: true,
+      },
+      push: { enabled: true },
+      publicUrl: null,
+    }),
+  };
+  const n = new Notifier({
+    settings: store as never,
+    send: async () => ({ ok: true, detail: null }),
+    sendPush: async (p) => { push.push(p as PushPayload); },
+    viewers: () => (looking ? new Set([PHONE]) : new Set()),
+    pushDeviceKeys: () => new Set([PHONE]),
+    now: () => NOW,
+  });
+  await settleBlocked(n);        // deferred
+  muted = true;
+  looking = false;
+  n.reconsider("w1:p1");         // meets the mute
+  await Bun.sleep(5);
+  muted = false;
+  n.reconsider("w1:p1");         // and there is nothing left to release
+  await Bun.sleep(5);
+  expect(push).toEqual([]);
+});
