@@ -772,3 +772,36 @@ session does not silently re-litigate them.
 
     See `docs/design/2026-08-26-notification-presence-design.md`.
 
+
+25. **A theme changes hue, never meaning.** paddock offers Dracula, Gruvbox and
+    Nord. Those are SYNTAX-HIGHLIGHTING palettes — their red means "string
+    literal" — and paddock's is a SEMANTIC one, where red is spent on exactly
+    one thing: an agent that has stopped and needs a person. So a theme sets
+    the chrome, and may set a state colour ONLY as a legibility adjustment for
+    its own ground. The meaning never moves.
+
+    What forced the distinction, and it is not what the obvious design
+    predicts: "themes change the chrome, the state colours stay fixed" is
+    unsafe. paddock's dark state colours were tuned against `--bg: #08090a`, a
+    near-black, and every popular palette uses a LIGHTER ground — measured,
+    Dracula puts `--danger` at 4.25 and Nord at 3.73, both below AA, before
+    anything is changed at all. Keeping the hexes is what breaks them.
+
+    `tests/themes.test.ts` asserts AA for `--danger`, `--warn` and `--ok`
+    against each theme's own `--bg`, **whether the theme overrode them or
+    inherited them**. Inheriting is exactly how a theme drops below AA
+    unnoticed, and no other test in the suite asserts a computed colour — the
+    same blind spot that let `shadcn init` turn `--accent` near-white while
+    1159 tests passed.
+
+    A theme must not touch `--term-bg` / `--term-fg` — herdr sends the agent's
+    own truecolor escapes, chosen for a dark terminal, so a light pane would
+    render white output onto a light ground — or `--tile-*`, which carry their
+    own backgrounds at ratios documented per hue. The audit refuses a block
+    that does.
+
+    Named themes do not follow the OS. That is inherent to a flat picker where
+    each entry is one palette, and it is the right trade: a named theme is a
+    deliberate choice, and Dracula has no light variant to switch to.
+
+    See `docs/design/2026-08-26-theme-picker-design.md`.
