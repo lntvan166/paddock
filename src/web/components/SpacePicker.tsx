@@ -76,13 +76,26 @@ export function SpacePicker({ spaces, currentId, navigate = (hash) => { location
                       null state gets `.dot-none` rather than a `StatusDot`
                       lives in one place now (`ui/StateMarker.tsx`), because
                       this picker, the space rows and the tab rows all need it
-                      and three copies would be three things free to drift. */}
-                  <StateMarker state={state} surfaceVar="--surface" />
+                      and three copies would be three things free to drift.
+                      No `surfaceVar`: the sheet's own ground is `--bg`
+                      (`.row-actions-sheet`), which is `StatusDot`'s default. */}
+                  <StateMarker state={state} />
                   <span className="space-name">{s.label ?? s.spaceId}</span>
                   {/* Colour is never the only channel: StatusDot is
                       aria-hidden, so the state is said in words here. */}
                   <span className="space-state">{state ?? NO_AGENT}</span>
-                  <span className="space-count">{s.paneCount}</span>
+                  <span className="space-count" aria-label={`${s.paneCount} panes`}>{s.paneCount}</span>
+                  {/* The visible half of the mark §5.2 asks for. `aria-current`
+                      above reaches a screen reader; a sighted operator gets
+                      nothing from it at all, so the row otherwise looked like a
+                      control that does nothing when tapped — the same defect
+                      this project cites as its reason for refusing
+                      `pane.rename`. A glyph, not colour alone: colour is never
+                      the only channel on this screen. The header behind the
+                      scrim already names the current space, but that text sits
+                      behind a dimmed backdrop while this list is open and is
+                      not a substitute for marking the row itself. */}
+                  {here && <span aria-hidden="true" className="picker-current">✓</span>}
                 </button>
               </li>
             );

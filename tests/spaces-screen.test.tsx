@@ -61,14 +61,25 @@ test("a row says its name, its rollup state and its pane count, and nothing else
   expect(row.querySelector(".space-name")?.textContent).toBe("schema migration");
   expect(row.querySelector(".space-state")?.textContent).toBe("working");
   expect(row.querySelector(".space-count")?.textContent).toBe("2");
-  // The alias is gone with the merged row it explained.
+  // The alias is gone with the merged row it explained. A tombstone, not a
+  // guard: nothing in `src/web/` can produce `.space-alias` any more, so this
+  // cannot fail — a real regression here would show up as the row rendering
+  // the wrong markup entirely, caught by the assertions above instead.
   expect(row.querySelector(".space-alias")).toBeNull();
 });
 
 test("nothing collapses, so nothing offers to", async () => {
   const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  // A tombstone, not a guard: nothing in `src/web/` can produce
+  // `[data-expand]` any more, so this assertion cannot fail.
   expect(host.querySelector("[data-expand]")).toBeNull();
-  expect(host.querySelector("[aria-expanded]")).toBeNull();
+  // Scoped to `.spaces`, not the whole screen: Radix's dialog trigger sets
+  // `aria-expanded` on itself, so an unscoped query here would only pass
+  // because `spacesAvailable` defaults to false and the header `+` (a Radix
+  // sheet trigger) does not render. Scoping makes this assert what its name
+  // says — that the LIST offers no expand/collapse — rather than riding on an
+  // unrelated control being absent.
+  expect(host.querySelector(".spaces [aria-expanded]")).toBeNull();
 });
 
 test("the collapsed-state key is not written any more", async () => {
@@ -89,6 +100,14 @@ test("blocked sorts first and a space with no agent sorts last", async () => {
   };
   const host = await render(<Spaces onBack={() => {}} load={load(MIXED)} />);
   expect(textsOf(host, "[data-space-row] .space-name")).toEqual(["flaky-test-fix", "docs-cleanup", "scratch"]);
+
+  // The null-state marker `ui/StateMarker.tsx` was hoisted for, on this
+  // surface: "scratch" has no agent, so it gets `.dot-none` (never `idle`'s
+  // hollow ring) and says "no agent" in words, not just a sort position.
+  const rows = [...host.querySelectorAll("[data-space-row]")];
+  const noAgentRow = rows.find((r) => r.querySelector(".space-name")?.textContent === "scratch")!;
+  expect(noAgentRow.querySelector(".dot-none")).not.toBeNull();
+  expect(noAgentRow.querySelector(".space-state")?.textContent).toBe("no agent");
 });
 
 test("the header keeps the one control that makes a space", async () => {

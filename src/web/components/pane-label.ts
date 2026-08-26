@@ -41,7 +41,7 @@ export function shellLabel(p: TreePane): string {
  * the space's own label does not, so "there is nothing to add" has to be
  * expressible — filling it with the pane id would put `w3:p1` on every row.
  */
-export function paneIdentity(p: TreePane): string | null {
+function paneIdentity(p: TreePane): string | null {
   return p.name ?? (p.harness === null ? shellLabel(p) : p.title);
 }
 

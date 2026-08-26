@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
-import { sortSpaces } from "@web/components/space-sort";
+import { sortSpaces, treeCwds } from "@web/components/space-sort";
 import { SpaceRow } from "@web/components/SpaceRow";
+import { useSpaceTree } from "@web/components/use-space-tree";
 import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
 
@@ -20,26 +21,9 @@ export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate 
    *  test can observe the navigation instead of mutating the hash. */
   navigate?: (hash: string) => void;
 }) {
-  const { treeStaleAt, spacesAvailable } = useStore();
-  const [tree, setTree] = useState<SpaceTree | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { spacesAvailable } = useStore();
+  const { tree, error, refresh } = useSpaceTree(load);
   const [now, setNow] = useState(() => Date.now());
-
-  const refresh = useCallback(async () => {
-    try {
-      setTree(await load());
-      setError(null);
-    } catch (err) {
-      // The last good tree is KEPT. An empty screen and a broken herdr must
-      // never look alike — that is the same rule the 502 in the route serves.
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [load]);
-
-  // Refetches on mount and whenever the server says the tree moved. The
-  // server sends `tree-stale` for STRUCTURE only, so this does not fire on
-  // every agent state change.
-  useEffect(() => { void refresh(); }, [refresh, treeStaleAt]);
 
   // The "as of" label ticks locally; the server is not asked for time.
   useEffect(() => {
@@ -47,21 +31,13 @@ export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate 
     return () => clearInterval(t);
   }, []);
 
-  /**
-   * Every working directory already in the tree, once each, in a stable order.
-   *
-   * The create sheet's quick picks (§9.3). Computed here rather than in the
-   * sheet because the HEADER's sheet needs the whole tree's cwds and a row's
-   * sheet needs the same list — one expression, two consumers, and the tree is
-   * already in hand. Sorted so the list does not reshuffle between renders of
-   * the same tree.
-   */
-  const cwds = tree === null
-    ? []
-    : [...new Set(tree.spaces.flatMap((s) => s.tabs.flatMap((t) => t.panes.map((p) => p.cwd))))].sort();
+  // The create sheet's quick picks (§9.3) — every cwd in the WHOLE tree, not
+  // just this screen's, computed by `treeCwds` so this and the space screen
+  // agree on the rule.
+  const cwds = treeCwds(tree);
 
   /**
-   * Whether the create controls exist at all.
+   * Whether the create control exists at all.
    *
    * The SAME capability the Spaces entry point in `App.tsx` is gated on
    * (`spacesAvailable`, set from the server's own snapshot frame), for the same
@@ -84,8 +60,12 @@ export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate 
         <h2>Spaces</h2>
         {/* §16.7: the `+` that makes a SPACE lives in the header of the screen
             that lists them. Position is what says what it makes, which is why
-            it carries no text label — and why the one on each row below,
-            which makes a tab in that row's space, looks identical. */}
+            it carries no text label.
+
+            This is the ONLY create control on this screen now. The one that
+            makes a tab moved to `#/space/<id>`, where it is the last row of
+            the list it adds to — a row rather than a glyph, because that
+            screen's header has no position that says "a tab in this space". */}
         {canCreate && (
           <CreateSheet
             target={{ kind: "space" }}

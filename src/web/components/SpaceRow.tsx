@@ -38,8 +38,10 @@ export function SpaceRow({ space }: { space: Space }) {
         {/* A bare number, in mono, because it is a quantity to compare down a
             column rather than a sentence to read. The pluralised
             "2 tabs"/"1 pane" phrasing went with the merged row that needed to
-            explain its own shape. */}
-        <span className="space-count">{space.paneCount}</span>
+            explain its own shape. `aria-label` carries the unit for a screen
+            reader — a bare numeral read aloud is "docs-cleanup, working, 2":
+            two of what? — without changing what a sighted operator sees. */}
+        <span className="space-count" aria-label={`${space.paneCount} panes`}>{space.paneCount}</span>
       </a>
     </li>
   );

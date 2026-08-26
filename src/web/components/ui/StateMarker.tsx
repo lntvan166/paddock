@@ -23,14 +23,17 @@ export const NO_AGENT = "no agent";
  * pane-shaped signature would serve one caller and force the others to invent
  * a pane they do not have.
  *
- * `surfaceVar` is passed straight through: a ring dot fills its interior with
- * that variable, so a dot on a sheet has to name the sheet's own ground or the
- * ring reads as a notch cut out of it.
+ * No `surfaceVar` parameter: every surface this renders on — the spaces list,
+ * a tab row, the picker sheet — sits on the page's own ground, so
+ * `StatusDot`'s default (`--bg`) is always right here. The one caller that
+ * passed `--surface` was wrong (the picker sheet's ground is `--bg`, from
+ * `.row-actions-sheet`, not `--surface`), and an unused parameter that a
+ * caller can still get wrong is a trap worth removing rather than
+ * re-documenting.
  */
-export function StateMarker({ state, surfaceVar }: {
+export function StateMarker({ state }: {
   state: AgentState | null;
-  surfaceVar?: string;
 }) {
   if (state === null) return <span className="dot-none" aria-hidden="true" />;
-  return <StatusDot state={state} surfaceVar={surfaceVar} />;
+  return <StatusDot state={state} />;
 }

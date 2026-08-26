@@ -1,4 +1,4 @@
-import type { AgentState, Space } from "@shared/types";
+import type { AgentState, Space, SpaceTree } from "@shared/types";
 
 /**
  * How bad a state is, for picking a space's rollup.
@@ -62,4 +62,21 @@ export function sortSpaces(spaces: Space[]): Space[] {
 function bucketOf(space: Space): number {
   const state = spaceState(space);
   return state === null ? NO_AGENT_BUCKET : BUCKET[state];
+}
+
+/**
+ * Every working directory already in the tree, once each, in a stable order.
+ *
+ * The create sheet's quick picks (§9.3), for both `Spaces.tsx` and
+ * `Space.tsx` — the two held byte-identical copies of this expression before
+ * it moved here. Computed from the WHOLE tree rather than from anything
+ * narrower: a new space or tab commonly belongs in a folder some other space
+ * is already working in, so the useful list is every folder in use, not the
+ * ones near this control. Sorted so the list does not reshuffle between
+ * renders of the same tree.
+ */
+export function treeCwds(tree: SpaceTree | null): string[] {
+  return tree === null
+    ? []
+    : [...new Set(tree.spaces.flatMap((s) => s.tabs.flatMap((t) => t.panes.map((p) => p.cwd))))].sort();
 }

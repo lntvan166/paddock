@@ -14,8 +14,6 @@ import { paneLabel } from "@web/components/pane-label";
 import { groupAgents, SECTION_DOT, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { Settings } from "@web/components/Settings";
 import { Space } from "@web/components/Space";
-import { LIVE_CREATE_SENDERS } from "@web/components/CreateSheet";
-import { LIVE_SENDERS } from "@web/components/RowActions";
 import { Spaces } from "@web/components/Spaces";
 import { staleAttrs } from "@web/components/staleness";
 import {
@@ -138,7 +136,13 @@ export function App() {
        * The DESTINATION is exact in both cases; only the wording differs. The
        * alternative was printing `w9`, which `docs/gotchas.md` bans on screen.
        */
-      const label = agents.find((a) => a.agentId === paneId)?.workspaceLabel ?? null;
+      // `.trim() || null`, not a bare `??`: `adapter.ts` computes
+      // `workspaceLabel` with no trim, while `tree.ts` computes `Space.label`
+      // as `w.label?.trim() || null` for the SAME field. A workspace labelled
+      // `"  "` would otherwise title the space screen `w9` (falsy after
+      // `tree.ts`'s own trim) while this control announced `Back to   ` —
+      // a blank the trim here makes agree with that.
+      const label = agents.find((a) => a.agentId === paneId)?.workspaceLabel?.trim() || null;
       return label !== null
         ? { hash: origin, label: `‹ ${label}`, ariaLabel: `Back to ${label}` }
         : { hash: origin, label: "‹ Space", ariaLabel: "Back to this space" };
@@ -316,8 +320,11 @@ export function App() {
       <Space
         spaceId={openSpaceId}
         onBack={() => { location.hash = "#/spaces"; }}
-        senders={LIVE_SENDERS}
-        createSenders={LIVE_CREATE_SENDERS}
+        // No `senders`/`createSenders` here: both default to the live
+        // clients inside `RowActions`/`CreateSheet` when undefined, exactly
+        // as `<Spaces>` below relies on. Passing the same live constants
+        // explicitly bought nothing and left a second precedent for the next
+        // screen to copy.
         navigate={(hash) => { location.hash = hash; }}
       />
     );
