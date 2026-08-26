@@ -574,7 +574,12 @@ body {
    avoid. */
 .host-head {
   display: flex;
-  align-items: baseline;
+  /* `center`, not `baseline`. The summary sits at the far end of the row now
+     rather than beside the title, and across that distance a shared baseline
+     reads as two things at different heights — the 17px title and the 13px
+     sentence have different cap heights, so their baselines align while their
+     visual centres do not. Adjacent, baseline was right; apart, centre is. */
+  align-items: center;
   flex-wrap: wrap;
   gap: 0.25rem 0.625rem;
   min-height: 2.75rem;
@@ -766,8 +771,17 @@ body {
    screen whose whole job is answering that question at a glance.
    The counts INSIDE it are part of the sentence, not a data readout, so this
    stays sans and does not take `.ident`. */
+/* Pushed to the trailing edge, the same shape `.spaces-head` uses: the title
+   owns the left, the reading off the list owns the right. Beside the title it
+   read as part of the name; at the far end it reads as what it is, a count of
+   what the screen below holds.
+
+   `margin-left: auto` rather than `justify-content: space-between` on the
+   header, because the row wraps — with space-between, a wrapped summary would
+   be pushed to the right of its own line instead of sitting under the title
+   where it belongs. */
 .host-summary {
-  margin: 0;
+  margin: 0 0 0 auto;
   font-size: var(--t-md);
   color: var(--fg-dim);
 }
