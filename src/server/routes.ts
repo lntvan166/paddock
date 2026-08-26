@@ -621,6 +621,24 @@ export interface AppDeps {
   home?: string;
 }
 
+/**
+ * What an operator reads when a herdr call fails.
+ *
+ * `err.message`, not `String(err)`. The latter renders an Error as
+ * "Error: the socket refused", and that prefix is shown verbatim in the UI —
+ * `detail` is surfaced by `.error` on the terminal and by the row sheets. Most
+ * routes here already did it this way; four did not, and the difference only
+ * became visible when `--demo` started producing errors people are meant to
+ * READ ("this is the demo — nothing was sent"), rather than only real herdr
+ * failures nobody wants to see anyway.
+ *
+ * `String` remains the fallback for a thrown non-Error, which is the case
+ * `err.message` cannot serve.
+ */
+function detailOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function createApp(deps: AppDeps) {
   const app = new Hono();
   const now = deps.now ?? Date.now;
@@ -864,7 +882,7 @@ export function createApp(deps: AppDeps) {
         }
         return c.json({ ...out, digest });
       } catch (err) {
-        return c.json({ ok: false, detail: String(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, 502);
       }
     });
 
@@ -874,7 +892,7 @@ export function createApp(deps: AppDeps) {
       try {
         return c.json(parsePrompt(await actions.readDetection(agent.agentId)));
       } catch (err) {
-        return c.json({ ok: false, detail: String(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, 502);
       }
     });
 
@@ -921,7 +939,7 @@ export function createApp(deps: AppDeps) {
         // arrow tap — correct on load, wrong the moment the operator moved.
         return c.json({ ok: true, ...out, selected: parsePrompt(out.lines.join("\n")).selected });
       } catch (err) {
-        return c.json({ ok: false, detail: String(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
       }
     });
 
@@ -957,7 +975,7 @@ export function createApp(deps: AppDeps) {
         const out = await actions.readOutput(agent.agentId, agent.state);
         return c.json({ ok: true, ...out });
       } catch (err) {
-        return c.json({ ok: false, detail: String(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
       }
     });
 
@@ -1571,7 +1589,7 @@ export function createApp(deps: AppDeps) {
         await actions.waitUntilUnblocked(agent.agentId);
         return c.json({ ok: true });
       } catch (err) {
-        return c.json({ ok: false, detail: String(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, 502);
       }
     });
   }
