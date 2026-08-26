@@ -90,6 +90,16 @@ will not mint a replacement keypair, because a new key silently invalidates
 every subscription that exists and every phone simply stops buzzing with nothing
 on screen to explain it.
 
+**"Skip push for the agent I'm watching"** (`notify.skipWhileViewing`, default
+**on**) withholds push — push only, never Telegram — from a device whose pane
+is already open on the agent that changed. It does not lose the notification:
+a fully withheld one is *held* and fires the moment the last device showing
+that pane leaves it, while the agent is still in the state that triggered it.
+On by default because the duplicate buzz on the device already showing the
+pane is the complaint this exists to fix, and the deferral means defaulting to
+quiet costs nothing — see decision 24 for why it is scoped to a device, and why
+Telegram is exempt.
+
 ## The Telegram token
 
 Written to `~/.config/paddock/settings.json` at file mode `0600`, in a

@@ -13,7 +13,7 @@ export interface Settings {
     mutedUntil: number | null;
     cooldownMs: number;
     /** See `SettingsView["notify"].skipWhileViewing` — the on-disk half of
-     *  the same field. Defaults off; a later task flips the default to true. */
+     *  the same field. Defaults on: see `defaults()` for why. */
     skipWhileViewing: boolean;
   };
   /** Push is off until the operator turns it on. The keypair and the device
@@ -65,10 +65,12 @@ const defaults = (): Settings => ({
   notify: {
     telegram: false, triggers: ["blocked"], settleMs: { ...DEFAULT_SETTLE_MS },
     mutedUntil: null, cooldownMs: DEFAULT_COOLDOWN_MS,
-    // Off on purpose: a half-wired presence store must not be able to
-    // withhold a real notification. A later task flips this default once
-    // presence is fully wired through.
-    skipWhileViewing: false,
+    // On by default because the duplicate buzz is the complaint, and the
+    // deferral (a withheld notification fires when the last viewer leaves,
+    // never dropped) means nothing is lost by defaulting to quiet. It shipped
+    // off while presence was half-wired, and was flipped to true in the same
+    // commit as the documentation recording that reasoning — see decision 24.
+    skipWhileViewing: true,
   },
   push: { enabled: false },
   publicUrl: null,

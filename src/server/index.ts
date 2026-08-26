@@ -382,11 +382,12 @@ if (command === "tunnel" && tunnelPublishRunning) {
 const hostId = DEMO ? DEMO_HOST_ID : (process.env.PADDOCK_HOST_ID ?? "local");
 const store = new AgentStore(hostId);
 /**
- * Who is looking at what, right now — populated by the `viewing` frame on
- * every socket this process serves (both listeners share `hubWebSocket`).
- *
- * Read by nobody yet: this is the write half of presence only. See
- * `state/presence.ts`.
+ * Who is looking at what, right now — written by `ws/serve.ts` from the
+ * `viewing` frame on every socket this process serves (both listeners share
+ * `hubWebSocket`). Read by the notifier below via `viewers`, to decide
+ * whether to withhold a push; its own `onChange` is wired to `reconsider`
+ * further down, so a viewer leaving (or its TTL expiring) releases anything
+ * that was held. See `state/presence.ts`.
  */
 const presence = new PresenceStore();
 presence.startSweep();

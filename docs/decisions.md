@@ -730,3 +730,45 @@ session does not silently re-litigate them.
 
     See `docs/design/2026-08-25-web-push-design.md`.
 
+24. **Presence is keyed by connection and matched per device, and it governs
+    push only, never Telegram.** A Safari tab and the installed PWA on one
+    phone share a `deviceKey` but hold separate sockets and separate location
+    hashes; keying presence by `deviceKey` would let whichever last spoke
+    overwrite the other's entry, so suppression would flicker on which surface
+    moved most recently. Each connection holds its own entry instead, and
+    `viewers()` unions them — a device is viewing an agent if *any* of its
+    connections is.
+
+    Suppression then matches per **device**, not globally: if the phone is on
+    the pane and a tablet is not, the tablet is still told. The cheaper global
+    rule is right for one device and wrong for two, and paddock is built
+    around more than one screen watching the same agents.
+
+    **Push only.** A `deviceKey` identifies one browser; a Telegram chat can be
+    read from a laptop, a desktop, or a second phone, so presence can make no
+    claim about whether its reader is looking at anything. Suppressing
+    Telegram on a phone's presence would silence the transport that exists
+    precisely because it works where the PWA does not — decision 23's whole
+    reason for shipping it.
+
+    **Two cheaper designs were rejected, both on the same budget.** Deciding
+    suppression inside `sw.js` via `clients.matchAll()` on push receipt needs
+    no wire change, no shared contract, and no server state, and per-device
+    correctness falls out for free because each device judges for itself. It
+    was rejected on two counts: nothing is left holding the episode, so it
+    cannot fire when the last viewer walks away — it silently becomes a drop
+    rather than a deferral, the opposite of what withholding is supposed to
+    do — and every suppression becomes a push that displays nothing, which is
+    the behaviour WebKit counts against a subscription and can revoke it for.
+
+    A silent clearing push — push on `blocked → working` with a flag telling
+    `sw.js` to close the tag and render nothing, so the lock screen clears
+    without the phone being touched — was rejected on the WebKit objection
+    alone, arrived at from the other direction: it is still a push that
+    displays nothing. A *visible* resolution push is WebKit-safe but costs a
+    second buzz per resolution, which is the opposite of the request. A
+    feature that spends the push subscription to save a buzz is a bad trade
+    either way it is reached.
+
+    See `docs/design/2026-08-26-notification-presence-design.md`.
+
