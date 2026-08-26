@@ -36,7 +36,7 @@ afterEach(async () => {
 // file asserts on its content.
 const settingsView = () => ({
   telegram: { configured: false, hint: null, chatId: null },
-  notify: { enabled: false, triggers: [], settleMs: { blocked: 5_000, done: 10_000 },
+  notify: { telegram: false, triggers: [], settleMs: { blocked: 5_000, done: 10_000 },
             mutedUntil: null, cooldownMs: 60_000 },
   publicUrl: null, serverNow: 1_700_000_000_000, error: null,
 });
@@ -191,7 +191,7 @@ test("the keypad-auto setting is a device pref, written to this browser only", a
   const view = () => ({
     telegram: { configured: false, hint: null, chatId: null },
     notify: {
-      enabled: false, triggers: ["blocked"],
+      telegram: false, triggers: ["blocked"],
       settleMs: { blocked: 5_000, done: 10_000 }, mutedUntil: null, cooldownMs: 60_000,
     },
     publicUrl: null, serverNow: 1_700_000_000_000, error: null,

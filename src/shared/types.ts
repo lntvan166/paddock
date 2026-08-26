@@ -6,7 +6,17 @@ export type NotifyTrigger = "blocked" | "done";
 export interface SettingsView {
   telegram: { configured: boolean; hint: string | null; chatId: string | null };
   notify: {
-    enabled: boolean;
+    /**
+     * Whether TELEGRAM may deliver. Named for the transport rather than for
+     * notifications as a whole, which is what it used to be called and no
+     * longer is: push has its own switch in `push.enabled`, and a single
+     * `enabled` gating both meant unchecking one silenced the other.
+     *
+     * Two transports, two switches, and no master above them — both off is
+     * already "send nothing", so a third flag would only be a way for the
+     * three to disagree.
+     */
+    telegram: boolean;
     triggers: NotifyTrigger[];
     /** Per trigger, how long the state must hold before a message is sent.
      *  0 fires on the edge, which is what v2 did unconditionally. */

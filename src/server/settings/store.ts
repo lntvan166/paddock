@@ -7,7 +7,7 @@ export interface Settings {
   version: 2;
   telegram: { token: string | null; chatId: string | null };
   notify: {
-    enabled: boolean;
+    telegram: boolean;
     triggers: NotifyTrigger[];
     settleMs: Record<NotifyTrigger, number>;
     mutedUntil: number | null;
@@ -60,7 +60,7 @@ const defaults = (): Settings => ({
   version: 2,
   telegram: { token: null, chatId: null },
   notify: {
-    enabled: false, triggers: ["blocked"], settleMs: { ...DEFAULT_SETTLE_MS },
+    telegram: false, triggers: ["blocked"], settleMs: { ...DEFAULT_SETTLE_MS },
     mutedUntil: null, cooldownMs: DEFAULT_COOLDOWN_MS,
   },
   push: { enabled: false },
@@ -196,7 +196,13 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
       chatId: typeof t.chatId === "string" ? t.chatId : null,
     },
     notify: {
-      enabled: typeof n.enabled === "boolean" ? n.enabled : d.notify.enabled,
+      // Migrated, not merely renamed. A file written before push existed
+      // carries `notify.enabled`, which meant "notifications on" when Telegram
+      // was the only transport — so it IS this operator's Telegram answer, and
+      // reading it here is what stops an upgrade silently muting them.
+      telegram: typeof n.telegram === "boolean" ? n.telegram
+        : typeof n.enabled === "boolean" ? n.enabled
+        : d.notify.telegram,
       triggers,
       settleMs: {
         blocked: clamped(num(s.blocked, DEFAULT_SETTLE_MS.blocked), 0, MAX_SETTLE_MS, "settleMs.blocked", log),

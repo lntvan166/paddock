@@ -2516,3 +2516,30 @@ body {
     @apply font-sans;
   }
 }
+
+/* The two transports, at the top of the rules that govern both of them.
+   A column rather than a row: each carries a line of explanation underneath —
+   which device count, or which credentials it needs — and side by side those
+   would either truncate or force the labels to different heights. */
+.notify-transports {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+}
+.notify-transport {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  /* The whole row is the target, not just the box. A 20px checkbox is under
+     half the 44px this project asks of a control, and the label is the part a
+     thumb actually aims at. */
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+.notify-transport > span { display: grid; gap: 0.1rem; }
+/* The explanation, dimmed and on its own line — it says what the checkbox
+   cannot: whether anything is actually registered to receive this. */
+.notify-transport small {
+  color: var(--fg-dim);
+  font-size: var(--t-xs);
+}

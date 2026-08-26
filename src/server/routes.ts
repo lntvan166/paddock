@@ -424,9 +424,9 @@ function validateSettingsPatch(
     const nn = n as Record<string, unknown>;
     const out: NonNullable<SettingsPatch["notify"]> = {};
 
-    if ("enabled" in nn) {
-      if (typeof nn.enabled !== "boolean") return { ok: false, detail: "notify.enabled must be a boolean" };
-      out.enabled = nn.enabled;
+    if ("telegram" in nn) {
+      if (typeof nn.telegram !== "boolean") return { ok: false, detail: "notify.telegram must be a boolean" };
+      out.telegram = nn.telegram;
     }
 
     if ("triggers" in nn) {

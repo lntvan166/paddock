@@ -68,7 +68,7 @@ function demoSettings(mutedUntil: number | null = null): SettingsView {
   return {
     telegram: { configured: false, hint: null, chatId: null },
     notify: {
-      enabled: false,
+      telegram: false,
       triggers: ["blocked"],
       settleMs: { blocked: 5_000, done: 10_000 },
       mutedUntil,
