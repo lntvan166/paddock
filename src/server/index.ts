@@ -14,6 +14,7 @@ import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { toSpaceTree } from "@server/herdr/tree";
 import { AgentStore } from "@server/state/store";
+import { PresenceStore } from "@server/state/presence";
 import { Supervisor } from "@server/supervisor";
 import { createJournalReader, defaultRoots, type JournalReader } from "@server/journal/read";
 import { shapeMessage, shapeSummary } from "@server/herdr/shape";
@@ -380,6 +381,15 @@ if (command === "tunnel" && tunnelPublishRunning) {
 
 const hostId = DEMO ? DEMO_HOST_ID : (process.env.PADDOCK_HOST_ID ?? "local");
 const store = new AgentStore(hostId);
+/**
+ * Who is looking at what, right now — populated by the `viewing` frame on
+ * every socket this process serves (both listeners share `hubWebSocket`).
+ *
+ * Read by nobody yet: this is the write half of presence only. See
+ * `state/presence.ts`.
+ */
+const presence = new PresenceStore();
+presence.startSweep();
 /**
  * The build currently on disk, re-read rather than captured at startup.
  *
@@ -858,7 +868,7 @@ try {
       if (ws !== null) return ws;
       return app.fetch(req);
     },
-    websocket: hubWebSocket({ hub, hostId, store }),
+    websocket: hubWebSocket({ hub, hostId, store, presence }),
   });
 } catch (err) {
   // EADDRINUSE only. Everything else rethrows with its stack intact — a
@@ -987,6 +997,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // open — but a timer that fires against a torn-down store would report
     // about an agent nobody is watching any more.
     notifier.dispose();
+    // The sweep timer is unref'd too, but a stale-viewer entry surviving this
+    // process's own shutdown would answer `viewers()` on a socket that no
+    // longer exists.
+    presence.dispose();
     // Unref'd, so it could never hold the process open — cleared anyway, so a
     // tick cannot land mid-teardown and print an update notice underneath the
     // shutdown report.
@@ -1051,6 +1065,7 @@ if (command === "tunnel") {
       hub,
       hostId,
       store,
+      presence,
       pairing,
       port: Number(process.env.PADDOCK_TUNNEL_PORT ?? 8788),
       bin: tunnelBin,

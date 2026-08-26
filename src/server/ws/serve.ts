@@ -1,7 +1,9 @@
 import type { Server, WebSocketHandler } from "bun";
 import type { AgentStore } from "@server/state/store";
+import type { PresenceStore } from "@server/state/presence";
 import type { Hub, HubClient } from "@server/ws/hub";
 import { allowUpgrade, hostOf } from "@server/origin";
+import type { ClientMessage } from "@shared/types";
 
 /**
  * What a socket carries: the hub client it was added as, so `close` can remove
@@ -15,6 +17,48 @@ export interface HubSocketDeps {
   hub: Hub;
   hostId: string;
   store: AgentStore;
+  presence: PresenceStore;
+}
+
+/**
+ * The frame cap. A `viewing` frame is about 120 bytes; 1 KB is generous and
+ * finite, which is the property that matters for something a client controls.
+ */
+export const MAX_CLIENT_FRAME = 1024;
+
+/** Longest plausible values. A pane id is `w1:p1`; a device key is 43 chars. */
+const MAX_DEVICE_KEY = 128;
+const MAX_AGENT_ID = 256;
+
+/**
+ * A client frame, or null for anything paddock does not recognise.
+ *
+ * NULL RATHER THAN A THROW, at every branch. Throwing inside Bun's `message`
+ * handler drops the connection, which would turn a malformed frame into a way
+ * to disconnect somebody's dashboard — and an unknown `type` is what a newer
+ * client talking to an older server looks like, which must degrade to no
+ * presence rather than to a broken socket.
+ *
+ * Exported so the parser is tested directly against hostile input rather than
+ * only through a live socket.
+ */
+export function parseClientMessage(raw: unknown): ClientMessage | null {
+  if (typeof raw !== "string" || raw.length > MAX_CLIENT_FRAME) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const m = parsed as Record<string, unknown>;
+  if (m.type !== "viewing") return null;
+  const { deviceKey, agentId } = m;
+  if (deviceKey !== null && typeof deviceKey !== "string") return null;
+  if (agentId !== null && typeof agentId !== "string") return null;
+  if (deviceKey !== null && deviceKey.length > MAX_DEVICE_KEY) return null;
+  if (agentId !== null && agentId.length > MAX_AGENT_ID) return null;
+  return { type: "viewing", deviceKey, agentId };
 }
 
 /**
@@ -74,10 +118,26 @@ export function hubWebSocket(deps: HubSocketDeps): WebSocketHandler<WsData> {
     },
     close(ws) {
       const held = ws.data.client;
-      if (held) deps.hub.remove(held);
+      if (held) {
+        deps.hub.remove(held);
+        // Presence dies with the connection. This is the fast path of the three
+        // that release a viewer; the TTL in `presence.ts` covers the socket iOS
+        // never closes.
+        deps.presence.drop(held);
+      }
     },
-    message() {
-      // Read-only in v1: the browser sends nothing, on either listener.
+    message(ws, raw) {
+      const client = ws.data.client;
+      if (client === undefined) return;
+      // Sized BEFORE any conversion: measuring a Buffer by `byteLength` rather
+      // than stringifying it first is what keeps the cap a cap.
+      const size = typeof raw === "string" ? raw.length : raw.byteLength;
+      if (size > MAX_CLIENT_FRAME) return;
+      const msg = parseClientMessage(typeof raw === "string" ? raw : raw.toString());
+      if (msg === null) return;
+      // The agentId is a Map key, compared against ids the store already holds.
+      // It never reaches herdr, so there is nothing behind it to reach.
+      deps.presence.set(client, { deviceKey: msg.deviceKey, agentId: msg.agentId });
     },
   };
 }

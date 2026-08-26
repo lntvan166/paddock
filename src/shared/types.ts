@@ -485,6 +485,23 @@ export type ServerMessage =
   | { type: "tree-stale"; serverTime: number };
 
 /**
+ * The ONLY thing a browser may say on this socket, and the first thing it has
+ * ever been allowed to say.
+ *
+ * `viewing` is presence: which device this is, and which pane it is SHOWING
+ * (null for the list, for Settings, and for a page that is hidden). The server
+ * uses it to withhold a push from a device already displaying the agent the
+ * push is about.
+ *
+ * It deliberately cannot ask for anything. Every state change still goes
+ * through a POST route, where `docs/decisions.md` put them — a socket that can
+ * mutate is a socket whose every frame needs the origin and body validation
+ * those routes already have.
+ */
+export type ClientMessage =
+  | { type: "viewing"; deviceKey: string | null; agentId: string | null };
+
+/**
  * A package manager that owns a paddock install and therefore owns its
  * upgrades. One member today; a union rather than a boolean because the
  * command to print differs per manager, so a second entry adds a case rather

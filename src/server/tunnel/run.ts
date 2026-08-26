@@ -1,5 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import type { AgentStore } from "@server/state/store";
+import type { PresenceStore } from "@server/state/presence";
 import type { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import {
@@ -43,6 +44,13 @@ export interface TunnelDeps {
   hub?: Hub;
   hostId?: string;
   store?: AgentStore;
+  /**
+   * Optional for the same reason `hub`/`store` are: an ATTACHED tunnel
+   * (`upstream`) has no presence store of its own, because it has no hub,
+   * store or notifier either — it proxies to the process that does, and that
+   * process's own listener is the one recording presence.
+   */
+  presence?: PresenceStore;
   /**
    * Serve a paddock ALREADY RUNNING here rather than this process's own.
    *
@@ -145,7 +153,9 @@ export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
         if (ws !== null) return ws;
         return deps.app!.fetch(req);
       },
-      websocket: hubWebSocket({ hub: deps.hub!, hostId: deps.hostId!, store: deps.store! }),
+      websocket: hubWebSocket({
+        hub: deps.hub!, hostId: deps.hostId!, store: deps.store!, presence: deps.presence!,
+      }),
     })
     /*
      * ATTACHED. The gate is identical — `decide`/`gateResponse` above and here
