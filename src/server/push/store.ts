@@ -26,6 +26,29 @@ interface FileShape {
   subscriptions: StoredSubscription[];
 }
 
+/**
+ * An fs failure's REASON, with no path in it.
+ *
+ * Node's `Error.message` for a filesystem call is
+ * `EACCES: permission denied, open '/home/<user>/.config/paddock/push.json'` —
+ * the errno, a description, and the ABSOLUTE PATH. This warning is surfaced in
+ * the Settings UI, so forwarding `.message` verbatim printed the operator's
+ * home directory on screen, where a README screenshot would capture it as
+ * pixels that `check-clean` cannot scan.
+ *
+ * The errno code and its description are what an operator can act on; the path
+ * is one they already know. So the code is kept and the path dropped, and a
+ * non-errno failure falls back to its own message with any quoted path
+ * stripped rather than being replaced by something vaguer than the truth.
+ */
+export function errnoReason(e: unknown): string {
+  const code = (e as NodeJS.ErrnoException | null)?.code;
+  if (typeof code === "string" && code !== "") return code;
+  const msg = e instanceof Error ? e.message : String(e);
+  // Anything inside single quotes is a path in every message this can see.
+  return msg.replace(/'[^']*'/g, "").replace(/,\s*$/, "").trim() || "unknown error";
+}
+
 export class PushStore {
   readonly error: string | null;
   readonly #dir: string;
@@ -67,12 +90,23 @@ export class PushStore {
           await store.#save();
           return store;
         } catch (writeErr) {
+          // The REASON, never the raw errno string. Node puts the absolute
+          // path in `.message` — `ENOENT: ... open '/home/<user>/.config/
+          // paddock/push.json'` — and this warning is rendered in the Settings
+          // UI, so it put the operator's home directory on screen. That is the
+          // one thing this repo's first rule forbids anywhere, and neither
+          // `check-clean` nor any test can catch it: it is runtime text, and it
+          // would reach a README screenshot as pixels.
           return new PushStore(
-            dir, null, [], `push.json could not be created: ${(writeErr as Error).message}`,
+            dir, null, [],
+            `push.json could not be created in the config directory (${errnoReason(writeErr)}) — push is off`,
           );
         }
       }
-      return new PushStore(dir, null, [], `push.json unreadable: ${(e as Error).message}`);
+      // Same reasoning as the create failure above: reason, not raw errno.
+      return new PushStore(
+        dir, null, [], `push.json is unreadable (${errnoReason(e)}) — push is off`,
+      );
     }
 
     try {

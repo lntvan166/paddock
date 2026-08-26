@@ -470,16 +470,45 @@ body {
   color: var(--fg-dim);
 }
 
-/* The tappable area around Radix's switch, which is 18.4px tall on its own —
-   well under this app's 2.75rem floor. The switch is what you see; this is what
-   you hit. Motion is Radix's (a transform on the thumb) and is covered by the
-   global prefers-reduced-motion block above, which clamps every transition in
-   the document rather than needing a rule per component. */
+/* Spacing around Radix's switch, which is 18.4px tall on its own — well under
+   this app's 2.75rem floor. Motion is Radix's (a transform on the thumb) and is
+   covered by the global prefers-reduced-motion block above, which clamps every
+   transition in the document rather than needing a rule per component.
+
+   THIS SPAN IS NOT THE HIT AREA, though it used to claim to be. It is a plain
+   `span` with no handler and no label association, so a tap on its padding
+   reached nothing: measured with a real hit-tested click at a point inside the
+   48x44 wrapper and outside the 32x18 switch, the state did not change, while
+   the same click on the switch itself did. The comment asserted a property the
+   markup never had, and a CSS-only test could not tell the two apart because
+   the wrapper really was 44px — it just was not tappable.
+
+   The hit area is expanded on the CONTROL instead, below. */
 .toggle {
   min-height: 2.75rem;
   display: inline-flex;
   align-items: center;
   padding: 0 0.5rem;
+}
+
+/* The switch's own tap target, grown to the 2.75rem floor without changing
+   what is drawn.
+   A centred pseudo-element is the technique rather than sizing the switch
+   itself, because the 32x18 pill IS the design — an iOS-style switch scaled to
+   44px tall would read as a different control. `content` and a transparent
+   background keep it invisible; being a child of the button means the hit it
+   takes belongs to the button, with no forwarding to assume. */
+.toggle [data-slot="switch"] { position: relative; }
+.toggle [data-slot="switch"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  width: 100%;
+  height: 100%;
 }
 
 
@@ -796,6 +825,16 @@ body {
 /* Pushes the refresh glyph to the far end, away from the two toggles it has
    nothing to do with. */
 .term-controls button:last-child { margin-left: auto; }
+
+/* EVERY control in this row is a full tap target, Refresh included.
+   The intent was already written down 200 lines up — "Refresh and Close sit
+   side by side, both full tap targets" — but that rule is scoped to
+   `.detail header .controls`, and Refresh moved into `.term-controls`. The
+   selector stopped matching the markup and nothing said so: measured on a
+   390px viewport, the glyph was a 15x24 target sitting beside a correct 44px
+   `Keys` button in the same row. A rule whose selector has drifted from where
+   the element lives is indistinguishable from no rule at all. */
+.term-controls button { min-height: 2.75rem; min-width: 2.75rem; }
 
 .term-keys {
   flex: none;
