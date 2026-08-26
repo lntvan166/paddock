@@ -8,6 +8,8 @@ import {
   type Probe,
 } from "@server/lifecycle/state";
 import { SettingsStore } from "@server/settings/store";
+import { checkTunnelState, removeTunnelState, tunnelStateFile } from "@server/tunnel/state";
+import { stopTunnel } from "@server/tunnel/stop";
 import { tunnelHint } from "@server/tunnel/preflight";
 import { duration, glyph, say } from "@server/term";
 
@@ -110,6 +112,36 @@ async function clearState(
 export async function runStatus(o: StatusOpts): Promise<number> {
   const log = o.log ?? say;
   const now = (o.now ?? Date.now)();
+  const paddock = await reportPaddock(o, log, now);
+  const tunnel = await reportTunnel(o, log, now);
+
+  /**
+   * WHY A TUNNEL CAN MAKE THIS ZERO.
+   *
+   * A BACKSTOP, not the ordinary path — measured, having first written the
+   * opposite here. `paddock tunnel` DOES record paddock state: a detached run
+   * shows one pid under both lines. So normally the paddock half already
+   * answers and this changes nothing.
+   *
+   * It is still reachable, because `recordState` can decline — a conflicting
+   * record it will not overwrite, a command line it could not capture — and it
+   * says so rather than failing. A tunnel serving its own dashboard while
+   * unrecorded would otherwise make `status` report "✗ paddock — not running"
+   * in the one command whose exit code scripts read.
+   *
+   * A tunnel that PUBLISHES another paddock (`--publish-running`) serves no
+   * dashboard of its own, so it cannot stand in for one: there, the paddock
+   * line is the answer and this changes nothing.
+   */
+  if (paddock !== 0 && tunnel.serving) return 0;
+  return paddock;
+}
+
+async function reportPaddock(
+  o: StatusOpts,
+  log: (line: string) => void,
+  now: number,
+): Promise<number> {
   const got = await checkState(o.dir, o.probe);
 
   switch (got.kind) {
@@ -141,6 +173,72 @@ export async function runStatus(o: StatusOpts): Promise<number> {
       log(`${glyph("yes")} paddock ${got.state.version} — running`);
       log(`    pid ${got.state.pid} · port ${got.state.port} · up ${duration(now - got.state.startedAt)}`);
       return 0;
+  }
+}
+
+/**
+ * The tunnel half of `status`.
+ *
+ * Reports NOTHING when there is no tunnel. `status` is read at a glance and
+ * most runs have none; a permanent "✗ tunnel — not running" line would be
+ * noise on every one of them, and the absence is not a fact the operator asked
+ * about. A stale or mismatched record IS reported, because that is a leftover
+ * they may need to know about — and cleared, as every other arm does.
+ *
+ * No QR here. `status` is one glance and its exit code is scriptable; twenty
+ * five lines of QR belong in `paddock pair`, which is the command you run when
+ * you actually want to scan something.
+ */
+async function reportTunnel(
+  o: StatusOpts,
+  log: (line: string) => void,
+  now: number,
+): Promise<{ serving: boolean }> {
+  const got = await checkTunnelState(o.dir, o.probe, log);
+  switch (got.kind) {
+    case "none":
+      return { serving: false };
+    case "unreadable":
+      log(`${glyph("unknown")} tunnel — could not read its state (${got.error})`);
+      return { serving: false };
+    case "stale":
+      log(`${glyph("no")} tunnel — not running (stale record for pid ${got.state.pid}, cleared)`);
+      await clearTunnel(o.dir, log);
+      return { serving: false };
+    case "mismatch":
+      log(
+        `${glyph("no")} tunnel — not running (pid ${got.state.pid} is now: ` +
+          `${got.actual ?? "unknown"})`,
+      );
+      await clearTunnel(o.dir, log);
+      return { serving: false };
+    case "running":
+      log(`${glyph("yes")} tunnel — ${got.state.url}`);
+      log(
+        `    pid ${got.state.pid} · up ${duration(now - got.state.startedAt)}` +
+          (got.state.publishing !== null
+            ? ` · publishing port ${got.state.publishing}`
+            : " · serving the dashboard itself") +
+          " · `paddock pair` for the code",
+      );
+      // Only a tunnel serving its OWN dashboard can stand in for a paddock.
+      return { serving: got.state.publishing === null };
+    default: {
+      const _exhaustive: never = got;
+      throw new Error(`paddock: unhandled tunnel state: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+
+/** `clearState`'s contract, for the tunnel's record. See its note. */
+async function clearTunnel(dir: string, log: (line: string) => void): Promise<void> {
+  try {
+    await removeTunnelState(dir);
+  } catch (e) {
+    log(
+      `paddock: could not remove ${tunnelStateFile(dir)} (${(e as Error).message}) ` +
+        "— remove it by hand, or the next run will read it again",
+    );
   }
 }
 
@@ -196,6 +294,37 @@ export async function runStop(o: StopOpts): Promise<number> {
   const send = o.signal ?? sendSignal;
   const probe = o.probe ?? systemProbe;
   const waitMs = o.waitMs ?? 10_000;
+
+  /**
+   * THE PUBLIC FACE GOES FIRST.
+   *
+   * A tunnel outliving the paddock it publishes serves 502s to everyone holding
+   * its URL — and with `--publish-running` that is exactly what stopping the
+   * paddock first would produce. Closing the tunnel first means the URL stops
+   * resolving before the thing behind it goes away.
+   *
+   * Silent when there is no tunnel, which is most runs. It has its own policy
+   * — SIGTERM and never SIGKILL, because SIGKILL would orphan cloudflared —
+   * so it is a separate function rather than a share of the logic below; see
+   * `tunnel/stop.ts`.
+   */
+  const tunnel = await stopTunnel({ dir: o.dir, probe, log, signal: o.signal, waitMs });
+
+  const paddock = await stopPaddock(o, log, send, probe, waitMs, tunnel.stoppedServing);
+  // The worse of the two. `paddock stop` succeeding while the tunnel it was
+  // asked to close is still up would be a success report for a job half done.
+  return paddock !== 0 ? paddock : tunnel.code;
+}
+
+async function stopPaddock(
+  o: StopOpts,
+  log: (line: string) => void,
+  send: (pid: number, sig: NodeJS.Signals) => void,
+  probe: Probe,
+  waitMs: number,
+  /** A self-serving tunnel was just stopped — see `StopTunnelResult`. */
+  tunnelWasServing: boolean,
+): Promise<number> {
   const got = await checkState(o.dir, probe);
 
   switch (got.kind) {
@@ -205,7 +334,12 @@ export async function runStop(o: StopOpts): Promise<number> {
       // a port it was just told was free.
       if (o.port !== undefined &&
           await reportUntracked(o.port, o.listener ?? httpListener, log)) return 1;
-      log("paddock — not running");
+      // Not said when the tunnel we just stopped WAS the dashboard. A plain
+      // `paddock tunnel` records both files and clears the paddock one on its
+      // way out, so this arm is reached for a process that was running a moment
+      // ago and that this very command stopped — "✓ tunnel stopped" followed by
+      // "paddock — not running" is one command contradicting itself.
+      if (!tunnelWasServing) log("paddock — not running");
       return 0;
     case "unreadable":
       // Distinct from "none" on purpose, same reasoning as runStatus: "could
@@ -364,6 +498,18 @@ export interface ChildCommandOpts {
    * once silently becoming `serve` instead of being refused (see cli.ts).
    */
   demo?: boolean;
+  /**
+   * Detach a `tunnel` run instead of a `serve` one, with the flags that change
+   * what the tunnel IS.
+   *
+   * Enumerated, for the same reason `demo` is. `--for` decides when the child
+   * closes itself and `--publish-running` decides whether it serves a
+   * dashboard at all — so a dropped flag here is not a cosmetic difference, it
+   * is a tunnel that outlives its deadline, or a SECOND paddock with a second
+   * notifier. `--detach` is deliberately absent: forwarded, the child would
+   * try to detach again, forever.
+   */
+  tunnel?: { for?: string; publishRunning?: boolean };
 }
 
 /**
@@ -378,6 +524,12 @@ export function childCommand(opts: ChildCommandOpts = {}): string[] {
   const script = Bun.argv[1];
   const compiled = script === undefined || script.startsWith("/$bunfs/");
   const base = compiled ? [process.execPath] : [process.execPath, script];
+  if (opts.tunnel !== undefined) {
+    const argv = [...base, "tunnel"];
+    if (opts.tunnel.publishRunning === true) argv.push("--publish-running");
+    if (opts.tunnel.for !== undefined) argv.push("--for", opts.tunnel.for);
+    return argv;
+  }
   return opts.demo ? [...base, "--demo"] : base;
 }
 
@@ -539,7 +691,7 @@ export async function runStart(o: StartOpts): Promise<number> {
  * exactly this into a one-line refusal and let anything else it did not
  * anticipate keep its stack trace.
  */
-class ConfigDirUnusable extends Error {
+export class ConfigDirUnusable extends Error {
   constructor(
     readonly file: string,
     readonly reason: string,
@@ -549,7 +701,7 @@ class ConfigDirUnusable extends Error {
   }
 }
 
-async function spawnDetached(
+export async function spawnDetached(
   dir: string,
   opts: ChildCommandOpts = {},
 ): Promise<{ pid: number; exited: Promise<number> }> {
@@ -598,7 +750,7 @@ async function defaultHealthCheck(port: number): Promise<boolean> {
   }
 }
 
-async function readLogTail(dir: string): Promise<string> {
+export async function readLogTail(dir: string): Promise<string> {
   try {
     const text = await readFile(logFile(dir), "utf8");
     return text.split("\n").slice(-15).join("\n");

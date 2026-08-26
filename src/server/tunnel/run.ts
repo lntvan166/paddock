@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
@@ -538,6 +538,13 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
    */
   if (deps.record !== undefined) {
     const socket = controlSocket(deps.record.dir);
+    // The directory FIRST. `Bun.serve({unix})` binds a path and will not create
+    // its parent, so on a first run — a fresh install, or a config dir that
+    // nothing has written to yet — the bind fails with ENOENT and the tunnel
+    // publishes while being unfindable by `pair`. 0700 because this directory
+    // holds the socket that hands out the pairing code, and the same mode
+    // `writeRecord` uses for it.
+    await mkdir(deps.record.dir, { recursive: true, mode: 0o700 });
     // A socket left behind by a run that died without teardown would make the
     // bind below fail — and `serveControl` throwing here would take down a
     // tunnel that is already live. Cleared first, deliberately: at this point

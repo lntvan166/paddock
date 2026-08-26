@@ -36,6 +36,10 @@ import { Pairing } from "@server/tunnel/pairing";
 import { upstreamAlive } from "@server/tunnel/proxy";
 import { preflight, tunnelHint } from "@server/tunnel/preflight";
 import { runTunnel } from "@server/tunnel/run";
+import { runDetach } from "@server/tunnel/detach";
+import { runPair } from "@server/tunnel/pair";
+import { removeTunnelState } from "@server/tunnel/state";
+import { useColour } from "@server/term";
 import { VERSION } from "@server/version";
 import { runDoctor } from "@server/doctor";
 import { detectManagedBy, runUpdate } from "@server/update";
@@ -154,6 +158,17 @@ if (command === "stop") {
 // spawns a detached child (which is this same binary, re-invoked with no
 // verb, and IS the thing that binds a port) and waits for that child's own
 // state file and health endpoint to confirm it is actually serving.
+/**
+ * `paddock pair` — the URL, code and QR of whatever tunnel is running.
+ *
+ * Reads and prints; starts nothing. Placed with the other read-only verbs and
+ * above every line that builds a paddock, for the same reason `status` is: a
+ * command that answers a question must not open a herdr socket to do it.
+ */
+if (command === "pair") {
+  process.exit(await runPair({ dir: defaultConfigDir() }));
+}
+
 if (command === "start") {
   process.exit(await runStart({ dir: defaultConfigDir(), demo: DEMO }));
 }
@@ -197,8 +212,7 @@ if (command === "tunnel") {
   tunnelDeadlineMs = parsed;
 
   // `--publish-running`: publish the paddock ALREADY serving here, instead of
-  // being a second one.
-  // second one. See `tunnel/proxy.ts` — this process gets no store, no hub, no
+  // being a second one. See `tunnel/proxy.ts` — this process gets no store, no hub, no
   // notifier and no herdr stream, only the gate and a proxy. That is what makes
   // it safe to run beside an instance the plain form must refuse to.
   tunnelPublishRunning = flags.has("--publish-running");
@@ -209,6 +223,32 @@ if (command === "tunnel") {
     process.exit(1);
   }
   tunnelBin = pre.bin;
+
+  /**
+   * `--detach` — spawn this same command in the background and report what it
+   * published.
+   *
+   * AFTER preflight, deliberately. Both parent and child run it, and running it
+   * here first means a missing cloudflared or an already-running paddock is
+   * refused at the terminal, with the message that names the remedy — rather
+   * than by a detached child whose output the operator has to go and find.
+   *
+   * Above everything that builds a paddock, like the `--publish-running` block
+   * below: this process spawns and exits, so a store, hub, notifier or herdr
+   * stream built here would be constructed and thrown away — and in the
+   * notifier's case would have sent a startup notification from a process that
+   * publishes nothing.
+   */
+  if (flags.has("--detach")) {
+    process.exit(await runDetach({
+      dir: defaultConfigDir(),
+      forSpec: values.get("--for"),
+      publishRunning: tunnelPublishRunning,
+      colour: useColour(process.env, Boolean(process.stdout.isTTY)),
+      columns: process.stdout.columns ?? 0,
+      rows: process.stdout.rows ?? 0,
+    }));
+  }
 }
 
 const socketPath =
@@ -256,6 +296,51 @@ if (command === "tunnel" && tunnelPublishRunning) {
 
   const pairing = new Pairing();
   let publicUrl: string | null = null;
+
+  /**
+   * THIS BLOCK'S OWN SHUTDOWN, and it must be its own.
+   *
+   * The shared handler further down cannot serve this path twice over. It is
+   * registered hundreds of lines below — so `onShutdown` there is still in its
+   * temporal dead zone from here, and assigning it threw
+   * `ReferenceError: Cannot access 'onShutdown' before initialization` on every
+   * `--publish-running` run. (Found by running the command, not by reading it:
+   * nothing type-checks a TDZ read, and the suite never started this path as a
+   * process.) It also disposes a `notifier` and clears a `stateDir` that this
+   * process deliberately never built.
+   *
+   * Without a handler at all, a ^C here would kill this process while
+   * `cloudflared` was still running — a public URL still resolving with nothing
+   * behind it, from a terminal that has returned to a prompt. That is the worst
+   * failure this feature has, so the teardown is awaited before the exit,
+   * exactly as the shared handler does it.
+   */
+  let teardown: (() => Promise<boolean>) | null = null;
+  let closing = false;
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => {
+      if (closing) return;
+      closing = true;
+      void (async () => {
+        let status = 0;
+        try {
+          // `undefined` means the tunnel had not got as far as registering.
+          if ((await teardown?.()) === false) status = 1;
+        } catch (e) {
+          console.error(`paddock: shutdown step failed (${String(e)})`);
+          status = 1;
+        }
+        // The record and the socket, so `pair` does not report a tunnel that
+        // has gone. `runTunnel`'s teardown does this too; repeated here for the
+        // path where it never registered one.
+        await removeTunnelState(defaultConfigDir()).catch((e: unknown) =>
+          console.error(`paddock: could not clear the tunnel record (${String(e)})`),
+        );
+        process.exit(status);
+      })();
+    });
+  }
+
   const code = await runTunnel({
     upstream,
     pairing,
@@ -263,12 +348,33 @@ if (command === "tunnel" && tunnelPublishRunning) {
     bin: tunnelBin,
     deadlineMs: tunnelDeadlineMs,
     setPublicUrl: (u) => { publicUrl = u; },
+    // So `paddock pair` and `paddock status` can find this run, and so a
+    // detached one can be asked for its code at all.
+    record: { dir: defaultConfigDir(), publishing: upstream.port },
     // This process holds no settings of its own, and the upstream's
     // `publicUrl` is its business rather than this one's. The tunnel hostname
     // is the only origin this listener ever needs to accept.
     publicHosts: () => (publicUrl === null ? [] : [new URL(publicUrl).host]),
-    registerShutdown: (fn) => { onShutdown = fn; },
+    registerShutdown: (fn) => { teardown = fn; },
   });
+
+  /**
+   * NOT `process.exit(code)` unconditionally — that is a RACE, and it cost an
+   * afternoon to find.
+   *
+   * `runTunnel` returns as soon as the cloudflared child is dead, which on a
+   * signal is the FIRST thing its teardown does. So the handler above is still
+   * awaiting that teardown — still to close the listener, the control socket,
+   * and remove the tunnel record — when this line runs and exits the process
+   * out from under it. The visible symptom was a `paddock.tunnel.json` and a
+   * `tunnel.sock` surviving every clean shutdown, which made `paddock pair`
+   * report a stale tunnel for one that had exited properly.
+   *
+   * When a signal is already in flight the handler owns the exit, so this waits
+   * for it rather than competing. Nothing resumes here: the handler calls
+   * `process.exit` once its cleanup has actually finished.
+   */
+  if (closing) await new Promise<never>(() => {});
   process.exit(code);
 }
 
@@ -952,6 +1058,10 @@ if (command === "tunnel") {
       setPublicUrl: (u) => { tunnelUrl = u; },
       publicHosts,
       registerShutdown: (fn) => { onShutdown = fn; },
+      // `publishing: null` — this form serves the dashboard ITSELF, which is
+      // what lets `paddock status` report the whole thing as up rather than
+      // saying "paddock not running" while the dashboard is plainly served.
+      record: { dir: stateDir, publishing: null },
     });
   } catch (err) {
     // `runTunnel` turns the failures it recognises into exit codes, so this is

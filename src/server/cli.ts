@@ -1,5 +1,6 @@
 /**
- * `serve`, `update`, `start`, `status` and `stop` are implemented and act.
+ * `serve`, `update`, `start`, `status`, `stop`, `tunnel` and `pair` are
+ * implemented and act.
  * `help` is implemented and only prints — it is the one command that must
  * answer without touching a socket or a port, since asking what the tool does
  * must never start it.
@@ -11,7 +12,7 @@
  */
 export type Command =
   | "serve" | "update" | "start" | "stop" | "status" | "doctor" | "tunnel"
-  | "help" | "agent" | "hub"
+  | "pair" | "help" | "agent" | "hub"
   | "unknown";
 
 export interface ParsedArgs {
@@ -37,8 +38,11 @@ export const USAGE = [
   "       paddock update [--check]  install the latest release",
   "       paddock doctor            can this paddock talk to your herdr?",
   "       paddock tunnel [--for D]  publish it on a quick tunnel, gated by a code",
-  "       paddock tunnel --publish-running  publish the paddock already running here",
+  "       paddock tunnel --detach   publish it in the background, then return",
+  "       paddock tunnel --publish-running",
+  "                                 publish the paddock already running here",
   "                                 D is 30m, 2h or 7d",
+  "       paddock pair              the URL, code and QR of the running tunnel",
   "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",
 ].join("\n");
@@ -103,6 +107,7 @@ function commandFor(verb: string | null): Command {
   if (verb === "start" || verb === "stop" || verb === "status") return verb;
   if (verb === "doctor") return "doctor";
   if (verb === "tunnel") return "tunnel";
+  if (verb === "pair") return "pair";
   if (verb === "help") return "help";
   if (RESERVED.has(verb)) return verb as Command;
   return "unknown";
