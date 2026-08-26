@@ -18,10 +18,13 @@ type PushPayload = { name: string; state: AgentState; agentId: string };
 function buildNotifier(o: {
   send?: (text: string, m?: InlineKeyboard) => Promise<{ ok: boolean; detail: string | null }>;
   sendPush?: (p: PushPayload) => Promise<void>;
+  /** Override the Telegram credentials — `{ token: "", chatId: "" }` is an
+   *  operator who wants push and never set Telegram up. */
+  telegram?: { token: string; chatId: string };
 }) {
   const store = {
     current: () => ({
-      telegram: { token: "1:A", chatId: "555" },
+      telegram: o.telegram ?? { token: "1:A", chatId: "555" },
       notify: {
         enabled: true, triggers: ["blocked"],
         settleMs: { blocked: 0, done: 0 }, mutedUntil: null, cooldownMs: 60_000,
@@ -105,4 +108,45 @@ test("with no push sender configured, nothing changes", async () => {
   });
   await settleBlocked(n);
   expect(telegram).toHaveLength(1);
+});
+
+test("push reaches a device when Telegram was never configured at all", async () => {
+  // THE GAP THAT LET THE BUG SHIP. `a failing telegram does not suppress push`
+  // above looks like it covers this and does not: it configures a token and
+  // fails the SEND, which happens AFTER the credentials guard. An absent token
+  // returns BEFORE it. Two paths, and only one of them was ever driven.
+  //
+  // What that cost: an operator who wanted push and not Telegram got silence,
+  // with no error logged anywhere, because delivery returned before the push
+  // was dispatched.
+  const telegram: string[] = [];
+  const push: PushPayload[] = [];
+  const n = buildNotifier({
+    telegram: { token: "", chatId: "" },
+    send: async (text) => { telegram.push(text); return { ok: true, detail: null }; },
+    sendPush: async (p) => { push.push(p); },
+  });
+  await settleBlocked(n);
+
+  expect(push).toEqual([{ name: "api-refactor", state: "blocked", agentId: "w1:p1" }]);
+  // And Telegram is not attempted — a transport with no credentials must not
+  // be POSTed to, and must not record a failure the operator never asked for.
+  expect(telegram).toHaveLength(0);
+});
+
+test("a half-configured Telegram is treated as unconfigured, and still lets push through", async () => {
+  // `isConfigured` differs from `!== null` for an empty string, and an unset
+  // environment variable IS an empty string — so a token with no chat id is
+  // the shape a partly-filled .env produces.
+  const telegram: string[] = [];
+  const push: PushPayload[] = [];
+  const n = buildNotifier({
+    telegram: { token: "1:A", chatId: "" },
+    send: async (text) => { telegram.push(text); return { ok: true, detail: null }; },
+    sendPush: async (p) => { push.push(p); },
+  });
+  await settleBlocked(n);
+
+  expect(push).toHaveLength(1);
+  expect(telegram).toHaveLength(0);
 });
