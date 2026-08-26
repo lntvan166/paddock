@@ -1,11 +1,12 @@
 /**
- * Ten hand-written glyphs: one per settings card, plus the two header controls
- * in `HostHeader` — Spaces and Settings.
+ * Twelve hand-written glyphs: one per settings card, the two header controls
+ * in `HostHeader` — Spaces and Settings — and the terminal's own two,
+ * `KeyboardIcon` and `BackspaceIcon`.
  *
  * Icon libraries are tens of kilobytes of tree-shaken JavaScript for what is a
  * few hundred bytes of path data here, on a project whose bundle is deliberately
  * ONE chunk because at high RTT an extra round trip costs more than the bytes it
- * saves. These ten are hand-written instead.
+ * saves. These twelve are hand-written instead.
  *
  * `currentColor` throughout, so a glyph is never a colour that has to be
  * redefined per theme, and `aria-hidden` throughout, because every one of them
@@ -108,6 +109,58 @@ export function SettingsIcon({ className }: IconProps) {
       <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
       <circle cx="16" cy="7" r="2.1" />
       <circle cx="10" cy="17" r="2.1" />
+    </Svg>
+  );
+}
+
+/**
+ * The keypad toggle in the terminal's control bar.
+ *
+ * A key cap outline with three dots and a space bar — enough to read as a
+ * keyboard at the 13px the bar renders, and nothing inside it small enough to
+ * collapse there.
+ */
+export function KeyboardIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8" />
+    </Svg>
+  );
+}
+
+/**
+ * Backspace — delete ONE character. Clearing a line is `^U`, behind the Ctrl
+ * latch, and nothing on the pad claims to do it in one tap.
+ *
+ * FILLED, against every other glyph in this file, and the exception is the
+ * point rather than an inconsistency.
+ *
+ * Three drafts. The first was `⌫` (U+232B) — a raw codepoint, which this file
+ * already records losing twice: `▦` and `␣` both rendered as tofu boxes on
+ * mobile and were replaced. The second drew it as an outline with an × inside
+ * and turned to mud at 18px — the identical failure `SettingsIcon` above
+ * documents, where a 3.9px annulus held 1.1px teeth.
+ *
+ * What survives is inverting figure and ground: fill the shape and knock the ×
+ * out as negative space. Nothing thin is left to collapse — the smallest
+ * feature becomes a ~2.4px GAP, and a gap holds at sizes where a hairline does
+ * not. Rendered beside the arrow keys it also reads as a different KIND of
+ * key, which is correct: backspace is not a movement.
+ *
+ * `stroke="none"` is load-bearing. The `Svg` wrapper sets
+ * `stroke="currentColor"`, so a filled path that does not opt out is drawn
+ * twice — filled AND outlined — which at this size is a smudge.
+ */
+export function BackspaceIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path
+        fill="currentColor"
+        stroke="none"
+        fillRule="evenodd"
+        d="M8.6 3.5h11.6c1.2 0 2.3 1 2.3 2.3v12.4c0 1.3-1 2.3-2.3 2.3H8.6c-.7 0-1.4-.3-1.8-.9L1.3 13c-.5-.6-.5-1.4 0-2l5.5-6.6c.4-.6 1.1-.9 1.8-.9zm8.6 5.1c-.5-.5-1.2-.5-1.7 0l-1.7 1.7-1.7-1.7c-.5-.5-1.2-.5-1.7 0s-.5 1.2 0 1.7l1.7 1.7-1.7 1.7c-.5.5-.5 1.2 0 1.7s1.2.5 1.7 0l1.7-1.7 1.7 1.7c.5.5 1.2.5 1.7 0s.5-1.2 0-1.7L15.2 12l1.7-1.7c.5-.5.5-1.2 0-1.7z"
+      />
     </Svg>
   );
 }

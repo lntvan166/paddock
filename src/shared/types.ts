@@ -229,51 +229,75 @@ export interface ActionResult {
  */
 export const NAV_KEYS = [
   "up", "down", "left", "right", "enter", "esc", "tab", "space", "backspace",
-  // Control keys. These do NOT travel as `send_keys` — see `CTRL_CHAR` below.
-  "ctrl-c", "ctrl-d", "ctrl-z", "ctrl-l",
-  "ctrl-a", "ctrl-e", "ctrl-u", "ctrl-w",
 ] as const;
 
-export type NavKey = (typeof NAV_KEYS)[number];
+/**
+ * Every letter a Ctrl combination can carry.
+ *
+ * A tuple rather than a string split, so the TYPE below is the closed set and
+ * not merely `string` — a route that validates against `isNavKey` has to be
+ * able to refuse `ctrl-☃`.
+ */
+export const CTRL_LETTERS = [
+  "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+  "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+] as const;
+
+/** `ctrl-a` … `ctrl-z`. */
+export type CtrlKey = `ctrl-${(typeof CTRL_LETTERS)[number]}`;
 
 /**
- * The control keys, and the byte each one actually sends.
+ * Everything the terminal view may send, as a CLOSED set.
  *
- * MEASURED, after shipping four of these broken. herdr's `pane.send_keys`
- * advertises an unconstrained `string[]` in its schema and then enforces a
- * hard allowlist underneath: `up down left right enter esc escape tab space
- * backspace C-c f1 f2`, and nothing else. `C-c` is accepted; `C-d`, `C-z` and
- * `C-l` are refused with `invalid_key`. Verifying ONE key and generalising to
- * four is how three of them shipped doing nothing.
- *
- * `pane.send_text` has no such allowlist — it forwards bytes. So a control key
- * travels as its CONTROL CHARACTER through the text path, which is both how
- * these four came to work and why four more could be added beside them: the
- * vocabulary is no longer herdr's allowlist, it is ASCII.
- *
- * Kept as explicit codepoints rather than computed from the letter, because
- * `charCodeAt(0) - 96` is a rule a reader has to decode and this is a table
- * they can check against `ascii(7)`. `tests/control-keys.test.ts` asserts the
- * two agree, so the table cannot drift from the rule.
+ * Two halves that travel by different roads, which is the whole reason this
+ * type is a union rather than one list. The nav names go through
+ * `pane.send_keys`, whose allowlist herdr enforces. The `ctrl-*` half goes
+ * through `pane.send_text` as a control character, because `send_keys` refuses
+ * every control key except `C-c` — measured, after three of them shipped doing
+ * nothing.
  */
-export const CTRL_CHAR: Partial<Record<NavKey, string>> = {
-  "ctrl-a": "\u0001", // line start
-  "ctrl-c": "\u0003", // interrupt
-  "ctrl-d": "\u0004", // end of input
-  "ctrl-e": "\u0005", // line end
-  "ctrl-l": "\u000c", // clear screen
-  "ctrl-u": "\u0015", // clear line
-  "ctrl-w": "\u0017", // delete word
-  "ctrl-z": "\u001a", // suspend
-};
+export type NavKey = (typeof NAV_KEYS)[number] | CtrlKey;
 
-/** Whether this key travels as text rather than through `send_keys`. */
-export function isCtrlKey(key: NavKey): boolean {
-  return key in CTRL_CHAR;
+/**
+ * Whether this key travels as a control character rather than a key name.
+ *
+ * A regex, not a lookup, and that is a REVERSAL of the note this file carried
+ * when there were eight of these: an explicit table was worth reading while it
+ * was eight lines and checkable against `ascii(7)`, and is noise at
+ * twenty-six. The rule replaces the table, and `tests/control-keys.test.ts`
+ * asserts the rule against a hand-written table of the common ones so the
+ * computation still has something independent to be wrong against.
+ */
+export function isCtrlKey(key: string): key is CtrlKey {
+  return /^ctrl-[a-z]$/.test(key);
 }
 
+/**
+ * The byte a control key sends.
+ *
+ * `^A` is 0x01 and each letter counts up from there, so the letter's position
+ * in the alphabet IS the codepoint. `charCodeAt(5)` reads past `ctrl-`.
+ *
+ * Verified against live herdr 0.8.2 on a throwaway pane: `^U` and `^W` were
+ * sent as bytes and visibly edited a typed line, and `ESC`-prefixed forms
+ * (Alt) were accepted with no effect — which is why there is no `altChar`
+ * beside this.
+ */
+export function ctrlChar(key: CtrlKey): string {
+  return String.fromCharCode(key.charCodeAt(5) - 96);
+}
+
+/**
+ * The route's gate. Both halves of the union, and nothing else.
+ *
+ * A closed set is the property `routes.ts` depends on: a client cannot smuggle
+ * an arbitrary escape sequence past this and have it forwarded verbatim. The
+ * `ctrl-*` half is closed by the regex — one lowercase letter, no more — so
+ * `ctrl-` and `ctrl-ab` are both refused.
+ */
 export function isNavKey(value: unknown): value is NavKey {
-  return typeof value === "string" && (NAV_KEYS as readonly string[]).includes(value);
+  if (typeof value !== "string") return false;
+  return (NAV_KEYS as readonly string[]).includes(value) || isCtrlKey(value);
 }
 
 /**

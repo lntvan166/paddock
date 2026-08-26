@@ -12,6 +12,7 @@ import { RATE_MS, readPrefs, type KeypadPref, type RatePref } from "@web/prefs";
 import { RequestFailed } from "@web/api";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
+import { CtrlCompose } from "@web/components/ui/CtrlCompose";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import { LaunchNotice } from "@web/components/LaunchNotice";
 
@@ -402,6 +403,10 @@ export function PaneTerminal({
    */
   const [shellFeedback, setShellFeedback] = useState<{ detail: string } | null>(null);
   const [shellKeypad, setShellKeypad] = useState<KeypadPref>(() => readPrefs().keypad);
+  // Not persisted, deliberately: an armed modifier is a state you are IN for
+  // the next keystroke, not a preference. Coming back to a pane with Ctrl
+  // still held from yesterday would be a trap.
+  const [ctrlArmed, setCtrlArmed] = useState(false);
 
   // Mirrors `paused` (and, for a shell, its own send) for the polling
   // interval, which must read the CURRENT value without being torn down and
@@ -973,7 +978,22 @@ export function PaneTerminal({
           )}
 
           {onSendKey && (
-            <Keypad pad={shellKeypad} busy={shellBusy} onPress={(k) => void pressShellKey(k)} context="shell" />
+            <>
+              {ctrlArmed && shellKeypad === "full" && (
+                <CtrlCompose
+                  busy={shellBusy}
+                  onSend={(k) => void pressShellKey(k)}
+                  onDismiss={() => setCtrlArmed(false)}
+                />
+              )}
+              <Keypad
+                pad={shellKeypad} busy={shellBusy}
+                onPress={(k) => void pressShellKey(k)}
+                context="shell"
+                ctrlArmed={ctrlArmed}
+                onCtrlArm={setCtrlArmed}
+              />
+            </>
           )}
 
           <form

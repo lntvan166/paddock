@@ -2,7 +2,7 @@ import { request } from "@server/herdr/socket";
 import type {
   HerdrAgentManifests, HerdrPaneRead, HerdrTabCreated, HerdrWorkspaceCreated,
 } from "@shared/herdr-api";
-import { CTRL_CHAR, type AgentState, type NavKey } from "@shared/types";
+import { ctrlChar, isCtrlKey, type AgentState, type NavKey } from "@shared/types";
 
 /**
  * Whether this key has to travel as text, and the byte it becomes.
@@ -17,8 +17,8 @@ import { CTRL_CHAR, type AgentState, type NavKey } from "@shared/types";
  * rest, so a single mechanism serves the whole row and there is no key whose
  * behaviour depends on which path it happened to take.
  */
-function ctrlChar(key: NavKey): string | undefined {
-  return CTRL_CHAR[key];
+function controlByte(key: NavKey): string | undefined {
+  return isCtrlKey(key) ? ctrlChar(key) : undefined;
 }
 
 
@@ -522,7 +522,7 @@ export function createActions(socketPath: string): HerdrActions {
         await request(socketPath, "agent.send_keys", { target, keys: ["C-c"] });
         return;
       }
-      if (CTRL_CHAR[key] !== undefined) {
+      if (isCtrlKey(key)) {
         throw new Error(`${key} is not available on an agent pane; only ctrl-c is`);
       }
       await request(socketPath, "agent.send_keys", { target, keys: [key] });
@@ -542,7 +542,7 @@ export function createActions(socketPath: string): HerdrActions {
     async sendPaneKey(paneId, key) {
       // A control key is a BYTE on the text path; everything else is a named
       // key on the key path. See `ctrlChar` for why the vocabulary splits.
-      const ch = ctrlChar(key);
+      const ch = controlByte(key);
       if (ch !== undefined) {
         await request(socketPath, "pane.send_text", { pane_id: paneId, text: ch });
         return;

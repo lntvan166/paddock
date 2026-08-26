@@ -289,7 +289,10 @@ test("the secondary key row collapses, and the committing keys never do", async 
   const host = await render(<AgentTerminal agent={agent({ state: "working" })} onBack={() => {}} />);
   await settle();
 
-  expect(host.querySelectorAll(".term-keys-secondary").length).toBe(0);
+  // `data-keypad`, not a layout class: nothing renders `.term-keys-secondary`
+  // any more, so asserting its absence would have passed no matter what the
+  // pad did — a guard that cannot fail is worth less than none.
+  expect(host.querySelector('.term-keys[data-keypad="full"]')).toBeNull();
   // The row that commits an answer is still there.
   expect(textsOf(host, ".term-keys-primary .term-key")).toEqual(["↑", "↓", "⏎ Enter"]);
 });
@@ -306,7 +309,11 @@ test("a blocked agent opens a collapsed pad, and cannot close an open one", asyn
   const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
   await settle();
 
-  expect(host.querySelectorAll(".term-keys-secondary").length).toBe(1);
+  // Asserted on `data-keypad`, not on a layout class. This read
+  // `.term-keys-secondary`, which was the class the `full` pad's second row
+  // happened to carry — so a relayout broke a test about STATE. The attribute
+  // is the fact; the classes are how it is drawn.
+  expect(host.querySelector('.term-keys[data-keypad="full"]')).not.toBeNull();
   // And the operator's stored choice is untouched — the agent opened it, which
   // is not the same as the operator choosing to.
   expect(localStorage.getItem("paddock.term.keypad")).toBe("compact");
@@ -323,7 +330,10 @@ test("auto-expand can be declined, and then a blocked agent leaves the pad alone
   const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
   await settle();
 
-  expect(host.querySelectorAll(".term-keys-secondary").length).toBe(0);
+  // `data-keypad`, not a layout class: nothing renders `.term-keys-secondary`
+  // any more, so asserting its absence would have passed no matter what the
+  // pad did — a guard that cannot fail is worth less than none.
+  expect(host.querySelector('.term-keys[data-keypad="full"]')).toBeNull();
 });
 
 test("the header spends its width on the agent's name, not on labels", async () => {

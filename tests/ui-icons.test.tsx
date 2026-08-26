@@ -14,7 +14,7 @@ afterEach(async () => { await unmount(); });
 const NAMES = [
   "MonitorIcon", "ActivityIcon", "TerminalIcon", "BellIcon",
   "SendIcon", "LinkIcon", "RefreshIcon", "PlugIcon",
-  "SpacesIcon", "SettingsIcon",
+  "SpacesIcon", "SettingsIcon", "KeyboardIcon", "BackspaceIcon",
 ] as const;
 
 test("every icon the module exports is in the list the tests below walk", async () => {
