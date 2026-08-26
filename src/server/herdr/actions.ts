@@ -2,7 +2,21 @@ import { request } from "@server/herdr/socket";
 import type {
   HerdrAgentManifests, HerdrPaneRead, HerdrTabCreated, HerdrWorkspaceCreated,
 } from "@shared/herdr-api";
-import type { AgentState, NavKey } from "@shared/types";
+import { HERDR_KEY, type AgentState, type NavKey } from "@shared/types";
+
+/**
+ * A `NavKey` in the spelling herdr forwards to tmux.
+ *
+ * The nav keys pass through unchanged — herdr has accepted those names since
+ * 0.8.0. The control keys are translated, because tmux spells them `C-c` and
+ * a button labelled `C-c` on a phone reads as noise. One map, at this
+ * boundary, is the whole reason `HERDR_KEY` lives in shared types rather than
+ * being spelled twice.
+ */
+function wireKey(key: NavKey): string {
+  return HERDR_KEY[key] ?? key;
+}
+
 
 /**
  * A path herdr can actually chdir into: absolute, and with paddock's own
@@ -483,11 +497,14 @@ export function createActions(socketPath: string): HerdrActions {
     },
 
     async sendOptionKey(target, key) {
+      // NOT `wireKey`: an option key is the prompt's own DIGIT ("1".."N"),
+      // validated by `OPTION_KEY_RE` at the route. It is not a `NavKey` and has
+      // no control-key spelling to translate.
       await request(socketPath, "agent.send_keys", { target, keys: [key] });
     },
 
     async sendNavKey(target, key) {
-      await request(socketPath, "agent.send_keys", { target, keys: [key] });
+      await request(socketPath, "agent.send_keys", { target, keys: [wireKey(key)] });
     },
 
     async sendReply(target, text) {
@@ -502,7 +519,7 @@ export function createActions(socketPath: string): HerdrActions {
     },
 
     async sendPaneKey(paneId, key) {
-      await request(socketPath, "pane.send_keys", { pane_id: paneId, keys: [key] });
+      await request(socketPath, "pane.send_keys", { pane_id: paneId, keys: [wireKey(key)] });
     },
 
     async waitUntilUnblocked(target, timeoutMs) {

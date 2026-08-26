@@ -1,6 +1,6 @@
 import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
-import { render, settle, textsOf, unmount } from "./support/render";
+import { click, render, settle, textsOf, unmount } from "./support/render";
 import { Spaces } from "@web/components/Spaces";
 import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
@@ -31,23 +31,57 @@ test("a failed read is surfaced, never rendered as an empty session", async () =
   await unmount();
 });
 
-test("no row carries a management control — the whole point of the second level", async () => {
-  // The regression guard for the measurement this redesign is built on: eleven
-  // spaces each carrying a link, a ⋯ and a + put 33 tap targets on one 390px
-  // viewport while fitting every row without a scroll. If a control comes back
-  // onto a row, this fails.
-  // The capability is set deliberately, and this is the whole point of the
-  // test. `spacesAvailable` defaults to FALSE, and the create control is gated
-  // on it — so with the default this assertion would pass even if every row
-  // still rendered a `+`, because nothing would render one either way. Setting
-  // it true is what makes this a guard: the rows carry no create control EVEN
-  // WHEN creating is available.
+test("a row carries its space's ⋯ and NOTHING else — one control, not three", async () => {
+  // The regression guard for the measurement this redesign is built on, in its
+  // amended form. Eleven spaces each carrying a link, a ⋯ and a + put 33 tap
+  // targets on one 390px viewport while fitting every row without a scroll.
+  //
+  // The ⋯ came back deliberately, on the operator's own report after using the
+  // screen: reaching a rename through a drill-down taxed the common case. The
+  // `+` did not, and that is the half this test now exists to hold — an
+  // eleven-times-repeated control for something done rarely is what turned a
+  // list into a control panel.
+  //
+  // The capability is set deliberately, and it is what makes this a guard.
+  // `spacesAvailable` defaults to FALSE and the create control is gated on it,
+  // so with the default the `+` assertion would pass even if every row rendered
+  // one, because nothing would render one either way.
   useStore.setState({ spacesAvailable: true });
   const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
   const list = host.querySelector(".spaces")!;
+
+  // The half that must stay gone: no create control on any row, even though
+  // creating is available.
   expect(list.querySelectorAll("[data-create]").length).toBe(0);
-  expect(list.querySelectorAll("[aria-label^='Actions']").length).toBe(0);
-  expect(list.querySelectorAll("button").length).toBe(0);
+
+  // The half that came back: exactly one ⋯ per row, and no other button.
+  const rows = list.querySelectorAll("[data-space-row]");
+  expect(rows.length).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row.querySelectorAll("[data-row-actions]").length).toBe(1);
+    expect(row.querySelectorAll("button").length).toBe(1);
+  }
+});
+
+test("the row's ⋯ is scoped to the SPACE, not to a tab or an agent", async () => {
+  // A control on the list whose target the list does not show is how this
+  // screen became a control panel the first time. The row shows a space, so
+  // the sheet offers a space — renaming a tab belongs to #/space/<id>, where
+  // the row you tap is the tab you mean.
+  useStore.setState({ spacesAvailable: true });
+  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const trigger = host.querySelector("[data-space-row] [data-row-actions]") as HTMLElement;
+  expect(trigger.getAttribute("aria-label")).toContain("schema migration");
+  await click(trigger);
+  const sheet = document.querySelector('[data-slot="sheet-content"]')!;
+  // On the CONTROLS, not on the prose. The close consequence line legitimately
+  // reads "This space, and every tab, pane and agent in it" — closing a space
+  // does take its tabs, and saying so is the point of that line. What must not
+  // appear is a control that ACTS on a tab.
+  const controls = [...sheet.querySelectorAll("button")].map((b) => b.textContent ?? "");
+  expect(controls.some((t) => t.includes("Rename space"))).toBe(true);
+  expect(controls.some((t) => t.includes("Close space"))).toBe(true);
+  expect(controls.some((t) => t.includes("Rename tab") || t.includes("Close tab"))).toBe(false);
 });
 
 test("a row opens its space, not a pane", async () => {
@@ -79,7 +113,14 @@ test("nothing collapses, so nothing offers to", async () => {
   // sheet trigger) does not render. Scoping makes this assert what its name
   // says — that the LIST offers no expand/collapse — rather than riding on an
   // unrelated control being absent.
-  expect(host.querySelector(".spaces [aria-expanded]")).toBeNull();
+  // `:not([data-row-actions])` because the row's ⋯ is a Radix sheet trigger and
+  // sets `aria-expanded` on itself. That is a SHEET opening, not a row
+  // expanding — the collapse this test guards against was a chevron that
+  // revealed sub-rows in place, and nothing on this screen does that any more.
+  // Excluding it by its own attribute keeps the query strong; widening it back
+  // to "no aria-expanded anywhere" would have made the test unfalsifiable the
+  // moment any Radix control landed in the list.
+  expect(host.querySelector(".spaces [aria-expanded]:not([data-row-actions])")).toBeNull();
 });
 
 test("the collapsed-state key is not written any more", async () => {

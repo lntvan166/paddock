@@ -127,8 +127,25 @@ route into it.
 
 ### 5.1 The list — `#/spaces`
 
-One row per space. No `⋯`, no `+` on any row. The header carries a single `+`
-(create a space) beside the back control.
+One row per space, carrying a space-scoped `⋯` and nothing else. The header
+carries a single `+` (create a space) beside the back control.
+
+> **AMENDED 2026-08-26, after the operator used the shipped screen.** This
+> section originally read "No `⋯`, no `+` on any row." The `+` stays gone; the
+> `⋯` is back.
+>
+> The 33-target measurement holds and is not in dispute — but it could not see
+> how often a space gets renamed or closed, and a drill-down to reach that is a
+> tax on the common case. The two halves are not equivalent: a `+` repeated
+> eleven times serves an action taken rarely, while a `⋯` repeated eleven times
+> serves one taken often. Removing both was right at the time and half-wrong in
+> use.
+>
+> The row is two tap targets, not one and not three. The sheet is space-scoped
+> only — renaming a tab or an agent still belongs to `#/space/<id>`, where the
+> row you tap is the thing you mean. `tests/spaces-screen.test.tsx`'s guard was
+> amended in the same change and still fails if a create control returns to a
+> row.
 
 A row shows three things and nothing else: the space's label, its rollup
 state, and its pane count. The count is the honest cheap answer to "is there

@@ -42,6 +42,25 @@ const SECONDARY_KEYS: ReadonlyArray<{ key: NavKey; label: string }> = [
   { key: "space", label: "Space" },
 ];
 
+/**
+ * The control keys, on their own row.
+ *
+ * Separate from `SECONDARY_KEYS` because they are a different KIND of act: the
+ * nav keys move a cursor, these interrupt or end what is running. Grouping them
+ * with Tab and Space would put "stop this process" one thumb-width from
+ * "insert a space", on a phone, with no visual break between them.
+ *
+ * Labelled `^C` rather than `Ctrl+C`: it is the notation a terminal itself
+ * echoes, it fits the key cap at a readable size, and every one of these four
+ * is a caret plus one letter, so the row reads as a set.
+ */
+const CONTROL_KEYS: ReadonlyArray<{ key: NavKey; label: string; hint: string }> = [
+  { key: "ctrl-c", label: "^C", hint: "Interrupt" },
+  { key: "ctrl-d", label: "^D", hint: "End of input" },
+  { key: "ctrl-z", label: "^Z", hint: "Suspend" },
+  { key: "ctrl-l", label: "^L", hint: "Clear screen" },
+];
+
 export interface KeypadProps {
   pad: KeypadPref;
   busy: boolean;
@@ -81,6 +100,24 @@ export function Keypad({ pad, busy, onPress }: KeypadProps) {
               data-key={k.key}
               disabled={busy} onClick={() => onPress(k.key)}
               aria-label={k.key}
+            >
+              {k.label}
+            </Button>
+          ))}
+        </div>
+      )}
+      {pad === "full" && (
+        <div className="term-keys-control">
+          {CONTROL_KEYS.map((k) => (
+            <Button
+              key={k.key} type="button" variant="outline" className="term-key term-key-sm term-key-ctrl"
+              data-key={k.key}
+              disabled={busy} onClick={() => onPress(k.key)}
+              /* The caret notation is what a terminal echoes, but it is not
+                 what a screen reader should read out — so the accessible name
+                 says what the key DOES, which is the only thing an operator
+                 reaching for it wants to know. */
+              aria-label={k.hint}
             >
               {k.label}
             </Button>
