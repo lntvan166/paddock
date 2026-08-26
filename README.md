@@ -142,6 +142,22 @@ to the paddock already listening, so there is no second herdr connection and no
 second notifier — the reason the plain form refuses. It exits if nothing is
 listening rather than publishing a URL that answers 502.
 
+Either form takes `--detach`, which publishes in the background and gives the
+terminal back:
+
+```bash
+paddock tunnel --detach                     # serve and publish, detached
+paddock tunnel --publish-running --detach   # publish the one already up
+paddock pair                                # its URL, code and QR, any time
+paddock stop                                # closes the tunnel too
+```
+
+`paddock pair` is what makes a backgrounded tunnel usable. The pairing code
+rotates, and it is minted on demand rather than stored — so `pair` asks the
+running tunnel over a local socket and the code it prints always has its full
+life ahead of it. It works against a foreground tunnel too, for when the
+terminal has scrolled past the QR.
+
 `paddock update` upgrades it; paddock never updates itself unasked. `paddock
 --demo` runs it with synthetic agents and no herdr.
 

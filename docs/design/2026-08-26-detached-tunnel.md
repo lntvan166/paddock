@@ -198,3 +198,43 @@ that is up but not answering — and never silently as "no tunnel running".
 | `paddock pair`, state file live, socket refuses | Say exactly that; do not report "no tunnel" |
 | `paddock pair`, pid gone | Report stale, clear the file, exit non-zero |
 | `paddock stop` with a tunnel but no dashboard | Stops the tunnel, says so |
+
+---
+
+## 10. As built (2026-08-26)
+
+Implemented as specified. Four things the build taught that the design did not
+know, recorded here because each was found by running the thing rather than by
+reading it:
+
+1. **`--publish-running` was broken on main before any of this.** Its block sits
+   at the top of `index.ts` and assigned a `let onShutdown` declared several
+   hundred lines below — a temporal dead zone read, so every run died with
+   `ReferenceError` before publishing. `tsc` does not flag a TDZ read and no
+   test executed `index.ts`'s top level, which is why an earlier claim that the
+   feature was verified was wrong.
+
+2. **Behind that crash, it had no signal handler at all.** The shared one is
+   registered far below and disposes a notifier and a `stateDir` that process
+   never builds. A `^C` would have left cloudflared running. It has its own now.
+
+3. **`process.exit(code)` after `runTunnel` races the handler.** `runTunnel`
+   returns as soon as the child is dead — the first thing its teardown does — so
+   the process exited while the handler was still closing the listener and
+   removing the record. On a signal, the handler owns the exit.
+
+4. **`Bun.serve({unix})` does not create its parent directory.** On a first run
+   the control socket failed to bind, and the tunnel published while being
+   unfindable by `pair`. The record directory is created before the bind.
+
+One deliberate divergence from §5: **`paddock stop` does not share `runStop`'s
+kill logic.** `stopTunnel` sends SIGTERM and never escalates, because SIGKILL
+cannot be handled and would skip the teardown that reaps cloudflared — turning
+a stop into the orphan it exists to prevent. A tunnel that will not exit is
+reported with its pid instead.
+
+`tests/publish-running-process.test.ts` starts the command as a process, since
+that is the only way 1–3 were visible at all. Its load-bearing assertion is that
+cloudflared is dead afterwards, checked separately from the record's removal:
+the handler removes the record itself as a backstop, so a tidy config dir is not
+evidence the child was reaped.

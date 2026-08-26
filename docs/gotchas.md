@@ -380,3 +380,24 @@ one, recorded here so they are not reintroduced.
   `paddock tunnel` refuses to start while another paddock is already running
   for this reason, not because of the port — the port conflict, if there is
   one, is a separate and later failure.
+
+## A top-level script's wiring is only testable by running it
+
+`paddock tunnel --publish-running` crashed on every invocation with
+`ReferenceError: Cannot access 'onShutdown' before initialization`: its block
+sits at the top of `index.ts` and assigned a `let` declared several hundred
+lines below it. Nothing caught it — `tsc` does not flag a temporal dead zone
+read, and every test called `runTunnel` directly rather than executing
+`index.ts`. It was claimed verified on the strength of a manual run that must
+have used a binary built before the block moved.
+
+Behind it sat a second defect the crash had been hiding: that path had no signal
+handler, so a `^C` would have left `cloudflared` running with a public URL and
+nothing behind it.
+
+**A command whose wiring lives at a module's top level needs at least one test
+that spawns it as a process.** `tests/publish-running-process.test.ts` is that
+test. Its load-bearing assertion is that the cloudflared child is dead after the
+parent is signalled — asserted separately from the state file's removal, because
+the shutdown handler removes that itself, so a tidy config dir is not evidence
+the child was reaped.
