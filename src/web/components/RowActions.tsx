@@ -1,5 +1,6 @@
 import { plural } from "@web/format";
 import { useId, useState } from "react";
+import { useKeyboardInset } from "@web/keyboard-inset";
 import type { TreePane } from "@shared/types";
 import { closeSpace, closeTab, renameAgent, renameSpace, renameTab } from "@web/api";
 import {
@@ -143,6 +144,10 @@ export function RowActions({ label, renames, close, onChanged, senders = LIVE_SE
   senders?: RowSenders;
 }) {
   const [open, setOpen] = useState(false);
+  // Hold the sheet above the on-screen keyboard while it is open. Tracked only
+  // while open — see the hook's note on why a page-lifetime listener would be
+  // wrong. Absent `visualViewport`, this does nothing at all.
+  useKeyboardInset(open);
   const [mode, setMode] = useState<Mode>({ view: "menu" });
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);

@@ -2899,7 +2899,19 @@ body {
    sheet's own breathing room. */
 .row-actions-sheet {
   gap: 0;
-  max-height: 85dvh;
+  /* Held above the keyboard. `--kb-inset` is published by `useKeyboardInset`
+     while a sheet is open and is 0 (absent) otherwise, so this is a no-op on a
+     desktop and on any browser without `visualViewport`.
+
+     BOTH lines are needed and they do different jobs. `bottom` lifts the sheet
+     off the keyboard; `max-height` stops it growing taller than the space that
+     is left, which without it would put the sheet's top off the screen instead
+     — trading a hidden field for a hidden heading.
+
+     Reported from a phone: creating a space or a tab put the name field under
+     the keyboard, "so I only blind type". */
+  bottom: var(--kb-inset, 0px);
+  max-height: calc(85dvh - var(--kb-inset, 0px));
   overflow-y: auto;
   background: var(--bg);
   border-top: 1px solid var(--border);
