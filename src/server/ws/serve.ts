@@ -110,6 +110,25 @@ export function tryUpgradeWs(
  */
 export function hubWebSocket(deps: HubSocketDeps): WebSocketHandler<WsData> {
   return {
+    /**
+     * Bun's own cap, not just the `message()` guard's.
+     *
+     * Without this Bun buffers up to its 16 MB default BEFORE `message()` ever
+     * runs — 16000x `MAX_CLIENT_FRAME` — so the size check in `message()` would
+     * refuse an oversized frame only after it was fully received and
+     * materialised. Set HERE, on the object both listeners' `Bun.serve` calls
+     * use for their `websocket` option, rather than on either `Bun.serve` call
+     * site directly: this file's opening comment is the reason — a socket
+     * behaviour that can land on one listener and not the other is exactly
+     * what living in one definition is meant to prevent.
+     *
+     * The check inside `message()` stays. It is not redundant: Bun refusing the
+     * frame (a hard socket-level cutoff) and paddock refusing it (a typed
+     * `null` a caller can react to) are two different layers, and the inner one
+     * is what `parseClientMessage`'s own tests exercise directly, with no
+     * socket involved at all.
+     */
+    maxPayloadLength: MAX_CLIENT_FRAME,
     open(ws) {
       const client: HubClient = { send: (d) => ws.send(d) };
       ws.data.client = client;

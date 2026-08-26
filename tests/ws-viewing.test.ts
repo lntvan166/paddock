@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { MAX_CLIENT_FRAME, parseClientMessage } from "@server/ws/serve";
+import { hubWebSocket, MAX_CLIENT_FRAME, parseClientMessage } from "@server/ws/serve";
+import type { Hub } from "@server/ws/hub";
+import type { AgentStore } from "@server/state/store";
+import type { PresenceStore } from "@server/state/presence";
 
 test("a valid frame parses", () => {
   expect(parseClientMessage(JSON.stringify({ type: "viewing", deviceKey: "dk", agentId: "w1:p1" })))
@@ -49,4 +52,20 @@ test("a plausible frame with an implausibly long id is refused", () => {
 test("a non-string input is refused", () => {
   expect(parseClientMessage(undefined)).toBeNull();
   expect(parseClientMessage({ type: "viewing" })).toBeNull();
+});
+
+test("the handler carries Bun's own payload cap, not just message()'s guard", () => {
+  // Without this, Bun buffers up to its 16 MB default before message() ever
+  // runs to check MAX_CLIENT_FRAME — a huge frame would be fully received
+  // before paddock got a chance to refuse it. Asserted on the returned
+  // handler, which is what BOTH listeners' `Bun.serve` calls build their
+  // `websocket` option from, so a future edit cannot drop the cap on one
+  // listener and keep it on the other.
+  const handler = hubWebSocket({
+    hub: {} as Hub,
+    hostId: "dev-box",
+    store: {} as AgentStore,
+    presence: {} as PresenceStore,
+  });
+  expect(handler.maxPayloadLength).toBe(MAX_CLIENT_FRAME);
 });
