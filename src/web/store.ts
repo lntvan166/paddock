@@ -229,7 +229,13 @@ export const useStore = create<Store>((set, get) => {
   let attempt = 0;
   let retry: ReturnType<typeof setTimeout> | null = null;
   let visibilityListenerAttached = false;
-  /** Resolved once, then reused: see `@web/device-key`. */
+  /**
+   * Refreshed on every heartbeat reply (see `ws.onmessage` below), not just
+   * resolved once at `ws.onopen`: a subscription created after the socket
+   * opened — enabling push from Settings mid-session — must be reflected
+   * within one heartbeat, not only on the next page load. `sendViewing`
+   * itself stays synchronous and just reads whatever this currently holds.
+   */
   let key: string | null = null;
 
   const sendViewing = () => {
@@ -265,7 +271,21 @@ export const useStore = create<Store>((set, get) => {
       set(applyMessage(get(), msg));
       // The reply to the hub's own 20s heartbeat IS presence's keep-alive, so
       // no timer of its own is needed on either side.
-      if (msg.type === "heartbeat") sendViewing();
+      if (msg.type === "heartbeat") {
+        sendViewing();
+        // Refresh the cached key for the NEXT heartbeat rather than awaiting
+        // it for this one: `onmessage` stays synchronous, so frames cannot be
+        // reordered by a `deviceKey()` that resolves late, and a throw here
+        // cannot break message handling. `deviceKey()` already caches only a
+        // non-null result (see `@web/device-key`) and never rejects — the one
+        // path that could is `.catch`-guarded, matching the "must not throw
+        // inside onmessage" rule everywhere else in this handler. This is how
+        // a push subscription created mid-session (Settings, after the tab
+        // already opened) is picked up within one heartbeat: `key` was `null`
+        // at `ws.onopen`, so without this it would stay `null` for the life
+        // of the tab.
+        void deviceKey().then((k) => { key = k; }).catch(() => {});
+      }
     };
     ws.onclose = () => {
       set({ connected: false });

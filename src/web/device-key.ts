@@ -1,20 +1,29 @@
 import { hashEndpoint } from "@shared/device-key";
 
 /**
- * This browser's device key, or null when it has no push subscription.
+ * This browser's device key, or null when it has no push subscription YET.
  *
- * Cached for the life of the page: a subscription's endpoint does not change
- * while the tab is open, and this is read on every heartbeat.
+ * Only a non-null result is cached. A subscription's endpoint is stable for
+ * the life of the subscription, so once known it never needs recomputing —
+ * but `null` is a statement about THIS MOMENT ("no subscription right now"),
+ * not a fact about the browser. Latching it would mean: open paddock before
+ * enabling push, and the very first `deviceKey()` call caches `null` forever,
+ * so `sendViewing` keeps sending `deviceKey: null` on every heartbeat for the
+ * rest of the tab's life even after Settings creates a subscription — and
+ * `PresenceStore.viewers()` drops null keys, so `skip` is permanently empty,
+ * `pushWithheld` is permanently false, and the whole feature goes quiet until
+ * the page is reloaded. A phone can hold a tab open for days.
  *
  * Here rather than in `store.ts` so the store keeps knowing nothing about push
  * — it awaits an opaque string and sends it.
  */
-let cached: string | null | undefined;
+let cached: string | null = null;
 
 export async function deviceKey(): Promise<string | null> {
-  if (cached !== undefined) return cached;
-  cached = await compute();
-  return cached;
+  if (cached !== null) return cached;
+  const result = await compute();
+  if (result !== null) cached = result;
+  return result;
 }
 
 async function compute(): Promise<string | null> {
@@ -32,7 +41,10 @@ async function compute(): Promise<string | null> {
   }
 }
 
-/** Forget what was cached — the unsubscribe path, and a test seam. */
+/** Forget what was cached — the unsubscribe path, and a test seam. Also
+ *  called on a successful subscribe, even though that path only ever caches
+ *  a non-null value, so enabling push takes effect immediately rather than
+ *  waiting for whatever `deviceKey()` already returned this page load. */
 export function resetDeviceKey(): void {
-  cached = undefined;
+  cached = null;
 }
