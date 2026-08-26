@@ -39,8 +39,23 @@ test("--mono is defined once on bare :root, not per theme", async () => {
   expect([...text.matchAll(/--mono:/g)]).toHaveLength(1);
 });
 
-test("dark overrides are guarded so a manual light toggle wins", async () => {
-  expect(await css()).toContain(':root:not([data-theme="light"])');
+test("dark overrides are guarded so any pinned theme wins", async () => {
+  // The guarantee is unchanged — a theme the operator pinned beats the OS
+  // preference — but the guard states it more generally than it used to.
+  //
+  // It was `:root:not([data-theme="light"])`, which names one special case.
+  // Once named themes exist that is wrong: `dracula` is not `light`, so the
+  // guard still matched and the system-dark palette applied underneath every
+  // theme, leaving each theme block to win only by appearing later in the
+  // file. `:not([data-theme])` says the actual rule: system dark applies when
+  // nothing is pinned at all.
+  //
+  // Verified in a browser across the full matrix, because happy-dom does not
+  // evaluate prefers-color-scheme: on a dark OS, `light` gives #ffffff and a
+  // pinned theme with no block yet also gives #ffffff rather than half of the
+  // dark palette.
+  expect(await css()).toContain(":root:not([data-theme])");
+  expect(await css()).not.toContain(':root:not([data-theme="light"])');
 });
 
 test("an explicit dark toggle is honoured", async () => {

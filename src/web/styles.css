@@ -248,9 +248,16 @@
   --radius: var(--r-md);
 }
 
-/* System dark, unless the user explicitly chose light. */
+/* System dark, unless the operator pinned ANY theme.
+
+   `:not([data-theme])`, not `:not([data-theme="light"])`. The old guard named
+   one special case; this states the rule. With named themes the old form still
+   matched — `dracula` is not `light` — so these values applied underneath
+   every theme, and each theme block won only by appearing later in the file.
+   Correctness by source order survives exactly until someone reorders the
+   file. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme]) {
     --bg: #08090a;
     --surface: #12141a;
     --border: #1f2126;
