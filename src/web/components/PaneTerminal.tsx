@@ -1,3 +1,4 @@
+import { BackIcon } from "@web/components/ui/icons";
 import { plural } from "@web/format";
 import {
   Fragment, useCallback, useEffect, useImperativeHandle, useRef, useState,
@@ -835,11 +836,17 @@ export function PaneTerminal({
   return (
     <section className="term" aria-label={`${title} terminal`}>
       <header className="term-header">
-        {/* Glyph only. `aria-label` already carried the meaning for assistive
-            tech, so the word was spending ~55px of a 390px header on something
-            only sighted users read — and they read the ‹ just as well. */}
+        {/* Glyph only, and that part is unchanged: `aria-label` already carries
+            the meaning for assistive tech, so the word was spending ~55px of a
+            390px header on something only sighted users read.
+
+            A DRAWN chevron, though. This was `‹` (U+2039) — reported as thin
+            with space on its left, which is exactly what a text glyph gives
+            you: 600-weight strokes against the app's 2px paths, plus the
+            codepoint's own left side bearing that no padding rule can remove.
+            The same fix `▦` and `⚙` already got. */}
         <button type="button" className="term-back" onClick={onBack} aria-label={backLabel}>
-          ‹
+          <BackIcon className="term-back-glyph" />
         </button>
         <div className="term-title">
           <strong>{title}</strong>

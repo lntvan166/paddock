@@ -1168,7 +1168,30 @@ body {
    while everything below it started at 12px — the largest single contributor
    to the ragged left edge down this screen. The 44px target is kept by
    `min-height` plus the header's own row height, not by padding. */
-.term-back { font-weight: 600; min-height: 2.75rem; padding: 0; }
+/* A drawn chevron sits where `‹` used to. `display: flex` so the path centres
+   in the 44px target instead of sitting on a text baseline, and `margin-left`
+   pulls back the optical gap the 24px viewBox leaves around a 10px-wide
+   glyph — an SVG's box is square, so without this the arrow reads as inset
+   from the gutter the rest of the header lines up on. */
+.term-back {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 600;
+  min-height: 2.75rem;
+  padding: 0;
+  /* -0.4375rem is 7px, and 7px is MEASURED, not chosen: an SVG's box is square
+     while a chevron is not, so the painted stroke sits 7px inside a 22px box.
+     Without this the arrow's ink starts at 19px while every other line on the
+     screen starts at the 16px gutter — which is the "space on the left" this
+     replaced the `‹` codepoint to fix, and which a padding rule cannot reach
+     because the gap is inside the glyph. Re-measure if the path changes. */
+  margin-left: -0.4375rem;
+}
+
+/* 22px, matching the tab bar's glyphs — the back control is the same kind of
+   thing at the other end of the screen, and at 24px it crowded the title. */
+.term-back-glyph { width: 22px; height: 22px; }
 
 /* `center`, not `baseline`: the state is a DOT now, and an empty flex item has
    no text baseline — its bottom margin edge would be aligned to the agent

@@ -20,6 +20,7 @@ import {
   useAgentRoute, useSettingsRoute, useSpaceRoute, useSpacesRoute,
 } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
+import { BackIcon } from "@web/components/ui/icons";
 import { TabBar } from "@web/components/TabBar";
 import { UpdateBar } from "@web/components/UpdateBar";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
@@ -128,7 +129,7 @@ export function App() {
     const origin = paneId !== null && paneOriginRef.current?.paneId === paneId
       ? paneOriginRef.current.origin
       : null;
-    if (origin === null) return { hash: "", label: "‹ Agents", ariaLabel: "Back to agents" };
+    if (origin === null) return { hash: "", label: "Agents", ariaLabel: "Back to agents" };
 
     if (spaceIdFromHash(origin) !== null) {
       /*
@@ -152,13 +153,13 @@ export function App() {
       // a blank the trim here makes agree with that.
       const label = agents.find((a) => a.agentId === paneId)?.workspaceLabel?.trim() || null;
       return label !== null
-        ? { hash: origin, label: `‹ ${label}`, ariaLabel: `Back to ${label}` }
-        : { hash: origin, label: "‹ Space", ariaLabel: "Back to this space" };
+        ? { hash: origin, label: `${label}`, ariaLabel: `Back to ${label}` }
+        : { hash: origin, label: "Space", ariaLabel: "Back to this space" };
     }
     if (origin === "#/spaces") {
-      return { hash: "#/spaces", label: "‹ Spaces", ariaLabel: "Back to spaces" };
+      return { hash: "#/spaces", label: "Spaces", ariaLabel: "Back to spaces" };
     }
-    return { hash: "", label: "‹ Agents", ariaLabel: "Back to agents" };
+    return { hash: "", label: "Agents", ariaLabel: "Back to agents" };
   }
 
   /**
@@ -425,7 +426,7 @@ export function App() {
             onClick={() => { location.hash = back.hash; }}
             aria-label={back.ariaLabel}
           >
-            {back.label}
+            <BackIcon className="term-back-glyph" /> {back.label}
           </button>
           <h2>{openId}</h2>
         </header>
