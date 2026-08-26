@@ -25,7 +25,7 @@ test("the tunnel URL is used for deeplinks and never saved", async () => {
   await settings.load();
   await settings.patch({
     telegram: { token: "1:aa", chatId: "9" },
-    notify: { enabled: true, triggers: ["blocked"], settleMs: { blocked: 0, done: 0 } },
+    notify: { telegram: true, triggers: ["blocked"], settleMs: { blocked: 0, done: 0 } },
     publicUrl: SAVED,
   });
 

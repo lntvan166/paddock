@@ -33,7 +33,7 @@ function harness(o: HarnessOpts = {}) {
     current: () => ({
       telegram: { token: "1:A", chatId: "555", ...o.telegram },
       notify: {
-        enabled: true, triggers: ["blocked"],
+        telegram: true, triggers: ["blocked"],
         settleMs: { blocked: 0, done: 0 }, mutedUntil: null, cooldownMs: 60_000,
         ...o.notify,
       },
@@ -133,7 +133,7 @@ test("a trailing slash on publicUrl does not produce a double slash in the link"
     current: () => ({
       telegram: { token: "1:A", chatId: "555" },
       notify: {
-        enabled: true, triggers: ["blocked"],
+        telegram: true, triggers: ["blocked"],
         settleMs: { blocked: 0, done: 0 }, mutedUntil: null, cooldownMs: 60_000,
       },
       publicUrl: "https://paddock.example.com/",

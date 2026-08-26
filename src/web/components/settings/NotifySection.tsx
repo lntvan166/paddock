@@ -2,11 +2,17 @@ import type { NotifyTrigger } from "@shared/types";
 import { isQuickTunnelUrl } from "@shared/quick-tunnel";
 import { BellIcon } from "@web/components/ui/icons";
 import { Card } from "@web/components/ui/Card";
-import { Toggle } from "@web/components/ui/Toggle";
 import { Checkbox } from "@web/components/shadcn/checkbox";
 
 export interface NotifySectionProps {
-  notifyEnabled: boolean; setNotifyEnabled: (v: boolean) => void;
+  /** The two transports. Both off is "send nothing" — there is deliberately no
+   *  master switch above them, because a third flag would only be a way for
+   *  the three to disagree. */
+  telegramOn: boolean; setTelegramOn: (v: boolean) => void;
+  pushOn: boolean; setPushOn: (v: boolean) => void;
+  /** How many devices are registered for push. A checkbox with no device to
+   *  deliver to is worth saying out loud rather than leaving to fail quietly. */
+  pushDevices: number;
   triggers: NotifyTrigger[]; toggleTrigger: (t: NotifyTrigger) => void;
   cooldownMs: number; setCooldownMs: (v: number) => void;
   publicUrl: string; setPublicUrl: (v: string) => void;
@@ -41,7 +47,8 @@ function muteLabel(mutedUntil: number, serverNow: number): string {
 }
 
 export function NotifySection({
-  notifyEnabled, setNotifyEnabled, triggers, toggleTrigger, cooldownMs, setCooldownMs,
+  telegramOn, setTelegramOn, pushOn, setPushOn, pushDevices,
+  triggers, toggleTrigger, cooldownMs, setCooldownMs,
   publicUrl, setPublicUrl, settleMs, setSettleMs, mutedUntil, serverNow, onMute, muting,
 }: NotifySectionProps) {
   const quickTunnel = isQuickTunnelUrl(publicUrl);
@@ -49,13 +56,7 @@ export function NotifySection({
     <Card
       icon={<BellIcon />}
       title="Notifications"
-      subtitle="Telegram messages when an agent needs you or finishes."
-      control={(
-        <Toggle
-          label="Notifications" checked={notifyEnabled}
-          onChange={setNotifyEnabled}
-        />
-      )}
+      subtitle="When an agent needs you or finishes. Both transports share the rules below."
       footer={quickTunnel ? (
         <>
           That is a quick-tunnel URL, and it changes every time <code>paddock tunnel</code> runs
@@ -65,8 +66,40 @@ export function NotifySection({
         </>
       ) : undefined}
     >
+      {/* The transports, above the rules that govern BOTH of them. This card
+          used to carry one toggle called "Notifications" and a subtitle saying
+          "Telegram messages", while the mute, the triggers and the cooldown
+          underneath already applied to push as well — so the shared half was
+          described as belonging to one transport.
+
+          Two checkboxes rather than two cards: they are the same decision made
+          twice, and separating them put the rules next to one of them and not
+          the other. */}
+      <div className="notify-transports" role="group" aria-label="Where notifications go">
+        <label className="notify-transport">
+          <Checkbox checked={telegramOn} onCheckedChange={(v) => setTelegramOn(v === true)} />
+          <span>
+            Telegram
+            <small>A message to your chat. Needs the token and chat id above.</small>
+          </span>
+        </label>
+        <label className="notify-transport">
+          <Checkbox checked={pushOn} onCheckedChange={(v) => setPushOn(v === true)} />
+          <span>
+            Web push
+            {/* Said plainly, because a checked box with nowhere to deliver is
+                the failure this whole area has already produced twice. */}
+            <small>
+              {pushDevices === 0
+                ? "No device registered yet — turn it on from the device you want buzzed."
+                : `${pushDevices} device${pushDevices === 1 ? "" : "s"} registered.`}
+            </small>
+          </span>
+        </label>
+      </div>
+
       {/* Only 1h / 4h / 8h, plus Unmute while muted — deliberately no
-          "mute indefinitely" button. `notifyEnabled` above is already that
+          "mute indefinitely" button. the transport checkboxes above are already that
           control, and two controls for one state is how an operator ends up
           muted with no idea why. */}
       <div className="settings-mute">

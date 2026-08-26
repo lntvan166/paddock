@@ -11,7 +11,7 @@ const dir = async () => mkdtemp(join(tmpdir(), "paddock-settings-"));
 test("defaults when no file exists, and notifications start off", async () => {
   const s = new SettingsStore(await dir(), {});
   await s.load();
-  expect(s.current().notify.enabled).toBe(false);
+  expect(s.current().notify.telegram).toBe(false);
   expect(s.view().telegram.configured).toBe(false);
 });
 
@@ -40,7 +40,7 @@ test("a malformed file does NOT erase the token: defaults in memory, error surfa
   const s = new SettingsStore(d, {});
   await s.load();
   expect(s.error).toContain("settings.json");
-  expect(s.current().notify.enabled).toBe(false);
+  expect(s.current().notify.telegram).toBe(false);
   expect(await readFile(join(d, "settings.json"), "utf8")).toBe("{ not json");
 });
 
@@ -80,10 +80,10 @@ test("current() hands back a snapshot, so a caller cannot mutate the store throu
   const s = new SettingsStore(await dir(), {});
   await s.load();
   const snapshot = s.current();
-  snapshot.notify.enabled = true;
+  snapshot.notify.telegram = true;
   snapshot.notify.triggers.push("done");
   snapshot.telegram.token = "tampered";
-  expect(s.current().notify.enabled).toBe(false);
+  expect(s.current().notify.telegram).toBe(false);
   expect(s.current().notify.triggers).toEqual(["blocked"]);
   expect(s.current().telegram.token).toBe(null);
 });
@@ -147,7 +147,7 @@ test("a v1 file gains settleMs defaults instead of loading without them", async 
   await writeFile(join(d, "settings.json"), JSON.stringify({
     version: 1,
     telegram: { token: "1:A", chatId: "555" },
-    notify: { enabled: true, triggers: ["blocked"], quietHours: { start: "22:00", end: "08:00" }, cooldownMs: 60_000 },
+    notify: { telegram: true, triggers: ["blocked"], quietHours: { start: "22:00", end: "08:00" }, cooldownMs: 60_000 },
     publicUrl: null,
   }));
   const s = new SettingsStore(d, {});
@@ -159,7 +159,7 @@ test("a v1 file gains settleMs defaults instead of loading without them", async 
   expect("quietHours" in cur.notify).toBe(false);
   // The operator's real settings survive the migration.
   expect(cur.telegram.token).toBe("1:A");
-  expect(cur.notify.enabled).toBe(true);
+  expect(cur.notify.telegram).toBe(true);
 });
 
 test("migrating a v1 file rewrites it once, so disk matches the code that reads it", async () => {
@@ -197,7 +197,7 @@ test("a v2 file is not rewritten on load", async () => {
   const path = join(d, "settings.json");
   await writeFile(path, JSON.stringify({
     version: 2, telegram: { token: null, chatId: null },
-    notify: { enabled: false, triggers: ["blocked"], settleMs: { blocked: 5_000, done: 10_000 },
+    notify: { telegram: false, triggers: ["blocked"], settleMs: { blocked: 5_000, done: 10_000 },
               mutedUntil: null, cooldownMs: 60_000 },
     publicUrl: null,
   }));
@@ -245,4 +245,34 @@ test("an in-range settleMs and cooldownMs are left exactly alone, and nothing is
   expect(s.notify.settleMs).toEqual({ blocked: 0, done: MAX_SETTLE_MS });
   expect(s.notify.cooldownMs).toBe(MIN_COOLDOWN_MS);
   expect(logged).toEqual([]);
+});
+
+test("a file written before push carries notify.enabled over to notify.telegram", async () => {
+  // The upgrade path that matters. `notify.enabled` meant "notifications on"
+  // when Telegram was the only transport, so it IS this operator's Telegram
+  // answer — and a rename that dropped it would silently mute someone who had
+  // notifications turned on.
+  const d = await dir();
+  await writeFile(join(d, "settings.json"), JSON.stringify({
+    version: 2,
+    telegram: { token: "1:A", chatId: "555" },
+    notify: { enabled: true, triggers: ["blocked"], cooldownMs: 60_000 },
+  }));
+  const s = new SettingsStore(d, {});
+  await s.load();
+  expect(s.current().notify.telegram).toBe(true);
+});
+
+test("an explicit notify.telegram wins over a legacy notify.enabled", async () => {
+  // Once the new field is written, the old one is history rather than an
+  // override — otherwise turning Telegram OFF would be undone on every load by
+  // a stale `enabled: true` sitting beside it.
+  const d = await dir();
+  await writeFile(join(d, "settings.json"), JSON.stringify({
+    version: 2,
+    notify: { enabled: true, telegram: false, triggers: ["blocked"] },
+  }));
+  const s = new SettingsStore(d, {});
+  await s.load();
+  expect(s.current().notify.telegram).toBe(false);
 });

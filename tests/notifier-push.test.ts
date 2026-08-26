@@ -26,7 +26,7 @@ function buildNotifier(o: {
     current: () => ({
       telegram: o.telegram ?? { token: "1:A", chatId: "555" },
       notify: {
-        enabled: true, triggers: ["blocked"],
+        telegram: true, triggers: ["blocked"],
         settleMs: { blocked: 0, done: 0 }, mutedUntil: null, cooldownMs: 60_000,
       },
       push: { enabled: true },

@@ -246,7 +246,6 @@ export class Notifier {
     if (this.#lastNotified.get(a.agentId) === state) return;
 
     const s = this.o.settings.current();
-    if (!s.notify.enabled) return;
     if (!s.notify.triggers.includes(state)) return;
     // A FLAG, not an early return, and that distinction is the whole bug this
     // replaced. This guard predates push: when Telegram was the only transport,
@@ -263,7 +262,8 @@ export class Notifier {
     //
     // `isConfigured`, not `!== null`: the two differ for an empty string, and
     // an unset environment variable IS an empty string.
-    const telegramReady = isConfigured(s.telegram.token) && isConfigured(s.telegram.chatId);
+    const telegramReady = s.notify.telegram
+      && isConfigured(s.telegram.token) && isConfigured(s.telegram.chatId);
 
     const now = this.#now();
     // Dropped, never queued: a pile delivered when mute lifts describes

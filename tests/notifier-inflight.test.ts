@@ -37,7 +37,7 @@ function harness(o: { cooldownMs?: number; settleMs?: Partial<Record<NotifyTrigg
     current: () => ({
       telegram: { token: "1:A", chatId: "555" },
       notify: {
-        enabled: true,
+        telegram: true,
         triggers: ["blocked", "done"] as NotifyTrigger[],
         settleMs: { blocked: 5_000, done: 10_000, ...o.settleMs },
         mutedUntil: null,

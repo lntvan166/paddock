@@ -53,7 +53,7 @@ test("PUT accepts a patch and persists it", async () => {
   const { app, settings } = await harness();
   const res = await app.request("/api/settings", {
     method: "PUT", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ notify: { enabled: true, triggers: ["blocked", "done"] } }),
+    body: JSON.stringify({ notify: { telegram: true, triggers: ["blocked", "done"] } }),
   });
   expect(res.status).toBe(200);
   expect(settings.current().notify.triggers).toEqual(["blocked", "done"]);
@@ -400,7 +400,7 @@ test("a body sent as text/plain is refused on every settings route", async () =>
   // of three callers is the kind of gap nobody notices later.
   const { app, settings } = await harness();
   const cases = [
-    { path: "/api/settings", method: "PUT", body: JSON.stringify({ notify: { enabled: true } }) },
+    { path: "/api/settings", method: "PUT", body: JSON.stringify({ notify: { telegram: true } }) },
     { path: "/api/settings/mute", method: "POST", body: JSON.stringify({ forMs: 60_000 }) },
     { path: "/api/settings/telegram/test", method: "POST", body: JSON.stringify({ token: "1:A", chatId: "555" }) },
   ];
@@ -414,7 +414,7 @@ test("a body sent as text/plain is refused on every settings route", async () =>
     expect((await res.json()).detail).toContain("content-type");
   }
   // And nothing was applied on the way to the rejection.
-  expect(settings.current().notify.enabled).toBe(false);
+  expect(settings.current().notify.telegram).toBe(false);
   expect(settings.current().notify.mutedUntil).toBeNull();
 });
 

@@ -27,7 +27,7 @@ function harness(o: { mutedUntil?: number | null; cooldownMs?: number; failWith?
     current: () => ({
       telegram: { token: "1:A", chatId: "555" },
       notify: {
-        enabled: true, triggers: ["blocked", "done"] as NotifyTrigger[],
+        telegram: true, triggers: ["blocked", "done"] as NotifyTrigger[],
         settleMs: { blocked: 0, done: 0 }, mutedUntil: muted,
         cooldownMs: o.cooldownMs ?? 0,
       },

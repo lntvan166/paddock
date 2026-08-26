@@ -47,7 +47,12 @@ export function Settings({ onBack }: SettingsProps) {
   // and this component must not invent a way to show it either.
   const [token, setToken] = useState("");
   const [chatId, setChatId] = useState("");
-  const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const [telegramOn, setTelegramOn] = useState(false);
+  // Push's server-wide switch, edited like every other field here — held in
+  // state, compared against the baseline, written by Save. The DEVICE
+  // subscription is a different fact and stays in `PushSection`, which talks
+  // to its own routes.
+  const [pushOn, setPushOn] = useState(false);
   const [triggers, setTriggers] = useState<NotifyTrigger[]>([]);
   const [cooldownMs, setCooldownMs] = useState(60_000);
   const [publicUrl, setPublicUrl] = useState("");
@@ -81,7 +86,8 @@ export function Settings({ onBack }: SettingsProps) {
     baseline !== null && (
       token !== "" ||
       chatId !== (baseline.telegram.chatId ?? "") ||
-      notifyEnabled !== baseline.notify.enabled ||
+      telegramOn !== baseline.notify.telegram ||
+      pushOn !== (baseline.push?.enabled ?? false) ||
       triggers.join(",") !== [...baseline.notify.triggers].join(",") ||
       cooldownMs !== baseline.notify.cooldownMs ||
       // Trimmed on BOTH sides, mirroring the transformation `save()` applies to
@@ -129,7 +135,13 @@ export function Settings({ onBack }: SettingsProps) {
         setView(body);
         setBaseline(body);
         setChatId(body.telegram.chatId ?? "");
-        setNotifyEnabled(body.notify.enabled);
+        setTelegramOn(body.notify.telegram);
+        // `?.` because an OLDER server answers without a `push` field at
+        // all, and a settings page that throws on load is a worse failure than
+        // a checkbox defaulting to off. Not hypothetical: two paddock binaries
+        // share this port on the dev box, and the installed release predates
+        // push entirely.
+        setPushOn(body.push?.enabled ?? false);
         setTriggers(body.notify.triggers);
         setCooldownMs(body.notify.cooldownMs);
         setPublicUrl(body.publicUrl ?? "");
@@ -197,11 +209,12 @@ export function Settings({ onBack }: SettingsProps) {
     const patch: SettingsPatch = {
       telegram: { chatId: chatId || null, ...(token ? { token } : {}) },
       notify: {
-        enabled: notifyEnabled,
+        telegram: telegramOn,
         triggers,
         cooldownMs,
         settleMs,
       },
+      push: { enabled: pushOn },
       publicUrl: publicUrl.trim() || null,
     };
     try {
@@ -345,8 +358,11 @@ export function Settings({ onBack }: SettingsProps) {
         />
 
         <NotifySection
-          notifyEnabled={notifyEnabled}
-          setNotifyEnabled={setNotifyEnabled}
+          telegramOn={telegramOn}
+          setTelegramOn={setTelegramOn}
+          pushOn={pushOn}
+          setPushOn={setPushOn}
+          pushDevices={view?.push?.devices ?? 0}
           triggers={triggers}
           toggleTrigger={toggleTrigger}
           cooldownMs={cooldownMs}

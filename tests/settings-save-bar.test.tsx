@@ -11,7 +11,7 @@ afterEach(async () => { await unmount(); globalThis.fetch = realFetch; });
 const view = () => ({
   telegram: { configured: true, hint: "7f21", chatId: "555" },
   notify: {
-    enabled: true, triggers: ["blocked"],
+    telegram: true, triggers: ["blocked"],
     settleMs: { blocked: 5_000, done: 10_000 }, mutedUntil: null, cooldownMs: 60_000,
   },
   push: { enabled: false, devices: 0, vapidPublicKey: null, error: null },

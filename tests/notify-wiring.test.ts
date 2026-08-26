@@ -33,7 +33,7 @@ test("a delta reaches BOTH the hub and the notifier", async () => {
     settings: {
       current: () => ({
         telegram: { token: "1:A", chatId: "5" },
-        notify: { enabled: true, triggers: ["blocked"], settleMs: { blocked: 0, done: 0 },
+        notify: { telegram: true, triggers: ["blocked"], settleMs: { blocked: 0, done: 0 },
                   mutedUntil: null, cooldownMs: 0 },
         publicUrl: null,
       }),

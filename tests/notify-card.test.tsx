@@ -16,7 +16,7 @@ afterEach(async () => { await unmount(); });
  */
 function props(over: Partial<NotifySectionProps> = {}): NotifySectionProps {
   return {
-    notifyEnabled: true, setNotifyEnabled: () => {},
+    telegramOn: true, setTelegramOn: () => {}, pushOn: false, setPushOn: () => {}, pushDevices: 0,
     triggers: ["blocked"], toggleTrigger: () => {},
     cooldownMs: 60_000, setCooldownMs: () => {},
     publicUrl: "", setPublicUrl: () => {},
@@ -54,12 +54,42 @@ test("an ordinary public URL leaves the footer off entirely", async () => {
   expect(host.querySelector(".card-foot")).toBeNull();
 });
 
-test("the master switch sits in the card header, not in the body", async () => {
-  // A master switch governs the whole card, so it belongs beside the title
-  // rather than being the first of several equal rows. This is `Card`'s
-  // `control` slot and the only consumer of it.
+test("the two transports are checkboxes in the body, and there is no master switch", async () => {
+  // This asserted a master switch in the card's `control` slot. It is gone on
+  // purpose: two transport checkboxes ARE the master, because both off is
+  // already "send nothing", and a third flag above them would only be a way
+  // for the three to disagree.
+  //
+  // They sit in the BODY rather than the header because the header slot holds
+  // one control that governs the card, and these are two peers — and because
+  // the rules underneath (triggers, mute, cooldown) apply to both of them, so
+  // the checkboxes belong at the top of what they govern.
   const host = await render(<NotifySection {...props()} />);
+
   const head = host.querySelector(".card-head") as HTMLElement;
-  expect(head.querySelector("[role='switch'][aria-label='Notifications']")).not.toBeNull();
-  expect(host.querySelector(".card-body [role='switch'][aria-label='Notifications']")).toBeNull();
+  expect(head.querySelector("[role='switch']")).toBeNull();
+
+  const transports = host.querySelector(".notify-transports") as HTMLElement;
+  expect(transports).not.toBeNull();
+  expect(transports.textContent).toContain("Telegram");
+  expect(transports.textContent).toContain("Web push");
+  // Two, and exactly two — a third would mean a transport nothing delivers.
+  expect(transports.querySelectorAll("[role='checkbox'], input[type='checkbox']").length).toBe(2);
+});
+
+test("the push row says when no device is registered, rather than looking ready", async () => {
+  // A checked box with nowhere to deliver is the failure this area has already
+  // produced twice — once because a server flag was never set, once because an
+  // unconfigured Telegram returned before push was reached. Both were silent.
+  const host = await render(<NotifySection {...props()} pushOn={true} pushDevices={0} />);
+  expect(host.querySelector(".notify-transports")?.textContent)
+    .toContain("No device registered yet");
+});
+
+test("the push row counts the devices when there are some", async () => {
+  const one = await render(<NotifySection {...props()} pushOn={true} pushDevices={1} />);
+  expect(one.querySelector(".notify-transports")?.textContent).toContain("1 device registered");
+  await unmount();
+  const many = await render(<NotifySection {...props()} pushOn={true} pushDevices={3} />);
+  expect(many.querySelector(".notify-transports")?.textContent).toContain("3 devices registered");
 });
