@@ -667,25 +667,23 @@ body {
    The column is fixed: only .term-pane scrolls. The keypad and the reply box
    must stay reachable no matter how long the transcript is — they are the
    reason the screen exists. */
-.term {
-  position: fixed;
-  inset: 0;
-  /* Centred in a readable column instead of stretching to the viewport.
-     Full-width on a phone (the design target), but on a 1440px laptop an
-     unconstrained terminal put option buttons 1400px wide with their text
-     stranded at the far left, and keypad buttons the size of a hand. The list
-     already centres itself at this width; the terminal did not, so the two
-     views disagreed about how wide the app is.
+/* The terminal's shell is the SHARED one — see `.screen, .term` further down,
+   which carries the fixed positioning, the centred 42rem column and the safe
+   -area inset that used to be restated here.
 
-     `min()` rather than a media query: there is one rule here, not a mobile
-     case and a desktop case, and no device detection anywhere in this
-     project. */
-  width: min(100%, 42rem);
-  margin-inline: auto;
-  display: flex;
-  flex-direction: column;
+   Kept from the original block, because it is the reasoning for that width and
+   would otherwise be lost: the terminal used to stretch to the viewport, and
+   on a 1440px laptop that put option buttons 1400px wide with their text
+   stranded at the far left, and keypad buttons the size of a hand. The list
+   already centred itself at this width; the terminal did not, so the two views
+   disagreed about how wide the app is. `min()` rather than a media query —
+   there is one rule here, not a mobile case and a desktop case, and no device
+   detection anywhere in this project.
+
+   What remains genuinely its own is the ground: the terminal's chrome sits on
+   `--surface`, where the list screens sit on `--bg`. */
+.term {
   background: var(--surface);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Edges, so the column reads as a deliberate boundary rather than content
@@ -1359,16 +1357,23 @@ body {
    here needs its own dark-mode block. */
 /* Reserved unconditionally, so the bar appearing never covers the last field
    and nothing on the page jumps when it does.
-   `calc(... + env(...))`, not a bare 5.5rem: `<main>` already carries
-   `.safe-bottom` above, which sets `padding-bottom:
-   env(safe-area-inset-bottom)`. `.settings` is the LATER rule at equal
-   specificity, so a bare value here would win and silently drop the home-
-   indicator inset from the whole page. */
-.settings {
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+
+   On the SCROLLING REGION, not on the screen. Settings is a `.screen` now, and
+   a screen is a fixed flex column whose own bottom padding would shorten the
+   scroller rather than reserve space inside it — the last field would sit
+   under the save bar exactly as if nothing had been reserved at all. The
+   clearance has to live where the content scrolls.
+
+   The `env(safe-area-inset-bottom)` term the original rule added here is
+   GONE, deliberately, and this is the one thing to be careful of if this rule
+   ever moves again. It was there because `<main>` carried `.safe-bottom` and
+   this rule, being later at equal specificity, would otherwise have overridden
+   it and dropped the home-indicator inset from the page. Neither condition
+   holds now: the shell owns that inset in its own block, and this selector is
+   `.settings > .screen-body`, which cannot collide with it. Adding the inset
+   back here would double it. */
+.settings > .screen-body {
+  padding-bottom: 5.5rem;
 }
 
 .settings-header {
@@ -1657,13 +1662,69 @@ body {
 .dl-value.ok { color: var(--ok); }
 .dl-value.warn { color: var(--warn); }
 
-/* The dashboard shell. A flex column at viewport height so `.build-stamp`'s
-   `margin-top: auto` has something to push against — see BuildStamp.tsx. */
-.dash {
+/* ── The screen shell ─────────────────────────────────────────────────────
+   ONE shell for every screen, shared with `.term` rather than copied from it.
+
+   The terminal has always been a fixed container with `flex: none` chrome and
+   a single scrolling region, so its header never leaves the viewport. Every
+   other screen was a flowing column at `min-height: 100dvh`, which meant the
+   header — and with it Back, the counts and the way into Settings — scrolled
+   away with the content. On Settings that was reported from use: leaving the
+   screen meant scrolling back to the top to reach a control that had gone.
+
+   Settings made the inversion plainest. It already reserved
+   `calc(5.5rem + env(safe-area-inset-bottom))` at the bottom to clear a FIXED
+   save bar, so it pinned its footer and let its header float — precisely
+   backwards for a screen operated with one thumb.
+
+   `.term` is listed here rather than left with its own copy of these
+   declarations: two rules that must agree are the thing this stylesheet keeps
+   getting bitten by. Its own block below keeps only what is genuinely its
+   own — the surface ground its chrome sits on.
+
+   `width: min(100%, 42rem)` is 42rem = Tailwind's `max-w-2xl`, which the
+   screens were already using; stating it here means a fixed element still
+   agrees with the column the app has always been. */
+.screen,
+.term {
+  position: fixed;
+  inset: 0;
+  width: min(100%, 42rem);
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* The one scrolling region inside a shell. Everything that is not chrome goes
+   in here.
+
+   `display: flex; flex-direction: column` is not decoration: `.build-stamp`
+   pushes itself down with `margin: auto 0 0`, and it needs a flex column to
+   push against. It used to push against `.dash`'s `min-height: 100dvh`; now it
+   pushes against this, which is exactly viewport-height when the content is
+   short and taller when it is long — so the stamp keeps the behaviour its own
+   comment describes, bottom of the screen on a short list and below the
+   content on a long one.
+
+   `min-height: 0` because a flex child's default `min-height: auto` refuses to
+   shrink below its content, which would push the scrollbar onto the shell and
+   take the chrome off screen with it — the very bug this shell exists to
+   fix. */
+.screen-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Chrome. Never scrolls, never shrinks. */
+.screen > .screen-chrome { flex: none; }
+
+.screen { background: var(--bg); }
 
 .build-stamp {
   /* Pushed to the bottom of the VIEWPORT when the list is short, and still

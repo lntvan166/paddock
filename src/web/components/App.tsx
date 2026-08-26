@@ -401,8 +401,10 @@ export function App() {
   // here, and it still never falls through to the dashboard.
   if (openId !== null && (!openTree.resolved || promoting)) {
     return (
-      <main className="dash mx-auto max-w-2xl safe-bottom">
-        <p className="px-3 py-6 text-[11px]" style={{ color: "var(--fg-dim)" }}>Opening…</p>
+      <main className="screen">
+        <div className="screen-body">
+          <p className="px-3 py-6 text-[11px]" style={{ color: "var(--fg-dim)" }}>Opening…</p>
+        </div>
       </main>
     );
   }
@@ -416,8 +418,8 @@ export function App() {
     // the same origin-aware destination as the two panes above.
     const back = backTargetFor(openId);
     return (
-      <main className="dash mx-auto max-w-2xl safe-bottom">
-        <header className="spaces-head">
+      <main className="screen">
+        <header className="spaces-head screen-chrome">
           <button
             type="button" className="term-back"
             onClick={() => { location.hash = back.hash; }}
@@ -427,21 +429,55 @@ export function App() {
           </button>
           <h2>{openId}</h2>
         </header>
-        <p className="error" role="alert">Could not open this pane: {openTree.error}</p>
+        <div className="screen-body">
+          <p className="error" role="alert">Could not open this pane: {openTree.error}</p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="dash mx-auto max-w-2xl safe-bottom">
-      {/* Shown ABOVE the staleness banner and outside the dimming wrapper: this
-          is the one message that explains why everything else might be wrong,
-          so it must never be dimmed as "possibly stale data". */}
-      {updateAvailable && <UpdateBar />}
-      {stale && (
-        <ConnectionBanner connected={connected} lastMessageAt={lastMessageAt} now={now} />
-      )}
-      {/* Stale data dims here — the banner above stays at full opacity so the
+    // `screen`, not a flowing column: the header carries the counts and the
+    // only routes into Spaces and Settings, and scrolling into Idle used to
+    // take all three off the viewport. See `.screen, .term` in styles.css.
+    <main className="screen">
+      {/* CHROME. Pinned, in the order a reader needs it: the two messages that
+          explain why everything below might be wrong, then the header.
+
+          `ReleaseBanner` and `InstallHint` deliberately did NOT come with
+          them, and this moves them: they used to render above the header and
+          now render below it, inside the scroller. Pinning every banner would
+          hand a phone-sized viewport to a stack of up to three of them, which
+          is the opposite of what pinning is for. These two are also the two
+          that can wait — a new release and an install hint are not why the
+          list in front of you might be wrong. `UpdateBar` and
+          `ConnectionBanner` are, so they stay. */}
+      <div className="screen-chrome">
+        {/* Outside the dimming wrapper below: this is the one message that
+            explains why everything else might be wrong, so it must never be
+            dimmed as "possibly stale data". */}
+        {updateAvailable && <UpdateBar />}
+        {stale && (
+          <ConnectionBanner connected={connected} lastMessageAt={lastMessageAt} now={now} />
+        )}
+        {/* The header dims with the data it counts. A SECOND wrapper rather
+            than one around both: the two halves are no longer siblings inside
+            one element now that the header is chrome. They never nest, so the
+            0.55 opacity cannot compound. */}
+        <div {...staleAttrs(stale)}>
+          <HostHeader
+            hostId={hostId} agents={agents}
+            onOpenSettings={() => { location.hash = "#/settings"; }}
+            // `null` when this server has no session tree to read — `--demo`,
+            // most of all. The alternative shipped: a header control whose only
+            // possible outcome was the Spaces screen's own error state.
+            onOpenSpaces={spacesAvailable ? () => { location.hash = "#/spaces"; } : null}
+          />
+        </div>
+      </div>
+
+      <div className="screen-body">
+      {/* Stale data dims here — the banners above stay at full opacity so the
           message announcing staleness is never itself hard to read. */}
       <div {...staleAttrs(stale)}>
         {/* Inside the dimming wrapper, unlike UpdateBar: that one explains why
@@ -459,14 +495,6 @@ export function App() {
           />
         )}
         <InstallHint />
-        <HostHeader
-          hostId={hostId} agents={agents}
-          onOpenSettings={() => { location.hash = "#/settings"; }}
-          // `null` when this server has no session tree to read — `--demo`,
-          // most of all. The alternative shipped: a header control whose only
-          // possible outcome was the Spaces screen's own error state.
-          onOpenSpaces={spacesAvailable ? () => { location.hash = "#/spaces"; } : null}
-        />
 
         {SECTION_ORDER.map((key) => {
           const list = groups[key];
@@ -520,8 +548,11 @@ export function App() {
       </div>
       {/* OUTSIDE the dimming wrapper, like UpdateBar: which version this
           bundle is stays true when the herdr link goes quiet, so dimming it
-          would claim otherwise. */}
+          would claim otherwise. Inside the SCROLLER though, not the chrome —
+          it pushes itself down with `margin: auto 0 0`, which is why
+          `.screen-body` is a flex column. */}
       <BuildStamp />
+      </div>
     </main>
   );
 }

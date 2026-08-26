@@ -313,14 +313,25 @@ export function Settings({ onBack }: SettingsProps) {
     : "not set";
 
   return (
-    <main className="settings mx-auto max-w-2xl safe-bottom">
-      <header className="settings-header">
+    // `screen`, not a flowing column: the header below must stay put. Leaving
+    // this screen used to mean scrolling back to the top to find Back — the
+    // control had gone off the viewport with everything else. See the
+    // `.screen, .term` block in styles.css.
+    //
+    // `mx-auto max-w-2xl safe-bottom` are gone rather than left alongside: the
+    // shell owns the centred 42rem column and the safe-area inset now, and
+    // three utilities restating what a class already does is how the two of
+    // them drift apart later.
+    <main className="settings screen">
+      <header className="settings-header screen-chrome">
         <button type="button" className="term-back" onClick={onBack} aria-label="Back to agents">
           ‹ Agents
         </button>
         <h1 className="settings-title">Settings</h1>
       </header>
 
+      {/* Everything below the header scrolls; the header does not. */}
+      <div className="screen-body">
       {view?.error && <p className="settings-banner">{view.error}</p>}
       {loadError && <p className="settings-banner">{loadError}</p>}
       {healthError && <p className="settings-banner">{healthError}</p>}
@@ -429,7 +440,14 @@ export function Settings({ onBack }: SettingsProps) {
         <p className="band-hint">Read-only. What build is running, and what this device can see.</p>
         <InfoSection health={health} />
       </section>
+      </div>
 
+      {/* OUTSIDE the scrolling region, with the header: `.settings-save-bar` is
+          `position: fixed`, so it was never going to scroll — but it is chrome,
+          and chrome belongs to the shell rather than to the content. The
+          clearance that stops it covering the last field now sits on
+          `.settings > .screen-body`, which is the element that actually
+          scrolls. */}
       {/* `dirty` is false while `baseline === null`, which is what used to be
           `disabled={saving || view === null}` on a Save button: every field
           in this section starts at an empty/false/60000 placeholder and is

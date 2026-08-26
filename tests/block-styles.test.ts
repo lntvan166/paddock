@@ -63,10 +63,19 @@ test("the terminal is constrained to a column, not stretched to the viewport", (
   // wide with their labels stranded at the far left. The list already centres
   // itself at this width, so an unconstrained terminal also made the two views
   // disagree about how wide the app is.
-  const css = readFileSync("src/web/styles.css", "utf8");
-  const at = css.indexOf(".term {");
-  expect(at).toBeGreaterThan(-1);
-  const rule = css.slice(at, css.indexOf("}", at));
+  //
+  // The declarations live on the SHARED shell rule (`.screen, .term`) rather
+  // than in a `.term` block of their own — every screen is a fixed, centred
+  // column now, and the terminal was only the first. So this matches the
+  // selector LIST rather than the literal string ".term {", which is what an
+  // earlier version of this test did: it went red when the rule was shared,
+  // even though the constraint it guards was untouched.
+  const css = readFileSync("src/web/styles.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rule = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((m) => (m[1] ?? "").split(",").map((x) => x.trim()).includes(".term"))
+    .map((m) => m[2] ?? "")
+    .join("\n");
+  expect(rule, "no rule whose selector list contains .term").not.toBe("");
   expect(rule).toContain("width: min(100%");
   expect(rule).toContain("margin-inline: auto");
 });

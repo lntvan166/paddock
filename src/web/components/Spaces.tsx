@@ -58,8 +58,10 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
   const canCreate = spacesAvailable;
 
   return (
-    <main className="dash mx-auto max-w-2xl safe-bottom">
-      <header className="spaces-head">
+    // `screen`, not a flowing column — Back must stay reachable at any scroll
+    // position. See the `.screen, .term` block in styles.css.
+    <main className="screen">
+      <header className="spaces-head screen-chrome">
         {/* Shared treatment (§16.4): this was the one back control in the
             app not using it. Labelled for its actual destination — the
             dashboard, which is all `onBack` here has ever pointed at. */}
@@ -86,6 +88,7 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
         )}
       </header>
 
+      <div className="screen-body">
       {error !== null && <p className="error" role="alert">{error}</p>}
 
       {tree !== null && (
@@ -106,6 +109,7 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
           </button>
         </footer>
       )}
+      </div>
     </main>
   );
 }

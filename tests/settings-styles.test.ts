@@ -97,9 +97,25 @@ test("the save bar clears the home indicator", () => {
 });
 
 test("reserving space for the bar does not cost the page its safe-area inset", () => {
-  // `.settings` is a later rule than `.safe-bottom` at equal specificity, so a
-  // bare padding-bottom here would override the inset for the whole page.
-  expect(declaration(".settings", "padding-bottom")).toContain("env(safe-area-inset-bottom");
+  // Two separate paddings, and the original defect was them being one.
+  //
+  // The clearance that stops the fixed save bar covering the last field now
+  // sits on the SCROLLING REGION. It has to: `.settings` is a `.screen`, and a
+  // screen is a fixed flex column whose own bottom padding would shorten the
+  // scroller rather than reserve space inside it — the last field would end up
+  // under the bar exactly as if nothing had been reserved.
+  expect(declaration(".settings > .screen-body", "padding-bottom")).toContain("5.5rem");
+
+  // And the home-indicator inset is the SHELL's, so reserving the bar's height
+  // can no longer overwrite it — which is what the rule this replaced was
+  // guarding against when both lived on the same element. Asserted here rather
+  // than only in a shell test because this pairing is the thing that broke.
+  expect(declaration(".screen", "padding-bottom")).toContain("env(safe-area-inset-bottom");
+
+  // The two must not both carry the inset, or a phone with a home indicator
+  // gets it twice and the last field floats above the bar by a stray 34px.
+  expect(declaration(".settings > .screen-body", "padding-bottom"))
+    .not.toContain("safe-area-inset-bottom");
 });
 
 test("the save bar's button is a full touch target", () => {
