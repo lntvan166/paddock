@@ -72,7 +72,9 @@ const BANDS = [
   ".spaces-head",
   ".settings-header",
   ".space-screen-head",
-  ".spaces-foot",
+  // `.spaces-foot` was here. It is gone: the space count and the read-time
+  // moved into `.spaces-head`, beside the word they describe, so there is no
+  // footer band left to align.
   // Settings content
   ".band",
   ".card-head",

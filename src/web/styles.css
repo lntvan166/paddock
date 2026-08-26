@@ -2453,24 +2453,36 @@ body {
   background: var(--bg);
 }
 
-.spaces-foot {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem var(--gutter);
-  border-top: 1px solid var(--border);
-  font-size: var(--t-xs);
-  color: var(--fg-dim);
-}
+/* The count and the read-time moved into `.spaces-head` — they describe the
+   list, and a footer put them at the far end of the screen from the word they
+   describe. Since the tab bar landed, that footer was also a strip of metadata
+   wedged between the last row and the tabs.
 
-.spaces-foot button {
+   `.spaces-count` takes the machine voice like every other count in the app;
+   `.spaces-refresh` is the control, pushed to the trailing edge so it groups
+   with the `+` rather than sitting between the title and it. */
+.spaces-count { flex: none; }
+
+/* Scoped to the header, at (0,2,0), because `.spaces-head button` is (0,1,1)
+   and sets BOTH `color: var(--accent)` and `font: inherit` — a bare
+   `.spaces-refresh` lost the colour to the accent and the size to the
+   shorthand, which is how this rendered rust at 16px instead of dim at 11px.
+   Measured in a browser; nothing in the suite asserts a computed colour.
+
+   Dim rather than accent, deliberately, and unchanged from how it read in the
+   footer: this is a timestamp that happens to be tappable, and the `+` beside
+   it is the control that makes something. Two controls in one cluster reading
+   at two weights is correct here — they are not the same kind of thing. */
+.spaces-head .spaces-refresh {
+  margin-left: auto;
   min-height: 2.75rem;
+  padding: 0;
   background: none;
   border: 0;
   color: var(--fg-dim);
   font: inherit;
+  font-size: var(--t-xs);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -2785,8 +2797,10 @@ body {
    controls §16.7 says must read as one thing did not, and the header one was
    the very "16px mark in an empty button" defect an earlier commit is named
    for. Scoped to the header, this is (0,2,0) and wins. */
+/* No `margin-left: auto` any more — `.spaces-refresh` before it carries that
+   now, and a second auto margin here would share the free space between the
+   two controls instead of grouping them at the trailing edge. */
 .spaces-head .create-btn {
-  margin-left: auto;
   font-size: 1.375rem;
 }
 

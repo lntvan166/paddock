@@ -1,5 +1,4 @@
 import { sectionFor } from "@shared/types";
-import { plural } from "@web/format";
 import { useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
@@ -75,6 +74,26 @@ export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate
           you reached it from here. */}
       <header className="spaces-head screen-chrome">
         <h2>Spaces</h2>
+        {/* The count, beside the thing it counts — the same shape every section
+            heading on the dashboard uses ("NEEDS YOU · 1"), and the machine
+            voice for the same reason: it is a reading off the list, not part of
+            the label. It used to sit in a footer at the bottom of the screen,
+            which since the tab bar landed meant a strip of metadata wedged
+            between the last row and the tabs, as far from the word "Spaces" as
+            the screen allows. */}
+        {tree !== null && (
+          <span className="ident row-meta spaces-count">· {tree.spaces.length}</span>
+        )}
+        {/* Says WHEN it read, because this screen is on-demand and an
+            implied-live one would be a guess rendered as a fact. In the header
+            now, beside the count it qualifies: "7 spaces, as of 3s ago" is one
+            statement about one read, and splitting it across the top and bottom
+            of the screen made it two. */}
+        {tree !== null && (
+          <button type="button" className="spaces-refresh tap" onClick={() => void refresh()}>
+            as of {Math.max(0, Math.round((now - tree.readAt) / 1000))}s ago ⟳
+          </button>
+        )}
         {/* §16.7: the `+` that makes a SPACE lives in the header of the screen
             that lists them. Position is what says what it makes, which is why
             it carries no text label.
@@ -142,16 +161,6 @@ export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate
         </ul>
       )}
 
-      {tree !== null && (
-        <footer className="spaces-foot">
-          <span>{plural(tree.spaces.length, "space")}</span>
-          {/* Says WHEN it read, because this screen is on-demand and an
-              implied-live one would be a guess rendered as a fact. */}
-          <button type="button" onClick={() => void refresh()}>
-            as of {Math.max(0, Math.round((now - tree.readAt) / 1000))}s ago ⟳
-          </button>
-        </footer>
-      )}
       </div>
       <TabBar current="spaces" needsYou={needsYou} />
     </main>
