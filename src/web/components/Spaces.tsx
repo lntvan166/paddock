@@ -50,18 +50,20 @@ export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate 
   /**
    * Every working directory already in the tree, once each, in a stable order.
    *
-   * The create sheet's quick picks (§9.3). Computed here rather than in the
-   * sheet because the HEADER's sheet needs the whole tree's cwds and a row's
-   * sheet needs the same list — one expression, two consumers, and the tree is
-   * already in hand. Sorted so the list does not reshuffle between renders of
-   * the same tree.
+   * The create sheet's quick picks (§9.3). Computed from the WHOLE tree rather
+   * than from anything narrower, and that is still right with only one
+   * consumer left: a new space commonly belongs in a folder some other space
+   * is already working in, so the useful list is every folder in use, not the
+   * ones near this control. The space screen computes its own for the same
+   * reason. Sorted so the list does not reshuffle between renders of the same
+   * tree.
    */
   const cwds = tree === null
     ? []
     : [...new Set(tree.spaces.flatMap((s) => s.tabs.flatMap((t) => t.panes.map((p) => p.cwd))))].sort();
 
   /**
-   * Whether the create controls exist at all.
+   * Whether the create control exists at all.
    *
    * The SAME capability the Spaces entry point in `App.tsx` is gated on
    * (`spacesAvailable`, set from the server's own snapshot frame), for the same
@@ -84,8 +86,12 @@ export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate 
         <h2>Spaces</h2>
         {/* §16.7: the `+` that makes a SPACE lives in the header of the screen
             that lists them. Position is what says what it makes, which is why
-            it carries no text label — and why the one on each row below,
-            which makes a tab in that row's space, looks identical. */}
+            it carries no text label.
+
+            This is the ONLY create control on this screen now. The one that
+            makes a tab moved to `#/space/<id>`, where it is the last row of
+            the list it adds to — a row rather than a glyph, because that
+            screen's header has no position that says "a tab in this space". */}
         {canCreate && (
           <CreateSheet
             target={{ kind: "space" }}
