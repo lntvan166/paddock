@@ -13,7 +13,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
 
@@ -97,7 +97,7 @@ jobs:
       # 404 — and had that upload then failed, one advertising a release that
       # never existed.
       - name: Check out the Homebrew tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: lntvan166/homebrew-paddock
           # github.token is scoped to THIS repository. Pushing to the tap with

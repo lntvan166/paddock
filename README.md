@@ -52,9 +52,9 @@ agents, no install, best in mobile mode.
 curl -fsSL https://lntvan166.github.io/paddock/install.sh | sh
 ```
 
-Installs to `~/.local/bin/paddock`, no `sudo`, checksum verified before
-anything is written · [read it first](https://lntvan166.github.io/paddock/install.sh)
-· [binaries](https://github.com/lntvan166/paddock/releases)
+Installs to `~/.local/bin/paddock`, no `sudo`, checksum verified before anything
+is written · [read it first](https://lntvan166.github.io/paddock/install.sh) ·
+[binaries](https://github.com/lntvan166/paddock/releases)
 
 Or with Homebrew, which pulls in herdr as a dependency:
 
@@ -62,116 +62,122 @@ Or with Homebrew, which pulls in herdr as a dependency:
 brew install lntvan166/paddock/paddock
 ```
 
-One command — the fully-qualified name taps and trusts this single formula.
-Homebrew 6.0.0 requires explicit trust for a non-official tap, so a bare
-`brew install paddock` cannot reach a tap; that name belongs to
-`homebrew/core`, which paddock does not qualify for (`docs/decisions.md`).
-Homebrew then owns the install, so upgrade with `brew upgrade paddock` —
-`paddock update` detects the keg and declines rather than desyncing it.
+The fully-qualified name taps and trusts this single formula in one command.
+Homebrew 6.0.0 requires explicit trust for a non-official tap, so a bare `brew
+install paddock` cannot reach one — and that name belongs to `homebrew/core`,
+which paddock does not qualify for (`docs/decisions.md`). Homebrew then owns the
+install: upgrade with `brew upgrade paddock`, and `paddock update` detects the
+keg and declines rather than desyncing it.
 
 ### herdr version
 
-paddock talks to herdr over herdr's own socket protocol. This release is built
-against **protocol 20**, which herdr **0.8.2** speaks. `install.sh` checks after
-installing, and you can ask again whenever:
+paddock talks to herdr over herdr's own socket protocol, and this release is
+built against **protocol 20** — which herdr **0.8.2** speaks. `install.sh`
+checks after installing; `paddock doctor` asks again whenever.
+
+The check is **directional**:
+
+- a herdr **newer** than this paddock runs fine. paddock verifies the fields it
+  actually reads rather than demanding a version number, so a herdr release that
+  adds things breaks nothing.
+- a herdr **older** than protocol 20 is refused, because paddock would be
+  reading fields herdr does not send yet.
+
+If yours is older, upgrade herdr **and restart its daemon** — the socket answers
+from the running daemon, not the binary on disk, so upgrading alone keeps
+reporting the old protocol.
+
+## run it
+
+Where herdr is running:
 
 ```bash
-paddock doctor
+paddock            # ctrl+c stops it
+paddock --demo     # synthetic agents, no herdr
 ```
 
-The check is **directional**. A herdr *newer* than this paddock is accepted and
-runs — paddock verifies the fields it actually reads rather than demanding an
-exact version number, so a herdr release that adds things breaks nothing. A
-herdr *older* than protocol 20 is refused, because paddock would be reading
-fields that herdr does not send yet.
+It serves on `127.0.0.1` only, which is what the next section is for.
 
-So if herdr is older, upgrade herdr **and restart its daemon**: the socket
-answers from the running daemon, not from the binary on disk, so upgrading alone
-keeps reporting the old protocol.
-
-then start it where herdr is running:
+To keep it up after the terminal closes:
 
 ```bash
-paddock
+paddock start      # detached
+paddock status     # is it up?
+paddock stop
 ```
 
-`ctrl+c` stops it. It serves on `127.0.0.1` only, which is what the next step
-is for.
+## publish it
 
-**Do this next — it is the thing paddock is for.** `paddock tunnel` serves the
-dashboard *itself*, so `ctrl+c` the one above first, then:
+**This is the thing paddock is for.** One command gives you a public URL and a
+pairing code — no DNS, no inbound port, nothing to configure. Open the URL on
+your phone, type the code once, and you are watching the same agents from the
+sofa.
 
 ```bash
 paddock tunnel
 ```
 
-That publishes a temporary public URL and a pairing code, and prints both. Nothing to configure, no DNS, no inbound port: open the URL on your
-phone, type the code once, and you are watching the same agents from the sofa.
-`--for 2h` bounds how long it lives (`30m`, `2h`, `7d`); `ctrl+c` ends it.
+`--for` bounds how long it lives (`30m`, `2h`, `7d`); `ctrl+c` ends it.
 
-On a terminal at least 37 columns wide and 27 rows tall, it also draws a QR:
-scan it and the phone opens the dashboard already paired, because the code
-rides in the URL fragment — which browsers never send, so it reaches no access
-log. Below that size the QR is omitted and you type the code, and a terminal
-under 34 rows drops the on-screen warning to make room. The default 80x24 is
-too short for the QR; make the window taller to see it.
+Four forms, because a tunnel can either serve the dashboard itself or publish
+one that is already running, and either can hold the terminal or not:
 
-It is a try-it path, not a deployment. A quick tunnel cannot have Cloudflare
-Access in front of it, so that pairing code is the only gate there is, and the
-URL is public until you close it — [from your phone](#from-your-phone) has what
-that does and does not protect, and the durable setup.
+|                | serves the dashboard      | publishes the one already running           |
+| -------------- | ------------------------- | ------------------------------------------- |
+| **foreground** | `paddock tunnel`          | `paddock tunnel --publish-running`          |
+| **background** | `paddock tunnel --detach` | `paddock tunnel --publish-running --detach` |
 
-To keep paddock running after you close the terminal:
+The left column *is* a whole paddock, so it refuses to start beside a detached
+instance — `paddock stop` first, or use the right column instead.
+`--publish-running` serves no dashboard of its own: it opens the pairing gate and
+proxies to the paddock already listening, so there is no second herdr connection
+and no second notifier. It exits if nothing is listening rather than publishing a
+URL that answers 502.
 
-```bash
-paddock start     # detached
-paddock status    # is it up?
-paddock stop
-```
+`paddock stop` closes a tunnel as well as the dashboard.
 
-`paddock tunnel` serves the dashboard itself, so it refuses to start beside a
-detached instance — `paddock stop` first, or run the tunnel in its place. To
-keep the instance you already have, publish it instead:
+### the code, and the QR
 
 ```bash
-paddock tunnel --publish-running
+paddock pair       # the URL, code and QR of whatever tunnel is running
 ```
 
-That form serves no dashboard of its own. It opens the pairing gate and proxies
-to the paddock already listening, so there is no second herdr connection and no
-second notifier — the reason the plain form refuses. It exits if nothing is
-listening rather than publishing a URL that answers 502.
+This is what makes a backgrounded tunnel usable. The pairing code rotates and is
+minted on demand rather than stored, so `pair` asks the running tunnel over a
+local socket and what it prints always has its full life ahead of it. It works
+against a foreground tunnel too, for when the terminal has scrolled past the QR.
 
-Either form takes `--detach`, which publishes in the background and gives the
-terminal back:
+A terminal at least **37 columns by 27 rows** also draws a QR: scan it and the
+phone opens already paired, because the code rides in the URL fragment — which
+browsers never send, so it reaches no access log. Below that the QR is omitted
+and you type the code; under 34 rows the on-screen warning is dropped to make
+room. The default 80×24 is too short, so make the window taller to see it.
+
+> [!IMPORTANT]
+> A quick tunnel is a try-it path, not a deployment. It cannot have Cloudflare
+> Access in front of it, so that pairing code is the only gate there is, and the
+> URL is public until you close it. [from your phone](#from-your-phone) has what
+> that does and does not protect, and the durable setup.
+
+## updating
 
 ```bash
-paddock tunnel --detach                     # serve and publish, detached
-paddock tunnel --publish-running --detach   # publish the one already up
-paddock pair                                # its URL, code and QR, any time
-paddock stop                                # closes the tunnel too
+paddock update
 ```
 
-`paddock pair` is what makes a backgrounded tunnel usable. The pairing code
-rotates, and it is minted on demand rather than stored — so `pair` asks the
-running tunnel over a local socket and the code it prints always has its full
-life ahead of it. It works against a foreground tunnel too, for when the
-terminal has scrolled past the QR.
-
-`paddock update` upgrades it; paddock never updates itself unasked. `paddock
---demo` runs it with synthetic agents and no herdr.
-
-It checks for a newer release at most once a day, caching the answer in
-`~/.config/paddock/update-check.json` — set `PADDOCK_NO_UPDATE_CHECK=1` and it
-makes no request and writes nothing. A running paddock re-reads that answer
-hourly, so an instance left up for a week still notices; the once-a-day limit is
-on the request, not on the noticing. When there is something newer, the terminal
-says so and the dashboard shows a dismissable banner.
+paddock never updates itself unasked. It checks for a newer release at most once
+a day, caching the answer in `~/.config/paddock/update-check.json` — set
+`PADDOCK_NO_UPDATE_CHECK=1` and it makes no request and writes nothing. A
+running paddock re-reads that answer hourly, so an instance left up for a week
+still notices: the once-a-day limit is on the request, not on the noticing. When
+there is something newer the terminal says so and the dashboard shows a
+dismissable banner.
 
 > [!WARNING]
 > paddock has **no login of its own**. Anyone who reaches its port can send
 > keystrokes to your agents, answer their prompts, and read their screens.
 > Never port-forward it or bind `0.0.0.0`.
+
 
 ## from your phone
 
