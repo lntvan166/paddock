@@ -54,17 +54,43 @@ test("the gutter is a token on bare :root, not buried in a media query", () => {
  * is asserted below rather than left implicit.
  */
 const BANDS = [
+  // Dashboard
   ".row",
   ".agent-card",
   ".sec-head",
   ".host-head",
+  // Terminal
   ".term-header",
   ".term-controls",
   ".term-keys",
   ".term-reply",
   ".term-options",
+  // A fragment, not the whole list: `ruleBody` splits selector lists on
+  // commas, so the shared `.term-error, .term-note` rule is matched by either.
+  ".term-error",
+  // Screen headers and footers
   ".spaces-head",
   ".settings-header",
+  ".space-screen-head",
+  ".spaces-foot",
+  // Settings content
+  ".band",
+  ".card-head",
+  ".card-body",
+  ".card-foot",
+  ".settings-save-bar",
+  ".notify-transports",
+  // Sheets
+  ".row-actions-head",
+  ".row-actions-menu > button",
+  ".create-form",
+  ".create-row",
+  // Banners: a message spanning the screen is a band like any other
+  ".update-bar",
+  ".settings-banner",
+  ".error",
+  ".launch-notice",
+  ".banner",
 ];
 
 for (const sel of BANDS) {

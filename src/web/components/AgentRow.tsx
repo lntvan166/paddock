@@ -67,7 +67,7 @@ export function AgentChip({ agent, onSelect }: { agent: Agent; onSelect?: () => 
   return (
     <button
       type="button"
-      className="ident tap rounded-full px-2.5 py-1"
+      className="ident tap rounded-[var(--r-full)] px-2.5 py-1"
       style={{
         fontSize: "var(--t-md)", background: "var(--surface)",
         border: "1px solid var(--border)", color: "var(--fg-dim)",

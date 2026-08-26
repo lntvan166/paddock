@@ -117,7 +117,7 @@ export function AgentCard({
         <>
           <button
             type="button"
-            className="tap self-start rounded px-3 py-2 font-semibold"
+            className="tap self-start rounded-[var(--r-sm)] px-3 py-2 font-semibold"
             style={{
               fontSize: "var(--t-md)",
               border: "1px solid var(--fg-dim)", color: "var(--fg-dim)",

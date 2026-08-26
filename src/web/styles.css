@@ -133,6 +133,29 @@
      the gutter was introduced to remove. */
   --edge: 2px;
 
+  /* ── Radius ─────────────────────────────────────────────────────────────
+     Two steps and a pill. There were ten values.
+
+     `shadcn init` brought `--radius: 0.75rem`, and `@theme inline` derives the
+     whole `--radius-*` scale from it, so every `rounded-lg` in JSX resolved to
+     12px — while 22 hand-written rules here rounded at 0.4rem (6.4px), with
+     0.25/0.3/0.35/0.45/0.5/0.6rem scattered between. Four of those sit inside
+     1.6px of each other, which is a huddle, not a scale. The visible result
+     was `.host-settings-btn` at 6.4px sitting directly above a 12px card in
+     the same header.
+
+     The two sizes the app actually reached for were right — they land within
+     rounding distance of Primer's `medium` and `large`, and GitHub ships three
+     plus a pill for a far larger app. What was missing is that neither was
+     named, so the boundary between them was accidental.
+
+     `--radius` below is now an ALIAS of --r-md rather than a value of its own,
+     for exactly the reason the shadcn bridge exists: `init` already wrote its
+     own `--border` and `--accent` over paddock's once. */
+  --r-sm: 0.375rem;  /* 6px  — buttons, inputs, keys, prompt options */
+  --r-md: 0.75rem;   /* 12px — sheets and dialogs: what still floats */
+  --r-full: 9999px;  /* dots, pills, chips */
+
   /* ── Type scale ─────────────────────────────────────────────────────────
      Four steps, and every piece of type in the app picks one of them.
 
@@ -202,10 +225,13 @@
   --destructive: var(--danger);
   --input: var(--border);
   --ring: var(--accent);
-  /* Radius matches the card vocabulary the app already uses, not shadcn's
-     0.625rem — otherwise a shadcn dialog would round differently from every
-     card beside it. */
-  --radius: 0.75rem;
+  /* An ALIAS of --r-md, not a value. It governs every `rounded-*` utility in
+     the app through `@theme inline`, so a literal here is a second radius
+     vocabulary competing with the one above — which is precisely what it was.
+     The comment this replaces claimed it "matches the card vocabulary the app
+     already uses"; the app's dominant hand-written radius was 6.4px, so it
+     did not. */
+  --radius: var(--r-md);
 }
 
 /* System dark, unless the user explicitly chose light. */
@@ -297,7 +323,7 @@ body {
 :where(a, button, [role="button"], input, select, textarea):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
-  border-radius: 0.25rem;
+  border-radius: var(--r-sm);
 }
 
 .safe-bottom {
@@ -311,7 +337,7 @@ body {
   width: 7px;
   height: 7px;
   flex-shrink: 0;
-  border-radius: 9999px;
+  border-radius: var(--r-full);
   border-width: 1.5px;
   border-style: solid;
   box-sizing: border-box;
@@ -331,7 +357,7 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border-radius: 9999px;
+  border-radius: var(--r-full);
   color: var(--tile-fg);
   font-weight: 600;
   letter-spacing: 0;
@@ -422,6 +448,25 @@ body {
   padding: 0 var(--gutter) 0.75rem;
 }
 
+/* ── Message bands ───────────────────────────────────────────────────────
+   `ConnectionBanner`, `ReleaseBanner`, `InstallHint`: three components that
+   had written out the same band by hand as `px-3 py-2 text-[11px]`, which is
+   both the old gutter and a step BELOW the scale's prose size.
+
+   --t-md, not --t-xs. Every one of these is a sentence you read — "Reconnecting
+   · last updated 2m ago", "paddock 0.11.0 is available", "Install paddock for
+   quicker access." The scale reserves --t-xs for "eyebrows, ages, counts,
+   badges: metadata" and --t-md for "anything you read", and set a step small
+   these read as fine print rather than as the messages they are.
+
+   Ground and border are deliberately NOT set here: each banner states its own,
+   because the colour is what distinguishes a warning from a release notice
+   from a hint. Only the geometry and the voice are shared. */
+.banner {
+  padding: 0.75rem var(--gutter);
+  font-size: var(--t-md);
+}
+
 /* "No agents detected.", "Opening…" — paddock talking about the list, so it
    takes the gutter like the list does. */
 .dash-note {
@@ -510,7 +555,7 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: var(--r-md);
   overflow: hidden;
 }
 
@@ -520,7 +565,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.8rem 0.9rem;
+  padding: 0.75rem var(--gutter);
 }
 
 .card-icon { color: var(--fg-dim); display: inline-flex; flex-shrink: 0; }
@@ -536,11 +581,11 @@ body {
    about the whole setting, not about its first line. */
 .card-control { flex-shrink: 0; display: inline-flex; align-items: center; }
 
-.card-body { border-top: 1px solid var(--border); padding: 0.8rem 0.9rem; }
+.card-body { border-top: 1px solid var(--border); padding: 0.75rem var(--gutter); }
 
 .card-foot {
   border-top: 1px solid var(--border);
-  padding: 0.6rem 0.9rem;
+  padding: 0.75rem var(--gutter);
   font-size: var(--t-xs);
   color: var(--fg-dim);
 }
@@ -588,7 +633,7 @@ body {
      thing you type into has to clear the threshold. */
   font-size: 16px;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
 }
@@ -658,7 +703,7 @@ body {
   gap: 0.25rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.6rem;
+  border-radius: var(--r-sm);
   padding: 0.2rem;
 }
 
@@ -670,7 +715,7 @@ body {
   justify-content: center;
   gap: 0.35rem;
   border: 0;
-  border-radius: 0.45rem;
+  border-radius: var(--r-sm);
   background: none;
   color: var(--fg-dim);
   font-size: var(--t-md);
@@ -875,7 +920,7 @@ body {
   align-items: center;
   gap: 0.2rem;
   padding: 0.1rem 0.3rem;
-  border-radius: 0.3rem;
+  border-radius: var(--r-sm);
   background: var(--danger-wash);
   color: var(--danger);
   font-size: var(--t-xs);
@@ -945,11 +990,11 @@ body {
 }
 
 .term-pane::-webkit-scrollbar-thumb, .term-structure::-webkit-scrollbar-thumb {
-  border-radius: 0.25rem;
+  border-radius: var(--r-sm);
   background: rgb(255 255 255 / 0.22);
 }
 
-.term-error, .term-note { flex: none; margin: 0; padding: 0.5rem 0.75rem; font-size: var(--t-md); }
+.term-error, .term-note { flex: none; margin: 0; padding: 0.75rem var(--gutter); font-size: var(--t-md); }
 
 /* A failure has to LOOK like one. Both of these carried `class="… warn"` from
    the moment they were written, and no rule in scope gave `.warn` a colour
@@ -1077,7 +1122,7 @@ body {
   padding: 0.4rem 0.5rem;
   margin-bottom: 0.35rem;
   border: 1px solid var(--accent);
-  border-radius: 0.5rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
 }
 .term-ctrl-lbl {
@@ -1093,7 +1138,7 @@ body {
   min-height: 2.75rem;
   padding: 0 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
@@ -1123,7 +1168,7 @@ body {
   border: 1px solid var(--border);
   /* Matches `.settings-mute button`, which is the same shape of control: a
      small bordered thing you tap in a row of siblings. */
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg-dim);
   font: inherit;
@@ -1186,7 +1231,7 @@ body {
   /* 0.4rem to match `.card-row input`: this is the same kind of thing — a text
      field you type into — and two radii that close together read as two
      designs rather than one. */
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -1199,7 +1244,7 @@ body {
   /* 0.4rem, matching every other control in the app. Still FILLED rather than
      bordered like `.settings-actions button`: this is the committing action,
      and demoting it to look secondary would lose that. */
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--accent);
   color: var(--accent-fg);
   font: inherit;
@@ -1305,7 +1350,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.02em;
   padding: 0 0.5rem;
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
 }
 .term-wrap-toggle[aria-pressed="false"] { color: var(--fg-dim); }
 
@@ -1390,7 +1435,7 @@ body {
   /* 0.4rem to match `.card-row input` and the rest of the card vocabulary.
      0.5rem here was the terminal's own radius, from before that vocabulary
      existed — two radii a thumb's width apart read as two designs. */
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   display: flex;
   align-items: center;
   /* Left-aligned, explicitly. shadcn's Button centres its content, which
@@ -1464,7 +1509,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   background: var(--accent);
   color: var(--accent-fg);
   font-size: var(--t-md);
@@ -1474,7 +1519,7 @@ body {
   min-height: 2.75rem;
   padding: 0 0.8rem;
   border: 0;
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   /* An opacity treatment rather than a palette colour: this is a scrim over
      the accent bar, not a token anyone would reuse. */
   background: rgb(255 255 255 / 0.18);
@@ -1496,7 +1541,7 @@ body {
   min-height: 2.5rem;
   min-width: 2.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   display: inline-flex;
@@ -1545,7 +1590,7 @@ body {
   font-weight: 600;
 }
 
-.band { padding: 0.9rem 0.9rem 0.4rem; }
+.band { padding: 1rem var(--gutter) 0.5rem; }
 
 /* The same device as `.sec-label` on the dashboard, so the same size and the
    same tracking. They were 0.62rem/0.09em here and 9.5px/0.09em there, which
@@ -1639,7 +1684,7 @@ body {
   min-height: 2.75rem;
   padding-inline: 1rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   font: inherit;
@@ -1680,15 +1725,15 @@ body {
      that contradicts itself cannot be read to find out what it does. */
   font-size: 16px;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
 }
 
 .settings-banner {
   margin: 0 0 0.85rem;
-  padding: 0.5rem 0.65rem;
-  border-radius: 0.4rem;
+  padding: 0.75rem var(--gutter);
+  border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--warn);
   color: var(--warn);
@@ -1711,7 +1756,7 @@ body {
   min-height: 2.75rem;
   padding: 0 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   font: inherit;
@@ -1743,7 +1788,7 @@ body {
   font-size: 1.1rem;
   letter-spacing: 0.12em;
   padding: 0.15rem 0.4rem;
-  border-radius: 0.3rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--border);
 }
@@ -1757,7 +1802,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.6rem 1rem;
+  padding: 0.75rem var(--gutter);
   padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -1771,7 +1816,7 @@ body {
   top: 0.5rem;
   margin: 0.5rem 0;
   padding: 0.55rem 0.8rem;
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--ok);
   color: var(--ok);
@@ -1939,7 +1984,7 @@ body {
   justify-content: center;
   min-width: 1.4rem;
   min-height: 1.4rem;
-  border-radius: 0.35rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--fg-dim);
@@ -1966,7 +2011,7 @@ body {
   min-height: 2.5rem;
   min-width: 2.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   display: inline-flex;
@@ -1996,7 +2041,7 @@ body {
 
 .spaces-head button {
   min-height: 2.75rem;
-  padding: 0 0.5rem;
+  padding: 0;
   background: none;
   border: 0;
   color: var(--accent);
@@ -2017,8 +2062,8 @@ body {
    tree on screen instead of an empty list. */
 .error {
   margin: 0.6rem 0.75rem;
-  padding: 0.55rem 0.7rem;
-  border-radius: 0.4rem;
+  padding: 0.75rem var(--gutter);
+  border-radius: var(--r-sm);
   background: var(--danger-wash);
   border: 1px solid var(--danger);
   color: var(--danger);
@@ -2078,7 +2123,7 @@ body {
   flex: none;
   min-width: 2.75rem;
   min-height: 2.75rem;
-  padding: 0 0.75rem 0 0.5rem;
+  padding: 0 var(--gutter) 0 0.5rem;
 }
 
 /* The scan target, same voice as an agent's name on the dashboard: an
@@ -2139,7 +2184,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   min-height: 2.75rem;
-  padding: 0 0.75rem;
+  padding: 0 var(--gutter);
 }
 
 /* The row's link, when the tab has a root pane. TabRow.tsx renders a bare
@@ -2213,7 +2258,11 @@ body {
   align-items: center;
   gap: 0.5rem;
   min-height: 2.75rem;
-  padding: 0 0.75rem 0 1.75rem;
+  /* Indented from the gutter, not from the screen: a pane row sits under its
+     tab, and 1.75rem was that indent measured against the OLD 0.75rem gutter.
+     Expressed as the relationship it always was, so the nesting reads the
+     same when the gutter moves. */
+  padding: 0 var(--gutter) 0 calc(var(--gutter) + 0.75rem);
   color: inherit;
   text-decoration: none;
 }
@@ -2232,7 +2281,7 @@ body {
   gap: 0.4rem;
   width: 100%;
   min-height: 2.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   background: none;
   border: 0;
   /* The one accent control in the screen's BODY (§6) — the quiet dot rule
@@ -2303,7 +2352,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-top: 1px solid var(--border);
   font-size: var(--t-xs);
   color: var(--fg-dim);
@@ -2328,7 +2377,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
@@ -2471,12 +2520,12 @@ body {
   overflow-y: auto;
   background: var(--bg);
   border-top: 1px solid var(--border);
-  border-radius: 0.75rem 0.75rem 0 0;
+  border-radius: var(--r-md) var(--r-md) 0 0;
   padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
 }
 
 .row-actions-head {
-  padding: 0.9rem 0.9rem 0.6rem;
+  padding: 1rem var(--gutter) 0.5rem;
   gap: 0.2rem;
 }
 
@@ -2505,7 +2554,7 @@ body {
    button bar, and a phone thumb reaches the whole width. */
 .row-actions-menu > button {
   min-height: 2.75rem;
-  padding: 0.55rem 0.9rem;
+  padding: 0.75rem var(--gutter);
   text-align: left;
   background: none;
   border: 0;
@@ -2541,7 +2590,7 @@ body {
   padding: 0 0.6rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--fg);
   font-family: var(--mono);
   /* 16px, not a scale step: iOS zooms any focused input below it, and a sheet
@@ -2570,7 +2619,7 @@ body {
   padding: 0 0.9rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--accent);
   font: inherit;
   font-size: var(--t-md);
@@ -2638,7 +2687,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  padding: 0.75rem 0.9rem;
+  padding: 0.75rem var(--gutter);
   border-top: 1px solid var(--border);
 }
 
@@ -2656,7 +2705,7 @@ body {
   padding: 0 0.6rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--fg);
   font-family: var(--mono);
   /* 16px, not a scale step — the iOS zoom floor for anything focusable, the
@@ -2681,7 +2730,7 @@ body {
   padding: 0 0.6rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--fg);
   font-family: var(--mono);
   font-size: var(--t-xs);
@@ -2703,7 +2752,7 @@ body {
 .launch-notice {
   flex: none;
   margin: 0;
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   font-size: var(--t-md);
   color: var(--fg-dim);
 }
@@ -2742,7 +2791,7 @@ body {
   padding: 0 0.7rem;
   background: none;
   border: 1px solid var(--danger);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--danger);
   font: inherit;
   font-size: var(--t-md);
@@ -2808,7 +2857,7 @@ body {
 .notify-transports {
   display: grid;
   gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
 }
 .notify-transport {
   display: flex;
@@ -2826,7 +2875,7 @@ body {
    it in NotifySection.tsx. `.notify-transports` has no border or background
    of its own, so without this the two rows above sit 0.75rem further in than
    this one and the step reads as a bug with nothing to explain it. */
-.notify-transport-solo { padding: 0.6rem 0.75rem; }
+.notify-transport-solo { padding: 0.75rem var(--gutter); }
 /* The explanation, dimmed and on its own line — it says what the checkbox
    cannot: whether anything is actually registered to receive this. */
 .notify-transport small {
@@ -2849,7 +2898,7 @@ body {
   justify-self: start;
   padding: 0 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   font: inherit;

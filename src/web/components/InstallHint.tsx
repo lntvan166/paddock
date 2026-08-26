@@ -24,7 +24,7 @@ export function InstallHint() {
 
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 text-[11px]"
+      className="banner flex items-center gap-2"
       style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}
     >
       <span style={{ color: "var(--fg-dim)" }}>
@@ -35,7 +35,7 @@ export function InstallHint() {
       {installEvent && (
         <button
           type="button"
-          className="tap rounded px-2 py-1"
+          className="tap rounded-[var(--r-sm)] px-2 py-1"
           style={{ border: "1px solid var(--border)", color: "var(--fg)" }}
           onClick={() => {
             // The captured event can only be prompted once — hide after use
@@ -49,7 +49,7 @@ export function InstallHint() {
       )}
       <button
         type="button"
-        className="tap ml-auto rounded px-2 py-1"
+        className="tap ml-auto rounded-[var(--r-sm)] px-2 py-1"
         style={{ border: "1px solid var(--border)", color: "var(--fg)" }}
         onClick={() => {
           dismissInstall();

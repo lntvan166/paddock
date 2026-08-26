@@ -12,7 +12,7 @@ export function ConnectionBanner({
   return (
     <div
       role="status"
-      className="px-3 py-2 text-[11px]"
+      className="banner"
       style={{ background: "var(--surface)", borderBottom: "1px solid var(--warn)", color: "var(--warn)" }}
     >
       {connected ? "Waiting for updates" : "Reconnecting"}
