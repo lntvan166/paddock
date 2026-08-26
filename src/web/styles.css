@@ -546,11 +546,23 @@ body {
 /* The section eyebrow. Same gutter as the rows it introduces — it used to be
    `px-3` against the card's 20px, so even the label was out of line with what
    it labelled. */
+/* One height whether or not the section folds — and on a PHONE those were
+   27px apart.
+   `Idle` is collapsible, so its label is a `.tap` button, and `.tap` carries
+   `min-height: 2.75rem` inside `@media (pointer: coarse)`. That floor does not
+   apply to a desktop pointer, so every screenshot taken on a laptop showed
+   48px while the target device rendered 68px: 1rem of padding, plus a 44px
+   button, plus 0.5rem. `Working` has no button and stayed at 41px.
+
+   Separation from the section above is a MARGIN, not padding: padding adds to
+   `min-height` and would put the collapsible one back above 44. */
 .sec-head {
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 1rem var(--gutter) 0.5rem;
+  min-height: 2.75rem;
+  margin-top: 0.5rem;
+  padding: 0 var(--gutter);
   color: var(--fg-dim);
 }
 
