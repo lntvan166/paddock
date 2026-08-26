@@ -5,7 +5,36 @@
  * not merely on write. Handled once here rather than in every component that
  * wants a preference — an uncaught throw would take the view down with it.
  */
-export type ThemePref = "system" | "light" | "dark";
+/**
+ * Every theme the picker offers, in the order it offers them.
+ *
+ * The ORDER is the UI order: paddock's own three first, then the named
+ * palettes. `system` is first because it is the default and the only entry
+ * that follows the operating system — every named theme pins itself, which is
+ * the accepted cost of a flat list (see the design doc, §2).
+ *
+ * This table and the `:root[data-theme=…]` blocks in styles.css are two
+ * sources of truth, and `tests/themes.test.ts` asserts they agree: an id here
+ * with no block would render unstyled, and a block with no id here would be
+ * unreachable from the picker. Same "guards the guard" pattern
+ * `tests/ui-icons.test.tsx` uses for its glyph list.
+ *
+ * `system` and `light` deliberately have NO block of their own — `light` IS
+ * the bare `:root` palette and `system` sets no attribute at all. `dark`
+ * already had one before any of this. The consistency test knows those by
+ * name; every other id must have a block.
+ */
+export const THEMES = [
+  { id: "system", label: "System" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+  { id: "dracula", label: "Dracula" },
+  { id: "gruvbox-dark", label: "Gruvbox Dark" },
+  { id: "gruvbox-light", label: "Gruvbox Light" },
+  { id: "nord", label: "Nord" },
+] as const;
+
+export type ThemePref = (typeof THEMES)[number]["id"];
 export type RatePref = "live" | "balanced" | "frugal";
 
 /**
@@ -146,7 +175,10 @@ export function readPrefs(): Prefs {
   // who has never opened the setting as one who switched it off.
   const autoRaw = raw(KEYS.keypadAuto);
   return {
-    theme: theme === "light" || theme === "dark" ? theme : DEFAULTS.theme,
+    // Checked against the registry rather than a hardcoded pair. A value left
+    // by a build that offered a theme since removed must fall back to the
+    // default, not reach `data-theme` and match no block.
+    theme: THEMES.some((t) => t.id === theme) ? (theme as ThemePref) : DEFAULTS.theme,
     rate: rate === "balanced" || rate === "frugal" ? rate : DEFAULTS.rate,
     wrap: wrapRaw === null ? DEFAULTS.wrap : wrapRaw === "1",
     fontPx: Number.isFinite(font) && font >= 10 && font <= 22 ? font : DEFAULTS.fontPx,
@@ -195,6 +227,6 @@ export function writePref<K extends keyof Prefs>(k: K, v: Prefs[K]): void {
  * `Settings.tsx` — a second import in the other direction would be a
  * circular module dependency for no reason beyond convenience.
  */
-export function themeAttr(pref: ThemePref): "light" | "dark" | null {
+export function themeAttr(pref: ThemePref): Exclude<ThemePref, "system"> | null {
   return pref === "system" ? null : pref;
 }
