@@ -74,7 +74,7 @@ export function SectionHeader({
     </>
   );
   return (
-    <div className="flex items-center gap-1.5 px-3 pt-3 pb-1.5" style={{ color: "var(--fg-dim)" }}>
+    <div className="sec-head">
       {expandable ? (
         <button
           type="button"

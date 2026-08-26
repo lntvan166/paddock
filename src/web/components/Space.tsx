@@ -69,14 +69,18 @@ export function Space({
    * never a stack of prior spaces for back to pop.
    */
   const screen = (headerExtra: React.ReactNode, body: React.ReactNode) => (
-    <main className="dash mx-auto max-w-2xl safe-bottom">
-      <header className="space-screen-head">
+    // `screen`, not a flowing column — Back must stay reachable at any scroll
+    // position. See the `.screen, .term` block in styles.css. That this shell
+    // was already defined once, for all four states, is why the change is one
+    // edit here rather than four.
+    <main className="screen">
+      <header className="space-screen-head screen-chrome">
         <button type="button" className="term-back" onClick={onBack} aria-label="Back to spaces">
           ‹ Spaces
         </button>
         {headerExtra}
       </header>
-      {body}
+      <div className="screen-body">{body}</div>
     </main>
   );
 

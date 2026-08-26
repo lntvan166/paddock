@@ -31,7 +31,7 @@ export function ReleaseBanner({
   return (
     <div
       role="status"
-      className="flex items-start gap-2 px-3 py-2 text-[11px]"
+      className="banner flex items-start gap-2"
       style={{
         background: "var(--surface)",
         borderBottom: "1px solid var(--accent)",

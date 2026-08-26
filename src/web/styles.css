@@ -102,6 +102,60 @@
      is the longest of the three prior stacks. */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* ── The gutter ─────────────────────────────────────────────────────────
+     Where a line of content starts, for every band that spans the screen.
+
+     Defined once because it was not. Measured across the app, content began
+     at SEVEN different distances from the edge: 9.6px (`.term-controls`,
+     `.term-keys`), 11.2px (`.term-pane`), 12px (the dashboard rows and three
+     screen headers), 14.4px (`.row-actions-*`, `.create-form`), 18.4px (the
+     terminal's back label), 19.2px (`.term-options`, from a 0.6rem margin plus
+     0.6rem padding) and 20px (an `AgentCard`, from `mx-2` plus `p-3`).
+
+     No single one of those was a mistake, which is exactly why there were
+     seven: each was chosen for its own rule, and nothing named the shared
+     idea. The visible cost was on the dashboard, where an attention card sat
+     8px further in than the row below it and the icon column jogged sideways
+     as you scrolled past.
+
+     1rem, not the 0.75rem the majority used: the ONE band that cannot take
+     horizontal padding is the terminal's output pane, and every other band
+     now aligns with the rest of the app rather than with it.
+
+     Not part of a general spacing scale — that is a separate piece of work.
+     This is one named decision that many rules share. */
+  --gutter: 1rem;
+
+  /* The attention edge: the stripe that marks a band as needing a person.
+     Named because two rules must agree on it AND because each of them has to
+     subtract it from its own left padding — a border displaces content, so an
+     edge added without that subtraction quietly re-creates the misalignment
+     the gutter was introduced to remove. */
+  --edge: 2px;
+
+  /* ── Radius ─────────────────────────────────────────────────────────────
+     Two steps and a pill. There were ten values.
+
+     `shadcn init` brought `--radius: 0.75rem`, and `@theme inline` derives the
+     whole `--radius-*` scale from it, so every `rounded-lg` in JSX resolved to
+     12px — while 22 hand-written rules here rounded at 0.4rem (6.4px), with
+     0.25/0.3/0.35/0.45/0.5/0.6rem scattered between. Four of those sit inside
+     1.6px of each other, which is a huddle, not a scale. The visible result
+     was `.host-settings-btn` at 6.4px sitting directly above a 12px card in
+     the same header.
+
+     The two sizes the app actually reached for were right — they land within
+     rounding distance of Primer's `medium` and `large`, and GitHub ships three
+     plus a pill for a far larger app. What was missing is that neither was
+     named, so the boundary between them was accidental.
+
+     `--radius` below is now an ALIAS of --r-md rather than a value of its own,
+     for exactly the reason the shadcn bridge exists: `init` already wrote its
+     own `--border` and `--accent` over paddock's once. */
+  --r-sm: 0.375rem;  /* 6px  — buttons, inputs, keys, prompt options */
+  --r-md: 0.75rem;   /* 12px — sheets and dialogs: what still floats */
+  --r-full: 9999px;  /* dots, pills, chips */
+
   /* ── Type scale ─────────────────────────────────────────────────────────
      Four steps, and every piece of type in the app picks one of them.
 
@@ -171,10 +225,13 @@
   --destructive: var(--danger);
   --input: var(--border);
   --ring: var(--accent);
-  /* Radius matches the card vocabulary the app already uses, not shadcn's
-     0.625rem — otherwise a shadcn dialog would round differently from every
-     card beside it. */
-  --radius: 0.75rem;
+  /* An ALIAS of --r-md, not a value. It governs every `rounded-*` utility in
+     the app through `@theme inline`, so a literal here is a second radius
+     vocabulary competing with the one above — which is precisely what it was.
+     The comment this replaces claimed it "matches the card vocabulary the app
+     already uses"; the app's dominant hand-written radius was 6.4px, so it
+     did not. */
+  --radius: var(--r-md);
 }
 
 /* System dark, unless the user explicitly chose light. */
@@ -266,7 +323,7 @@ body {
 :where(a, button, [role="button"], input, select, textarea):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
-  border-radius: 0.25rem;
+  border-radius: var(--r-sm);
 }
 
 .safe-bottom {
@@ -280,7 +337,7 @@ body {
   width: 7px;
   height: 7px;
   flex-shrink: 0;
-  border-radius: 9999px;
+  border-radius: var(--r-full);
   border-width: 1.5px;
   border-style: solid;
   box-sizing: border-box;
@@ -300,7 +357,7 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border-radius: 9999px;
+  border-radius: var(--r-full);
   color: var(--tile-fg);
   font-weight: 600;
   letter-spacing: 0;
@@ -319,8 +376,176 @@ body {
 }
 
 /* Every row is bare: the two sections that need attention render AgentCard
-   instead, which carries its own border and accent. */
-.row { border-top: 1px solid var(--border); }
+   instead, which carries its own accent.
+
+   The padding moved here from `px-3 py-2.5` in the JSX so the row and the card
+   share one gutter — they are the same list, and they used to disagree by 8px.
+   Vertical stays 0.75rem, which is what `py-2.5` (10px) rounded to; the row is
+   the densest thing on the screen and did not need loosening. */
+.row {
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem var(--gutter);
+}
+
+/* ── The attention card ───────────────────────────────────────────────────
+   A blocked or freshly-finished agent, in `Needs you` and `Ready`.
+
+   FULL-BLEED, where this used to be `mx-2 rounded-lg`: floating the card
+   inset its contents by 20px against the 12px of every row around it, so the
+   icon column stepped sideways at each section boundary — the single most
+   visible symptom of the seven gutters.
+
+   Attention is carried by a 2px left edge plus the wash, rather than by a
+   border on all four sides. On a phone held at arm's length a full-width band
+   is louder than a floating rounded rectangle, not quieter, and it lets the
+   card align with everything else instead of being the exception. The colour
+   is unchanged: `--danger` for blocked, `--ok` for finished.
+
+   `--card-accent` and `--card-ground` are set inline by AgentCard.tsx, which
+   is where the state-to-colour rule lives — the same two values it used to
+   pass to `border` and `background` directly. */
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem var(--gutter);
+  /* The edge is 2px of BORDER, and a border displaces the content behind it —
+     so without this the card's tile landed at 18px while every row's landed at
+     16px. A 2px jog instead of the 8px one this work removed is still a jog,
+     and it is the exact defect the gutter exists to prevent. Measured, not
+     reasoned about: the injected probe read 18. */
+  padding-left: calc(var(--gutter) - var(--edge));
+  border-top: 1px solid var(--border);
+  border-left: var(--edge) solid var(--card-accent);
+  background: var(--card-ground);
+}
+
+/* The section eyebrow. Same gutter as the rows it introduces — it used to be
+   `px-3` against the card's 20px, so even the label was out of line with what
+   it labelled. */
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 1rem var(--gutter) 0.5rem;
+  color: var(--fg-dim);
+}
+
+/* The dashboard's own header. Was `px-3 py-2.5` inline. */
+.host-head {
+  padding: 0.75rem var(--gutter);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The collapsed-Idle chip row, aligned with the rows it stands in for. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0 var(--gutter) 0.75rem;
+}
+
+/* ── The bottom tab bar ──────────────────────────────────────────────────
+   Three destinations, labelled, within thumb reach.
+
+   Chrome, so it sits OUTSIDE `.screen-body` and never scrolls — the same
+   `flex: none` treatment the header gets, at the other end of the shell.
+
+   `padding-bottom` carries the safe-area inset because this is now the
+   bottom-most element on the screen: the shell's own inset would sit BELOW
+   the bar's ground, leaving a strip of page colour under it on a phone with a
+   home indicator. `.screen:has(.tab-bar)` drops the shell's copy so the two
+   cannot double up. */
+.tab-bar {
+  flex: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.screen:has(.tab-bar) { padding-bottom: 0; }
+
+.tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.5rem 0.25rem;
+  /* Comfortably past the 44px floor even before the safe-area inset: this is
+     the control you aim at one-handed, walking. */
+  min-height: 3.25rem;
+  justify-content: center;
+  color: var(--fg-dim);
+  text-decoration: none;
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+
+/* Colour AND weight, never colour alone — and `aria-current` in the markup
+   carries it to a screen reader, which neither of these reaches. */
+.tab-item[data-current="true"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tab-glyph-wrap { position: relative; display: inline-flex; }
+.tab-glyph { width: 22px; height: 22px; }
+.tab-label { line-height: 1.2; }
+
+/* The needs-you count. --danger, which this palette spends on exactly one
+   idea: an agent that has stopped and needs a person. */
+.tab-badge {
+  position: absolute;
+  bottom: 60%;
+  left: 60%;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.25rem;
+  border-radius: var(--r-full);
+  background: var(--danger);
+  color: #fff;
+  font-family: var(--mono);
+  /* --t-xs, the step this scale reserves for "counts and badges" — which is
+     literally what this is, and the one place that description fits exactly. */
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 1rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Message bands ───────────────────────────────────────────────────────
+   `ConnectionBanner`, `ReleaseBanner`, `InstallHint`: three components that
+   had written out the same band by hand as `px-3 py-2 text-[11px]`, which is
+   both the old gutter and a step BELOW the scale's prose size.
+
+   --t-md, not --t-xs. Every one of these is a sentence you read — "Reconnecting
+   · last updated 2m ago", "paddock 0.11.0 is available", "Install paddock for
+   quicker access." The scale reserves --t-xs for "eyebrows, ages, counts,
+   badges: metadata" and --t-md for "anything you read", and set a step small
+   these read as fine print rather than as the messages they are.
+
+   Ground and border are deliberately NOT set here: each banner states its own,
+   because the colour is what distinguishes a warning from a release notice
+   from a hint. Only the geometry and the voice are shared. */
+.banner {
+  padding: 0.75rem var(--gutter);
+  font-size: var(--t-md);
+}
+
+/* "No agents detected.", "Opening…" — paddock talking about the list, so it
+   takes the gutter like the list does. */
+.dash-note {
+  padding: 1.5rem var(--gutter);
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+}
 
 /* ── Two voices ───────────────────────────────────────────────────────────
    The one idea the dashboard's typography carries: mono is what the MACHINE
@@ -376,6 +601,21 @@ body {
   color: var(--fg-dim);
 }
 
+/* The dashboard header's summary sentence — "1 needs you · 2 working".
+   --t-md, not --t-xs. This scale's own definitions put "eyebrows, ages,
+   counts, badges: metadata" at --t-xs and "anything you read: prose, labels,
+   controls" at --t-md, and this line is a sentence: it is the one place that
+   says, in words, how many agents want something from you. It was set a step
+   below what that rule prescribes, which is why it read as fine print on the
+   screen whose whole job is answering that question at a glance.
+   The counts INSIDE it are part of the sentence, not a data readout, so this
+   stays sans and does not take `.ident`. */
+.host-summary {
+  margin-top: 0.25rem;
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+}
+
 .sec-label {
   font-size: var(--t-xs);
   font-weight: 700;
@@ -387,7 +627,7 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: var(--r-md);
   overflow: hidden;
 }
 
@@ -397,7 +637,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.8rem 0.9rem;
+  padding: 0.75rem var(--gutter);
 }
 
 .card-icon { color: var(--fg-dim); display: inline-flex; flex-shrink: 0; }
@@ -413,11 +653,11 @@ body {
    about the whole setting, not about its first line. */
 .card-control { flex-shrink: 0; display: inline-flex; align-items: center; }
 
-.card-body { border-top: 1px solid var(--border); padding: 0.8rem 0.9rem; }
+.card-body { border-top: 1px solid var(--border); padding: 0.75rem var(--gutter); }
 
 .card-foot {
   border-top: 1px solid var(--border);
-  padding: 0.6rem 0.9rem;
+  padding: 0.75rem var(--gutter);
   font-size: var(--t-xs);
   color: var(--fg-dim);
 }
@@ -465,7 +705,7 @@ body {
      thing you type into has to clear the threshold. */
   font-size: 16px;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
 }
@@ -535,7 +775,7 @@ body {
   gap: 0.25rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.6rem;
+  border-radius: var(--r-sm);
   padding: 0.2rem;
 }
 
@@ -547,7 +787,7 @@ body {
   justify-content: center;
   gap: 0.35rem;
   border: 0;
-  border-radius: 0.45rem;
+  border-radius: var(--r-sm);
   background: none;
   color: var(--fg-dim);
   font-size: var(--t-md);
@@ -667,25 +907,23 @@ body {
    The column is fixed: only .term-pane scrolls. The keypad and the reply box
    must stay reachable no matter how long the transcript is — they are the
    reason the screen exists. */
-.term {
-  position: fixed;
-  inset: 0;
-  /* Centred in a readable column instead of stretching to the viewport.
-     Full-width on a phone (the design target), but on a 1440px laptop an
-     unconstrained terminal put option buttons 1400px wide with their text
-     stranded at the far left, and keypad buttons the size of a hand. The list
-     already centres itself at this width; the terminal did not, so the two
-     views disagreed about how wide the app is.
+/* The terminal's shell is the SHARED one — see `.screen, .term` further down,
+   which carries the fixed positioning, the centred 42rem column and the safe
+   -area inset that used to be restated here.
 
-     `min()` rather than a media query: there is one rule here, not a mobile
-     case and a desktop case, and no device detection anywhere in this
-     project. */
-  width: min(100%, 42rem);
-  margin-inline: auto;
-  display: flex;
-  flex-direction: column;
+   Kept from the original block, because it is the reasoning for that width and
+   would otherwise be lost: the terminal used to stretch to the viewport, and
+   on a 1440px laptop that put option buttons 1400px wide with their text
+   stranded at the far left, and keypad buttons the size of a hand. The list
+   already centred itself at this width; the terminal did not, so the two views
+   disagreed about how wide the app is. `min()` rather than a media query —
+   there is one rule here, not a mobile case and a desktop case, and no device
+   detection anywhere in this project.
+
+   What remains genuinely its own is the ground: the terminal's chrome sits on
+   `--surface`, where the list screens sit on `--bg`. */
+.term {
   background: var(--surface);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Edges, so the column reads as a deliberate boundary rather than content
@@ -700,8 +938,8 @@ body {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
@@ -721,7 +959,12 @@ body {
    screen and a 60x24 one everywhere else — measured on the Spaces screen. The
    third instance of that shape found in this review: a correct rule scoped to a
    place the element also appears somewhere else. */
-.term-back { font-weight: 600; min-height: 2.75rem; padding: 0 0.4rem; }
+/* No horizontal padding of its own. It used to carry 0.4rem on top of the
+   header's 0.75rem, which put the one word you aim at 18.4px from the edge
+   while everything below it started at 12px — the largest single contributor
+   to the ragged left edge down this screen. The 44px target is kept by
+   `min-height` plus the header's own row height, not by padding. */
+.term-back { font-weight: 600; min-height: 2.75rem; padding: 0; }
 
 /* `center`, not `baseline`: the state is a DOT now, and an empty flex item has
    no text baseline — its bottom margin edge would be aligned to the agent
@@ -749,7 +992,7 @@ body {
   align-items: center;
   gap: 0.2rem;
   padding: 0.1rem 0.3rem;
-  border-radius: 0.3rem;
+  border-radius: var(--r-sm);
   background: var(--danger-wash);
   color: var(--danger);
   font-size: var(--t-xs);
@@ -766,7 +1009,16 @@ body {
   min-height: 0;
   min-width: 0;
   margin: 0;
-  padding: 0.6rem 0.7rem;
+  /* FULL-BLEED horizontally, and the one band on this screen that opts out of
+     `--gutter`. The pane is a viewport onto what the agent drew, not a column
+     of paddock's own text: its content is already aligned by construction, it
+     scrolls sideways rather than wrapping, and it is measured in COLUMNS
+     VISIBLE — see the font-size note below, whose floor was corrected once
+     because ~46 columns clipped an 80-column TUI mid-word. 0.7rem of side
+     padding cost roughly two columns for no gain, on the axis this pane is
+     tuned for. `tests/gutter.test.ts` asserts this exemption rather than
+     leaving it to look like an oversight. */
+  padding: 0.75rem 0;
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -810,11 +1062,11 @@ body {
 }
 
 .term-pane::-webkit-scrollbar-thumb, .term-structure::-webkit-scrollbar-thumb {
-  border-radius: 0.25rem;
+  border-radius: var(--r-sm);
   background: rgb(255 255 255 / 0.22);
 }
 
-.term-error, .term-note { flex: none; margin: 0; padding: 0.5rem 0.75rem; font-size: var(--t-md); }
+.term-error, .term-note { flex: none; margin: 0; padding: 0.75rem var(--gutter); font-size: var(--t-md); }
 
 /* A failure has to LOOK like one. Both of these carried `class="… warn"` from
    the moment they were written, and no rule in scope gave `.warn` a colour
@@ -846,7 +1098,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.6rem;
+  padding: 0.5rem var(--gutter);
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
@@ -868,8 +1120,8 @@ body {
 .term-keys {
   flex: none;
   display: grid;
-  gap: 0.35rem;
-  padding: 0.5rem 0.6rem;
+  gap: 0.5rem;
+  padding: 0.75rem var(--gutter);
   background: var(--surface);
 }
 
@@ -942,7 +1194,7 @@ body {
   padding: 0.4rem 0.5rem;
   margin-bottom: 0.35rem;
   border: 1px solid var(--accent);
-  border-radius: 0.5rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
 }
 .term-ctrl-lbl {
@@ -958,7 +1210,7 @@ body {
   min-height: 2.75rem;
   padding: 0 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
@@ -988,7 +1240,7 @@ body {
   border: 1px solid var(--border);
   /* Matches `.settings-mute button`, which is the same shape of control: a
      small bordered thing you tap in a row of siblings. */
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg-dim);
   font: inherit;
@@ -1035,7 +1287,7 @@ body {
   display: flex;
   gap: 0.5rem;
   background: var(--surface);
-  padding: 0.5rem 0.75rem 0.75rem;
+  padding: 0.75rem var(--gutter);
 }
 
 .term-reply input {
@@ -1051,7 +1303,7 @@ body {
   /* 0.4rem to match `.card-row input`: this is the same kind of thing — a text
      field you type into — and two radii that close together read as two
      designs rather than one. */
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -1064,7 +1316,7 @@ body {
   /* 0.4rem, matching every other control in the app. Still FILLED rather than
      bordered like `.settings-actions button`: this is the committing action,
      and demoting it to look secondary would lose that. */
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--accent);
   color: var(--accent-fg);
   font: inherit;
@@ -1170,7 +1422,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.02em;
   padding: 0 0.5rem;
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
 }
 .term-wrap-toggle[aria-pressed="false"] { color: var(--fg-dim); }
 
@@ -1210,14 +1462,32 @@ body {
    less deliberate than the settings screen. Kept as a grid rather than folded
    into `.card` because it also has to scroll — a long prompt must not push the
    reply bar off-screen, which is what `max-height` is for. */
+/* The prompt block: the agent's real options, under your thumb.
+   A full-width BAND with a left edge in --danger, not a rounded card floating
+   in a 0.6rem margin. Three reasons, in order of weight:
+
+   Its content started at 19.2px — a 0.6rem margin plus 0.6rem padding — which
+   was the furthest-in thing on the screen, so the one block you are meant to
+   act on was also the one least aligned with everything around it.
+
+   It is the same idea as a blocked `AgentCard` on the dashboard, and now it is
+   drawn the same way. Two representations of "this agent has stopped and needs
+   you" that look like two different components is exactly the kind of
+   disagreement `.agent-card`'s own note is about.
+
+   And a card inside a fixed column already bounded at 42rem was a border
+   inside a border. The band still scrolls at 40vh, which is what actually
+   protects a long option list. */
 .term-options {
   flex: none;
   display: grid;
-  gap: 0.4rem;
-  margin: 0.5rem 0.6rem 0;
-  padding: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  gap: 0.5rem;
+  padding: 0.75rem var(--gutter);
+  /* Compensated for the edge, exactly as `.agent-card` is and for the same
+     measured reason. */
+  padding-left: calc(var(--gutter) - var(--edge));
+  border-top: 1px solid var(--border);
+  border-left: var(--edge) solid var(--danger);
   background: var(--surface);
   max-height: 40vh;
   overflow-y: auto;
@@ -1237,7 +1507,7 @@ body {
   /* 0.4rem to match `.card-row input` and the rest of the card vocabulary.
      0.5rem here was the terminal's own radius, from before that vocabulary
      existed — two radii a thumb's width apart read as two designs. */
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   display: flex;
   align-items: center;
   /* Left-aligned, explicitly. shadcn's Button centres its content, which
@@ -1311,7 +1581,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   background: var(--accent);
   color: var(--accent-fg);
   font-size: var(--t-md);
@@ -1321,7 +1591,7 @@ body {
   min-height: 2.75rem;
   padding: 0 0.8rem;
   border: 0;
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   /* An opacity treatment rather than a palette colour: this is a scrim over
      the accent bar, not a token anyone would reuse. */
   background: rgb(255 255 255 / 0.18);
@@ -1343,7 +1613,7 @@ body {
   min-height: 2.5rem;
   min-width: 2.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   display: inline-flex;
@@ -1359,23 +1629,30 @@ body {
    here needs its own dark-mode block. */
 /* Reserved unconditionally, so the bar appearing never covers the last field
    and nothing on the page jumps when it does.
-   `calc(... + env(...))`, not a bare 5.5rem: `<main>` already carries
-   `.safe-bottom` above, which sets `padding-bottom:
-   env(safe-area-inset-bottom)`. `.settings` is the LATER rule at equal
-   specificity, so a bare value here would win and silently drop the home-
-   indicator inset from the whole page. */
-.settings {
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
-}
+
+   On the SCROLLING REGION, not on the screen. Settings is a `.screen` now, and
+   a screen is a fixed flex column whose own bottom padding would shorten the
+   scroller rather than reserve space inside it — the last field would sit
+   under the save bar exactly as if nothing had been reserved at all. The
+   clearance has to live where the content scrolls.
+
+   The `env(safe-area-inset-bottom)` term the original rule added here is
+   GONE, deliberately, and this is the one thing to be careful of if this rule
+   ever moves again. It was there because `<main>` carried `.safe-bottom` and
+   this rule, being later at equal specificity, would otherwise have overridden
+   it and dropped the home-indicator inset from the page. Neither condition
+   holds now: the shell owns that inset in its own block, and this selector is
+   `.settings > .screen-body`, which cannot collide with it. Adding the inset
+   back here would double it. */
+/* Nothing reserved. The save bar is a flex sibling now rather than a fixed
+   overlay, so it cannot cover the last field and there is nothing to clear —
+   see `.settings-save-bar`. */
 
 .settings-header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1385,7 +1662,7 @@ body {
   font-weight: 600;
 }
 
-.band { padding: 0.9rem 0.9rem 0.4rem; }
+.band { padding: 1rem var(--gutter) 0.5rem; }
 
 /* The same device as `.sec-label` on the dashboard, so the same size and the
    same tracking. They were 0.62rem/0.09em here and 9.5px/0.09em there, which
@@ -1479,7 +1756,7 @@ body {
   min-height: 2.75rem;
   padding-inline: 1rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   font: inherit;
@@ -1520,15 +1797,15 @@ body {
      that contradicts itself cannot be read to find out what it does. */
   font-size: 16px;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
 }
 
 .settings-banner {
   margin: 0 0 0.85rem;
-  padding: 0.5rem 0.65rem;
-  border-radius: 0.4rem;
+  padding: 0.75rem var(--gutter);
+  border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--warn);
   color: var(--warn);
@@ -1551,7 +1828,7 @@ body {
   min-height: 2.75rem;
   padding: 0 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   font: inherit;
@@ -1583,22 +1860,30 @@ body {
   font-size: 1.1rem;
   letter-spacing: 0.12em;
   padding: 0.15rem 0.4rem;
-  border-radius: 0.3rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--border);
 }
 
+/* A flex child of the shell, NOT `position: fixed`.
+   It used to be fixed at `bottom: 0`, with `.screen-body` reserving 5.5rem so
+   the bar could never cover the last field. Both of those stop working once
+   `TabBar` exists: a fixed bar at bottom 0 lands directly ON the tabs, and the
+   reservation became 88px of permanent dead space on top of the bar's own —
+   about 142px of a 844px phone, spent on nothing, whenever the form is clean.
+
+   Stacked instead: scroller, then save bar, then tabs. Nothing overlaps,
+   nothing is reserved, and the bar takes space only while it exists. The
+   safe-area inset belongs to the tab bar below it now — see `.tab-bar` — so
+   this no longer carries its own; two elements both padding for the home
+   indicator is how you get a double gap. */
 .settings-save-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.6rem 1rem;
-  padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
+  padding: 0.75rem var(--gutter);
   background: var(--surface);
   border-top: 1px solid var(--border);
   color: var(--fg);
@@ -1611,7 +1896,7 @@ body {
   top: 0.5rem;
   margin: 0.5rem 0;
   padding: 0.55rem 0.8rem;
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--ok);
   color: var(--ok);
@@ -1657,13 +1942,69 @@ body {
 .dl-value.ok { color: var(--ok); }
 .dl-value.warn { color: var(--warn); }
 
-/* The dashboard shell. A flex column at viewport height so `.build-stamp`'s
-   `margin-top: auto` has something to push against — see BuildStamp.tsx. */
-.dash {
+/* ── The screen shell ─────────────────────────────────────────────────────
+   ONE shell for every screen, shared with `.term` rather than copied from it.
+
+   The terminal has always been a fixed container with `flex: none` chrome and
+   a single scrolling region, so its header never leaves the viewport. Every
+   other screen was a flowing column at `min-height: 100dvh`, which meant the
+   header — and with it Back, the counts and the way into Settings — scrolled
+   away with the content. On Settings that was reported from use: leaving the
+   screen meant scrolling back to the top to reach a control that had gone.
+
+   Settings made the inversion plainest. It already reserved
+   `calc(5.5rem + env(safe-area-inset-bottom))` at the bottom to clear a FIXED
+   save bar, so it pinned its footer and let its header float — precisely
+   backwards for a screen operated with one thumb.
+
+   `.term` is listed here rather than left with its own copy of these
+   declarations: two rules that must agree are the thing this stylesheet keeps
+   getting bitten by. Its own block below keeps only what is genuinely its
+   own — the surface ground its chrome sits on.
+
+   `width: min(100%, 42rem)` is 42rem = Tailwind's `max-w-2xl`, which the
+   screens were already using; stating it here means a fixed element still
+   agrees with the column the app has always been. */
+.screen,
+.term {
+  position: fixed;
+  inset: 0;
+  width: min(100%, 42rem);
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* The one scrolling region inside a shell. Everything that is not chrome goes
+   in here.
+
+   `display: flex; flex-direction: column` is not decoration: `.build-stamp`
+   pushes itself down with `margin: auto 0 0`, and it needs a flex column to
+   push against. It used to push against `.dash`'s `min-height: 100dvh`; now it
+   pushes against this, which is exactly viewport-height when the content is
+   short and taller when it is long — so the stamp keeps the behaviour its own
+   comment describes, bottom of the screen on a short list and below the
+   content on a long one.
+
+   `min-height: 0` because a flex child's default `min-height: auto` refuses to
+   shrink below its content, which would push the scrollbar onto the shell and
+   take the chrome off screen with it — the very bug this shell exists to
+   fix. */
+.screen-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Chrome. Never scrolls, never shrinks. */
+.screen > .screen-chrome { flex: none; }
+
+.screen { background: var(--bg); }
 
 .build-stamp {
   /* Pushed to the bottom of the VIEWPORT when the list is short, and still
@@ -1723,7 +2064,7 @@ body {
   justify-content: center;
   min-width: 1.4rem;
   min-height: 1.4rem;
-  border-radius: 0.35rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--fg-dim);
@@ -1750,7 +2091,7 @@ body {
   min-height: 2.5rem;
   min-width: 2.5rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   display: inline-flex;
@@ -1774,13 +2115,13 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
 .spaces-head button {
   min-height: 2.75rem;
-  padding: 0 0.5rem;
+  padding: 0;
   background: none;
   border: 0;
   color: var(--accent);
@@ -1801,8 +2142,8 @@ body {
    tree on screen instead of an empty list. */
 .error {
   margin: 0.6rem 0.75rem;
-  padding: 0.55rem 0.7rem;
-  border-radius: 0.4rem;
+  padding: 0.75rem var(--gutter);
+  border-radius: var(--r-sm);
   background: var(--danger-wash);
   border: 1px solid var(--danger);
   color: var(--danger);
@@ -1862,7 +2203,7 @@ body {
   flex: none;
   min-width: 2.75rem;
   min-height: 2.75rem;
-  padding: 0 0.75rem 0 0.5rem;
+  padding: 0 var(--gutter) 0 0.5rem;
 }
 
 /* The scan target, same voice as an agent's name on the dashboard: an
@@ -1923,7 +2264,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   min-height: 2.75rem;
-  padding: 0 0.75rem;
+  padding: 0 var(--gutter);
 }
 
 /* The row's link, when the tab has a root pane. TabRow.tsx renders a bare
@@ -1997,7 +2338,11 @@ body {
   align-items: center;
   gap: 0.5rem;
   min-height: 2.75rem;
-  padding: 0 0.75rem 0 1.75rem;
+  /* Indented from the gutter, not from the screen: a pane row sits under its
+     tab, and 1.75rem was that indent measured against the OLD 0.75rem gutter.
+     Expressed as the relationship it always was, so the nesting reads the
+     same when the gutter moves. */
+  padding: 0 var(--gutter) 0 calc(var(--gutter) + 0.75rem);
   color: inherit;
   text-decoration: none;
 }
@@ -2016,7 +2361,7 @@ body {
   gap: 0.4rem;
   width: 100%;
   min-height: 2.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   background: none;
   border: 0;
   /* The one accent control in the screen's BODY (§6) — the quiet dot rule
@@ -2087,7 +2432,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-top: 1px solid var(--border);
   font-size: var(--t-xs);
   color: var(--fg-dim);
@@ -2112,7 +2457,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
@@ -2255,12 +2600,12 @@ body {
   overflow-y: auto;
   background: var(--bg);
   border-top: 1px solid var(--border);
-  border-radius: 0.75rem 0.75rem 0 0;
+  border-radius: var(--r-md) var(--r-md) 0 0;
   padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
 }
 
 .row-actions-head {
-  padding: 0.9rem 0.9rem 0.6rem;
+  padding: 1rem var(--gutter) 0.5rem;
   gap: 0.2rem;
 }
 
@@ -2289,7 +2634,7 @@ body {
    button bar, and a phone thumb reaches the whole width. */
 .row-actions-menu > button {
   min-height: 2.75rem;
-  padding: 0.55rem 0.9rem;
+  padding: 0.75rem var(--gutter);
   text-align: left;
   background: none;
   border: 0;
@@ -2325,7 +2670,7 @@ body {
   padding: 0 0.6rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--fg);
   font-family: var(--mono);
   /* 16px, not a scale step: iOS zooms any focused input below it, and a sheet
@@ -2354,7 +2699,7 @@ body {
   padding: 0 0.9rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--accent);
   font: inherit;
   font-size: var(--t-md);
@@ -2422,7 +2767,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  padding: 0.75rem 0.9rem;
+  padding: 0.75rem var(--gutter);
   border-top: 1px solid var(--border);
 }
 
@@ -2440,7 +2785,7 @@ body {
   padding: 0 0.6rem;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--fg);
   font-family: var(--mono);
   /* 16px, not a scale step — the iOS zoom floor for anything focusable, the
@@ -2465,7 +2810,7 @@ body {
   padding: 0 0.6rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--fg);
   font-family: var(--mono);
   font-size: var(--t-xs);
@@ -2487,7 +2832,7 @@ body {
 .launch-notice {
   flex: none;
   margin: 0;
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   font-size: var(--t-md);
   color: var(--fg-dim);
 }
@@ -2526,7 +2871,7 @@ body {
   padding: 0 0.7rem;
   background: none;
   border: 1px solid var(--danger);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   color: var(--danger);
   font: inherit;
   font-size: var(--t-md);
@@ -2592,7 +2937,7 @@ body {
 .notify-transports {
   display: grid;
   gap: 0.5rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
 }
 .notify-transport {
   display: flex;
@@ -2610,7 +2955,7 @@ body {
    it in NotifySection.tsx. `.notify-transports` has no border or background
    of its own, so without this the two rows above sit 0.75rem further in than
    this one and the step reads as a bug with nothing to explain it. */
-.notify-transport-solo { padding: 0.6rem 0.75rem; }
+.notify-transport-solo { padding: 0.75rem var(--gutter); }
 /* The explanation, dimmed and on its own line — it says what the checkbox
    cannot: whether anything is actually registered to receive this. */
 .notify-transport small {
@@ -2633,7 +2978,7 @@ body {
   justify-self: start;
   padding: 0 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
   font: inherit;

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { sectionFor } from "@shared/types";
+import { useStore } from "@web/store";
 import type { HealthBody, NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 import {
   readPrefs, themeAttr, writePref,
@@ -12,6 +14,7 @@ import { PushSection } from "@web/components/settings/PushSection";
 import { InfoSection } from "@web/components/settings/InfoSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
+import { TabBar } from "@web/components/TabBar";
 
 interface SettingsProps {
   onBack: () => void;
@@ -27,6 +30,9 @@ interface SettingsProps {
  * is not.
  */
 export function Settings({ onBack }: SettingsProps) {
+  // Counted with `sectionFor`, the one rule. From this screen a newly blocked
+  // agent used to be invisible entirely.
+  const needsYou = useStore((s) => s.agents.filter((a) => sectionFor(a) === "needs-you").length);
   const [prefs, setPrefs] = useState<Prefs>(() => readPrefs());
 
   const [view, setView] = useState<SettingsView | null>(null);
@@ -313,14 +319,25 @@ export function Settings({ onBack }: SettingsProps) {
     : "not set";
 
   return (
-    <main className="settings mx-auto max-w-2xl safe-bottom">
-      <header className="settings-header">
+    // `screen`, not a flowing column: the header below must stay put. Leaving
+    // this screen used to mean scrolling back to the top to find Back — the
+    // control had gone off the viewport with everything else. See the
+    // `.screen, .term` block in styles.css.
+    //
+    // `mx-auto max-w-2xl safe-bottom` are gone rather than left alongside: the
+    // shell owns the centred 42rem column and the safe-area inset now, and
+    // three utilities restating what a class already does is how the two of
+    // them drift apart later.
+    <main className="settings screen">
+      <header className="settings-header screen-chrome">
         <button type="button" className="term-back" onClick={onBack} aria-label="Back to agents">
           ‹ Agents
         </button>
         <h1 className="settings-title">Settings</h1>
       </header>
 
+      {/* Everything below the header scrolls; the header does not. */}
+      <div className="screen-body">
       {view?.error && <p className="settings-banner">{view.error}</p>}
       {loadError && <p className="settings-banner">{loadError}</p>}
       {healthError && <p className="settings-banner">{healthError}</p>}
@@ -429,7 +446,14 @@ export function Settings({ onBack }: SettingsProps) {
         <p className="band-hint">Read-only. What build is running, and what this device can see.</p>
         <InfoSection health={health} />
       </section>
+      </div>
 
+      {/* OUTSIDE the scrolling region, with the header: `.settings-save-bar` is
+          `position: fixed`, so it was never going to scroll — but it is chrome,
+          and chrome belongs to the shell rather than to the content. The
+          clearance that stops it covering the last field now sits on
+          `.settings > .screen-body`, which is the element that actually
+          scrolls. */}
       {/* `dirty` is false while `baseline === null`, which is what used to be
           `disabled={saving || view === null}` on a Save button: every field
           in this section starts at an empty/false/60000 placeholder and is
@@ -439,6 +463,11 @@ export function Settings({ onBack }: SettingsProps) {
           configured. A form that never loaded cannot be saved — and now
           there is no Save button rendered at all until something is dirty. */}
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} />
+      {/* Below the save bar in the markup, and below it on screen: the save bar
+          acts on THIS view, the tabs leave it. Apple's rule — a tab bar
+          navigates, a toolbar acts on the current screen — is why the two are
+          different objects rather than one row of buttons. */}
+      <TabBar current="settings" needsYou={needsYou} />
     </main>
   );
 }
