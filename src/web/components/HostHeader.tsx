@@ -42,50 +42,50 @@ export function HostHeader({
     n("idle") > 0 ? `${n("idle")} idle` : null,
   ].filter(Boolean);
   return (
+    /* ONE line, the same shape `.spaces-head` uses — a title, then what it is
+       a title OF, on the same baseline. It was two rows, and its own note gave
+       the reason: at these type sizes the line overflowed at 390px and
+       `demo-box` hyphenated into "demo-" / "box", which is the one thing an
+       identifier must never do.
+
+       That reason expired when navigation moved to the bottom bar. The line no
+       longer carries a 44px gear and a 44px Spaces button, and the measurement
+       now is 297px of content in 358px of room — 350px in the worst case that
+       also shows a non-default host id.
+
+       350 in 358 is eight pixels of slack, which is not enough to promise, so
+       the row WRAPS rather than overflows. In the common case it is one line;
+       in the rare long one the summary drops below instead of hyphenating the
+       wordmark. */
     <header className="host-head">
-      {/* Two rows, not one.
-          Everything used to sit on a single line: wordmark, host id, the whole
-          section summary, and the gear. At the type sizes this file now uses
-          that line overflowed at 390px — `demo-box` hyphenated into "demo-" /
-          "box", which is the one thing an identifier must never do, and the
-          summary wrapped under itself. Identity and the way out belong on the
-          top line; the summary is a sentence and gets its own. */}
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="flex min-w-0 items-center gap-1.5 font-semibold" style={{ fontSize: "var(--t-lg)" }}>
-          <Mark size={16} />
-          paddock
-          {/* The host label, demoted from the title but not dropped — see
-              DEFAULT_HOST_ID above. `connecting…` still has to appear
-              somewhere: the title is now a constant, so it can no longer carry
-              the "we have not heard from the server yet" signal it used to.
-              `whitespace-nowrap` because a hostname that breaks across a
-              hyphen reads as a different hostname. */}
-          {hostId === null ? (
-            <span className="row-state ml-1 whitespace-nowrap">connecting…</span>
-          ) : hostId !== DEFAULT_HOST_ID ? (
-            <span className="ident row-meta ml-1 truncate whitespace-nowrap">{hostId}</span>
-          ) : null}
-        </h1>
-        {/* The new-release notice USED to live here, as one dim line among the
-            other dim metadata. The reasoning was sound — `paddock update` is
-            not an alarm — but a 10px line the colour of its neighbours is not
-            read, it is skipped, and an operator a version behind did not know.
-            It is now `ReleaseBanner`, shown once and dismissible. Do not add a
-            second copy here: one fact, one channel. */}
-        {/* Spaces and Settings USED to sit here, as two unlabelled 44px glyphs
-            in the top-right corner — the least reachable point on a phone held
-            in one hand, on a screen designed to be read one-handed. They are
-            tabs now, at the bottom, with labels. Do not put a navigation
-            control back in this corner. */}
-      </div>
+      <h1 className="host-title">
+        <Mark size={18} />
+        paddock
+        {/* The host label, demoted from the title but not dropped — see
+            DEFAULT_HOST_ID above. `connecting…` still has to appear somewhere:
+            the title is a constant, so it can no longer carry the "we have not
+            heard from the server yet" signal it used to. `whitespace-nowrap`
+            because a hostname that breaks across a hyphen reads as a different
+            hostname — and on one line that is the failure this layout has to
+            keep refusing. */}
+        {hostId === null ? (
+          <span className="row-state whitespace-nowrap">connecting…</span>
+        ) : hostId !== DEFAULT_HOST_ID ? (
+          <span className="ident row-meta truncate whitespace-nowrap">{hostId}</span>
+        ) : null}
+      </h1>
       {/* paddock's own sentence about the list, so sans — the counts inside it
           are part of the sentence, not a data readout.
 
-          `host-summary`, not `row-state`: this is a SENTENCE, and the scale
-          reserves --t-xs for "eyebrows, ages, counts, badges: metadata" and
-          --t-md for "anything you read". It was set one step below what the
-          app's own rule prescribes, which is why the line that says how many
-          agents need you read as fine print. */}
+          `--t-md`, the step the scale reserves for "anything you read". It was
+          at --t-xs, one below what the app's own rule prescribes, which is why
+          the line that says how many agents need you read as fine print.
+
+          The new-release notice USED to live in this header as another dim
+          line. It is `ReleaseBanner` now, shown once and dismissible — one
+          fact, one channel. And Spaces and Settings used to sit here as two
+          unlabelled glyphs in the top-right corner; they are labelled tabs at
+          the bottom now. Do not put a navigation control back in this row. */}
       <p className="host-summary">
         {parts.length ? parts.join(" · ") : "no agents"}
       </p>

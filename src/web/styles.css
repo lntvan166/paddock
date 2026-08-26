@@ -566,10 +566,34 @@ body {
   color: var(--fg-dim);
 }
 
-/* The dashboard's own header. Was `px-3 py-2.5` inline. */
+/* The dashboard's own header: title and summary on ONE baseline, the same
+   shape `.spaces-head` uses. `flex-wrap` is the safety valve — the worst case
+   (a non-default host id plus all four sections) measures 350px in 358px of
+   room, and eight pixels is not a margin worth promising. It wraps rather than
+   hyphenating the wordmark, which is the defect the two-row layout existed to
+   avoid. */
 .host-head {
-  padding: 0.75rem var(--gutter);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.625rem;
+  min-height: 2.75rem;
+  padding: 0.5rem var(--gutter);
   border-bottom: 1px solid var(--border);
+}
+
+/* Larger and heavier than it was — this is the screen's name, and with the
+   summary beside it rather than beneath, --t-xl is the step the scale reserves
+   for "a screen's own title, and nothing else". `.spaces-head h2` takes the
+   same step, so the two list screens now agree on how a title looks. */
+.host-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--t-xl);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* The collapsed-Idle chip row, aligned with the rows it stands in for. */
@@ -743,7 +767,7 @@ body {
    The counts INSIDE it are part of the sentence, not a data readout, so this
    stays sans and does not take `.ident`. */
 .host-summary {
-  margin-top: 0.25rem;
+  margin: 0;
   font-size: var(--t-md);
   color: var(--fg-dim);
 }
