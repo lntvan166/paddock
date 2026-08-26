@@ -77,3 +77,35 @@ test("the ⋯ is a sibling of the link, never inside it", async () => {
   const host = await render(<TabRow tab={SINGLE} onChanged={() => {}} />);
   expect(host.querySelector("a button")).toBeNull();
 });
+
+test("a named tab shows the agent under it, because the two are different facts", async () => {
+  // `migrate-up` is what the operator called the TAB; `api-refactor` is what
+  // the agent calls itself. The row said only the first, so a tab renamed for
+  // the work no longer told you which agent was doing it.
+  const host = await render(<TabRow tab={SINGLE} onChanged={() => {}} />);
+  expect(textsOf(host, ".tab-name")).toEqual(["migrate-up"]);
+  expect(textsOf(host, ".tab-agent")).toEqual(["api-refactor"]);
+});
+
+test("an unnamed tab does not print the same name twice", async () => {
+  // With no tab label the row already falls back to the pane's own label, so a
+  // subtitle would repeat it verbatim. `paneIdentity` is nullable for exactly
+  // this reason — "there is nothing to add" has to be expressible, or every
+  // merged row grows a duplicate.
+  const unnamed: Tab = { tabId: "w1:t9", label: null, panes: [pane("w1:p9")] };
+  const host = await render(<TabRow tab={unnamed} onChanged={() => {}} />);
+  expect(textsOf(host, ".tab-name")).toEqual(["api-refactor"]);
+  expect(host.querySelectorAll(".tab-agent").length).toBe(0);
+});
+
+test("a shell pane contributes no agent line", async () => {
+  // A pane with no harness is labelled by its folder, not by an agent name.
+  // Rendering that folder as "the agent" would be a claim the tree cannot
+  // support.
+  const shell: Tab = {
+    tabId: "w1:t8", label: "scratch",
+    panes: [pane("w1:p8", { harness: null, name: null, title: "bash", cwd: "/srv/project", state: null })],
+  };
+  const host = await render(<TabRow tab={shell} onChanged={() => {}} />);
+  expect(host.querySelectorAll(".tab-agent").length).toBe(0);
+});

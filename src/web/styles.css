@@ -2554,6 +2554,21 @@ body {
   flex-direction: column;
 }
 
+/* The agent under the tab name. Mono like the name above it, because both are
+   identifiers you match against something else — the two-voice rule, not a
+   decorative choice. Dim and one step down, so the row reads as "this tab,
+   running that agent" rather than as two titles competing. */
+.tab-agent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+}
+
 .tab-name {
   min-width: 0;
   overflow: hidden;
