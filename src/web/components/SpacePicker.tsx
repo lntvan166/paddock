@@ -1,3 +1,4 @@
+import { plural } from "@web/format";
 import { useState } from "react";
 import { spaceHash } from "@shared/route";
 import type { Space } from "@shared/types";
@@ -84,7 +85,7 @@ export function SpacePicker({ spaces, currentId, navigate = (hash) => { location
                   {/* Colour is never the only channel: StatusDot is
                       aria-hidden, so the state is said in words here. */}
                   <span className="space-state">{state ?? NO_AGENT}</span>
-                  <span className="space-count" aria-label={`${s.paneCount} panes`}>{s.paneCount}</span>
+                  <span className="space-count" aria-label={plural(s.paneCount, "pane")}>{s.paneCount}</span>
                   {/* The visible half of the mark §5.2 asks for. `aria-current`
                       above reaches a screen reader; a sighted operator gets
                       nothing from it at all, so the row otherwise looked like a

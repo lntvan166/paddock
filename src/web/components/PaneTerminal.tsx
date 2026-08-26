@@ -1,3 +1,4 @@
+import { plural } from "@web/format";
 import {
   Fragment, useCallback, useEffect, useImperativeHandle, useRef, useState,
   type CSSProperties, type ReactNode, type Ref,
@@ -826,8 +827,8 @@ export function PaneTerminal({
   const earlierNode = slot !== undefined ? slot : (remaining > 0 && (
     <button type="button" className="term-earlier" onClick={revealMore}>
       Show earlier
-      {` · ${remaining} lines`}
-      {history.gaps > 0 && <span className="term-gapnote"> · {history.gaps} gaps</span>}
+      {` · ${plural(remaining, "line")}`}
+      {history.gaps > 0 && <span className="term-gapnote"> · {plural(history.gaps, "gap")}</span>}
     </button>
   ));
 

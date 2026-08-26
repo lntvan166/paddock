@@ -251,7 +251,18 @@ body {
    `:focus-visible`, not `:focus`, so a tap does not draw a ring a touch user
    never asked for — which is also why this is additive and no rule anywhere
    sets `outline: none`. --ring is shadcn's token, aliased to --accent by the
-   bridge, so both vocabularies draw the same ring. */
+   bridge, so a ring drawn in either vocabulary is the same colour.
+
+   THIS IS THE ONLY RING, and it was not. Every shadcn-backed control also
+   carried `focus-visible:ring-ring/50 focus-visible:ring-3
+   focus-visible:border-ring`, which is a 3px semi-transparent box-shadow ring
+   AND a border recolour on top of the 2px outline below — three treatments on
+   one focused control, in a file whose own rule is one. The claim that both
+   vocabularies "draw the same ring" was false: one is an `outline` at offset 2,
+   the other a `ring` at 50% alpha. Those classes are gone from
+   `shadcn/{button,checkbox,input,switch,toggle}.tsx`; this rule is what draws
+   focus for every control in the app. `aria-invalid:` rings are untouched —
+   an error state is a different signal. */
 :where(a, button, [role="button"], input, select, textarea):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
@@ -633,6 +644,18 @@ body {
   border-block: 1px solid var(--border);
   color: var(--fg);
 }
+/* EVERY `.warn` is the warning colour, wherever it is written.
+   This rule is the general case the three scoped ones below were standing in
+   for, and its absence has now cost the same bug twice: first `.term-error` /
+   `.term-note`, then `PushSection`'s subscription failure, which rendered at
+   `rgb(20 22 26)` — byte-identical to body text, and so indistinguishable from
+   the neutral help line beside it. Measured in a browser, not inferred.
+
+   The scoped rules stay. They are redundant against this one for colour, but
+   they carry the specificity that beats a competing `--fg-dim` on the same
+   element, and removing them would make source order the tie-breaker. */
+.warn { color: var(--warn); }
+
 .detail .warn { color: var(--warn); }
 .detail .ok { color: var(--ok); }
 
@@ -692,7 +715,13 @@ body {
   cursor: pointer;
 }
 
-.term-back { font-weight: 600; }
+/* The floor on the CONTROL, not on one of its contexts.
+   `.space-screen-head .term-back` further down already carried
+   `min-height: 2.75rem`, so the same button was a 44px target on the space
+   screen and a 60x24 one everywhere else — measured on the Spaces screen. The
+   third instance of that shape found in this review: a correct rule scoped to a
+   place the element also appears somewhere else. */
+.term-back { font-weight: 600; min-height: 2.75rem; padding: 0 0.4rem; }
 
 /* `center`, not `baseline`: the state is a DOT now, and an empty flex item has
    no text baseline — its bottom margin edge would be aligned to the agent
@@ -1155,7 +1184,7 @@ body {
 .term-earlier {
   flex: none;
   width: 100%;
-  min-height: 2.25rem;
+  min-height: 2.75rem;
   border: 0;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -1289,7 +1318,7 @@ body {
 }
 
 .update-bar button {
-  min-height: 2.25rem;
+  min-height: 2.75rem;
   padding: 0 0.8rem;
   border: 0;
   border-radius: 0.4rem;
@@ -2065,7 +2094,7 @@ body {
 }
 
 .spaces-foot button {
-  min-height: 2.25rem;
+  min-height: 2.75rem;
   background: none;
   border: 0;
   color: var(--fg-dim);
@@ -2587,7 +2616,24 @@ body {
    own. Indented under the row's explanation so it reads as belonging to that
    checkbox — which is the whole point of moving it here. */
 .push-control { display: grid; gap: 0.35rem; margin-top: 0.3rem; }
-.push-device-btn { min-height: 2.75rem; justify-self: start; }
+/* The full appearance, not just the tap floor.
+   This carried `class="btn push-device-btn"` and `.btn` is defined NOWHERE, so
+   the only styling that ever applied was the height below — leaving the one
+   button in this card wearing raw browser chrome next to controls that are all
+   themed. Matches `.settings-actions button`, which is the same kind of button
+   one card away. */
+.push-device-btn {
+  min-height: 2.75rem;
+  justify-self: start;
+  padding: 0 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
 /* A capability note — "add to Home Screen first", "blocked for this site".
    Dimmed like the row's own explanation, because it is the same KIND of
    sentence: what this checkbox can and cannot do on this device. */

@@ -154,7 +154,7 @@ export function PushSection(p: PushSectionProps) {
       {cap === "ready" ? (
         <button
           type="button"
-          className="btn push-device-btn"
+          className="push-device-btn"
           disabled={busy}
           onClick={() => void (subscribed === true ? disable() : enable())}
         >

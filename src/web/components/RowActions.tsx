@@ -1,3 +1,4 @@
+import { plural } from "@web/format";
 import { useId, useState } from "react";
 import type { TreePane } from "@shared/types";
 import { closeSpace, closeTab, renameAgent, renameSpace, renameTab } from "@web/api";
@@ -68,19 +69,8 @@ export const LIVE_SENDERS: RowSenders = {
   closeSpace: (id) => closeSpace(id),
 };
 
-/**
- * One English plural, formed in one place.
- *
- * Not i18n and not pretending to be: paddock's UI is English. This exists so
- * a count and its noun cannot disagree — the defect it replaced was a space
- * row reading "1 tabs". It lives here rather than in `SpaceRow.tsx` because
- * the consequence line below is the other consumer, and `SpaceRow` already
- * imports this module: the alternative was an import cycle or a second
- * spelling of the same rule.
- */
-export function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
-}
+/** Re-exported so existing importers keep working; defined in `web/format`. */
+export { plural } from "@web/format";
 
 /**
  * What closing this actually does, said as a sentence (§10).

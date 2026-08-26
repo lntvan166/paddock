@@ -1,3 +1,4 @@
+import { plural } from "@web/format";
 import { useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
@@ -97,7 +98,7 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
 
       {tree !== null && (
         <footer className="spaces-foot">
-          <span>{tree.spaces.length} spaces</span>
+          <span>{plural(tree.spaces.length, "space")}</span>
           {/* Says WHEN it read, because this screen is on-demand and an
               implied-live one would be a guess rendered as a fact. */}
           <button type="button" onClick={() => void refresh()}>

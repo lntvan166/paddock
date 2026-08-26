@@ -28,6 +28,20 @@ single most important rule in this file.
 - **Config ships as `.env.example` only.** Never commit `.env`.
 - **Screenshots and README images come from `paddock serve --demo`**, never a live
   session.
+  - **What `--demo` cannot show, measured 2026-08-26.** `--demo` has no herdr,
+    so the herdr-backed routes are deliberately unregistered and 404 honestly
+    (`src/server/index.ts`). That includes `POST /api/agents/:id/output` and
+    `GET /api/spaces` — so **the terminal pane and both Spaces screens render as
+    errors in demo mode**, and cannot be screenshotted from it at all. The rule
+    above still holds for every surface demo can draw (the agent list, Settings,
+    the install and notification prompts). For the terminal and Spaces there is
+    currently NO permitted source of a screenshot, so the README simply does not
+    show them — which is the honest state, not an oversight to route around by
+    using a live session.
+    Fixing this properly means a demo `HerdrActions` shim that serves synthetic
+    reads and refuses writes with a plain "this is the demo" message. Worth
+    doing; not worth doing carelessly, because a demo whose keys appear to work
+    and do nothing is exactly the mislabelled control this file bans elsewhere.
   - **One narrow exception: a device frame showing no session content.** The
     Home Screen shot in `README.md` cannot come from the demo, because the thing
     it demonstrates is iOS turning the PWA into an installed app, which only

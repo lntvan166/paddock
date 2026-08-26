@@ -297,10 +297,13 @@ test("the secondary key row collapses, and the committing keys never do", async 
   expect(textsOf(host, ".term-keys-primary .term-key")).toEqual(["↑", "↓", "⏎ Enter"]);
 });
 
-test("a blocked agent opens a collapsed pad, and cannot close an open one", async () => {
-  // Expand-only. Revealing a key the operator is about to want costs nothing;
-  // taking one away mid-tap is the hazard the always-present rule exists for.
-  localStorage.setItem("paddock.term.keypad", "compact");
+test("a blocked agent reveals a HIDDEN pad, and opens the compact one", async () => {
+  // BEHAVIOUR CHANGE, deliberate: this used to open `full`. Measured on a
+  // 390x844 phone, `full` is 159px against `compact`'s 60px, and with the
+  // control row above it the key affordance took 215px of an 844px screen.
+  // `compact` is also the set this pad documents for the job — up/down to move
+  // a prompt's highlight, Enter to commit — and Esc/Tab stay one tap away.
+  localStorage.setItem("paddock.term.keypad", "hidden");
   const { fn } = stubFetch({
     "/output": () => screenOf(["out"]),
     "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
@@ -313,10 +316,32 @@ test("a blocked agent opens a collapsed pad, and cannot close an open one", asyn
   // `.term-keys-secondary`, which was the class the `full` pad's second row
   // happened to carry — so a relayout broke a test about STATE. The attribute
   // is the fact; the classes are how it is drawn.
-  expect(host.querySelector('.term-keys[data-keypad="full"]')).not.toBeNull();
+  expect(host.querySelector('.term-keys[data-keypad="compact"]')).not.toBeNull();
+  expect(host.querySelector('.term-keys[data-keypad="full"]')).toBeNull();
   // And the operator's stored choice is untouched — the agent opened it, which
   // is not the same as the operator choosing to.
-  expect(localStorage.getItem("paddock.term.keypad")).toBe("compact");
+  expect(localStorage.getItem("paddock.term.keypad")).toBe("hidden");
+});
+
+test("a blocked agent does not overwrite a pad the operator chose", async () => {
+  // The other half of expand-only, and it was broken: the effect set `full`
+  // unconditionally, so a deliberate `compact` was REPLACED the moment an agent
+  // asked a question, and a deliberate `full` was handed back its own value in
+  // a way that looked like agreement. Both are now left alone.
+  for (const chosen of ["compact", "full"] as const) {
+    localStorage.setItem("paddock.term.keypad", chosen);
+    const { fn } = stubFetch({
+      "/output": () => screenOf(["out"]),
+      "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+    });
+    globalThis.fetch = fn as unknown as typeof fetch;
+    const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+    await settle();
+    expect(
+      host.querySelector(`.term-keys[data-keypad="${chosen}"]`),
+      `a chosen "${chosen}" pad must survive an agent blocking`,
+    ).not.toBeNull();
+  }
 });
 
 test("auto-expand can be declined, and then a blocked agent leaves the pad alone", async () => {

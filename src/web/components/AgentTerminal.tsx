@@ -166,7 +166,29 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
     // refused" without this flag.
     if (!promptLoaded) return;
     if (promptOptionCount > 0) return;
-    setKeypad("full");
+    /**
+     * `compact`, NOT `full`, and only from `hidden`.
+     *
+     * Measured on a 390x844 phone: `full` is 159px and `compact` is 60px, and
+     * with the 56px control row above it the key affordance was taking 215px —
+     * a QUARTER of the screen — leaving the transcript 504px. Reported as "much
+     * height compared to needed", which it was.
+     *
+     * `compact` is the right set by this file's own reasoning, not just the
+     * cheaper one: `PRIMARY_KEYS` exists because "answering a prompt from a
+     * phone is up/down to move and Enter to commit", and this effect fires in
+     * exactly that situation — a blocked agent whose prompt the parser could
+     * not turn into buttons. Esc and Tab stay one tap away on `Keys`, which is
+     * the same bargain the `promptOptionCount > 0` branch above already makes.
+     *
+     * Only from `hidden`, because this must not overwrite a choice. An operator
+     * who deliberately set `full` was being handed `full` back, which looked
+     * like agreement; one who set `compact` had it REPLACED by `full` the
+     * moment an agent asked a question. The functional update reads the live
+     * value without putting it in the dependency list, so the effect still runs
+     * once per state change rather than on every pad change.
+     */
+    setKeypad((prev) => (prev === "hidden" ? "compact" : prev));
   }, [agent.state, promptOptionCount, promptLoaded]);
 
   /**

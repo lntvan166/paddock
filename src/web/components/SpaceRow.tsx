@@ -1,3 +1,4 @@
+import { plural } from "@web/format";
 import { spaceHash } from "@shared/route";
 import type { Space } from "@shared/types";
 import { RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
@@ -61,7 +62,7 @@ export function SpaceRow({ space, onChanged, senders }: {
             explain its own shape. `aria-label` carries the unit for a screen
             reader — a bare numeral read aloud is "docs-cleanup, working, 2":
             two of what? — without changing what a sighted operator sees. */}
-        <span className="space-count" aria-label={`${space.paneCount} panes`}>{space.paneCount}</span>
+        <span className="space-count" aria-label={plural(space.paneCount, "pane")}>{space.paneCount}</span>
       </a>
       {/* A SIBLING of the anchor, never a child: a <button> inside an <a> is
           invalid HTML and unreachable by keyboard — the trap `RowActions` and
