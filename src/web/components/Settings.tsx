@@ -53,6 +53,7 @@ export function Settings({ onBack }: SettingsProps) {
   // subscription is a different fact and stays in `PushSection`, which talks
   // to its own routes.
   const [pushOn, setPushOn] = useState(false);
+  const [skipWhileViewing, setSkipWhileViewing] = useState(false);
   const [triggers, setTriggers] = useState<NotifyTrigger[]>([]);
   const [cooldownMs, setCooldownMs] = useState(60_000);
   const [publicUrl, setPublicUrl] = useState("");
@@ -88,6 +89,7 @@ export function Settings({ onBack }: SettingsProps) {
       chatId !== (baseline.telegram.chatId ?? "") ||
       telegramOn !== baseline.notify.telegram ||
       pushOn !== (baseline.push?.enabled ?? false) ||
+      skipWhileViewing !== baseline.notify.skipWhileViewing ||
       triggers.join(",") !== [...baseline.notify.triggers].join(",") ||
       cooldownMs !== baseline.notify.cooldownMs ||
       // Trimmed on BOTH sides, mirroring the transformation `save()` applies to
@@ -142,6 +144,7 @@ export function Settings({ onBack }: SettingsProps) {
         // share this port on the dev box, and the installed release predates
         // push entirely.
         setPushOn(body.push?.enabled ?? false);
+        setSkipWhileViewing(body.notify.skipWhileViewing);
         setTriggers(body.notify.triggers);
         setCooldownMs(body.notify.cooldownMs);
         setPublicUrl(body.publicUrl ?? "");
@@ -210,6 +213,7 @@ export function Settings({ onBack }: SettingsProps) {
       telegram: { chatId: chatId || null, ...(token ? { token } : {}) },
       notify: {
         telegram: telegramOn,
+        skipWhileViewing,
         triggers,
         cooldownMs,
         settleMs,
@@ -362,6 +366,8 @@ export function Settings({ onBack }: SettingsProps) {
           setTelegramOn={setTelegramOn}
           pushOn={pushOn}
           setPushOn={setPushOn}
+          skipWhileViewing={skipWhileViewing}
+          setSkipWhileViewing={setSkipWhileViewing}
           pushDevices={view?.push?.devices ?? 0}
           pushControl={(
             <PushSection

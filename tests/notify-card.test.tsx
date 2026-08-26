@@ -17,6 +17,7 @@ afterEach(async () => { await unmount(); });
 function props(over: Partial<NotifySectionProps> = {}): NotifySectionProps {
   return {
     telegramOn: true, setTelegramOn: () => {}, pushOn: false, setPushOn: () => {}, pushDevices: 0,
+    skipWhileViewing: false, setSkipWhileViewing: () => {},
     triggers: ["blocked"], toggleTrigger: () => {},
     cooldownMs: 60_000, setCooldownMs: () => {},
     publicUrl: "", setPublicUrl: () => {},
@@ -92,4 +93,21 @@ test("the push row counts the devices when there are some", async () => {
   await unmount();
   const many = await render(<NotifySection {...props()} pushOn={true} pushDevices={3} />);
   expect(many.querySelector(".notify-transports")?.textContent).toContain("3 devices registered");
+});
+
+test("the watching setting states what it does to push, and to Telegram", async () => {
+  // A feature that withholds a buzz reads as a broken feature unless the UI
+  // says otherwise — and it must not appear to govern Telegram, which presence
+  // cannot speak for.
+  const host = await render(<NotifySection {...props()} />);
+  const text = host.textContent ?? "";
+  expect(text).toContain("Skip push for the agent I'm watching");
+  expect(text).toContain("waits until you leave");
+  expect(text).toContain("Telegram");
+});
+
+test("the watching checkbox reports its state", async () => {
+  const host = await render(<NotifySection {...props({ skipWhileViewing: true })} />);
+  const box = host.querySelector('[aria-label="Skip push for the agent I\'m watching"]');
+  expect(box?.getAttribute("data-state")).toBe("checked");
 });

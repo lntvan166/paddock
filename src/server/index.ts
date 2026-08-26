@@ -14,6 +14,7 @@ import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { toSpaceTree } from "@server/herdr/tree";
 import { AgentStore } from "@server/state/store";
+import { PresenceStore } from "@server/state/presence";
 import { Supervisor } from "@server/supervisor";
 import { createJournalReader, defaultRoots, type JournalReader } from "@server/journal/read";
 import { shapeMessage, shapeSummary } from "@server/herdr/shape";
@@ -381,6 +382,16 @@ if (command === "tunnel" && tunnelPublishRunning) {
 const hostId = DEMO ? DEMO_HOST_ID : (process.env.PADDOCK_HOST_ID ?? "local");
 const store = new AgentStore(hostId);
 /**
+ * Who is looking at what, right now — written by `ws/serve.ts` from the
+ * `viewing` frame on every socket this process serves (both listeners share
+ * `hubWebSocket`). Read by the notifier below via `viewers`, to decide
+ * whether to withhold a push; its own `onChange` is wired to `reconsider`
+ * further down, so a viewer leaving (or its TTL expiring) releases anything
+ * that was held. See `state/presence.ts`.
+ */
+const presence = new PresenceStore();
+presence.startSweep();
+/**
  * The build currently on disk, re-read rather than captured at startup.
  *
  * `make dev` rebuilds the UI without restarting this process, so a value read
@@ -561,7 +572,15 @@ const notifier = new Notifier({
    * the dashboard must take effect without a restart.
    */
   sendPush: pushSender(),
+  viewers: (agentId) => presence.viewers(agentId),
+  // A synchronous read of what `push.json` already stores — see
+  // `StoredSubscription.deviceKey` for why it is not hashed here.
+  pushDeviceKeys: () => push.deviceKeys(),
 });
+
+// A viewer leaving is what releases a withheld notification. Includes TTL
+// expiry, which the presence store emits as an ordinary change.
+presence.onChange((agentId) => notifier.reconsider(agentId));
 
 /**
  * The protocol the LIVE herdr reported, or null before it answered.
@@ -858,7 +877,7 @@ try {
       if (ws !== null) return ws;
       return app.fetch(req);
     },
-    websocket: hubWebSocket({ hub, hostId, store }),
+    websocket: hubWebSocket({ hub, hostId, store, presence }),
   });
 } catch (err) {
   // EADDRINUSE only. Everything else rethrows with its stack intact — a
@@ -987,6 +1006,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // open — but a timer that fires against a torn-down store would report
     // about an agent nobody is watching any more.
     notifier.dispose();
+    // The sweep timer is unref'd too, but a stale-viewer entry surviving this
+    // process's own shutdown would answer `viewers()` on a socket that no
+    // longer exists.
+    presence.dispose();
     // Unref'd, so it could never hold the process open — cleared anyway, so a
     // tick cannot land mid-teardown and print an update notice underneath the
     // shutdown report.
@@ -1051,6 +1074,7 @@ if (command === "tunnel") {
       hub,
       hostId,
       store,
+      presence,
       pairing,
       port: Number(process.env.PADDOCK_TUNNEL_PORT ?? 8788),
       bin: tunnelBin,

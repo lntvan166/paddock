@@ -12,6 +12,9 @@ export interface Settings {
     settleMs: Record<NotifyTrigger, number>;
     mutedUntil: number | null;
     cooldownMs: number;
+    /** See `SettingsView["notify"].skipWhileViewing` — the on-disk half of
+     *  the same field. Defaults on: see `defaults()` for why. */
+    skipWhileViewing: boolean;
   };
   /** Push is off until the operator turns it on. The keypair and the device
    *  list are NOT here — they are state, and they live in push.json. */
@@ -62,6 +65,12 @@ const defaults = (): Settings => ({
   notify: {
     telegram: false, triggers: ["blocked"], settleMs: { ...DEFAULT_SETTLE_MS },
     mutedUntil: null, cooldownMs: DEFAULT_COOLDOWN_MS,
+    // On by default because the duplicate buzz is the complaint, and the
+    // deferral (a withheld notification fires when the last viewer leaves,
+    // never dropped) means nothing is lost by defaulting to quiet. It shipped
+    // off while presence was half-wired, and was flipped to true in the same
+    // commit as the documentation recording that reasoning — see decision 24.
+    skipWhileViewing: true,
   },
   push: { enabled: false },
   publicUrl: null,
@@ -189,6 +198,17 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
     }
   }
 
+  // Named, not dropped silently — same rule as `triggers` above and
+  // `settleMs`/`cooldownMs` via `clamped`: a hand-edited settings.json is a
+  // documented use, so a wrong type must degrade AUDIBLY rather than vanish
+  // with nothing on record of the fact that it happened.
+  if ("skipWhileViewing" in n && typeof n.skipWhileViewing !== "boolean") {
+    log(
+      `[settings] notify.skipWhileViewing was ${JSON.stringify(n.skipWhileViewing)}, not a boolean, ` +
+        `and has been reset to ${d.notify.skipWhileViewing}.`,
+    );
+  }
+
   return {
     version: 2,
     telegram: {
@@ -213,6 +233,8 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
         num(n.cooldownMs, d.notify.cooldownMs),
         MIN_COOLDOWN_MS, Number.MAX_SAFE_INTEGER, "cooldownMs", log,
       ),
+      skipWhileViewing: typeof n.skipWhileViewing === "boolean"
+        ? n.skipWhileViewing : d.notify.skipWhileViewing,
     },
     // Explicitly, like every other field here: a shallow merge is what let a
     // v1 file load with no settleMs and silently restore the edge-firing bug.

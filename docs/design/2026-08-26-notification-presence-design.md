@@ -133,6 +133,15 @@ The client refreshes by re-sending its `viewing` frame once per heartbeat it
 receives. The hub already sends one every 20s, so the reply *is* the liveness
 proof and no new timer exists on either side. 60s is three missed heartbeats.
 
+That 60s bounds a READ: `viewers()` filters by it directly, so no lookup is
+ever staler than that. RELEASE is a separate number, because the entry is only
+actually dropped — and `onChange` only actually fired — the next time the
+sweep timer ticks, and that timer runs every 20s independently of any given
+entry's expiry. So the worst case for the deferred-notification re-fire on
+this TTL path (the third layer below, for the phone whose socket never
+closes) is 60s + 20s = **80s** from the last heartbeat reply to the re-fire,
+not 60s.
+
 This gives release three layers, cheapest first:
 
 1. an explicit `agentId: null` when the page goes hidden or the hash changes,
@@ -158,10 +167,23 @@ reason and logs only its origin.
 `crypto.subtle` requires a secure context, which the service worker already
 requires, so this adds no constraint that push did not already impose.
 
-The join happens at the composition root: hash each endpoint from
-`push.list()`, compare against the presence sets. No subscription means
-`deviceKey: null` — presence is still recorded, it matches no target, and it
-suppresses nothing.
+**Amended from the plan as written: the hash is persisted, not computed per
+notification.** `StoredSubscription.deviceKey` is stamped by `push/store.ts`
+at subscribe time (`add`) and backfilled on load for a `push.json` written
+before the field existed, rather than hashed from `push.list()` at the
+composition root on every send as first specified. `deviceKeys()` is
+therefore a synchronous `Set` read, no different in shape from `list()`.
+
+The reason is `#fire`, not a preference: the notifier needs the device roster
+*before* it decides whether to stamp `#lastSentAt`, and that stamp has to
+happen in the same tick as reading `since` — the comment on `#fire` already
+explains why an attempt, not just a success, consumes the cooldown. Hashing
+per send would put an `await hashEndpoint(...)` between that read and that
+write, an interleaving window `#fire` does not have today and that a roster
+getter has no business introducing. A synchronous `pushDeviceKeys()` closes
+over `push.deviceKeys()` and keeps the ordering exactly what it was before
+presence existed. No subscription still means no key in the roster —
+presence is still recorded, it matches no target, and it suppresses nothing.
 
 `paddock tunnel` unattached is a whole second paddock with its own notifier, so
 it gets presence from the same `index.ts` wiring; `run.ts` only has to pass the

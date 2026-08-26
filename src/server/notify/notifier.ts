@@ -35,11 +35,33 @@ export interface NotifierOpts {
    *
    * Takes the payload rather than composed text: a push notification is
    * rendered by `sw.js` from structured fields, where Telegram receives a
-   * string. `{name, state, agentId}` and NOTHING else — `a.task` is
-   * agent-authored text and this one lands on a lock screen.
+   * string. `{name, state, agentId}` and NOTHING else reaches the lock
+   * screen — `a.task` is agent-authored text. `skipDeviceKeys` rides along
+   * on this same call but is an ARGUMENT to the sender, not content: the
+   * sender strips it before the body is built. See `index-wiring.ts`.
    */
-  sendPush?: (payload: { name: string; state: AgentState; agentId: string }) => Promise<void>;
+  sendPush?: (
+    payload: { name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string> },
+  ) => Promise<void>;
+  /**
+   * Which DEVICES have this agent's pane open and awake, from
+   * `state/presence.ts`. A getter, read at send time: a viewer can arrive or
+   * leave between two notifications.
+   */
+  viewers?: (agentId: string) => Set<string>;
+  /**
+   * Every subscribed device's key. Needed to answer "is EVERY device already
+   * showing this?", which is a different question from "is anyone".
+   *
+   * Synchronous, which is why `push.json` persists the key rather than this
+   * hashing endpoints on demand: an await here would sit between reading the
+   * cooldown and stamping it.
+   */
+  pushDeviceKeys?: () => Set<string>;
 }
+
+/** Shared empty set, so the no-presence path allocates nothing per send. */
+const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
 
 /**
  * The message for one settled transition: name, state, and a way in.
@@ -112,6 +134,23 @@ export class Notifier {
   /** In-flight settle windows. At most one per agent — `#arm` cancels before
    *  it sets, and a timer callback only ever removes its OWN entry. */
   #pending = new Map<string, { state: NotifyTrigger; timer: TimerHandle; attempts: number }>();
+  /**
+   * Episodes withheld because every subscribed device was already showing the
+   * agent, waiting for a viewer to leave.
+   *
+   * DEFERRED, NOT DROPPED, and that is the whole reason this map exists: look
+   * at an agent as it blocks, pocket the phone ten seconds later without
+   * answering, and dropping would mean nothing ever tells you. The same
+   * defer-not-drop rule the cooldown follows, for the same reason — losing a
+   * real event to prevent a duplicate one is the worse trade.
+   *
+   * Holds the AGENT, not just its id, matching what the retry path already
+   * closes over: a rename between deferral and fire shows the old name, which
+   * is already true of a retry and not worth a second mechanism.
+   */
+  #deferred = new Map<string, {
+    agent: Agent; state: NotifyTrigger; episode: number; attempts: number;
+  }>();
   lastError: string | null = null;
 
   constructor(private o: NotifierOpts) {}
@@ -145,6 +184,29 @@ export class Notifier {
   dispose(): void {
     for (const p of this.#pending.values()) this.#clearTimer(p.timer);
     this.#pending.clear();
+    this.#deferred.clear();
+  }
+
+  /**
+   * Look again at an agent whose viewers may have gone away.
+   *
+   * Called from `state/presence.ts`'s change events — a navigation, a
+   * backgrounded page, a closed socket, or a TTL expiry. It ASSERTS NOTHING
+   * itself: it re-arms at zero delay and `#fire` re-reads triggers, mute,
+   * presence and the cooldown. That is deliberate — a release is a reason to
+   * re-decide, not a decision.
+   */
+  reconsider(agentId: string): void {
+    const d = this.#deferred.get(agentId);
+    if (d === undefined) return;
+    // The state moved on, or this pane's episode is over. Arming either would
+    // cancel a LIVE timer to install a send that then declines to fire, which
+    // is how the operator loses the notification they were waiting for.
+    if (this.#lastSeen.get(agentId) !== d.state || this.#episode.get(agentId) !== d.episode) {
+      this.#deferred.delete(agentId);
+      return;
+    }
+    this.#arm(d.agent, d.state, 0, d.attempts, d.episode);
   }
 
   #cancel(agentId: string): void {
@@ -164,6 +226,7 @@ export class Notifier {
     // A send that was already in flight for the removed agent resumes with no
     // episode to match, so it writes nothing — which is what removal means.
     this.#episode.delete(agentId);
+    this.#deferred.delete(agentId);
   }
 
   #see(a: Agent): void {
@@ -193,6 +256,9 @@ export class Notifier {
     // the state it is about to announce, and drop the send — silently, with
     // no error and nothing on `/api/health`, for the rest of the pane's life.
     this.#lastNotified.delete(a.agentId);
+    // The episode this deferral belonged to is over. Left in place, a later
+    // `reconsider` would announce a state the agent has already left.
+    this.#deferred.delete(a.agentId);
     if (!isTrigger(a.state)) return;
 
     const s = this.o.settings.current();
@@ -246,7 +312,20 @@ export class Notifier {
     if (this.#lastNotified.get(a.agentId) === state) return;
 
     const s = this.o.settings.current();
-    if (!s.notify.triggers.includes(state)) return;
+    if (!s.notify.triggers.includes(state)) {
+      // The operator unticked this trigger while this agent's episode was
+      // deferred (`#deferred.set` below can only have run for a PRIOR `#fire`
+      // that reached it, so an entry can exist here). Left in place, every
+      // later presence event calls `reconsider` → `#arm(…, 0, …)` → this
+      // method again, which declines here again — bounded and harmless (it
+      // can only ever re-decline, never fire), but it is churn against a
+      // trigger the operator explicitly turned off, and a state the
+      // invariant comments elsewhere don't describe. Same idea as the
+      // "no longer waiting on a viewer" delete a few lines down: whatever
+      // this deferral was for is no longer something paddock will announce.
+      this.#deferred.delete(a.agentId);
+      return;
+    }
     // A FLAG, not an early return, and that distinction is the whole bug this
     // replaced. This guard predates push: when Telegram was the only transport,
     // "no token" and "nothing to do" were the same statement. They stopped
@@ -269,7 +348,34 @@ export class Notifier {
     // Dropped, never queued: a pile delivered when mute lifts describes
     // agents unblocked hours earlier. Read HERE rather than when the timer
     // was armed, so muting during a settle window still silences.
-    if (s.notify.mutedUntil !== null && now < s.notify.mutedUntil) return;
+    if (s.notify.mutedUntil !== null && now < s.notify.mutedUntil) {
+      // A deferral held for this agent is discarded with the notification, or
+      // mute lifting would deliver exactly the pile this rule prevents.
+      this.#deferred.delete(a.agentId);
+      return;
+    }
+
+    // WHO IS ALREADY LOOKING. Decided here, above the cooldown stamp, and the
+    // position is the point: a withheld push makes no request at all, so there
+    // is nothing to rate-limit, and spending the cooldown would delay the
+    // deferred re-fire by up to `cooldownMs` for no reason anyone could name.
+    // The stamp's own comment is about a send that was MADE and FAILED, which
+    // this is not.
+    const skip = s.notify.skipWhileViewing
+      ? this.o.viewers?.(a.agentId) ?? EMPTY_KEYS
+      : EMPTY_KEYS;
+    const roster = this.o.pushDeviceKeys?.() ?? EMPTY_KEYS;
+    // `roster.size > 0` guards the case where nothing is subscribed: an empty
+    // roster is not suppression, and reading it as "every device is viewing"
+    // would silence push for an operator with no devices to silence.
+    const pushWithheld = roster.size > 0 && [...roster].every((k) => skip.has(k));
+    if (pushWithheld && !telegramReady) {
+      this.#deferred.set(a.agentId, { agent: a, state, episode, attempts });
+      return;
+    }
+    // Something is about to be delivered, so this episode is no longer waiting
+    // on a viewer.
+    this.#deferred.delete(a.agentId);
 
     const since = now - (this.#lastSentAt.get(a.agentId) ?? Number.NEGATIVE_INFINITY);
     if (since < s.notify.cooldownMs) {
@@ -299,7 +405,13 @@ export class Notifier {
     // it would never run — and the two transports must be independent in both
     // directions. `#sendPush` swallows its own faults, so it can never turn a
     // push failure into the "outside the send contract" path `#arm` describes.
-    const pushed = this.#sendPush(a, state);
+    //
+    // Gated on `pushWithheld` rather than always dispatched: the guard above
+    // only refuses to fire AT ALL when NEITHER transport has anything to do,
+    // so a ready Telegram still reaches this line with push fully withheld —
+    // and every device in `roster` is already in `skip` when that is true, so
+    // there is no device left for a real sender to tell anything.
+    const pushed = pushWithheld ? Promise.resolve() : this.#sendPush(a, state, skip);
 
     // Push has been dispatched; without Telegram there is nothing else to do.
     // Everything below this line is Telegram's retry and error bookkeeping,
@@ -360,11 +472,11 @@ export class Notifier {
    * reaching the delta path would take the dashboard down to deliver a
    * notification, which is exactly backwards.
    */
-  async #sendPush(a: Agent, state: NotifyTrigger): Promise<void> {
+  async #sendPush(a: Agent, state: NotifyTrigger, skipDeviceKeys: ReadonlySet<string>): Promise<void> {
     const send = this.o.sendPush;
     if (send === undefined) return;
     try {
-      await send({ name: a.name, state, agentId: a.agentId });
+      await send({ name: a.name, state, agentId: a.agentId, skipDeviceKeys: new Set(skipDeviceKeys) });
     } catch (e) {
       console.info(`paddock: push failed for ${a.name}: ${(e as Error).message}`);
     }

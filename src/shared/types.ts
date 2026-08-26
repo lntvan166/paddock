@@ -26,6 +26,14 @@ export interface SettingsView {
      *  misread by a phone in one zone and a server in another. */
     mutedUntil: number | null;
     cooldownMs: number;
+    /**
+     * Withhold a push from a device that is currently showing that agent's
+     * pane, until it stops showing it.
+     *
+     * Push ONLY. A device key identifies one browser; a Telegram chat can be
+     * read from a laptop, so presence can make no claim about it.
+     */
+    skipWhileViewing: boolean;
   };
   push: {
     enabled: boolean;
@@ -483,6 +491,23 @@ export type ServerMessage =
    * entitled to believe it.
    */
   | { type: "tree-stale"; serverTime: number };
+
+/**
+ * The ONLY thing a browser may say on this socket, and the first thing it has
+ * ever been allowed to say.
+ *
+ * `viewing` is presence: which device this is, and which pane it is SHOWING
+ * (null for the list, for Settings, and for a page that is hidden). The server
+ * uses it to withhold a push from a device already displaying the agent the
+ * push is about.
+ *
+ * It deliberately cannot ask for anything. Every state change still goes
+ * through a POST route, where `docs/decisions.md` put them — a socket that can
+ * mutate is a socket whose every frame needs the origin and body validation
+ * those routes already have.
+ */
+export type ClientMessage =
+  | { type: "viewing"; deviceKey: string | null; agentId: string | null };
 
 /**
  * A package manager that owns a paddock install and therefore owns its

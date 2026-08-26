@@ -1,7 +1,9 @@
 import type { Server, WebSocketHandler } from "bun";
 import type { AgentStore } from "@server/state/store";
+import type { PresenceStore } from "@server/state/presence";
 import type { Hub, HubClient } from "@server/ws/hub";
 import { allowUpgrade, hostOf } from "@server/origin";
+import type { ClientMessage } from "@shared/types";
 
 /**
  * What a socket carries: the hub client it was added as, so `close` can remove
@@ -15,6 +17,60 @@ export interface HubSocketDeps {
   hub: Hub;
   hostId: string;
   store: AgentStore;
+  presence: PresenceStore;
+}
+
+/**
+ * The frame cap. A `viewing` frame is about 120 bytes; 1 KB is generous and
+ * finite, which is the property that matters for something a client controls.
+ */
+export const MAX_CLIENT_FRAME = 1024;
+
+/** Longest plausible values. A pane id is `w1:p1`; a device key is 43 chars. */
+const MAX_DEVICE_KEY = 128;
+const MAX_AGENT_ID = 256;
+
+/**
+ * A client frame, or null for anything paddock does not recognise.
+ *
+ * NULL RATHER THAN A THROW, at every branch. Throwing inside Bun's `message`
+ * handler drops the connection, which would turn a malformed frame into a way
+ * to disconnect somebody's dashboard — and an unknown `type` is what a newer
+ * client talking to an older server looks like, which must degrade to no
+ * presence rather than to a broken socket.
+ *
+ * That trade is no longer absolute for SIZE: `maxPayloadLength: MAX_CLIENT_FRAME`
+ * on the handler below means Bun itself closes the connection (code 1006)
+ * for any frame over 1 KB before `message()` — and this parser — ever run, so
+ * an oversized frame IS a way to disconnect somebody's dashboard, just not
+ * one this function's `null` return has anything to do with. That is a
+ * deliberate trade, not a regression of the rule above: paddock's own client
+ * sends ~120-byte frames and reconnects with backoff on any close, so the
+ * cost of the rare hostile-or-corrupt oversized frame is a reconnect, not a
+ * stuck session. The `null` return here still covers everything Bun's cap
+ * does not — bad JSON, an unknown `type`, a wrong field type or shape — which
+ * is most of what a malformed-but-normal-sized frame can do.
+ *
+ * Exported so the parser is tested directly against hostile input rather than
+ * only through a live socket.
+ */
+export function parseClientMessage(raw: unknown): ClientMessage | null {
+  if (typeof raw !== "string" || raw.length > MAX_CLIENT_FRAME) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const m = parsed as Record<string, unknown>;
+  if (m.type !== "viewing") return null;
+  const { deviceKey, agentId } = m;
+  if (deviceKey !== null && typeof deviceKey !== "string") return null;
+  if (agentId !== null && typeof agentId !== "string") return null;
+  if (deviceKey !== null && deviceKey.length > MAX_DEVICE_KEY) return null;
+  if (agentId !== null && agentId.length > MAX_AGENT_ID) return null;
+  return { type: "viewing", deviceKey, agentId };
 }
 
 /**
@@ -66,6 +122,25 @@ export function tryUpgradeWs(
  */
 export function hubWebSocket(deps: HubSocketDeps): WebSocketHandler<WsData> {
   return {
+    /**
+     * Bun's own cap, not just the `message()` guard's.
+     *
+     * Without this Bun buffers up to its 16 MB default BEFORE `message()` ever
+     * runs — 16000x `MAX_CLIENT_FRAME` — so the size check in `message()` would
+     * refuse an oversized frame only after it was fully received and
+     * materialised. Set HERE, on the object both listeners' `Bun.serve` calls
+     * use for their `websocket` option, rather than on either `Bun.serve` call
+     * site directly: this file's opening comment is the reason — a socket
+     * behaviour that can land on one listener and not the other is exactly
+     * what living in one definition is meant to prevent.
+     *
+     * The check inside `message()` stays. It is not redundant: Bun refusing the
+     * frame (a hard socket-level cutoff) and paddock refusing it (a typed
+     * `null` a caller can react to) are two different layers, and the inner one
+     * is what `parseClientMessage`'s own tests exercise directly, with no
+     * socket involved at all.
+     */
+    maxPayloadLength: MAX_CLIENT_FRAME,
     open(ws) {
       const client: HubClient = { send: (d) => ws.send(d) };
       ws.data.client = client;
@@ -74,10 +149,26 @@ export function hubWebSocket(deps: HubSocketDeps): WebSocketHandler<WsData> {
     },
     close(ws) {
       const held = ws.data.client;
-      if (held) deps.hub.remove(held);
+      if (held) {
+        deps.hub.remove(held);
+        // Presence dies with the connection. This is the fast path of the three
+        // that release a viewer; the TTL in `presence.ts` covers the socket iOS
+        // never closes.
+        deps.presence.drop(held);
+      }
     },
-    message() {
-      // Read-only in v1: the browser sends nothing, on either listener.
+    message(ws, raw) {
+      const client = ws.data.client;
+      if (client === undefined) return;
+      // Sized BEFORE any conversion: measuring a Buffer by `byteLength` rather
+      // than stringifying it first is what keeps the cap a cap.
+      const size = typeof raw === "string" ? raw.length : raw.byteLength;
+      if (size > MAX_CLIENT_FRAME) return;
+      const msg = parseClientMessage(typeof raw === "string" ? raw : raw.toString());
+      if (msg === null) return;
+      // The agentId is a Map key, compared against ids the store already holds.
+      // It never reaches herdr, so there is nothing behind it to reach.
+      deps.presence.set(client, { deviceKey: msg.deviceKey, agentId: msg.agentId });
     },
   };
 }

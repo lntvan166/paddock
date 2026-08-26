@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { setPushEnabled, subscribePush, unsubscribePush } from "@web/api";
+import { resetDeviceKey } from "@web/device-key";
 
 /**
  * What this browser can do, and what to say when it cannot.
@@ -110,6 +111,12 @@ export function PushSection(p: PushSectionProps) {
       // subscription, and nothing in the app ever set that flag — so this
       // button registered a device and then stayed silent forever.
       await setPushEnabled(true);
+      // Forget the cached `null` from before this subscription existed (see
+      // `@web/device-key`), so this device's `deviceKey()` resolves the new
+      // endpoint hash on the very next heartbeat instead of waiting on
+      // whatever the store's own heartbeat-driven refresh would eventually
+      // pick up — enabling push should take effect immediately.
+      resetDeviceKey();
       setSubscribed(true);
       p.onChanged();
     } catch (e) {
@@ -131,6 +138,10 @@ export function PushSection(p: PushSectionProps) {
         await unsubscribePush(sub.endpoint);
         await sub.unsubscribe();
       }
+      // Forget the cached endpoint hash: it would otherwise stay cached as
+      // non-null (see `@web/device-key`) and keep being sent on every
+      // heartbeat after the subscription it named is gone.
+      resetDeviceKey();
       setSubscribed(false);
       p.onChanged();
     } catch (e) {

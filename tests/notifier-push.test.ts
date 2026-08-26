@@ -12,7 +12,7 @@ const agent = (over: Partial<Agent> = {}): Agent => ({
   updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
 });
 
-type PushPayload = { name: string; state: AgentState; agentId: string };
+type PushPayload = { name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string> };
 
 /** Mirrors `tests/notifier.test.ts`'s harness — same stub store, same clock. */
 function buildNotifier(o: {
@@ -57,16 +57,25 @@ test("a settled transition reaches both transports", async () => {
   });
   await settleBlocked(n);
   expect(telegram).toHaveLength(1);
-  expect(push).toEqual([{ name: "api-refactor", state: "blocked", agentId: "w1:p1" }]);
+  // `skipDeviceKeys` rides every payload now (Task 4) — empty here because
+  // this suite constructs no presence getters, which is the point: the field
+  // is present but inert, never suppressing anything by default.
+  expect(push).toEqual([{ name: "api-refactor", state: "blocked", agentId: "w1:p1", skipDeviceKeys: new Set() }]);
 });
 
 test("the push payload carries no task line", async () => {
   // `a.task` is terminal_title_stripped — agent-authored text that may carry a
   // pasted credential — and a notification renders on a lock screen.
+  //
+  // `skipDeviceKeys` is listed alongside the others deliberately: it is an
+  // ARGUMENT to the sender (see `index-wiring.ts`), not lock-screen content,
+  // but it does ride this same call — `buildPushSender` is what strips it
+  // before the body is built, and that is asserted separately in
+  // `notify-wiring.test.ts`'s "the skip set never reaches the payload".
   const push: Record<string, unknown>[] = [];
   const n = buildNotifier({ sendPush: async (p) => { push.push(p as unknown as Record<string, unknown>); } });
   await settleBlocked(n, { task: "export AWS_SECRET=hunter2" });
-  expect(Object.keys(push[0]!).sort()).toEqual(["agentId", "name", "state"]);
+  expect(Object.keys(push[0]!).sort()).toEqual(["agentId", "name", "skipDeviceKeys", "state"]);
   expect(JSON.stringify(push[0])).not.toContain("hunter2");
 });
 
@@ -128,7 +137,7 @@ test("push reaches a device when Telegram was never configured at all", async ()
   });
   await settleBlocked(n);
 
-  expect(push).toEqual([{ name: "api-refactor", state: "blocked", agentId: "w1:p1" }]);
+  expect(push).toEqual([{ name: "api-refactor", state: "blocked", agentId: "w1:p1", skipDeviceKeys: new Set() }]);
   // And Telegram is not attempted — a transport with no credentials must not
   // be POSTed to, and must not record a failure the operator never asked for.
   expect(telegram).toHaveLength(0);

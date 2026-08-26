@@ -431,3 +431,23 @@ test("a charset parameter on an application/json body is still accepted", async 
   expect(res.status).toBe(200);
   expect(settings.current().notify.mutedUntil).toBe(1_700_000_000_000 + 60_000);
 });
+
+test("notify.skipWhileViewing must be a boolean", async () => {
+  const { app } = await harness();
+  const res = await app.request("/api/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ notify: { skipWhileViewing: "yes" } }),
+  });
+  expect(res.status).toBe(400);
+  expect(await res.text()).toContain("skipWhileViewing");
+});
+
+test("notify.skipWhileViewing is accepted and reflected in the view", async () => {
+  const { app } = await harness();
+  const res = await app.request("/api/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ notify: { skipWhileViewing: true } }),
+  });
+  expect(res.status).toBe(200);
+  expect((await res.json()).notify.skipWhileViewing).toBe(true);
+});

@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import type { Agent, ManagedBy, ServerMessage } from "@shared/types";
+import type { Agent, ClientMessage, ManagedBy, ServerMessage } from "@shared/types";
+import { agentIdFromHash } from "@shared/route";
+import { deviceKey } from "@web/device-key";
 
 export interface ClientState {
   agents: Agent[];
@@ -116,6 +118,27 @@ export function backoffMs(attempt: number, rand: () => number = Math.random): nu
 }
 
 /**
+ * What this device is showing, as a frame.
+ *
+ * Pure and exported so the RULE is tested — the socket wiring around it is
+ * not, exactly as `wsUrlFrom` is tested and `open()` is not.
+ *
+ * `hidden` collapses the hash to null. Presence means "this device is SHOWING
+ * the agent": a backgrounded PWA with a pane in its hash shows nothing, and
+ * treating it as a viewer is how a pocketed phone stays silent about an agent
+ * that is waiting for it.
+ */
+export function viewingMessage(o: {
+  deviceKey: string | null; hash: string; hidden: boolean;
+}): ClientMessage {
+  return {
+    type: "viewing",
+    deviceKey: o.deviceKey,
+    agentId: o.hidden ? null : agentIdFromHash(o.hash),
+  };
+}
+
+/**
  * The tree-reading capability, from a snapshot that may not mention it.
  *
  * `undefined` is left alone rather than read as `false`, the same distinction
@@ -206,6 +229,23 @@ export const useStore = create<Store>((set, get) => {
   let attempt = 0;
   let retry: ReturnType<typeof setTimeout> | null = null;
   let visibilityListenerAttached = false;
+  /**
+   * Refreshed on every heartbeat reply (see `ws.onmessage` below), not just
+   * resolved once at `ws.onopen`: a subscription created after the socket
+   * opened — enabling push from Settings mid-session — must be reflected
+   * within one heartbeat, not only on the next page load. `sendViewing`
+   * itself stays synchronous and just reads whatever this currently holds.
+   */
+  let key: string | null = null;
+
+  const sendViewing = () => {
+    if (ws === null || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(viewingMessage({
+      deviceKey: key,
+      hash: globalThis.location?.hash ?? "",
+      hidden: typeof document !== "undefined" && document.visibilityState === "hidden",
+    })));
+  };
 
   const open = () => {
     // Re-entrancy guard: a second connect() call (duplicate mount, a
@@ -218,6 +258,7 @@ export const useStore = create<Store>((set, get) => {
     ws.onopen = () => {
       attempt = 0;
       set({ connected: true });
+      void deviceKey().then((k) => { key = k; sendViewing(); });
     };
     ws.onmessage = (ev) => {
       let msg: ServerMessage;
@@ -228,6 +269,23 @@ export const useStore = create<Store>((set, get) => {
         return;
       }
       set(applyMessage(get(), msg));
+      // The reply to the hub's own 20s heartbeat IS presence's keep-alive, so
+      // no timer of its own is needed on either side.
+      if (msg.type === "heartbeat") {
+        sendViewing();
+        // Refresh the cached key for the NEXT heartbeat rather than awaiting
+        // it for this one: `onmessage` stays synchronous, so frames cannot be
+        // reordered by a `deviceKey()` that resolves late, and a throw here
+        // cannot break message handling. `deviceKey()` already caches only a
+        // non-null result (see `@web/device-key`) and never rejects — the one
+        // path that could is `.catch`-guarded, matching the "must not throw
+        // inside onmessage" rule everywhere else in this handler. This is how
+        // a push subscription created mid-session (Settings, after the tab
+        // already opened) is picked up within one heartbeat: `key` was `null`
+        // at `ws.onopen`, so without this it would stay `null` for the life
+        // of the tab.
+        void deviceKey().then((k) => { key = k; }).catch(() => {});
+      }
     };
     ws.onclose = () => {
       set({ connected: false });
@@ -250,7 +308,13 @@ export const useStore = create<Store>((set, get) => {
           attempt = 0;
           open();
         }
+        // Hiding or showing the page changes what this device is viewing —
+        // see `viewingMessage` — even when the socket itself is untouched.
+        sendViewing();
       });
+      // A pane opened or closed within an already-visible tab changes what
+      // this device is viewing without touching `visibilitychange` at all.
+      addEventListener("hashchange", sendViewing);
     }
     open();
   };

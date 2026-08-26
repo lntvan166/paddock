@@ -73,6 +73,10 @@ function demoSettings(mutedUntil: number | null = null): SettingsView {
       settleMs: { blocked: 5_000, done: 10_000 },
       mutedUntil,
       cooldownMs: 60_000,
+      // Matches `defaults().notify.skipWhileViewing` in settings/store.ts —
+      // the demo is a fresh install's settings view, and a fresh install now
+      // starts with this on.
+      skipWhileViewing: true,
     },
     // No keypair, because the demo is a static bundle with no server behind it
     // — there is nothing to subscribe TO. A null public key is the honest

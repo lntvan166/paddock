@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyMessage, backoffMs, isStale, useStore, type ClientState } from "@web/store";
+import { applyMessage, backoffMs, isStale, useStore, viewingMessage, type ClientState } from "@web/store";
 import type { Agent, ServerMessage } from "@shared/types";
 import { wsUrlFrom } from "@web/store";
 
@@ -243,4 +243,31 @@ test("a snapshot that does not mention it says nothing — and the default is no
     type: "snapshot", hostId: "dev-box", agents: [], serverTime: 1,
   });
   expect(next.spacesAvailable).toBe(false);
+});
+
+test("the viewing frame carries the pane in the hash", () => {
+  expect(viewingMessage({ deviceKey: "dk", hash: "#/pane/w1%3Ap1", hidden: false }))
+    .toEqual({ type: "viewing", deviceKey: "dk", agentId: "w1:p1" });
+});
+
+test("a hidden page is viewing nothing, whatever its hash says", () => {
+  // Presence means "this device is SHOWING the agent". A backgrounded PWA with
+  // a pane in its hash is showing nothing, and treating it as a viewer is how
+  // a pocketed phone stays silent about an agent that is waiting.
+  expect(viewingMessage({ deviceKey: "dk", hash: "#/pane/w1%3Ap1", hidden: true }))
+    .toEqual({ type: "viewing", deviceKey: "dk", agentId: null });
+});
+
+test("the agent list is viewing nothing", () => {
+  // Suppression is per agent, not per app: being in paddock somewhere else
+  // must never silence anything.
+  expect(viewingMessage({ deviceKey: "dk", hash: "#/settings", hidden: false }))
+    .toEqual({ type: "viewing", deviceKey: "dk", agentId: null });
+});
+
+test("the legacy #/agent/ deep link counts as viewing", () => {
+  // Every Telegram message ever sent used that form and they are still in chat
+  // histories, so it still parses — including here.
+  expect(viewingMessage({ deviceKey: null, hash: "#/agent/w1%3Ap1", hidden: false }))
+    .toEqual({ type: "viewing", deviceKey: null, agentId: "w1:p1" });
 });

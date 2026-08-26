@@ -72,7 +72,7 @@ test("the push sender is wired to the store's subscriptions and prunes the gone 
     bodies.push(payload);
     return target.endpoint.endsWith("/dead") ? { kind: "gone" } : { kind: "ok" };
   });
-  await send!({ name: "api-refactor", state: "blocked", agentId: "a1" });
+  await send!({ name: "api-refactor", state: "blocked", agentId: "a1", skipDeviceKeys: new Set() });
   expect(removed).toEqual(["https://push.example.com/dead"]);
   // Every device gets the payload, and it is the payload the notifier composed.
   expect(bodies).toHaveLength(2);
@@ -95,7 +95,7 @@ test("a failing device does not stop the ones after it", async () => {
       ? { kind: "failed", detail: "HTTP 500" }
       : { kind: "ok" };
   });
-  await send!({ name: "api-refactor", state: "blocked", agentId: "a1" });
+  await send!({ name: "api-refactor", state: "blocked", agentId: "a1", skipDeviceKeys: new Set() });
   expect(reached).toHaveLength(2);
 });
 
@@ -104,4 +104,46 @@ test("with no keypair, the push sender is not wired at all", () => {
   // fails once per notification for ever.
   const store = { keys: () => null, list: () => [], remove: async () => {} };
   expect(buildPushSender(store as never, async () => ({ kind: "ok" }))).toBeNull();
+});
+
+test("the push sender skips the devices named in skipDeviceKeys", async () => {
+  const PHONE_ENDPOINT = "https://push.example.com/phone";
+  const TABLET_ENDPOINT = "https://push.example.com/tablet";
+  const store = {
+    keys: () => FAKE_KEYS,
+    list: () => [
+      { endpoint: PHONE_ENDPOINT, p256dh: P256DH, auth: AUTH, deviceKey: "dk-phone" },
+      { endpoint: TABLET_ENDPOINT, p256dh: P256DH, auth: AUTH, deviceKey: "dk-tablet" },
+    ],
+    remove: async () => {},
+  };
+  const sent: string[] = [];
+  const send = buildPushSender(store as never, async (target) => {
+    sent.push(target.endpoint);
+    return { kind: "ok" };
+  });
+  await send!({
+    name: "docs-cleanup", state: "blocked", agentId: "w1:p1",
+    skipDeviceKeys: new Set(["dk-phone"]),
+  });
+  expect(sent).toEqual([TABLET_ENDPOINT]);
+});
+
+test("the skip set never reaches the payload", async () => {
+  // A push payload is `{name, state, agentId}` and nothing else — it renders
+  // on a lock screen, and `skipDeviceKeys` is an argument, not content.
+  const store = {
+    keys: () => FAKE_KEYS,
+    list: () => [{ endpoint: "https://push.example.com/x", p256dh: P256DH, auth: AUTH, deviceKey: "dk-x" }],
+    remove: async () => {},
+  };
+  const bodies: string[] = [];
+  const send = buildPushSender(store as never, async (_t, _k, payload) => {
+    bodies.push(payload);
+    return { kind: "ok" };
+  });
+  await send!({
+    name: "docs-cleanup", state: "blocked", agentId: "w1:p1", skipDeviceKeys: new Set(["dk-other"]),
+  });
+  expect(JSON.parse(bodies[0]!)).toEqual({ name: "docs-cleanup", state: "blocked", agentId: "w1:p1" });
 });

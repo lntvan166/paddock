@@ -95,6 +95,7 @@ test("the predicate is what the UI asks, not a second regex", () => {
 function notifySectionProps(publicUrl: string) {
   return {
     telegramOn: false, setTelegramOn: () => {}, pushOn: false, setPushOn: () => {}, pushDevices: 0,
+    skipWhileViewing: false, setSkipWhileViewing: () => {},
     triggers: [] as NotifyTrigger[],
     toggleTrigger: () => {},
     cooldownMs: 60_000,

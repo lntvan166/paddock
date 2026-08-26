@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { hashEndpoint } from "@shared/device-key";
 import { generateVapidKeys, type VapidKeys } from "@server/push/vapid";
 
 /**
@@ -19,11 +20,32 @@ export interface StoredSubscription {
   endpoint: string;
   p256dh: string;
   auth: string;
+  /**
+   * `hashEndpoint(endpoint)`, persisted rather than recomputed.
+   *
+   * The notifier needs the roster of device keys SYNCHRONOUSLY, above the
+   * cooldown stamp in `#fire` — hashing there would mean an await between
+   * reading `since` and writing `#lastSentAt`, which is an interleaving window
+   * that code does not have today. Written once where the endpoint arrives,
+   * and backfilled on load for a file written before this existed.
+   */
+  deviceKey: string;
 }
+
+/**
+ * What a subscription looks like ON DISK, as opposed to in memory.
+ *
+ * Every `StoredSubscription` this process holds has a `deviceKey` — that is
+ * the in-memory guarantee `list()` and `deviceKeys()` rely on. But a
+ * `push.json` written before `deviceKey` existed has no such field, so the
+ * shape it parses into must allow one to be missing. `load()` backfills it
+ * before any `StoredSubscription` reaches `#subs`.
+ */
+type StoredSubscriptionOnDisk = Omit<StoredSubscription, "deviceKey"> & { deviceKey?: string };
 
 interface FileShape {
   keys: VapidKeys;
-  subscriptions: StoredSubscription[];
+  subscriptions: StoredSubscriptionOnDisk[];
 }
 
 /**
@@ -117,7 +139,15 @@ export class PushStore {
           "push.json has no VAPID keypair — push is off until it is repaired or removed",
         );
       }
-      return new PushStore(dir, parsed.keys, parsed.subscriptions ?? [], null);
+      // A file written before device keys existed has none. Backfilled rather
+      // than left absent: an unkeyed subscription can never be suppressed, so
+      // it would silently keep buzzing the phone that is showing the agent.
+      const subs = await Promise.all(
+        (parsed.subscriptions ?? []).map(async (s) => ({
+          ...s, deviceKey: s.deviceKey ?? await hashEndpoint(s.endpoint),
+        })),
+      );
+      return new PushStore(dir, parsed.keys, subs, null);
     } catch (e) {
       return new PushStore(
         dir, null, [],
@@ -130,11 +160,23 @@ export class PushStore {
   keys(): VapidKeys | null { return this.#keys; }
   list(): StoredSubscription[] { return [...this.#subs]; }
 
-  /** Keyed by endpoint: a browser re-subscribing after a permission reset
-   *  reuses its endpoint with fresh keys, and two records would send every
-   *  notification twice. */
-  async add(s: StoredSubscription): Promise<void> {
-    this.#subs = [...this.#subs.filter((x) => x.endpoint !== s.endpoint), s];
+  /** Every subscribed device's key. The notifier's roster — see its `#fire`. */
+  deviceKeys(): Set<string> {
+    return new Set(this.#subs.map((s) => s.deviceKey));
+  }
+
+  /**
+   * Keyed by endpoint: a browser re-subscribing after a permission reset
+   * reuses its endpoint with fresh keys, and two records would send every
+   * notification twice.
+   *
+   * Takes the endpoint and the push keys, not a full `StoredSubscription` —
+   * the device key is DERIVED here rather than trusted from a caller, so
+   * there is exactly one place a subscription's key can come from.
+   */
+  async add(s: Omit<StoredSubscription, "deviceKey">): Promise<void> {
+    const deviceKey = await hashEndpoint(s.endpoint);
+    this.#subs = [...this.#subs.filter((x) => x.endpoint !== s.endpoint), { ...s, deviceKey }];
     await this.#save();
   }
 
