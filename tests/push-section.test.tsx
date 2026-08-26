@@ -156,3 +156,53 @@ test("a server with no keypair says push is off rather than offering a button", 
     expect(node.textContent?.toLowerCase()).toContain("not configured");
   } finally { undo(); }
 });
+
+test("enabling turns the SERVER switch on, not just this device's subscription", async () => {
+  // THE BUG THIS PINS. `index.ts` returns early on `push.enabled` before it
+  // reaches any subscription, and nothing in the app ever set that flag — so
+  // this button registered a device, the settings page reported it subscribed,
+  // and no notification could ever arrive. The subscription says WHERE a
+  // notification may go; the flag says whether paddock may send one at all,
+  // and both have to be true.
+  const undo = capabilities({ push: true, standalone: true });
+  const nav = globalThis.navigator as unknown as Record<string, unknown>;
+  (nav.serviceWorker as Record<string, unknown>).register = () => Promise.resolve({
+    pushManager: {
+      getSubscription: () => Promise.resolve(null),
+      subscribe: () => Promise.resolve({
+        toJSON: () => ({
+          endpoint: "https://push.example.com/x",
+          keys: { p256dh: "k".repeat(87), auth: "a".repeat(22) },
+        }),
+      }),
+    },
+  });
+
+  const seen: { url: string; method: string; body: unknown }[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    let body: unknown;
+    try { body = init?.body ? JSON.parse(String(init.body)) : undefined; } catch { /* not JSON */ }
+    seen.push({ url: String(input), method: init?.method ?? "GET", body });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    const node = await render(<PushSection {...props} />);
+    await settle();
+    await click(node.querySelector("button")!);
+    await settle();
+
+    // The device is registered...
+    expect(seen.some((r) => r.url.includes("/api/push/subscribe"))).toBe(true);
+    // ...AND the server is told it may send.
+    const patch = seen.find((r) => r.url.includes("/api/settings") && r.method === "PUT");
+    expect(patch).toBeDefined();
+    expect(patch!.body).toEqual({ push: { enabled: true } });
+  } finally {
+    globalThis.fetch = realFetch;
+    undo();
+  }
+});

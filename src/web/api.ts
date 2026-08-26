@@ -397,6 +397,28 @@ export async function subscribePush(sub: PushSubscriptionJSON, f: Fetch = fetch)
   if (!res.ok) throw new Error(`subscribe failed (HTTP ${res.status})`);
 }
 
+/**
+ * Turn the server-wide push switch on.
+ *
+ * Separate from `subscribePush` because they are separate facts: a
+ * subscription says WHERE a notification can go, and `push.enabled` says
+ * whether paddock may send one at all. `index.ts` gates every send on the
+ * second, and nothing set it — so a device could subscribe, the settings page
+ * could report it subscribed, and no notification could ever arrive.
+ *
+ * Called from the enable flow rather than from the subscribe ROUTE, because
+ * the design is explicit that subscriptions arrive through their own routes
+ * and settings change through the settings patch. This keeps that line intact.
+ */
+export async function setPushEnabled(enabled: boolean, f: Fetch = fetch): Promise<void> {
+  const res = await f("/api/settings", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ push: { enabled } }),
+  });
+  if (!res.ok) throw new Error(`could not turn push on (HTTP ${res.status})`);
+}
+
 export async function unsubscribePush(endpoint: string, f: Fetch = fetch): Promise<void> {
   const res = await request("/api/push/unsubscribe", { endpoint }, f);
   if (!res.ok) throw new Error(`unsubscribe failed (HTTP ${res.status})`);

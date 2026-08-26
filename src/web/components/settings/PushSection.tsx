@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { BellIcon } from "@web/components/ui/icons";
 import { Card } from "@web/components/ui/Card";
-import { subscribePush, unsubscribePush } from "@web/api";
+import { setPushEnabled, subscribePush, unsubscribePush } from "@web/api";
 
 /**
  * What this browser can do, and what to say when it cannot.
@@ -108,6 +108,11 @@ export function PushSection(p: PushSectionProps) {
         applicationServerKey: keyBytes(p.vapidPublicKey ?? ""),
       });
       await subscribePush(sub.toJSON());
+      // The second half, and without it the first half delivers nothing.
+      // `index.ts` returns early on `push.enabled` before it reaches any
+      // subscription, and nothing in the app ever set that flag — so this
+      // button registered a device and then stayed silent forever.
+      await setPushEnabled(true);
       setSubscribed(true);
       p.onChanged();
     } catch (e) {
