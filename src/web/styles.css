@@ -2605,6 +2605,12 @@ body {
   cursor: pointer;
 }
 .notify-transport > span { display: grid; gap: 0.1rem; }
+/* Matches `.notify-transports`' own inset (0.6rem 0.75rem) for the one
+   checkbox that sits OUTSIDE that group on purpose — see the comment beside
+   it in NotifySection.tsx. `.notify-transports` has no border or background
+   of its own, so without this the two rows above sit 0.75rem further in than
+   this one and the step reads as a bug with nothing to explain it. */
+.notify-transport-solo { padding: 0.6rem 0.75rem; }
 /* The explanation, dimmed and on its own line — it says what the checkbox
    cannot: whether anything is actually registered to receive this. */
 .notify-transport small {

@@ -117,8 +117,11 @@ export function NotifySection({
           checkboxes there is itself an assertion (see notify-card.test.tsx)
           that a third would mean a transport with nothing to deliver to.
           Same `notify-transport` markup for a matching look, different
+          group. `notify-transport-solo` matches `.notify-transports`' own
+          inset so this row lines up with the two above it — it is a sibling
+          in the LAYOUT even though it is deliberately not a member of that
           group. */}
-      <label className="notify-transport">
+      <label className="notify-transport notify-transport-solo">
         <Checkbox
           checked={skipWhileViewing}
           aria-label="Skip push for the agent I'm watching"

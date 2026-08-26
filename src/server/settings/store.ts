@@ -198,6 +198,17 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
     }
   }
 
+  // Named, not dropped silently — same rule as `triggers` above and
+  // `settleMs`/`cooldownMs` via `clamped`: a hand-edited settings.json is a
+  // documented use, so a wrong type must degrade AUDIBLY rather than vanish
+  // with nothing on record of the fact that it happened.
+  if ("skipWhileViewing" in n && typeof n.skipWhileViewing !== "boolean") {
+    log(
+      `[settings] notify.skipWhileViewing was ${JSON.stringify(n.skipWhileViewing)}, not a boolean, ` +
+        `and has been reset to ${d.notify.skipWhileViewing}.`,
+    );
+  }
+
   return {
     version: 2,
     telegram: {

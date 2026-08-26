@@ -285,14 +285,23 @@ test("skipWhileViewing is on by default", async () => {
   expect(s.current().notify.skipWhileViewing).toBe(true);
 });
 
-test("a non-boolean skipWhileViewing falls back to the default", async () => {
+test("a non-boolean skipWhileViewing falls back to the default, and it is logged", async () => {
   // A hand-edited settings.json is a documented use, so a wrong type must
   // degrade rather than throw — the rule `triggers` and `settleMs` follow.
-  expect(migrate({ notify: { skipWhileViewing: "yes" } }, () => {}).notify.skipWhileViewing)
-    .toBe(true);
+  // The design's Settings section says this one warns "as `triggers` and
+  // `settleMs` already do", so a real logger is passed here rather than
+  // `() => {}` — with a no-op logger this test cannot tell a silent fallback
+  // from a logged one, which is exactly the omission this covers.
+  const logged: string[] = [];
+  const s = migrate({ notify: { skipWhileViewing: "yes" } }, (m) => logged.push(m));
+  expect(s.notify.skipWhileViewing).toBe(true);
+  expect(logged.join(" ")).toContain("skipWhileViewing");
 });
 
 test("a stored skipWhileViewing survives a load", async () => {
-  expect(migrate({ notify: { skipWhileViewing: true } }, () => {}).notify.skipWhileViewing)
-    .toBe(true);
+  // The default is also `true`, so asserting `true` here would pass against a
+  // normalizer that ignores the field entirely. `false` is the value that
+  // actually has to survive the round trip for this test to mean anything.
+  expect(migrate({ notify: { skipWhileViewing: false } }, () => {}).notify.skipWhileViewing)
+    .toBe(false);
 });

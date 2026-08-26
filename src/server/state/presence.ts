@@ -48,8 +48,21 @@ export class PresenceStore {
    * cannot: iOS suspending a backgrounded PWA delivers no `visibilitychange`
    * and may leave the socket hanging, and a stale entry would suppress
    * notifications for a phone asleep in a pocket.
+   *
+   * `viewers()` reads this cutoff directly, so no READ is ever off by more
+   * than `#staleMs` — but RELEASE (the `onChange` that lets a deferred
+   * notification re-fire on this TTL path) only happens when `sweep()` next
+   * runs, up to `#sweepMs` later. Worst case is therefore `#staleMs +
+   * #sweepMs` (60s + 20s = 80s) from the last refresh to the re-fire, not
+   * `#staleMs` alone — see `#sweepMs` below.
    */
   readonly #staleMs: number;
+  /**
+   * How often `sweep()` runs. Bounds how STALE a release can be, not a read:
+   * an entry can sit expired-but-not-yet-swept for up to this long before its
+   * `onChange` fires, which is the extra time added on top of `#staleMs` for
+   * the suspended-PWA path described above.
+   */
   readonly #sweepMs: number;
 
   constructor(o: { now?: () => number; staleMs?: number; sweepMs?: number } = {}) {

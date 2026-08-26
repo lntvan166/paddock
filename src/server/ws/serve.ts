@@ -39,6 +39,18 @@ const MAX_AGENT_ID = 256;
  * client talking to an older server looks like, which must degrade to no
  * presence rather than to a broken socket.
  *
+ * That trade is no longer absolute for SIZE: `maxPayloadLength: MAX_CLIENT_FRAME`
+ * on the handler below means Bun itself closes the connection (code 1006)
+ * for any frame over 1 KB before `message()` — and this parser — ever run, so
+ * an oversized frame IS a way to disconnect somebody's dashboard, just not
+ * one this function's `null` return has anything to do with. That is a
+ * deliberate trade, not a regression of the rule above: paddock's own client
+ * sends ~120-byte frames and reconnects with backoff on any close, so the
+ * cost of the rare hostile-or-corrupt oversized frame is a reconnect, not a
+ * stuck session. The `null` return here still covers everything Bun's cap
+ * does not — bad JSON, an unknown `type`, a wrong field type or shape — which
+ * is most of what a malformed-but-normal-sized frame can do.
+ *
  * Exported so the parser is tested directly against hostile input rather than
  * only through a live socket.
  */

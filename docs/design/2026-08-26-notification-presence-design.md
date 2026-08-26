@@ -133,6 +133,15 @@ The client refreshes by re-sending its `viewing` frame once per heartbeat it
 receives. The hub already sends one every 20s, so the reply *is* the liveness
 proof and no new timer exists on either side. 60s is three missed heartbeats.
 
+That 60s bounds a READ: `viewers()` filters by it directly, so no lookup is
+ever staler than that. RELEASE is a separate number, because the entry is only
+actually dropped — and `onChange` only actually fired — the next time the
+sweep timer ticks, and that timer runs every 20s independently of any given
+entry's expiry. So the worst case for the deferred-notification re-fire on
+this TTL path (the third layer below, for the phone whose socket never
+closes) is 60s + 20s = **80s** from the last heartbeat reply to the re-fire,
+not 60s.
+
 This gives release three layers, cheapest first:
 
 1. an explicit `agentId: null` when the page goes hidden or the hash changes,

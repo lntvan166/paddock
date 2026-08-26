@@ -312,7 +312,20 @@ export class Notifier {
     if (this.#lastNotified.get(a.agentId) === state) return;
 
     const s = this.o.settings.current();
-    if (!s.notify.triggers.includes(state)) return;
+    if (!s.notify.triggers.includes(state)) {
+      // The operator unticked this trigger while this agent's episode was
+      // deferred (`#deferred.set` below can only have run for a PRIOR `#fire`
+      // that reached it, so an entry can exist here). Left in place, every
+      // later presence event calls `reconsider` → `#arm(…, 0, …)` → this
+      // method again, which declines here again — bounded and harmless (it
+      // can only ever re-decline, never fire), but it is churn against a
+      // trigger the operator explicitly turned off, and a state the
+      // invariant comments elsewhere don't describe. Same idea as the
+      // "no longer waiting on a viewer" delete a few lines down: whatever
+      // this deferral was for is no longer something paddock will announce.
+      this.#deferred.delete(a.agentId);
+      return;
+    }
     // A FLAG, not an early return, and that distinction is the whole bug this
     // replaced. This guard predates push: when Telegram was the only transport,
     // "no token" and "nothing to do" were the same statement. They stopped

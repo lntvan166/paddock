@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { hubWebSocket, MAX_CLIENT_FRAME, parseClientMessage } from "@server/ws/serve";
 import type { Hub } from "@server/ws/hub";
 import type { AgentStore } from "@server/state/store";
-import type { PresenceStore } from "@server/state/presence";
+import { PresenceStore } from "@server/state/presence";
 
 test("a valid frame parses", () => {
   expect(parseClientMessage(JSON.stringify({ type: "viewing", deviceKey: "dk", agentId: "w1:p1" })))
@@ -68,4 +68,45 @@ test("the handler carries Bun's own payload cap, not just message()'s guard", ()
     presence: {} as PresenceStore,
   });
   expect(handler.maxPayloadLength).toBe(MAX_CLIENT_FRAME);
+});
+
+/**
+ * The manual two-browser check the plan called for was never actually
+ * performed (see the whole-branch review). This is the cheap substitute: the
+ * REAL `open`/`message`/`close` handlers `hubWebSocket` returns, driven
+ * directly with a fake socket, against a REAL `PresenceStore` — so what is
+ * proven is the wiring between the socket handlers and presence, not a
+ * reimplementation of either. `hub` and `store` are plain stubs: nothing here
+ * exercises fan-out or the agent snapshot, both already covered elsewhere
+ * (`hub.test.ts`, `lifecycle-server-state.test.ts`).
+ */
+test("a valid frame reaches presence and viewers() sees it, and close drops it", () => {
+  const presence = new PresenceStore();
+  const hub = { add: () => {}, remove: () => {}, sendSnapshot: () => {} } as unknown as Hub;
+  const store = { snapshot: () => [] } as unknown as AgentStore;
+  const handler = hubWebSocket({ hub, hostId: "dev-box", store, presence });
+
+  // One fake socket. `send` is never asserted on: the stub `hub` above never
+  // calls `client.send`, so what matters is only that it exists as a
+  // callable the real `open()` can close over.
+  const ws = { data: {}, send: () => {} } as unknown as Parameters<typeof handler.message>[0];
+
+  handler.open?.(ws);
+  handler.message(ws, JSON.stringify({ type: "viewing", deviceKey: "dk-1", agentId: "w1:p1" }));
+  expect(presence.viewers("w1:p1")).toEqual(new Set(["dk-1"]));
+
+  handler.close?.(ws, 1000, "");
+  expect(presence.viewers("w1:p1")).toEqual(new Set());
+});
+
+test("a frame for one agent does not appear under another", () => {
+  const presence = new PresenceStore();
+  const hub = { add: () => {}, remove: () => {}, sendSnapshot: () => {} } as unknown as Hub;
+  const store = { snapshot: () => [] } as unknown as AgentStore;
+  const handler = hubWebSocket({ hub, hostId: "dev-box", store, presence });
+  const ws = { data: {}, send: () => {} } as unknown as Parameters<typeof handler.message>[0];
+
+  handler.open?.(ws);
+  handler.message(ws, JSON.stringify({ type: "viewing", deviceKey: "dk-1", agentId: "w1:p1" }));
+  expect(presence.viewers("w2:p9")).toEqual(new Set());
 });

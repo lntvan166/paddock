@@ -290,3 +290,44 @@ test("mute discards a deferral rather than queuing it", async () => {
   await Bun.sleep(5);
   expect(push).toEqual([]);
 });
+
+test("unticking a trigger while an episode is deferred clears the deferral, not just declines once", async () => {
+  // `#fire`'s trigger check returns before reaching the `#deferred.delete`
+  // further down, so a deferred entry that fails the trigger check must clear
+  // itself right there — otherwise it sits in `#deferred` and a LATER
+  // presence event (the viewer leaving, the trigger being re-ticked) re-arms
+  // it and lets it fire on stale reasoning. Proven observably: re-ticking the
+  // trigger and releasing the viewer must NOT deliver the notification the
+  // operator had already dismissed the trigger for.
+  const push: PushPayload[] = [];
+  let looking = true;
+  let triggers: AgentState[] = ["blocked"];
+  const store = {
+    current: () => ({
+      telegram: { token: "", chatId: "" },
+      notify: {
+        telegram: true, triggers, settleMs: { blocked: 0, done: 0 },
+        mutedUntil: null, cooldownMs: 0, skipWhileViewing: true,
+      },
+      push: { enabled: true },
+      publicUrl: null,
+    }),
+  };
+  const n = new Notifier({
+    settings: store as never,
+    send: async () => ({ ok: true, detail: null }),
+    sendPush: async (p) => { push.push(p as PushPayload); },
+    viewers: () => (looking ? new Set([PHONE]) : new Set()),
+    pushDeviceKeys: () => new Set([PHONE]),
+    now: () => NOW,
+  });
+  await settleBlocked(n);        // deferred: withheld push, no Telegram configured
+  triggers = [];                 // the operator unticks "blocked"
+  n.reconsider("w1:p1");         // declines on the trigger check — must also clear #deferred
+  await Bun.sleep(5);
+  triggers = ["blocked"];        // re-ticked
+  looking = false;               // and the viewer leaves
+  n.reconsider("w1:p1");         // nothing should be left to release
+  await Bun.sleep(5);
+  expect(push).toEqual([]);
+});
