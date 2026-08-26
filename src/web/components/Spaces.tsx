@@ -15,8 +15,7 @@ import type { SpaceTree } from "@shared/types";
  * `load` is injected so the tests can drive this without a network, and so a
  * failure is a value this component renders rather than a thrown promise.
  */
-export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, navigate }: {
-  onBack: () => void;
+export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate }: {
   load?: () => Promise<SpaceTree>;
   /** The row `⋯`'s writes — rename and close, space-scoped.
    *
@@ -67,13 +66,14 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
     // `screen`, not a flowing column — Back must stay reachable at any scroll
     // position. See the `.screen, .term` block in styles.css.
     <main className="screen">
+      {/* No back control, for the same reason Settings has none: Spaces is a
+          TAB DESTINATION, a peer of Agents rather than a screen descended into,
+          and the bar at the bottom is both the way out and the label saying
+          where you are. §16.4's ruling — that a back control must use the
+          shared `.term-back` treatment — still governs every screen that HAS
+          one; this screen no longer does. A single space still does, because
+          you reached it from here. */}
       <header className="spaces-head screen-chrome">
-        {/* Shared treatment (§16.4): this was the one back control in the
-            app not using it. Labelled for its actual destination — the
-            dashboard, which is all `onBack` here has ever pointed at. */}
-        <button type="button" className="term-back" onClick={onBack} aria-label="Back to agents">
-          ‹ Agents
-        </button>
         <h2>Spaces</h2>
         {/* §16.7: the `+` that makes a SPACE lives in the header of the screen
             that lists them. Position is what says what it makes, which is why

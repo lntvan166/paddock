@@ -28,7 +28,7 @@ const view = () => ({
 async function mounted() {
   const stub = stubFetch({ "/api/settings": () => view() });
   globalThis.fetch = stub.fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   return { host, stub };
@@ -97,7 +97,7 @@ test("typing a token counts as dirty even though the field starts empty", async 
 
 test("a successful save clears the bar and announces itself in a live region", async () => {
   globalThis.fetch = fakeServerFetch();
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   // The region is mounted before there is anything to say: a role="status"
@@ -130,7 +130,7 @@ test("a failed save keeps the bar and uses the persistent banner, not the toast"
     }
     return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   const chatId = host.querySelector<HTMLInputElement>('input[name="chatId"]')!;
@@ -152,7 +152,7 @@ test("the test button posts the on-screen token, not an empty body", async () =>
     "/api/settings": () => view(),
   });
   globalThis.fetch = stub.fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   const token = host.querySelector<HTMLInputElement>('input[name="token"]')!;
@@ -174,7 +174,7 @@ test("mute applies immediately and does not go through Save", async () => {
     "/api/settings": () => view(),
   });
   globalThis.fetch = stub.fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   await click(host.querySelector('button[name="mute-1h"]'));
@@ -202,7 +202,7 @@ test("mute never establishes a baseline the operator never confirmed", async () 
     if (String(input).includes("/api/settings/mute")) return muteStub.fn(input, init);
     throw new Error("network down");
   }) as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   expect(host.textContent).toContain("network down");
@@ -227,7 +227,7 @@ test("a muted dashboard says until when, computed from the server's clock", asyn
   };
   const stub = stubFetch({ "/api/settings": () => muted });
   globalThis.fetch = stub.fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   const el = host.querySelector(".settings-mute")!;
@@ -240,7 +240,7 @@ test("unmute posts a zero duration", async () => {
   const muted = { ...view(), notify: { ...view().notify, mutedUntil: 1_700_000_000_000 + 3_600_000 } };
   const stub = stubFetch({ "/api/settings/mute": () => view(), "/api/settings": () => muted });
   globalThis.fetch = stub.fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   await click(host.querySelector('button[name="unmute"]'));
@@ -252,7 +252,7 @@ test("unmute posts a zero duration", async () => {
 test("a settle window is edited in seconds and saved in milliseconds", async () => {
   const stub = stubFetch({ "/api/settings": () => view() });
   globalThis.fetch = stub.fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   const done = host.querySelector<HTMLInputElement>('input[name="settle-done"]')!;
@@ -285,7 +285,7 @@ test("a mute remainder of 59 minutes and change renders 59m, never 60m", async (
   };
   const stub = stubFetch({ "/api/settings": () => muted });
   globalThis.fetch = stub.fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   const text = host.querySelector(".settings-mute")!.textContent!;
@@ -305,7 +305,7 @@ test("a stored publicUrl with stray whitespace does not arrive already dirty", a
     "/api/settings": () => ({ ...view(), publicUrl: "https://paddock.example.com " }),
   });
   globalThis.fetch = stub.fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
   expect(host.querySelector(".settings-save-bar")).toBeNull();

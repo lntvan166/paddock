@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 test("a failed read is surfaced, never rendered as an empty session", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => { throw new Error("socket refused"); }} />);
+  const el = await render(<Spaces load={async () => { throw new Error("socket refused"); }} />);
   await settle();
   expect(el.textContent).toContain("socket refused");
   expect(el.textContent).not.toContain("No spaces");
@@ -47,7 +47,7 @@ test("a row carries its space's ⋯ and NOTHING else — one control, not three"
   // so with the default the `+` assertion would pass even if every row rendered
   // one, because nothing would render one either way.
   useStore.setState({ spacesAvailable: true });
-  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const host = await render(<Spaces load={load(TABBED)} />);
   const list = host.querySelector(".spaces")!;
 
   // The half that must stay gone: no create control on any row, even though
@@ -69,7 +69,7 @@ test("the row's ⋯ is scoped to the SPACE, not to a tab or an agent", async () 
   // the sheet offers a space — renaming a tab belongs to #/space/<id>, where
   // the row you tap is the tab you mean.
   useStore.setState({ spacesAvailable: true });
-  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const host = await render(<Spaces load={load(TABBED)} />);
   const trigger = host.querySelector("[data-space-row] [data-row-actions]") as HTMLElement;
   expect(trigger.getAttribute("aria-label")).toContain("schema migration");
   await click(trigger);
@@ -85,12 +85,12 @@ test("the row's ⋯ is scoped to the SPACE, not to a tab or an agent", async () 
 });
 
 test("a row opens its space, not a pane", async () => {
-  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const host = await render(<Spaces load={load(TABBED)} />);
   expect(host.querySelector("[data-space-row] a")?.getAttribute("href")).toBe("#/space/w3");
 });
 
 test("a row says its name, its rollup state and its pane count, and nothing else", async () => {
-  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const host = await render(<Spaces load={load(TABBED)} />);
   const row = host.querySelector("[data-space-row]")!;
   expect(row.querySelector(".space-name")?.textContent).toBe("schema migration");
   expect(row.querySelector(".space-state")?.textContent).toBe("working");
@@ -103,7 +103,7 @@ test("a row says its name, its rollup state and its pane count, and nothing else
 });
 
 test("nothing collapses, so nothing offers to", async () => {
-  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const host = await render(<Spaces load={load(TABBED)} />);
   // A tombstone, not a guard: nothing in `src/web/` can produce
   // `[data-expand]` any more, so this assertion cannot fail.
   expect(host.querySelector("[data-expand]")).toBeNull();
@@ -126,7 +126,7 @@ test("nothing collapses, so nothing offers to", async () => {
 test("the collapsed-state key is not written any more", async () => {
   // A stale key holding space ids that address nothing is worse than none.
   localStorage.removeItem("paddock.spaces.collapsed");
-  await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  await render(<Spaces load={load(TABBED)} />);
   expect(localStorage.getItem("paddock.spaces.collapsed")).toBeNull();
 });
 
@@ -139,7 +139,7 @@ test("blocked sorts first and a space with no agent sorts last", async () => {
       { spaceId: "wb", label: "flaky-test-fix", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wb:t1", label: null, panes: [{ paneId: "wb:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "blocked" }] }] },
     ],
   };
-  const host = await render(<Spaces onBack={() => {}} load={load(MIXED)} />);
+  const host = await render(<Spaces load={load(MIXED)} />);
   expect(textsOf(host, "[data-space-row] .space-name")).toEqual(["flaky-test-fix", "docs-cleanup", "scratch"]);
 
   // The null-state marker `ui/StateMarker.tsx` was hoisted for, on this
@@ -153,7 +153,7 @@ test("blocked sorts first and a space with no agent sorts last", async () => {
 
 test("the header keeps the one control that makes a space", async () => {
   useStore.setState({ spacesAvailable: true });
-  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const host = await render(<Spaces load={load(TABBED)} />);
   expect(host.querySelector(".spaces-head [data-create='space']")).not.toBeNull();
 });
 
@@ -162,6 +162,6 @@ test("an unnamed space is named by its id, because a blank row is not a row", as
     readAt: 1_700_000_000_000,
     spaces: [{ spaceId: "w7", label: null, tabCount: 1, paneCount: 1, tabs: [{ tabId: "w7:t1", label: null, panes: [{ paneId: "w7:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "idle" }] }] }],
   };
-  const host = await render(<Spaces onBack={() => {}} load={load(UNNAMED)} />);
+  const host = await render(<Spaces load={load(UNNAMED)} />);
   expect(textsOf(host, "[data-space-row] .space-name")).toEqual(["w7"]);
 });

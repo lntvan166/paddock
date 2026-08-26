@@ -109,7 +109,7 @@ test("choosing a theme in Settings applies it immediately, with no remount", asy
     headers: { "content-type": "application/json" },
   })) as unknown as typeof fetch;
 
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 
@@ -166,7 +166,7 @@ test("clearing the font size in Settings returns the pane to the clamp", async (
     headers: { "content-type": "application/json" },
   })) as unknown as typeof fetch;
 
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 
@@ -198,7 +198,7 @@ test("the keypad-auto setting is a device pref, written to this browser only", a
   });
   const { fn, calls } = stubFetch({ "/api/settings": () => view() });
   globalThis.fetch = fn as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 

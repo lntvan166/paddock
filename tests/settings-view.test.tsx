@@ -41,7 +41,7 @@ test("the token is never rendered — only the hint", async () => {
     JSON.stringify({ ...view(), telegram: { ...view().telegram, token: SECRET_TOKEN } }),
     { headers: { "content-type": "application/json" } },
   )) as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 
@@ -65,7 +65,7 @@ test("the global section says it affects every device", async () => {
   globalThis.fetch = (async () => new Response(JSON.stringify(view()), {
     headers: { "content-type": "application/json" },
   })) as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   expect(host.textContent?.toLowerCase()).toContain("every device");
 });
@@ -82,7 +82,7 @@ test("the three bands are real headings, not just styled paragraphs", async () =
   globalThis.fetch = (async () => new Response(JSON.stringify(view()), {
     headers: { "content-type": "application/json" },
   })) as unknown as typeof fetch;
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   const headings = [...host.querySelectorAll("h2")].map((h) => h.textContent);
   expect(headings).toEqual(["This device", "All devices", "Info"]);
@@ -108,7 +108,7 @@ test("a failed save surfaces the server's rejection reason, never a silent failu
     return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
 
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 
@@ -135,7 +135,7 @@ test("a failed test message surfaces Telegram's own description, never a silent 
     return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
 
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 
@@ -161,7 +161,7 @@ test("a form that never loaded cannot be saved, so a failed GET cannot overwrite
     throw new Error("network down");
   }) as unknown as typeof fetch;
 
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 
@@ -186,7 +186,7 @@ test("publicUrl and cooldownMs have real inputs, and both reach the PUT body", a
     return new Response(JSON.stringify(view()), { headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
 
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 
@@ -218,7 +218,7 @@ test("an existing publicUrl is shown in the field, not silently wiped on the nex
     { headers: { "content-type": "application/json" } },
   )) as unknown as typeof fetch;
 
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
   await settle();
 

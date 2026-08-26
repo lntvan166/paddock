@@ -52,7 +52,7 @@ const VIEW = {
 
 test("Settings pins its header outside the scrolling region", async () => {
   stubFetch({ "/api/settings": () => VIEW, "/api/health": () => ({}) });
-  const host = await render(<Settings onBack={() => {}} />);
+  const host = await render(<Settings />);
   await settle();
 
   const screen = host.querySelector(".screen");
@@ -72,7 +72,7 @@ test("Settings pins its header outside the scrolling region", async () => {
 
 test("Spaces pins its header outside the scrolling region", async () => {
   const host = await render(
-    <Spaces onBack={() => {}} load={async () => ({ spaces: [], readAt: 0 })} />,
+    <Spaces load={async () => ({ spaces: [], readAt: 0 })} />,
   );
   await settle();
 

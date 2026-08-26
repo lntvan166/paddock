@@ -155,15 +155,25 @@ test("a shell pane opened cold (no recorded origin) returns to the dashboard, ne
   expect(location.hash).toBe("");
 });
 
-test("the Spaces screen's own back control uses the shared term-back treatment", async () => {
+test("the Spaces screen has no back control — it is a tab destination", async () => {
+  // This test used to assert the opposite: that Spaces' back control used the
+  // shared `.term-back` treatment (§16.4, which found it was the one control
+  // in the app not doing so). That ruling is intact and still governs every
+  // screen that HAS a back control — see the terminal cases above and the
+  // single-space case below, which both still assert it.
+  //
+  // What changed is that this screen no longer has one. Spaces is reached from
+  // the bottom tab bar now, making it a PEER of Agents rather than a screen
+  // descended into, and a back control here pointed at one of three peers
+  // while duplicating a control already on screen. A drill-down still keeps
+  // its own.
   const tree = treeWith("claude");
-  const host = await render(<Spaces onBack={() => {}} load={async () => tree} />);
+  const host = await render(<Spaces load={async () => tree} />);
   await settle();
 
-  const back = host.querySelector(".spaces-head button");
-  expect(back).not.toBeNull();
-  expect(back?.classList.contains("term-back")).toBe(true);
-  expect(back?.getAttribute("aria-label")).toBe("Back to agents");
+  expect(host.querySelector(".spaces-head .term-back")).toBeNull();
+  // The heading still says where you are; only the redundant way out went.
+  expect(host.querySelector(".spaces-head")?.textContent).toContain("Spaces");
 });
 
 test("an agent pane opened from a SPACE returns to that space, not the list", async () => {

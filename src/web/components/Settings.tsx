@@ -14,11 +14,12 @@ import { PushSection } from "@web/components/settings/PushSection";
 import { InfoSection } from "@web/components/settings/InfoSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
+import { BuildStamp } from "@web/components/BuildStamp";
 import { TabBar } from "@web/components/TabBar";
 
-interface SettingsProps {
-  onBack: () => void;
-}
+/** No props. `onBack` was removed with the header's back control — Settings is
+ *  a tab destination now, and the tab bar is the way out. */
+type SettingsProps = Record<string, never>;
 
 /**
  * Two sections, because the settings behind them live in two different
@@ -29,7 +30,7 @@ interface SettingsProps {
  * silently failed would leave the operator believing a switch is set when it
  * is not.
  */
-export function Settings({ onBack }: SettingsProps) {
+export function Settings(_props: SettingsProps = {}) {
   // Counted with `sectionFor`, the one rule. From this screen a newly blocked
   // agent used to be invisible entirely.
   const needsYou = useStore((s) => s.agents.filter((a) => sectionFor(a) === "needs-you").length);
@@ -329,10 +330,12 @@ export function Settings({ onBack }: SettingsProps) {
     // three utilities restating what a class already does is how the two of
     // them drift apart later.
     <main className="settings screen">
+      {/* No back control. Settings is a TAB DESTINATION now, not a screen you
+          descended into — a peer of Agents rather than its child — and the way
+          out is the bar at the bottom, which also says where you are. A back
+          button here pointed at one of three peers and duplicated a control
+          already on screen. Drill-downs (a pane, a single space) keep theirs. */}
       <header className="settings-header screen-chrome">
-        <button type="button" className="term-back" onClick={onBack} aria-label="Back to agents">
-          ‹ Agents
-        </button>
         <h1 className="settings-title">Settings</h1>
       </header>
 
@@ -445,6 +448,13 @@ export function Settings({ onBack }: SettingsProps) {
         <h2 className="band-label" id="band-info">Info</h2>
         <p className="band-hint">Read-only. What build is running, and what this device can see.</p>
         <InfoSection health={health} />
+        {/* Which bundle this browser is running — moved here from the
+            dashboard, where it competed with the tab bar for the bottom of the
+            screen and answered a question the dashboard never asks. This is
+            the CLIENT build; `InfoSection`'s "Server version" row is the other
+            half, and its own comment explains why the two must stay
+            distinguishable. */}
+        <BuildStamp />
       </section>
       </div>
 

@@ -6,7 +6,6 @@ import { PaneTerminal, SHELL_MIN_REFRESH_MS } from "@web/components/PaneTerminal
 import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
 import { AgentTerminal } from "@web/components/AgentTerminal";
-import { BuildStamp } from "@web/components/BuildStamp";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
@@ -319,7 +318,7 @@ export function App() {
   // in-flight key resolving AFTER the operator navigated to B, would land on
   // B's screen. Resetting fields in an effect cannot stop that late write;
   // only unmounting the old instance can.
-  if (showSettings) return <Settings onBack={() => { location.hash = ""; }} />;
+  if (showSettings) return <Settings />;
 
   // Before `showSpaces` below: belt and braces, not load-bearing.
   // `useSpacesRoute` matches `"#/spaces"` exactly and `spaceIdFromHash`
@@ -339,7 +338,7 @@ export function App() {
     );
   }
 
-  if (showSpaces) return <Spaces onBack={() => { location.hash = ""; }} />;
+  if (showSpaces) return <Spaces />;
 
   if (openAgent) {
     // Back returns to wherever THIS pane was opened from (§16.4) — the
@@ -538,12 +537,18 @@ export function App() {
         )}
 
       </div>
-      {/* OUTSIDE the dimming wrapper, like UpdateBar: which version this
-          bundle is stays true when the herdr link goes quiet, so dimming it
-          would claim otherwise. Inside the SCROLLER though, not the chrome —
-          it pushes itself down with `margin: auto 0 0`, which is why
-          `.screen-body` is a flex column. */}
-      <BuildStamp />
+      {/* `BuildStamp` used to sit here, pinned to the bottom of the viewport.
+          It has moved to Settings' Info band, where `InfoSection` already
+          reports the SERVER version and the connection facts — see its own
+          note about the client/server distinction, which is why the two are
+          different rows rather than one.
+
+          Two reasons it left. The tab bar now occupies the bottom of the
+          screen, so a version line above it competed with navigation for the
+          most reachable strip of a phone; and the dashboard answers "does
+          anything need me", to which the bundle's version is never part of
+          the answer. It is a diagnostic, and Settings is where the
+          diagnostics are. */}
       </div>
       {/* Chrome at the bottom, outside the scroller, so the three destinations
           stay in thumb reach at any scroll position. Counted with `sectionFor`

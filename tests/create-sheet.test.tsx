@@ -141,7 +141,7 @@ test("the + in the Spaces header makes a space, enabled and named for it", async
   withTree(true);
   const { senders } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Spaces load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
 
@@ -162,7 +162,7 @@ test("neither + exists when the server does not say it can read a tree", async (
   withTree(false);
   const { senders, calls } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Spaces load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
   expect(el.querySelectorAll("[data-create]")).toHaveLength(0);
@@ -202,7 +202,7 @@ test("the picker offers the installed harnesses AND a plain shell", async () => 
   withTree(true);
   const { senders, calls } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Spaces load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
   await click(el.querySelector('.spaces-head [data-create="space"]'));
@@ -224,7 +224,7 @@ test("a failed harness read is surfaced, and the shell option survives it", asyn
     harnesses: async () => { throw new RequestFailed(502, "herdr said no"); },
   });
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Spaces load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
   await click(el.querySelector('.spaces-head [data-create="space"]'));
@@ -265,7 +265,7 @@ test("a new space's agent name tracks the label as it is typed", async () => {
   withTree(true);
   const { senders } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Spaces load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
   await click(el.querySelector('.spaces-head [data-create="space"]'));
@@ -345,7 +345,7 @@ test("a new space's cwd starts empty, so herdr picks its own default", async () 
   withTree(true);
   const { senders, calls } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Spaces load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
   await click(el.querySelector('.spaces-head [data-create="space"]'));
@@ -499,7 +499,7 @@ test("a FAILED create navigates nowhere and keeps herdr's own words on screen", 
   const { state, load } = counted(TREE);
   const nav: string[] = [];
   const el = await render(
-    <Spaces onBack={() => {}} load={load} createSenders={senders} navigate={(h) => nav.push(h)} />,
+    <Spaces load={load} createSenders={senders} navigate={(h) => nav.push(h)} />,
   );
   await settle();
   const before = state.loads;
@@ -615,7 +615,7 @@ test("the create sheet carries no shadcn close button either", async () => {
   withTree(true);
   const { senders } = recorder();
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+    <Spaces load={async () => TREE} createSenders={senders} navigate={() => {}} />,
   );
   await settle();
   await click(el.querySelector('.spaces-head [data-create="space"]'));
@@ -676,7 +676,7 @@ test("a 200 that says ok:false never becomes a navigation", async () => {
   });
   const nav: string[] = [];
   const el = await render(
-    <Spaces onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
+    <Spaces load={async () => TREE} createSenders={senders} navigate={(h) => nav.push(h)} />,
   );
   await settle();
   await click(el.querySelector('.spaces-head [data-create="space"]'));

@@ -16,7 +16,7 @@ test("a settings load that fails shows the error, not a blank screen", async () 
   const original = globalThis.fetch;
   globalThis.fetch = fn as typeof fetch;
   try {
-    const host = await render(<Settings onBack={() => {}} />);
+    const host = await render(<Settings />);
     expect(host.textContent ?? "").not.toBe("");
     expect((host.textContent ?? "").toLowerCase()).toContain("settings");
   } finally {

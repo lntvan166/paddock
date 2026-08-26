@@ -1117,11 +1117,18 @@ body {
    the element lives is indistinguishable from no rule at all. */
 .term-controls button { min-height: 2.75rem; min-width: 2.75rem; }
 
+/* 0.5rem vertical, NOT the 0.75rem every other band takes.
+   Three bands stack at the bottom of this screen — controls, keys, reply — and
+   each one's padding meets the next one's, so a rhythm that reads as generous
+   on a single band reads as a gap between rows of keys. Reported from use:
+   the keypad looked far taller than the reply box beneath it.
+   The keys themselves are untouched at 2.75rem; this is the band around them,
+   and 8px of it is what keeps the three bands reading as one cluster. */
 .term-keys {
   flex: none;
   display: grid;
   gap: 0.5rem;
-  padding: 0.75rem var(--gutter);
+  padding: 0.5rem var(--gutter);
   background: var(--surface);
 }
 
@@ -1282,12 +1289,15 @@ body {
 .term-key:active { background: var(--border); }
 .term-key:disabled { opacity: 0.5; }
 
+/* Matches `.term-keys` above it, with a little more at the very bottom: this
+   is the last band before the screen edge, and the extra is thumb clearance
+   rather than rhythm. */
 .term-reply {
   flex: none;
   display: flex;
   gap: 0.5rem;
   background: var(--surface);
-  padding: 0.75rem var(--gutter);
+  padding: 0.5rem var(--gutter) 0.75rem;
 }
 
 .term-reply input {
