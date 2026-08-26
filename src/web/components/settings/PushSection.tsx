@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { BellIcon } from "@web/components/ui/icons";
-import { Card } from "@web/components/ui/Card";
 import { setPushEnabled, subscribePush, unsubscribePush } from "@web/api";
 
 /**
@@ -63,7 +61,6 @@ export interface PushSectionProps {
   /** How many devices will buzz — NOT whether this one is subscribed. That is
    *  read from the browser below, because the server holds endpoints and cannot
    *  tell which of them is the browser currently asking. */
-  devices: number;
   vapidPublicKey: string | null;
   /** Non-null when push.json failed to load. Shown, never swallowed. */
   error: string | null;
@@ -143,48 +140,46 @@ export function PushSection(p: PushSectionProps) {
     }
   }, [p]);
 
-  const devices = p.devices === 1 ? "1 device" : `${p.devices} devices`;
-
+  // NO `Card` of its own. This used to be a second card further down the page,
+  // which meant push was configured in TWO places — a checkbox in the
+  // Notifications card and a device button down here — and either one could be
+  // set without the other. An operator could check the box and register no
+  // device, or register a device with the box unchecked, and both look like
+  // "push is on".
+  //
+  // It renders inline in the Web push row instead, so the transport and the
+  // device that receives it are one decision in one place.
   return (
-    <Card
-      icon={<BellIcon />}
-      title="Push notifications"
-      subtitle={
-        cap === "ready"
-          ? `Sent to this device's browser. ${devices} subscribed.`
-          : "Sent to an installed paddock, so a tap opens the app itself."
-      }
-      footer={
-        <>
-          {p.error !== null ? <p className="warn">{p.error}</p> : null}
-          {failure !== null ? <p className="warn">{failure}</p> : null}
-          {cap === "needs-install" ? (
-            <p>
-              Add paddock to your Home Screen first, then enable notifications here.
-              A browser tab cannot receive them.
-            </p>
-          ) : null}
-          {cap === "unsupported" ? <p>This browser does not support push notifications.</p> : null}
-          {cap === "denied" ? (
-            <p>
-              Notifications are blocked for this site. Change it in your browser settings —
-              this page cannot ask again.
-            </p>
-          ) : null}
-          {cap === "unconfigured" ? <p>Push is not configured on this server.</p> : null}
-        </>
-      }
-    >
+    <div className="push-control">
       {cap === "ready" ? (
         <button
           type="button"
-          className="btn"
+          className="btn push-device-btn"
           disabled={busy}
           onClick={() => void (subscribed === true ? disable() : enable())}
         >
           {subscribed === true ? "Disable on this device" : "Enable on this device"}
         </button>
       ) : null}
-    </Card>
+
+      {/* The capability messages, which are the whole reason this cannot be a
+          bare checkbox: on iOS a browser tab can never receive a push, and a
+          denied permission cannot be re-asked from the page. */}
+      {p.error !== null ? <p className="warn">{p.error}</p> : null}
+      {failure !== null ? <p className="warn">{failure}</p> : null}
+      {cap === "needs-install" ? (
+        <p className="push-note">
+          Add paddock to your Home Screen first, then enable it here.
+          A browser tab cannot receive notifications.
+        </p>
+      ) : null}
+      {cap === "unsupported" ? <p className="push-note">This browser does not support push.</p> : null}
+      {cap === "denied" ? (
+        <p className="push-note">
+          Blocked for this site. Change it in your browser settings — this page cannot ask again.
+        </p>
+      ) : null}
+      {cap === "unconfigured" ? <p className="push-note">Push is not configured on this server.</p> : null}
+    </div>
   );
 }

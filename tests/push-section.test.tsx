@@ -65,7 +65,6 @@ function capabilities(o: {
 
 const props = {
   enabled: false,
-  devices: 0,
   vapidPublicKey: "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
   error: null as string | null,
   onChanged: () => {},
@@ -138,13 +137,14 @@ test("a push.json error is shown rather than swallowed", async () => {
   } finally { undo(); }
 });
 
-test("the device count is shown so the operator knows how many phones buzz", async () => {
-  const undo = capabilities({ push: true, standalone: true });
-  try {
-    const node = await render(<PushSection {...props} devices={3} />);
-    expect(node.textContent).toContain("3");
-  } finally { undo(); }
-});
+// The device-count test lived here and now lives in `tests/notify-card.test.tsx`
+// ("the push row counts the devices when there are some"). The count moved with
+// the control: push used to be configured in two places — a checkbox in the
+// Notifications card and a device button in a card of its own — and either
+// could be set without the other. It is one row now, so the count is asserted
+// where it renders.
+
+
 
 test("a server with no keypair says push is off rather than offering a button", async () => {
   // The demo bundle, and any paddock whose push.json could not be read. An

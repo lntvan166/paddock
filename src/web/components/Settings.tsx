@@ -363,6 +363,14 @@ export function Settings({ onBack }: SettingsProps) {
           pushOn={pushOn}
           setPushOn={setPushOn}
           pushDevices={view?.push?.devices ?? 0}
+          pushControl={(
+            <PushSection
+              enabled={view?.push?.enabled ?? false}
+              vapidPublicKey={view?.push?.vapidPublicKey ?? null}
+              error={view?.push?.error ?? null}
+              onChanged={() => setReload((n) => n + 1)}
+            />
+          )}
           triggers={triggers}
           toggleTrigger={toggleTrigger}
           cooldownMs={cooldownMs}
@@ -385,13 +393,6 @@ export function Settings({ onBack }: SettingsProps) {
             the first render to read one threw and blanked the whole settings
             screen. A response without `push` should degrade to "off", not to
             nothing. */}
-        <PushSection
-          enabled={view?.push?.enabled ?? false}
-          devices={view?.push?.devices ?? 0}
-          vapidPublicKey={view?.push?.vapidPublicKey ?? null}
-          error={view?.push?.error ?? null}
-          onChanged={() => setReload((n) => n + 1)}
-        />
 
         {/* Present only while a tunnel is running: `view.tunnel` is null for
             a paddock served the ordinary way, which has nothing to pair.

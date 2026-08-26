@@ -2543,3 +2543,13 @@ body {
   color: var(--fg-dim);
   font-size: var(--t-xs);
 }
+
+/* The device control, inside the Web push row rather than in a card of its
+   own. Indented under the row's explanation so it reads as belonging to that
+   checkbox — which is the whole point of moving it here. */
+.push-control { display: grid; gap: 0.35rem; margin-top: 0.3rem; }
+.push-device-btn { min-height: 2.75rem; justify-self: start; }
+/* A capability note — "add to Home Screen first", "blocked for this site".
+   Dimmed like the row's own explanation, because it is the same KIND of
+   sentence: what this checkbox can and cannot do on this device. */
+.push-note { margin: 0; color: var(--fg-dim); font-size: var(--t-xs); }

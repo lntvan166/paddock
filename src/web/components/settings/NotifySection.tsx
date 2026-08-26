@@ -13,6 +13,10 @@ export interface NotifySectionProps {
   /** How many devices are registered for push. A checkbox with no device to
    *  deliver to is worth saying out loud rather than leaving to fail quietly. */
   pushDevices: number;
+  /** The device-registration control, rendered inside the Web push row.
+   *  A SLOT rather than an import, so this card keeps knowing nothing about
+   *  service workers, permission prompts or `PushManager`. */
+  pushControl?: React.ReactNode;
   triggers: NotifyTrigger[]; toggleTrigger: (t: NotifyTrigger) => void;
   cooldownMs: number; setCooldownMs: (v: number) => void;
   publicUrl: string; setPublicUrl: (v: string) => void;
@@ -47,7 +51,7 @@ function muteLabel(mutedUntil: number, serverNow: number): string {
 }
 
 export function NotifySection({
-  telegramOn, setTelegramOn, pushOn, setPushOn, pushDevices,
+  telegramOn, setTelegramOn, pushOn, setPushOn, pushDevices, pushControl,
   triggers, toggleTrigger, cooldownMs, setCooldownMs,
   publicUrl, setPublicUrl, settleMs, setSettleMs, mutedUntil, serverNow, onMute, muting,
 }: NotifySectionProps) {
@@ -94,6 +98,11 @@ export function NotifySection({
                 ? "No device registered yet — turn it on from the device you want buzzed."
                 : `${pushDevices} device${pushDevices === 1 ? "" : "s"} registered.`}
             </small>
+            {/* The device control lives HERE, not in a card of its own further
+                down the page. Two places to configure one transport is a
+                control an operator can half-set: box checked and no device, or
+                a device registered with the box off. */}
+            {pushControl}
           </span>
         </label>
       </div>
