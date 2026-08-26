@@ -849,7 +849,20 @@ body {
 /* The Keys toggle's glyph, sized off the control rather than the type scale —
    same reason `.term-key-glyph` above is, and it sits beside a word so it must
    not out-weigh it. */
-.term-keys-toggle-glyph { width: 15px; height: 15px; vertical-align: -0.18em; margin-right: 0.3rem; }
+/* The Keys toggle's glyph.
+   The BUTTON becomes a flex row rather than the glyph being nudged inline:
+   Tailwind's preflight sets `svg { display: block }`, so `vertical-align` on
+   the icon does nothing and the label wrapped onto a second line — a two-line
+   control 34px tall, under the 44px this bar's own rule asks for. Laying the
+   button out explicitly is immune to whatever `display` the reset gives an
+   svg. */
+.term-keys-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.75rem;
+}
+.term-keys-toggle-glyph { width: 15px; height: 15px; flex: none; }
 
 /* The armed Ctrl field. Accent-bordered because it is the one thing on screen
    waiting for input, and it sits ABOVE the pad so the native keyboard rising
