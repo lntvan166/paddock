@@ -810,6 +810,28 @@ body {
 .term-keys-primary { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 0.35rem; }
 .term-keys-secondary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; }
 
+/* The control keys, on their own row and visibly a different KIND of act.
+   Four columns rather than five: these are ^C ^D ^Z ^L and nothing else, and
+   a fifth empty cell would read as a missing key. */
+.term-keys-control {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+  /* A gap above, because the break between "move the cursor" and "interrupt
+     what is running" is the point of the split. Without it the row reads as
+     more nav keys. */
+  margin-top: 0.35rem;
+}
+
+/* Set in mono, because `^C` is notation rather than a word — the same reason
+   an agent's name is mono on the dashboard. Not danger-coloured: ^L clears a
+   screen and ^Z suspends, and painting the set red would claim they are all
+   destructive. */
+.term-key-ctrl {
+  font-family: var(--mono);
+  letter-spacing: 0;
+}
+
 /* Quieter than the prompt options above, by design. A key is a fallback for
    output paddock could not turn into a labelled choice, so it should be
    findable and not attention-seeking. Same shape, one rung down in weight. */
@@ -1654,7 +1676,14 @@ body {
   padding: 0;
 }
 
+/* A flex LINE, and this is load-bearing rather than cosmetic.
+   The row holds two children now — the link and the `⋯` that came back with
+   §5.1's amendment — and without this they stack, putting the control on its
+   own line beneath the row it belongs to. The `⋯` reads as trailing content of
+   its row only if it sits at the row's trailing edge. */
 [data-space-row] {
+  display: flex;
+  align-items: center;
   border-top: 1px solid var(--border);
 }
 
@@ -1665,10 +1694,28 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* Takes the row's free space, which is what puts the `⋯` hard against the
+     trailing edge. `min-width: 0` so the name inside can still ellipsise —
+     without it the flex item refuses to shrink below its content and the count
+     is pushed off a narrow phone. */
+  flex: 1;
+  min-width: 0;
   min-height: 2.75rem;
-  padding: 0.6rem 0.75rem;
+  /* No trailing padding: the `⋯` beside it carries its own, and doubling them
+     puts the control a thumb-width from the screen edge. */
+  padding: 0.6rem 0 0.6rem 0.75rem;
   color: inherit;
   text-decoration: none;
+}
+
+/* The `⋯` at the row's trailing edge — a full 44px target, its own padding,
+   and `flex: none` so it never shrinks when a long space name competes for the
+   line. */
+[data-space-row] > [data-row-actions] {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem 0 0.5rem;
 }
 
 /* The scan target, same voice as an agent's name on the dashboard: an
