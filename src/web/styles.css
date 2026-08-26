@@ -1245,12 +1245,25 @@ body {
    rendered as `sche…`; the header's job is identity and it has 390px to do it
    in. This row carries the border that separates the pane from the panel, since
    it is now the panel's top edge. */
+/* NO vertical padding, and that is the rule rather than a tightening.
+   Every child of this band is already a 2.75rem tap target — the `Keys`
+   toggle and the refresh button both carry `min-height: 2.75rem` — so 44px IS
+   the band's height. The 0.5rem it used to add top and bottom made the row
+   61px without making one pixel of it more tappable, on the screen whose whole
+   job is showing as much of the agent's output as it can.
+
+   Reported from use as "the padding in the Keys line is still large", and
+   measured before changing: 8px + 44px + 8px + 1px border.
+
+   The bands BELOW keep theirs, because theirs does a different job — it
+   separates stacked rows of controls from each other, where this one was only
+   separating a control from a border. */
 .term-controls {
   flex: none;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem var(--gutter);
+  padding: 0 var(--gutter);
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
