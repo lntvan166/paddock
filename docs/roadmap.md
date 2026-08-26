@@ -175,14 +175,22 @@ surprise.
   a weaker nudge toward the one action that makes notifications possible on
   iOS at all.
 
-- **`--demo` cannot demonstrate the approve path.** Demo mode has no herdr to
-  act on, so `index.ts` leaves `HerdrActions` unset and `/output`, `/prompt`
-  and `/answer` are never registered: they 404 there, honestly, rather than
-  synthesising an answer from a fake agent. `/ack` *is* registered in demo mode
-  — it touches only paddock's own store and the hub, and spec §7 sends nothing
-  to herdr for it — so dismissing a finished card is the one v2 action that
-  works with no herdr at all. Since README screenshots come from `--demo`,
-  there are no screenshots of reading output or answering a prompt.
+- ~~**`--demo` cannot demonstrate the approve path.**~~ *Resolved 2026-08-27,
+  and the resolution keeps the distinction this entry was really about.* Demo
+  mode used to leave `HerdrActions` unset, so `/output`, `/prompt` and
+  `/answer` were never registered and 404'd — honest, and it meant there were
+  no screenshots of reading output or answering a prompt.
+
+  `src/server/demo-actions.ts` now serves synthetic READS, so the terminal and
+  both Spaces screens render and can be screenshotted. Every WRITE still
+  refuses, with a message that reaches the operator through the route's
+  existing 502 path — `/answer` does not answer. So the approve path is
+  *shown*, never *simulated*, which is the line this entry was drawing: a demo
+  that appeared to send a keystroke and did not would be worse than one that
+  404s.
+
+  `/ack` remains the one action that genuinely works with no herdr at all, for
+  the reason it always did — it touches only paddock's own store and the hub.
 
 - **No service worker ships in v1.** The "no auth token so `/sw.js` still
   works" reasoning in `docs/decisions.md` is therefore documented but

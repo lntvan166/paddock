@@ -44,6 +44,20 @@ walk back and look.
 [**try the live demo →**](https://lntvan166.github.io/paddock/) — synthetic
 agents, no install, best in mobile mode.
 
+<p align="center">
+  <img src="docs/images/04-spaces.png" alt="Every space on the machine, each row a tap from the agent inside it" width="46%">
+  <img src="docs/images/03-settings.png" alt="Per-device settings: theme, refresh rate, and how the terminal is drawn" width="46%">
+</p>
+
+**pick a theme.** paddock ships its own light and dark, plus Dracula, Gruvbox
+and Nord. Every one is checked against WCAG AA — including the three state
+colours, which keep their meaning in every theme: red is always an agent that
+has stopped and needs you.
+
+<p align="center">
+  <img src="docs/images/06-themes.png" alt="The same agent list in Dracula, Gruvbox Light and Nord" width="94%">
+</p>
+
 ---
 
 ## install

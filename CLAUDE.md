@@ -28,20 +28,27 @@ single most important rule in this file.
 - **Config ships as `.env.example` only.** Never commit `.env`.
 - **Screenshots and README images come from `paddock serve --demo`**, never a live
   session.
-  - **What `--demo` cannot show, measured 2026-08-26.** `--demo` has no herdr,
-    so the herdr-backed routes are deliberately unregistered and 404 honestly
-    (`src/server/index.ts`). That includes `POST /api/agents/:id/output` and
-    `GET /api/spaces` — so **the terminal pane and both Spaces screens render as
-    errors in demo mode**, and cannot be screenshotted from it at all. The rule
-    above still holds for every surface demo can draw (the agent list, Settings,
-    the install and notification prompts). For the terminal and Spaces there is
-    currently NO permitted source of a screenshot, so the README simply does not
-    show them — which is the honest state, not an oversight to route around by
-    using a live session.
-    Fixing this properly means a demo `HerdrActions` shim that serves synthetic
-    reads and refuses writes with a plain "this is the demo" message. Worth
-    doing; not worth doing carelessly, because a demo whose keys appear to work
-    and do nothing is exactly the mislabelled control this file bans elsewhere.
+  - **`--demo` can show every screen, since 2026-08-27.** It used to leave
+    `HerdrActions` unset, so the herdr-backed routes were never registered and
+    404'd honestly — which meant the terminal pane and both Spaces screens
+    rendered as errors and had NO permitted source of a screenshot at all.
+    `src/server/demo-actions.ts` is the shim this file used to ask for: it
+    serves synthetic reads and REFUSES every write with a plain "this is the
+    demo" message.
+
+    The refusal is the load-bearing part, and `tests/demo-actions.test.ts`
+    asserts it for every write on the interface — plus a guard that fails when
+    a method is added to `HerdrActions` and left off that list. A write that
+    resolved quietly would be exactly the mislabelled control this file bans:
+    every key in the demo looking live and doing nothing, silently, with no
+    other test able to notice because a resolved promise is what success looks
+    like.
+
+    One agent stays blocked and never rotates (`DEMO_BLOCKED_AGENT_ID`), so
+    the permission prompt — the thing paddock exists for — is always on screen
+    rather than appearing every thirtieth tick. That is also what makes the
+    README's blocked screenshot reproducible instead of a race.
+
   - **One narrow exception: a device frame showing no session content.** The
     Home Screen shot in `README.md` cannot come from the demo, because the thing
     it demonstrates is iOS turning the PWA into an installed app, which only

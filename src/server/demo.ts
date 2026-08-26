@@ -4,6 +4,11 @@ import { DEMO_JOURNAL_AGENT_ID, DEMO_JOURNAL_LINES } from "@shared/demo-history"
 
 export const DEMO_HOST_ID = "demo-box";
 
+/** The one agent that stays blocked. `demo-actions.ts` serves this pane's
+ *  prompt, and `tick()` below leaves it alone so the prompt is always there to
+ *  be answered — see the note in `tick`. */
+export const DEMO_BLOCKED_AGENT_ID = "d1:p1";
+
 /**
  * Synthetic agents for `--demo`. Names are INVENTED — this is the only mode used
  * for screenshots and README media, so it must never resemble real data.
@@ -172,7 +177,20 @@ export class DemoSource {
 
   tick(): void {
     const rotation: AgentState[] = ["working", "idle", "blocked", "working", "done"];
-    const target = this.agents[this.cursor % this.agents.length]!;
+    // The seeded `blocked` agent never rotates.
+    //
+    // It used to, and the demo was worse for it: with six agents and five
+    // states, that one returned to `blocked` every thirtieth tick, so someone
+    // running `paddock --demo` to see what this is could watch for minutes and
+    // never see a permission prompt — the single thing the application exists
+    // for. Now "Needs you" always holds one, and the movement people came to
+    // see (agents finishing, going idle, picking up again) happens around it.
+    //
+    // It is also what makes the README's blocked screenshot reproducible: the
+    // shot has to catch a state that is on screen, and racing a timer for it
+    // is how an image ends up hand-staged.
+    const movable = this.agents.filter((a) => a.agentId !== DEMO_BLOCKED_AGENT_ID);
+    const target = movable[this.cursor % movable.length]!;
     const state = rotation[this.cursor % rotation.length]!;
     const now = this.now();
     // Spreads `...target` without applying carryAcknowledged, so `next` can

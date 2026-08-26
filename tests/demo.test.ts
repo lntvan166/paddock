@@ -1,7 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  createDemoSource, DEMO_HOST_ID, DemoSource, demoAgents, demoJournalPage, demoSessionFor,
-} from "@server/demo";
+import { DEMO_BLOCKED_AGENT_ID, DEMO_HOST_ID, DemoSource, createDemoSource, demoAgents, demoJournalPage, demoSessionFor } from "@server/demo";
 import { AgentStore } from "@server/state/store";
 import type { Agent, HistoryResult } from "@shared/types";
 import { installDemoBackend } from "@web/demo/backend";
@@ -123,7 +121,11 @@ test("a demo tick is reflected in the STORE, not just pushed at browsers", () =>
   const src = createDemoSource({ store, onDelta: () => { ticks++; }, now: () => NOW });
   store.replaceAll(src.snapshot(), NOW);
 
-  const changed = src.snapshot()[0]!;
+  // NOT `snapshot()[0]`, which is the pinned blocked agent: `tick()` skips it
+  // on purpose so the demo always has a permission prompt on screen, and an
+  // agent that never moves cannot demonstrate that a move reaches the store.
+  // The guarantee this test protects is unchanged — only the subject is.
+  const changed = src.snapshot().find((a) => a.agentId !== DEMO_BLOCKED_AGENT_ID)!;
   const before = store.snapshot().find((a) => a.agentId === changed.agentId)!;
 
   src.tick();

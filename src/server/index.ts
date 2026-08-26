@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@server/routes";
 import { createDemoSource, DemoSource, DEMO_HOST_ID, demoJournalPage, demoSessionFor } from "@server/demo";
+import { demoActions, demoTree } from "@server/demo-actions";
 import {
   HerdrStream,
   ProtocolMismatchError,
@@ -599,10 +600,15 @@ let demo: DemoSource | null = null;
 // is unaffected: it is registered unconditionally in routes.ts because it
 // touches only paddock's own store, so dismissing a finished agent works in
 // `--demo` too — which is the mode README screenshots come from.
+// In `--demo` these are the SHIM, not undefined — see `demo-actions.ts`.
+//
+// They used to be left unset, so every herdr-backed route was never registered
+// and 404'd. That was honest and it had a cost `CLAUDE.md` records: the
+// terminal pane and both Spaces screens rendered as errors, leaving no
+// permitted source of a screenshot for the two screens that show what paddock
+// is FOR. The shim serves synthetic reads and REFUSES every write with a
+// message, which is the one shape that does not become a mislabelled control.
 let actions: HerdrActions | undefined;
-// Same reasoning as `actions` immediately above: demo has no herdr session to
-// read, so `GET /api/spaces` stays unset and 404s honestly rather than
-// synthesising a tree out of the seeded demo agents.
 let readTree: (() => Promise<SpaceTree>) | undefined;
 // Health reads the stream itself rather than a cached boolean: a flag can go
 // stale (and did — a failed reopen left it saying `true` with no stream at
@@ -623,6 +629,11 @@ if (DEMO) {
   // guard against that bypass must exempt this line rather than "fix" it.
   demo = createDemoSource({ store, onDelta: (d) => hub.queue(d) });
   store.replaceAll(demo.snapshot(), Date.now());
+  // Reads answer, writes refuse. `demoTree` is read fresh on every call so its
+  // `readAt` is the moment it was asked — the Spaces screen renders "as of 3s
+  // ago" from that, and a frozen timestamp would age visibly on screen.
+  actions = demoActions();
+  readTree = async () => demoTree(Date.now());
   demo.start();
   console.info("paddock: demo mode — synthetic agents, no herdr connection");
 } else {
