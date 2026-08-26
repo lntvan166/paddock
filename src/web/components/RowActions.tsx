@@ -104,7 +104,10 @@ export function consequence(kind: "tab" | "space", panes: TreePane[]): string {
 /** What this sheet's actions reach, so the operator knows the scope before
  *  tapping one. A pane row's close takes its whole tab, which is not obvious
  *  from a row that shows one pane. */
-function scopeOf(kind: "tab" | "space"): string {
+/** What the sheet says it acts on. `undefined` is the terminal header, where
+ *  the sheet reaches one agent and nothing structural. */
+function scopeOf(kind: "tab" | "space" | undefined): string {
+  if (kind === undefined) return "This agent.";
   return kind === "space"
     ? "This space, and every tab, pane and agent in it."
     : "This pane, and the tab that holds it.";
@@ -120,7 +123,22 @@ type Mode =
 export function RowActions({ label, renames, close, onChanged, senders = LIVE_SENDERS }: {
   label: string;
   renames: RenameTarget[];
-  close: CloseTarget;
+  /**
+   * OPTIONAL, and absent in exactly one place: the terminal header.
+   *
+   * A close needs the tab or space that would be closed, plus the panes it
+   * would take with it so the consequence line can be counted off the tree
+   * already on screen (§10). The terminal knows a PANE — it never reads the
+   * tree for an agent — so it has neither. Offering a close there would mean
+   * fetching a tree to answer a question the operator has not asked yet, or
+   * stating a consequence paddock has not counted, and §10 exists to forbid
+   * the second.
+   *
+   * So the terminal's menu renames and nothing else, which is the action a
+   * person looking at one agent actually wants. Closing stays where the
+   * structure is visible: the tab and space rows.
+   */
+  close?: CloseTarget;
   onChanged: () => void;
   senders?: RowSenders;
 }) {
@@ -181,8 +199,14 @@ export function RowActions({ label, renames, close, onChanged, senders = LIVE_SE
     return run(() => senders.renameSpace(target.id, value));
   };
 
-  const confirmClose = () =>
-    run(() => close.kind === "tab" ? senders.closeTab(close.id) : senders.closeSpace(close.id));
+  const confirmClose = () => {
+    // Unreachable without `close`: the menu entry that arms this view is
+    // guarded on it. Stated rather than assumed, because a `!` here would be
+    // the compiler being told to stop checking the one path that deletes
+    // someone's work.
+    if (close === undefined) return;
+    return run(() => close.kind === "tab" ? senders.closeTab(close.id) : senders.closeSpace(close.id));
+  };
 
   // The one real clear (§7.2, §17): `agent.rename {name: null}` removes the
   // field. There is none for a tab or a space, because herdr models no unset
@@ -216,7 +240,7 @@ export function RowActions({ label, renames, close, onChanged, senders = LIVE_SE
       <SheetContent side="bottom" className="row-actions-sheet" showCloseButton={false}>
         <SheetHeader className="row-actions-head">
           <SheetTitle className="row-actions-title">{label}</SheetTitle>
-          <SheetDescription className="row-actions-scope">{scopeOf(close.kind)}</SheetDescription>
+          <SheetDescription className="row-actions-scope">{scopeOf(close?.kind)}</SheetDescription>
         </SheetHeader>
 
         {error !== null && <p className="error" role="alert">{error}</p>}
@@ -245,13 +269,15 @@ export function RowActions({ label, renames, close, onChanged, senders = LIVE_SE
                 Clear name — paddock will label it from its folder.
               </button>
             )}
-            <button
-              type="button"
-              className="row-actions-danger"
-              onClick={() => setMode({ view: "close" })}
-            >
-              Close {close.kind}
-            </button>
+            {close !== undefined && (
+              <button
+                type="button"
+                className="row-actions-danger"
+                onClick={() => setMode({ view: "close" })}
+              >
+                Close {close.kind}
+              </button>
+            )}
           </div>
         )}
 
@@ -279,7 +305,7 @@ export function RowActions({ label, renames, close, onChanged, senders = LIVE_SE
           </form>
         )}
 
-        {mode.view === "close" && (
+        {mode.view === "close" && close !== undefined && (
           <div className="row-actions-close">
             <p id={consequenceId} className="row-actions-consequence">
               {consequence(close.kind, close.panes)}
