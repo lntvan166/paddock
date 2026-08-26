@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { compress } from "hono/compress";
-import { resolveReadLines, type HerdrActions } from "@server/herdr/actions";
+import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
+import { expandHome } from "@server/herdr/tree";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
@@ -93,6 +94,22 @@ const MAX_TEXT_LEN = 10_000;
  * stay legible in the Spaces list and the terminal view's header alike.
  */
 const MAX_LABEL_LEN = 64;
+
+/**
+ * Ceiling on how many `args` an `agent.start` may carry.
+ *
+ * `args` was the one client value on this branch that reached a herdr
+ * parameter with no paddock bound at all — and unlike `text` or a label, it is
+ * forwarded into a SPAWNED PROCESS'S argv. `{"args": ["x".repeat(1e8)]}` was
+ * buffered here and pushed straight at herdr. The total length is bounded by
+ * `MAX_TEXT_LEN` (the same ceiling typed text carries) and the count is
+ * bounded separately, because a hundred thousand empty strings costs nothing
+ * in length and is still a hundred thousand argv entries.
+ *
+ * Refused, never truncated — the same rule as `MAX_LABEL_LEN`, for a stronger
+ * reason: a silently shortened argument is a different command.
+ */
+const MAX_ARGS = 64;
 
 /**
  * Digest of a screen, used to answer "has this changed?" without resending it.
@@ -240,6 +257,70 @@ function findTab(tree: SpaceTree, id: string): Tab | undefined {
 /** Same reasoning again, one level up: a space is not in the store. */
 function findSpace(tree: SpaceTree, id: string): Space | undefined {
   return tree.spaces.find((s) => s.spaceId === id);
+}
+
+/**
+ * Shared validation for the two create bodies, `{label?, cwd?}`.
+ *
+ * Unlike `MAX_LABEL_LEN` on a RENAME, an empty or whitespace-only label (or
+ * cwd) here is normalised to ABSENT rather than refused: the rename routes
+ * refuse a blank value because the operator is replacing a name that
+ * already exists and herdr models no "unset" for it (§17) — but a CREATE
+ * has nothing existing to protect, and herdr is happy to pick its own
+ * default (a tab's number, a space's own default cwd) for a field that
+ * was never sent. Refusing a blank create label would only be refusing
+ * something herdr already handles; the length ceilings still apply,
+ * because a client-supplied value reaching a herdr parameter is governed
+ * by paddock's own policy either way (same reasoning as `MAX_READ_LINES`).
+ */
+function normalizeCreateBody(
+  body: Record<string, unknown>,
+  home: string | undefined,
+): { label?: string; cwd?: HostPath; err?: string } {
+  const rawLabel = body.label;
+  if (rawLabel !== undefined && typeof rawLabel !== "string") {
+    return { err: "label must be a string" };
+  }
+  if (typeof rawLabel === "string" && rawLabel.length > MAX_LABEL_LEN) {
+    return { err: "label must be within the length limit" };
+  }
+  const label = typeof rawLabel === "string" && rawLabel.trim() !== "" ? rawLabel : undefined;
+
+  const rawCwd = body.cwd;
+  if (rawCwd !== undefined && typeof rawCwd !== "string") {
+    return { err: "cwd must be a string" };
+  }
+  if (typeof rawCwd === "string" && rawCwd.length > MAX_TEXT_LEN) {
+    return { err: "cwd must be within the length limit" };
+  }
+  // Expanded HERE, not forwarded verbatim. The tilde in `~/project` is
+  // paddock's own invention (`tildeise`), and the create sheet's quick picks
+  // are the tree's own tilde-ised cwds coming back — measured live, herdr
+  // neither expands nor refuses one: the pane came up in the home directory
+  // with nothing saying the chosen folder had been ignored. The length ceiling
+  // is checked BEFORE this, against what the client sent, so the bound is on
+  // the operator's input rather than on however long this machine's home path
+  // happens to be.
+  const blank = typeof rawCwd !== "string" || rawCwd.trim() === "";
+  const cwd = blank ? undefined : expandHome((rawCwd as string).trim(), home);
+  // `null` means the value is not ABSOLUTE after expansion — `~someone/work`,
+  // `~/work` on a server with no HOME, or `./relative`. The first version of
+  // this forwarded the tilde unchanged, which handed herdr precisely the value
+  // the line above exists to stop it seeing; the second refused the tilde and
+  // still forwarded `./relative` with a 200, while this very message said
+  // "absolute". Both shapes depend on a working directory paddock cannot see,
+  // and an absolute path is the measured alternative that says the same thing —
+  // so both are refused, with a reason the operator can read: a 400 beats a
+  // pane that quietly comes up in the wrong folder. Returned from OUTSIDE the
+  // create routes' `try`, like every other deliberate refusal here, so it can
+  // never be relabelled as a 502.
+  if (cwd === null) {
+    return {
+      err: "cwd must be an absolute path — a leading ~, or a relative path, cannot be resolved here",
+    };
+  }
+
+  return { label, cwd };
 }
 
 /**
@@ -505,6 +586,15 @@ export interface AppDeps {
    * from fake agents.
    */
   readTree?: () => Promise<SpaceTree>;
+  /**
+   * The operator's home directory, so a tilde-ised `cwd` coming BACK from the
+   * client can be expanded before it reaches herdr — see `expandHome` in
+   * `tree.ts`, which is the same value `toSpaceTree` uses to tilde-ise it on
+   * the way out. Optional and absent in tests that do not exercise a path: an
+   * absent home leaves the value untouched, which is the same thing
+   * `tildeise` does.
+   */
+  home?: string;
 }
 
 export function createApp(deps: AppDeps) {
@@ -1203,6 +1293,198 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`spaces: could not close \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Create a space (herdr's workspace). Body: `{label?, cwd?}`.
+     *
+     * The only create route with no `:id` to validate against the tree —
+     * there is nothing existing to check — but `deps.readTree`'s ABSENCE
+     * still 404s honestly, same capability gate every action route uses:
+     * a paddock with no session tree (`--demo`) cannot create anything in
+     * one either.
+     *
+     * `workspace.create`'s own envelope carries the new space's id AND its
+     * first tab AND its first pane — `actions.createSpace` reads all three
+     * straight off it. No `deps.readTree()` call happens here at all, which
+     * is what keeps the whole create path's snapshot-read count at zero for
+     * this route: §9.1's correction removed a re-read that was never
+     * needed, and the surest way to keep it removed is a route that has no
+     * tree read to begin with.
+     */
+    app.post("/api/spaces", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+
+      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c), deps.home);
+      if (err) return c.json({ ok: false, detail: err }, 400);
+
+      try {
+        const created = await actions.createSpace({ label, cwd });
+        return c.json({ ok: true, ...created });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        warn(`spaces: could not create a space: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Create a tab in an existing space. Body: `{label?, cwd?}`. Same shape
+     * as `/api/tabs/:id/close` etc.: 404 when `deps.readTree` is absent,
+     * 404 for an unknown space id, and the deliberate outcomes `return`ed
+     * from INSIDE the `try` so the `catch` cannot relabel a client error as
+     * a 502.
+     *
+     * The single `await deps.readTree()` below is the ONLY snapshot read
+     * this route makes, and it exists to validate the space id — never to
+     * find the new tab or pane afterward. `tab.create`'s own envelope
+     * carries `root_pane` alongside `tab` (§9.1's correction, measured in
+     * `docs/probes/2026-08-25-structural-events.md`), so the new pane's id
+     * is read straight off that response.
+     */
+    app.post("/api/spaces/:id/tabs", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c), deps.home);
+      if (err) return c.json({ ok: false, detail: err }, 400);
+
+      try {
+        const tree = await deps.readTree();
+        const space = findSpace(tree, id);
+        if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
+        const created = await actions.createTab(id, { label, cwd });
+        return c.json({ ok: true, ...created });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        warn(`spaces: could not create a tab in \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * Start a coding agent in an existing pane. Body: `{kind, name, args?}`.
+     *
+     * `kind` is checked against `actions.harnessKinds()` — the harnesses
+     * THIS machine actually has installed (`server.agent_manifests`) — and
+     * refused with 400 BEFORE `agent.start` is ever called when it is not
+     * on that list. The allowlist is never hardcoded (§9.3):
+     * `AgentStartParams.kind` is a plain string in protocol 20, not an
+     * enum, so the only defensible allowlist is what is measured installed.
+     *
+     * `name` is REQUIRED — an absent, empty, or whitespace-only value is
+     * refused with 400 before `agent.start` is ever called, the same shape
+     * the rename routes use for a label. `agent.start`'s own `name` field
+     * carries no `?` in the measured schema
+     * (`docs/design/2026-08-19-notifications-and-settings-design.md` §10),
+     * and whether herdr accepts `null` for it was never measured — this
+     * route is not authorised to spawn a live agent to find out — so there
+     * is no fallback here to guess one. An earlier version defaulted an
+     * absent name to `kind`, which would have made every agent spawned
+     * from the UI come out `claude`, then `claude 2`, then `claude 3`: the
+     * create sheet (Task 8) pre-fills this field from the space's own
+     * label instead — herdr's own convention when a human starts an agent
+     * (§14.7) — so the common case stays one tap and the unmeasured
+     * `null` question stays unasked.
+     *
+     * A herdr failure inside `agent.start` gets its OWN inner `catch`,
+     * distinct from the outer one: by the time that call runs, the pane
+     * already exists (found on the tree read just above) and already held
+     * a plain shell before this request arrived. A failed start is
+     * therefore neither success nor nothing — the operator is not left
+     * wondering whether the pane they were looking at vanished — so the
+     * `detail` says which half landed, the same distinction
+     * `/api/panes/:id/text` draws with "typed, but not run".
+     */
+    app.post("/api/panes/:id/agent", async (c) => {
+      if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
+      const id = c.req.param("id");
+
+      const body = await jsonBody(c);
+      const kind = body.kind;
+      if (typeof kind !== "string" || kind.trim() === "") {
+        return c.json({ ok: false, detail: "kind must be a non-empty string" }, 400);
+      }
+      const rawName = body.name;
+      if (typeof rawName !== "string" || rawName.trim() === "") {
+        return c.json({ ok: false, detail: "name must be a non-empty string" }, 400);
+      }
+      if (rawName.length > MAX_LABEL_LEN) {
+        return c.json({ ok: false, detail: "name must be within the length limit" }, 400);
+      }
+      const name = rawName;
+
+      const rawArgs = body.args;
+      if (
+        rawArgs !== undefined
+        && !(Array.isArray(rawArgs) && rawArgs.every((a) => typeof a === "string"))
+      ) {
+        return c.json({ ok: false, detail: "args must be an array of strings" }, 400);
+      }
+      const args = Array.isArray(rawArgs) ? (rawArgs as string[]) : undefined;
+      // Bounded by paddock's policy, like every other client value that
+      // reaches a herdr parameter — see `MAX_ARGS`. Both refusals are here,
+      // before the tree read, so neither can be confused with a 502.
+      if (args !== undefined && args.length > MAX_ARGS) {
+        return c.json({ ok: false, detail: `too many args — at most ${MAX_ARGS}` }, 400);
+      }
+      if (args !== undefined && args.reduce((n, a) => n + a.length, 0) > MAX_TEXT_LEN) {
+        return c.json({ ok: false, detail: "args must be within the length limit" }, 400);
+      }
+
+      try {
+        const tree = await deps.readTree();
+        const pane = findPane(tree, id);
+        if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
+        // The same 409 `/api/panes/:id/output`, `/text` and `/key` give, for
+        // the same reason and in the same words. This route used to validate
+        // the pane's existence and then start an agent regardless, which made
+        // a spawn into an occupied pane `agent.start`'s problem — and what
+        // herdr does with that is unmeasured. A fourth pane route answering a
+        // fourth way to the same question is the defect; the three siblings
+        // already settled the answer.
+        if (pane.harness !== null) {
+          return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/… to drive it" }, 409);
+        }
+
+        const kinds = await actions.harnessKinds();
+        if (!kinds.includes(kind)) {
+          return c.json({ ok: false, detail: `unsupported kind: ${kind}` }, 400);
+        }
+
+        try {
+          await actions.startAgent(id, kind, name, args);
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e);
+          warn(`panes: agent did not start in \`${id}\`: ${detail}`);
+          return c.json(
+            { ok: false, detail: `shell exists, but the agent did not start: ${detail}`, paneId: id },
+            502,
+          );
+        }
+        return c.json({ ok: true, paneId: id });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        warn(`panes: could not start an agent in \`${id}\`: ${detail}`);
+        return c.json({ ok: false, detail }, 502);
+      }
+    });
+
+    /**
+     * The harness kinds THIS machine has installed — `server.agent_manifests`,
+     * for the create sheet's picker. A GET is right here: no parameters at
+     * all, so nothing lands in a query string (unlike every other write
+     * route in this file, this one reads nothing client-supplied).
+     */
+    app.get("/api/harnesses", async (c) => {
+      try {
+        const kinds = await actions.harnessKinds();
+        return c.json({ ok: true, kinds });
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        warn(`harnesses: could not read installed kinds: ${detail}`);
         return c.json({ ok: false, detail }, 502);
       }
     });

@@ -641,6 +641,10 @@ const appDeps = {
   hub,
   actions,
   readTree,
+  // The SAME value `toSpaceTree` tilde-ises with, above. One home directory,
+  // read once, used in both directions — a second source for it would let the
+  // outbound tilde and the inbound expansion disagree.
+  home: process.env.HOME,
   settings,
   push,
   // Confined to the DEMO branch: a demo run must never read a real journal

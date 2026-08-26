@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, NavKey, ParsedPrompt } from "@shared/types";
 import { answerWithKey, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
 import { StatusDot } from "@web/components/AgentRow";
-import { StateIcon } from "@web/components/ui/StateIcon";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
@@ -387,15 +386,18 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               and the word is only for assistive tech.
 
               Colour alone is not a channel a sighted colour-blind operator can
-              read, and the palette pairs red with green. `AgentRow` and
-              `AgentCard` get away with a bare dot because they sit under
-              `Section`'s visible "Needs you" heading; this header has no such
-              context. So the one state where a missed distinction has a
-              consequence pays for the width, and the other three do not. */}
+              read, and the palette pairs red with green. This pill answers that
+              by its own shape: a tinted, bordered, uppercase pill against the
+              bare dot every other state gets, plus the word itself. It carried
+              a lucide `CircleAlert` at size 11 as a third channel, which at
+              that size is 0.92px of stroke around a 9.2px circle holding a
+              1.8px bar — and redundant besides, since `blocked` is the only
+              state that ever renders this pill, so there is no green one here
+              to confuse it with. `StateIcon` is untouched and still renders at
+              its legible 13px default on `AgentCard`. */}
           {agent.state === "blocked"
             ? (
                 <span className="term-state">
-                  <StateIcon state="blocked" size={11} />
                   blocked
                 </span>
               )

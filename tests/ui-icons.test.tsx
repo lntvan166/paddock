@@ -55,3 +55,15 @@ test("no icon library is imported", async () => {
   expect(src).not.toContain("lucide");
   expect(src).not.toContain("react-icons");
 });
+
+test("the settings glyph is a gear or a slider, never a sun", async () => {
+  // It drew a circle at the centre with six DETACHED ticks around it and no
+  // outer rim, which is the standard brightness glyph — a gear's teeth are
+  // teeth OF a rim, and without one they are ticks. A circle centred at 12,12
+  // is what both the sun and the abandoned gear have in common, so its absence
+  // is the discriminator.
+  const host = await render(<icons.SettingsIcon />);
+  const svg = host.querySelector("svg")!;
+  expect(svg.querySelectorAll('circle[cx="12"][cy="12"]').length).toBe(0);
+  await unmount();
+});

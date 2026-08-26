@@ -1839,18 +1839,25 @@ body {
 }
 
 /* A shell has no triage state at all — it is not `idle`, which is why it gets
-   no `StatusDot`. Same geometry as `.dot` (a ring is the same size as a disc;
-   hollowing must not also move it) but DASHED rather than solid, so a shell
-   is never mistaken for the one real state that happens to render as a
-   hollow ring. */
+   no `StatusDot`. Same 7px footprint as `.dot`, because hollowing a marker
+   must not also move it.
+
+   A SQUARE, not a dashed ring. Dashed was the first attempt at "not idle" and
+   it does not survive this size: the border centreline is ~17px round, a
+   dashed border sets dash and gap at roughly twice the 1.5px border width, so
+   ~2.9 periods have to close a circle whose four sides are stroked with
+   independent dash phases. It rendered as four unequal arcs — an incomplete
+   circle, which is how an operator reported it. Shape is the channel that
+   survives what a border-style does not, which is what `StateIcon`'s own
+   comment already says. */
 .dot-none {
   width: 7px;
   height: 7px;
   flex-shrink: 0;
   box-sizing: border-box;
-  border-radius: 9999px;
+  border-radius: 1.5px;
   border-width: 1.5px;
-  border-style: dashed;
+  border-style: solid;
   border-color: var(--fg-dim);
   background: var(--bg);
 }
@@ -2036,6 +2043,162 @@ body {
 .row-actions-menu > .row-actions-danger,
 .row-actions-row > .row-actions-danger {
   color: var(--danger);
+}
+
+/* ── Create: the two `+` controls and the sheet they open ──────────────────
+   §16.7. Collie's create control is a quiet icon button inside the header it
+   creates into, and that placement is what is worth copying: position carries
+   the scope, so neither button needs a text label to say what it makes.
+   Collie's 36px size is NOT copied — every tap target in this app clears 44px,
+   and a create control is not the place to make an exception. */
+.create-btn {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  /* Sizes the `+` GLYPH, not text — the same exemption `[data-expand]` and the
+     arrow keys carry, and for the same reason: on the 13px prose step a `+`
+     sat in the middle of a 44px target and read as an empty button. */
+  font-size: 1.375rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* The header's `+` sits at the far end of the row, past the screen title. The
+   back link and the title take their natural width; this takes what is left,
+   which puts it under the thumb rather than beside the heading.
+
+   The glyph size is repeated HERE, and that is not duplication for its own
+   sake: `.spaces-head button` above sets `font: inherit` at specificity
+   (0,1,1), which beats the bare `.create-btn` rule's (0,1,0) whatever the
+   source order says. So the header's `+` rendered its glyph at the ambient
+   16px while the identical control on a space row rendered at 22px — the two
+   controls §16.7 says must read as one thing did not, and the header one was
+   the very "16px mark in an empty button" defect an earlier commit is named
+   for. Scoped to the header, this is (0,2,0) and wins. */
+.spaces-head .create-btn {
+  margin-left: auto;
+  font-size: 1.375rem;
+}
+
+.create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.create-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
+
+.create-form input,
+.create-form select {
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--fg);
+  font-family: var(--mono);
+  /* 16px, not a scale step — the iOS zoom floor for anything focusable, the
+     same rule `.row-actions-rename input` carries. A sheet that zooms the page
+     on tap loses the row behind it. */
+  font-size: 16px;
+}
+
+/* Quick picks: the cwds already in the tree (§9.3). Buttons at rest, never a
+   hover reveal and never a bare `<datalist>` — a datalist is invisible on
+   touch until the field has focus, and an invisible affordance is the thing the
+   UI rules ban. They WRAP rather than scroll sideways: a path is long, and a
+   horizontal scroller hides picks behind a gesture with nothing to hint it. */
+.create-cwds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.create-cwds > button {
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+
+/* The pick that matches the field. `aria-pressed` is the state; this is the
+   same state said in a second channel, never colour alone. */
+.create-cwds > button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── The launch notice ────────────────────────────────────────────────────
+   What became of a spawn, rendered on the pane it was asked for. Inside the
+   fixed `.term` column (`PaneTerminal` mounts it), so it needs no positioning
+   of its own — it takes a row above the view controls, the same place
+   `.term-note` takes. */
+.launch-notice {
+  flex: none;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+}
+
+/* A failure has to LOOK like one, and it stays until dismissed — an error with
+   a three-second window is a swallowed error. `--danger` and `--danger-wash`
+   are both defined on bare :root and redefined under `prefers-color-scheme:
+   dark` AND `[data-theme="dark"]`, so a manual toggle wins either way. */
+.launch-failed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: var(--danger-wash);
+  border-top: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.launch-failed-head {
+  margin: 0;
+  font-size: var(--t-md);
+  font-weight: 600;
+}
+
+/* herdr's own words, in herdr's own voice — mono, and wrapping anywhere,
+   because a detail can carry a path with no spaces in it. */
+.launch-detail {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  overflow-wrap: anywhere;
+}
+
+.launch-failed > button {
+  align-self: flex-start;
+  min-height: 2.75rem;
+  padding: 0 0.7rem;
+  background: none;
+  border: 1px solid var(--danger);
+  border-radius: 0.4rem;
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--t-md);
+  cursor: pointer;
 }
 
 @theme inline {

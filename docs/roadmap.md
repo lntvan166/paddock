@@ -379,6 +379,63 @@ surprise.
   file the child writes and killing that pid in a `finally`, the way
   `tests/lifecycle-detach.test.ts` does.
 
+- **Nothing has exercised `agent.start` against a live herdr.** Every other
+  write this branch added — `workspace.create`, `tab.create`, the tab and space
+  renames, the two closes — was driven against a real herd. The creates, the
+  tab/space renames and the closes are written up in
+  `docs/probes/2026-08-25-structural-events.md`; the AGENT rename's live
+  measurement is separate, in the design doc's §14.2, and that probe never
+  covered it. `agent.start` was not exercised at all, and
+  `server.agent_manifests` only as a schema read. So the spawn path is built
+  from the schema plus fakes, which is exactly the combination that produced
+  this branch's one measured-false assumption: `tab.create` "returns a bare
+  `TabInfo`, therefore the new pane must be found by re-reading the snapshot" —
+  read correctly off the type, wrong about the envelope, and persuasive enough
+  in writing to pre-empt its own objection (see §9.1's dated correction). The
+  same reasoning is load-bearing here and has had no contact with a running
+  herdr.
+
+  Named precisely, what remains unproven:
+
+  - That the `{name, kind, pane_id, args?, timeout_ms?}` body shape is
+    **accepted at all** — field names, nesting, and whether `args` and
+    `timeout_ms` are optional in practice rather than merely `?` in the schema.
+  - That `timeout_ms: 30000` is accepted. The bound paddock respects
+    (`> 3000 && ≤ 300000`) is read from the schema's documentation, not
+    measured; `tests/create-routes.test.ts` asserts paddock stays inside it,
+    which proves paddock's arithmetic and nothing about herdr's.
+  - That herdr accepts a **slug** as `name` — its charset (paddock's `slug`
+    emits `[a-z0-9-]`), its length (paddock bounds it at `MAX_LABEL_LEN`, herdr
+    at nothing known), and what happens on a **collision** with an existing
+    agent of the same name. paddock's own disambiguation renders duplicates as
+    `claude`, `claude 2`; whether herdr refuses, renames, or accepts a duplicate
+    is unknown.
+  - That the ~30 s block **resolves** rather than surfacing a false "the agent
+    did not start". `HERDR_TIMEOUT_MS` is 10 s and this call overrides it
+    per-call; if that override does not take effect the way the schema implies,
+    every successful spawn reports as a failure after ten seconds, which is the
+    single worst outcome on this path — the operator is told a thing failed
+    that in fact worked.
+  - That the success path **promotes the pane from shell to agent in the UI**
+    and clears the launch notice. That transition crosses the whole stack
+    (herdr event → adapter → store → hub → the pane screen's own state), and
+    every test of it drives a fixture.
+
+  **Why it was not measured:** spawning a coding agent spends the operator's
+  harness quota, on their machine, and that was not authorised. This is a real
+  reason, not a deferral of convenience — but it does mean the gap is a
+  standing one rather than one that closes itself, so it is written here rather
+  than left implicit in a test file's fixtures.
+
+  **What the first live spawn should verify, in order:** send the body exactly
+  as `actions.ts` builds it and record the raw request and the raw result, the
+  way the structural-events probe does — the envelope, not just the happy
+  field; then a slug `name` that collides with an existing agent; then the
+  elapsed time to resolution against the 30 s override; then that the pane's
+  row in `#/spaces` changes from shell to agent and `LaunchNotice` clears
+  without a reload. One spawn answers the first three; the fourth needs only
+  that the operator watch the phone while it happens.
+
 - ~~**The schema-drift guarantee does not cover the four write-call
   envelopes added for spaces/tabs management.**~~ *Resolved.* `HerdrTabCreated`
   (`tab.create`), `HerdrWorkspaceCreated` (`workspace.create`),

@@ -1,79 +1,11 @@
 import "./support/dom";
-import { expect, test } from "bun:test";
-import { render, settle, unmount } from "./support/render";
+import { afterEach, expect, test } from "bun:test";
+import { render, settle, textsOf, unmount } from "./support/render";
 import { Spaces } from "@web/components/Spaces";
+import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
 
-const FLAT: SpaceTree = {
-  readAt: 1_700_000_000_000,
-  spaces: [{
-    spaceId: "w1", label: "api-refactor", tabCount: 1, paneCount: 1,
-    tabs: [{ tabId: "w1:t1", label: null, panes: [
-      { paneId: "w1:p1", harness: "claude", name: "api-refactor", title: "api-refactor", cwd: "/srv/project", state: "working" },
-    ] }],
-  }],
-};
-
-const STRUCTURED: SpaceTree = {
-  readAt: 1_700_000_000_000,
-  spaces: [{
-    spaceId: "w2", label: "schema-migration", tabCount: 2, paneCount: 2,
-    tabs: [
-      { tabId: "w2:t1", label: "migrate-up", panes: [{ paneId: "w2:p1", harness: "codex", name: "schema-migration", title: "m", cwd: "/srv/project", state: "working" }] },
-      { tabId: "w2:t2", label: null, panes: [{ paneId: "w2:p2", harness: "claude", name: "schema-migration-2", title: "b", cwd: "/srv/project", state: "idle" }] },
-    ],
-  }],
-};
-
-const SHELL: SpaceTree = {
-  readAt: 1_700_000_000_000,
-  spaces: [{
-    spaceId: "w3", label: "docs-cleanup", tabCount: 1, paneCount: 1,
-    tabs: [{ tabId: "w3:t1", label: null, panes: [
-      // cwd's own last segment is "bash", not `/srv/project` like the other
-      // fixtures: the shell defect fix (§16.6) labels a pane with no agent by
-      // its folder, never by its terminal title, so the pinned assertions
-      // below that expect "bash" on screen need the folder itself to be the
-      // thing named that.
-      { paneId: "w3:p1", harness: null, name: null, title: "bash", cwd: "/srv/project/bash", state: null },
-    ] }],
-  }],
-};
-
-// One tab, two panes — `pane.split`. Structured, and NOT because of its tabs:
-// the row's count has to explain the sub-rows under it.
-const SPLIT: SpaceTree = {
-  readAt: 1_700_000_000_000,
-  spaces: [{
-    spaceId: "w4", label: "flaky-test-fix", tabCount: 1, paneCount: 2,
-    tabs: [{ tabId: "w4:t1", label: null, panes: [
-      { paneId: "w4:p1", harness: "claude", name: "flaky-test-fix", title: "t", cwd: "/srv/project", state: "working" },
-      { paneId: "w4:p2", harness: null, name: null, title: "bash", cwd: "/srv/project", state: null },
-    ] }],
-  }],
-};
-
 const load = (t: SpaceTree) => async () => t;
-
-const SLUG: SpaceTree = {
-  readAt: 1_700_000_000_000,
-  spaces: [{
-    spaceId: "w1", label: "api refactor", tabCount: 1, paneCount: 1,
-    tabs: [{ tabId: "w1:t1", label: null, panes: [
-      { paneId: "w1:p1", harness: "claude", name: "api-refactor", title: "x", cwd: "/srv/project", state: "idle" },
-    ] }],
-  }],
-};
-
-const DIVERGED: SpaceTree = {
-  readAt: 1_700_000_000_000,
-  spaces: [{
-    spaceId: "w2", label: "api refactor", tabCount: 1, paneCount: 1,
-    tabs: [{ tabId: "w2:t1", label: null, panes: [
-      { paneId: "w2:p1", harness: "claude", name: "chasing a flaky test", title: "x", cwd: "/srv/project", state: "idle" },
-    ] }],
-  }],
-};
 
 const TABBED: SpaceTree = {
   readAt: 1_700_000_000_000,
@@ -86,84 +18,9 @@ const TABBED: SpaceTree = {
   }],
 };
 
-const SHELL_HOME: SpaceTree = {
-  readAt: 1_700_000_000_000,
-  spaces: [{
-    spaceId: "w4", label: "scratch", tabCount: 1, paneCount: 1,
-    tabs: [{ tabId: "w4:t1", label: null, panes: [
-      { paneId: "w4:p1", harness: null, name: null, title: "operator@dev-box:~", cwd: "~", state: null },
-    ] }],
-  }],
-};
-
-test("a name that is the slug of its space label shows no alias", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => SLUG} />);
-  await settle();
-  expect(el.textContent).toContain("api refactor");
-  expect(el.querySelector(".space-alias")).toBeNull();
+afterEach(async () => {
   await unmount();
-});
-
-test("a genuinely different name is shown, on the pane not the space", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => DIVERGED} />);
-  await settle();
-  expect(el.textContent).toContain("api refactor");
-  expect(el.textContent).toContain("chasing a flaky test");
-  await unmount();
-});
-
-test("a tab label is a caption on its pane, not a heading above a group", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => TABBED} />);
-  await settle();
-  expect(el.querySelector("h3")).toBeNull();
-  const cap = el.querySelector(".pane-tab");
-  expect(cap?.textContent).toContain("migrate up");
-  // The pane it captions, not a sibling of the group.
-  expect(cap?.closest("[data-pane-row]")).not.toBeNull();
-  await unmount();
-});
-
-test("an unnamed tab contributes no caption at all", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => TABBED} />);
-  await settle();
-  expect(el.querySelectorAll(".pane-tab")).toHaveLength(1);
-  await unmount();
-});
-
-test("a shell is labelled by its folder, never by its prompt", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => SHELL_HOME} />);
-  await settle();
-  const row = el.querySelector("[data-pane-row]")!;
-  expect(row.textContent).not.toContain("operator@dev-box");
-  expect(row.textContent).toContain("~");
-  await unmount();
-});
-
-test("a 1:1:1 space renders as ONE row with nothing to expand", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={load(FLAT)} />);
-  await settle();
-  expect(el.textContent).toContain("api-refactor");
-  expect(el.querySelectorAll("[data-space-row]")).toHaveLength(1);
-  expect(el.querySelector("[data-expand]")).toBeNull();
-  await unmount();
-});
-
-test("a space with two tabs renders sub-rows", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={load(STRUCTURED)} />);
-  await settle();
-  expect(el.querySelectorAll("[data-pane-row]")).toHaveLength(2);
-  expect(el.textContent).toContain("migrate-up");
-  await unmount();
-});
-
-test("a pane with no agent is shown, and never labelled with a state", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={load(SHELL)} />);
-  await settle();
-  const row = el.querySelector("[data-pane-row]")!;
-  expect(row.textContent).toContain("bash");
-  expect(row.textContent).not.toContain("idle");
-  expect(row.getAttribute("data-state")).toBe("none");
-  await unmount();
+  useStore.setState({ spacesAvailable: false });
 });
 
 test("a failed read is surfaced, never rendered as an empty session", async () => {
@@ -174,84 +31,77 @@ test("a failed read is surfaced, never rendered as an empty session", async () =
   await unmount();
 });
 
-test("a merged row is a link into the pane", async () => {
-  // The commonest space shape — six in seven are 1:1:1 — used to render no
-  // anchor at all, so the only route into a shell's terminal was typing its
-  // hash by hand. A structured space's sub-rows had carried the same link
-  // since Task 11, which is what made the omission easy to miss.
-  const el = await render(<Spaces onBack={() => {}} load={load(SHELL)} />);
-  await settle();
-
-  const link = el.querySelector<HTMLAnchorElement>("[data-space-row][data-pane-row] a[href]");
-  expect(link).not.toBeNull();
-  // The pane id, encoded — the colon in `w3:p1` is not a literal in a hash.
-  expect(link!.getAttribute("href")).toBe("#/pane/w3%3Ap1");
-  // The label the operator reads is INSIDE the target they tap.
-  expect(link!.textContent).toContain("bash");
-  await unmount();
+test("no row carries a management control — the whole point of the second level", async () => {
+  // The regression guard for the measurement this redesign is built on: eleven
+  // spaces each carrying a link, a ⋯ and a + put 33 tap targets on one 390px
+  // viewport while fitting every row without a scroll. If a control comes back
+  // onto a row, this fails.
+  // The capability is set deliberately, and this is the whole point of the
+  // test. `spacesAvailable` defaults to FALSE, and the create control is gated
+  // on it — so with the default this assertion would pass even if every row
+  // still rendered a `+`, because nothing would render one either way. Setting
+  // it true is what makes this a guard: the rows carry no create control EVEN
+  // WHEN creating is available.
+  useStore.setState({ spacesAvailable: true });
+  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const list = host.querySelector(".spaces")!;
+  expect(list.querySelectorAll("[data-create]").length).toBe(0);
+  expect(list.querySelectorAll("[aria-label^='Actions']").length).toBe(0);
+  expect(list.querySelectorAll("button").length).toBe(0);
 });
 
-test("every row announces the actions that now exist, and none of them is inert", async () => {
-  // FLIPPED, deliberately, by the change that added the sheet. This asserted
-  // that no row contained a ⋯ at all, because the version that existed then
-  // was permanently `disabled` and announced "Actions for X" — a mislabelled
-  // control, which CLAUDE.md rates worse than no control. The affordance came
-  // back WITH the sheet that fills it (see the note at the top of
-  // SpaceRow.tsx), so the assertion inverts: the ⋯ must be present on every
-  // row shape and it must be ENABLED. Its behaviour is covered in
-  // tests/row-actions.test.tsx; what is pinned here is that no row shape
-  // renders it inert or omits it.
-  for (const tree of [FLAT, STRUCTURED, SHELL]) {
-    const el = await render(<Spaces onBack={() => {}} load={load(tree)} />);
-    await settle();
-    const rows = el.querySelectorAll("[data-space-row], .space-tabs [data-pane-row]");
-    const actions = [...el.querySelectorAll<HTMLButtonElement>("[data-row-actions]")];
-    expect(actions).toHaveLength(rows.length);
-    for (const a of actions) {
-      expect(a.textContent).toContain("⋯");
-      expect(a.disabled).toBe(false);
-    }
-    // Nothing on the row itself is disabled — the only disabled control in
-    // this feature is Save on an empty label, inside the open sheet.
-    expect(el.querySelectorAll("button[disabled]")).toHaveLength(0);
-    await unmount();
-  }
+test("a row opens its space, not a pane", async () => {
+  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  expect(host.querySelector("[data-space-row] a")?.getAttribute("href")).toBe("#/space/w3");
 });
 
-test("a structured space says the count that explains its shape, and says it grammatically", async () => {
-  // "1 tabs" was wrong twice: wrong grammar, and the wrong unit for a space
-  // that is structured because ONE tab holds several panes — an ordinary
-  // result of `pane.split`.
-  const el = await render(<Spaces onBack={() => {}} load={load(STRUCTURED)} />);
-  await settle();
-  expect(el.querySelector(".space-count")!.textContent).toBe("2 tabs");
-  await unmount();
-
-  const split = await render(<Spaces onBack={() => {}} load={load(SPLIT)} />);
-  await settle();
-  expect(split.querySelector(".space-count")!.textContent).toBe("2 panes");
-  expect(split.textContent).not.toContain("1 tabs");
-  await unmount();
+test("a row says its name, its rollup state and its pane count, and nothing else", async () => {
+  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  const row = host.querySelector("[data-space-row]")!;
+  expect(row.querySelector(".space-name")?.textContent).toBe("schema migration");
+  expect(row.querySelector(".space-state")?.textContent).toBe("working");
+  expect(row.querySelector(".space-count")?.textContent).toBe("2");
+  // The alias is gone with the merged row it explained.
+  expect(row.querySelector(".space-alias")).toBeNull();
 });
 
-test("an agent's merged row opens the same way a shell's does", async () => {
-  // One pane at two moments: whether the row's pane has a harness changes what
-  // the terminal renders, never whether the row is openable.
-  const el = await render(<Spaces onBack={() => {}} load={load(FLAT)} />);
-  await settle();
-  const link = el.querySelector<HTMLAnchorElement>("[data-space-row][data-pane-row] a[href]");
-  expect(link?.getAttribute("href")).toBe("#/pane/w1%3Ap1");
-  await unmount();
+test("nothing collapses, so nothing offers to", async () => {
+  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  expect(host.querySelector("[data-expand]")).toBeNull();
+  expect(host.querySelector("[aria-expanded]")).toBeNull();
 });
 
-test("a structured space's own row is not a link — there is no single pane to open", async () => {
-  // Its panes each carry their own link below; a row-level one would have to
-  // pick a pane, and picking one is a guess.
-  const el = await render(<Spaces onBack={() => {}} load={load(STRUCTURED)} />);
-  await settle();
-  const head = el.querySelector("[data-space-row] .space-head")!;
-  expect(head.querySelector("a")).toBeNull();
-  // The sub-rows still have theirs.
-  expect(el.querySelectorAll(".space-tabs [data-pane-row] a[href]")).toHaveLength(2);
-  await unmount();
+test("the collapsed-state key is not written any more", async () => {
+  // A stale key holding space ids that address nothing is worse than none.
+  localStorage.removeItem("paddock.spaces.collapsed");
+  await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  expect(localStorage.getItem("paddock.spaces.collapsed")).toBeNull();
+});
+
+test("blocked sorts first and a space with no agent sorts last", async () => {
+  const MIXED: SpaceTree = {
+    readAt: 1_700_000_000_000,
+    spaces: [
+      { spaceId: "wi", label: "docs-cleanup", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wi:t1", label: null, panes: [{ paneId: "wi:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "idle" }] }] },
+      { spaceId: "wn", label: "scratch", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wn:t1", label: null, panes: [{ paneId: "wn:p1", harness: null, name: null, title: "t", cwd: "/srv/project", state: null }] }] },
+      { spaceId: "wb", label: "flaky-test-fix", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wb:t1", label: null, panes: [{ paneId: "wb:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "blocked" }] }] },
+    ],
+  };
+  const host = await render(<Spaces onBack={() => {}} load={load(MIXED)} />);
+  expect(textsOf(host, "[data-space-row] .space-name")).toEqual(["flaky-test-fix", "docs-cleanup", "scratch"]);
+});
+
+test("the header keeps the one control that makes a space", async () => {
+  useStore.setState({ spacesAvailable: true });
+  const host = await render(<Spaces onBack={() => {}} load={load(TABBED)} />);
+  expect(host.querySelector(".spaces-head [data-create='space']")).not.toBeNull();
+});
+
+test("an unnamed space is named by its id, because a blank row is not a row", async () => {
+  const UNNAMED: SpaceTree = {
+    readAt: 1_700_000_000_000,
+    spaces: [{ spaceId: "w7", label: null, tabCount: 1, paneCount: 1, tabs: [{ tabId: "w7:t1", label: null, panes: [{ paneId: "w7:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "idle" }] }] }],
+  };
+  const host = await render(<Spaces onBack={() => {}} load={load(UNNAMED)} />);
+  expect(textsOf(host, "[data-space-row] .space-name")).toEqual(["w7"]);
 });

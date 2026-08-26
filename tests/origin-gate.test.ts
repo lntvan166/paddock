@@ -53,6 +53,10 @@ function harness(state: Agent["state"] = "blocked") {
     async renameSpace() { calls.push("renameSpace"); },
     async closeTab() { calls.push("closeTab"); },
     async closeSpace() { calls.push("closeSpace"); },
+    async createSpace() { calls.push("createSpace"); return { spaceId: "w9", tabId: "w9:t1", paneId: "w9:p1" }; },
+    async createTab() { calls.push("createTab"); return { tabId: "w1:t9", paneId: "w1:p9" }; },
+    async startAgent() { calls.push("startAgent"); },
+    async harnessKinds() { calls.push("harnessKinds"); return ["claude"]; },
   };
   const app = createApp({
     store, actions, now: () => NOW, health,

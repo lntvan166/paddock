@@ -3,6 +3,7 @@ import { createApp } from "@server/routes";
 import { AgentStore } from "@server/state/store";
 import { Hub } from "@server/ws/hub";
 import type { SpaceTree } from "@shared/types";
+import { agentIdFromHash, spaceHash, spaceIdFromHash } from "@shared/route";
 
 const NOW = 1_700_000_000_000;
 
@@ -44,4 +45,32 @@ test("a herdr failure surfaces, and is never reported as an empty tree", async (
   const body = await res.json();
   expect(body.ok).toBe(false);
   expect(body.detail).toContain("socket refused");
+});
+
+test("a space id round-trips through its hash", () => {
+  // Space ids are herdr coordinates and contain no colon today, but they are
+  // herdr's to change; encoding costs nothing and a raw one would break the
+  // day it does.
+  expect(spaceIdFromHash(spaceHash("w1"))).toBe("w1");
+  expect(spaceIdFromHash(spaceHash("w1:odd/id"))).toBe("w1:odd/id");
+});
+
+test("the plural route is not the singular one", () => {
+  // `#/spaces` is the LIST. If it parsed as a space id the list would render
+  // a space screen for a space called "s".
+  expect(spaceIdFromHash("#/spaces")).toBeNull();
+  expect(spaceIdFromHash("#/space/")).toBeNull();
+  expect(spaceIdFromHash("#/settings")).toBeNull();
+  expect(spaceIdFromHash("")).toBeNull();
+});
+
+test("a malformed escape lands on no space rather than throwing", () => {
+  // Same rule `agentIdFromHash` follows: a hand-edited or truncated URL must
+  // not crash the render.
+  expect(spaceIdFromHash("#/space/%")).toBeNull();
+});
+
+test("a pane hash is not a space hash, and neither reads the other", () => {
+  expect(spaceIdFromHash("#/pane/w1:p1")).toBeNull();
+  expect(agentIdFromHash(spaceHash("w1"))).toBeNull();
 });

@@ -1,252 +1,46 @@
-import { paneHash } from "@shared/route";
-import type { Space, TreePane } from "@shared/types";
-import { paneIdentity, paneLabel } from "@web/components/pane-label";
-import { plural, RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
-import { StatusDot } from "@web/components/ui/StatusDot";
-
-/*
- * THE `⋯` AND WHY IT LOOKS LIKE THIS.
- *
- * Every row carried a `disabled` `⋯` with `aria-label="Actions for X"` once,
- * rendered ahead of the sheet that would fill it. Those were removed:
- * announcing an action that cannot happen, on every row, is a mislabelled
- * control, and `CLAUDE.md` rates that worse than none. They were also already
- * diverging — the sub-row's label read `name ?? paneId` while the row read
- * `name ?? title ?? paneId`, so a shell announced `w3:p1` under visible text
- * saying "bash".
- *
- * The `⋯` is back, with the sheet that fills it, and the two requirements the
- * removal note carried forward hold here and must keep holding:
- *
- * 1. It is VISIBLE at rest and enabled. Never an unhinted long-press — that
- *    is the touch equivalent of a hover-only affordance, which the UI rules
- *    ban, and §6.1 names it as the first thing paddock does differently from
- *    Collie.
- * 2. Its accessible name carries the row's FULL VISIBLE LABEL, and that label
- *    is the one `pane-label.ts` computes (§16.6's rule has one home). Which is
- *    why the label is built here, once per row shape, and handed to
- *    `RowActions` rather than derived again inside it.
- */
+import { spaceHash } from "@shared/route";
+import type { Space } from "@shared/types";
+import { spaceState } from "@web/components/space-sort";
+import { NO_AGENT, StateMarker } from "@web/components/ui/StateMarker";
 
 /**
- * One space, and its panes only when there is something to show.
+ * One space, as a row in the list — and nothing else.
  *
- * "Structured" means more than one pane or more than one tab. A space with
- * one tab and one pane has neither, so it renders as a SINGLE row with no
- * chevron — there is nothing to expand, and offering a control that reveals
- * nothing is worse than offering none. Most spaces are that shape.
+ * It used to carry a `⋯`, a `+`, a chevron, an alias and its panes' sub-rows.
+ * Measured at 390px with eleven spaces, that was 33 tap targets on a screen
+ * whose eleven rows all fitted without a scroll: the problem was never
+ * vertical space, it was that a list had become a control panel. Those
+ * controls now live on `#/space/<id>`, where the operator has already chosen
+ * what they are managing.
+ *
+ * Three things, in this order: what it is, how it is doing, how big it is. The
+ * count is the cheap honest answer to "is there structure in here" — a `1`
+ * opens onto one tab, a `4` is worth the tap.
  */
-/**
- * Are these two strings the same label, allowing for herdr's own slugging?
- *
- * §14.7 measured that herdr initialises an agent's `name` to the SLUG of its
- * workspace label. A literal comparison therefore reports a difference that is
- * not one — `"api refactor"` vs `"api-refactor"` — and the first version of
- * this screen printed every merged row's title twice, once de-spaced. §16.1.
- *
- * Deliberately loose. A false negative hides an alias on a row whose labels
- * differ only in punctuation, which costs nothing. A false positive is visible
- * noise on nearly every row, which is the defect this replaces.
- */
-function sameLabel(a: string, b: string): boolean {
-  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return slug(a) === slug(b);
-}
-
-export function SpaceRow({ space, open, onToggle, onChanged, senders }: {
-  space: Space;
-  open: boolean;
-  onToggle: () => void;
-  /** Re-read the tree. Called after every write, win or lose — §11's no
-   *  optimistic updates rule, which is why this is a refetch and not a
-   *  local edit of the tree that is already here. */
-  onChanged: () => void;
-  senders?: RowSenders;
-}) {
-  const panes = space.tabs.flatMap((t) => t.panes);
-  const structured = panes.length > 1 || space.tabs.length > 1;
-  const only = !structured ? panes[0] ?? null : null;
-
-  // The SPACE's own label, unconditionally — same as a structured row. A
-  // merged row used to show the pane's identity here instead, which hid the
-  // space's label on six spaces out of seven (most spaces are 1:1:1). A later
-  // plan adds workspace.rename, which writes exactly this field: on a shell
-  // pane (no name, no matching title) renaming the space would have produced
-  // no visible change at all — the same "control that appears to do
-  // nothing" defect the design doc cites as the reason paddock refuses
-  // pane.rename (§7.1), recreated in mirror image.
-  const spaceLabel = space.label ?? space.spaceId;
-  // The merged pane's own identity, shown as a SECONDARY string and only
-  // when it says something the space label does not. Most merged rows have
-  // an agent whose name matches its space, so this stays silent for the
-  // common case; a bare shell (no name) is identified by its title, which is
-  // the one case this exists for.
-  //
-  // `paneIdentity` is the shared rule (`pane-label.ts`), the same one the pane
-  // sub-rows below and the terminal header in `App.tsx` use — the three had
-  // drifted into three expressions.
-  const alias = only ? paneIdentity(only) : null;
-  const showAlias = alias !== null && !sameLabel(alias, spaceLabel);
-
-  // Why this row is structured at all, said in the unit that explains it.
-  //
-  // This read `${space.tabCount} tabs`, which was wrong in both halves. A
-  // space reaches this branch on EITHER count, so a single tab split into
-  // several panes (`pane.split` is an ordinary thing to do) rendered
-  // "1 tabs" — a number that does not explain the sub-rows under it, and a
-  // plural that does not agree with it.
-  const countLabel = space.tabCount === 1
-    ? plural(space.paneCount, "pane")
-    : plural(space.tabCount, "tab");
-
-  // The row's full visible label, for the `⋯`'s accessible name — everything
-  // the row shows, in the order it shows it. On a merged row that includes the
-  // alias, because the alias is on screen: a button announcing only half of
-  // what its row says is the divergence this file's opening note records.
-  const rowLabel = showAlias ? `${spaceLabel} (${alias})` : spaceLabel;
-
-  // What this row's sheet can reach. A structured space's row is the space and
-  // nothing else — its panes and their tabs are reached from the sub-rows
-  // below. A merged row IS the space AND its single pane, so it also offers
-  // that pane's agent, when it has one.
-  //
-  // It deliberately does NOT offer the tab: a 1:1:1 space shows no tab label
-  // anywhere, so renaming it would produce no visible change on this screen —
-  // the same "control that appears to do nothing" defect §7.1 gives as the
-  // reason paddock refuses `pane.rename`.
-  const spaceRenames: RenameTarget[] = [
-    { kind: "space", id: space.spaceId, current: space.label },
-    ...(only !== null && only.harness !== null
-      ? [{ kind: "agent", id: only.paneId, current: only.name } as RenameTarget]
-      : []),
-  ];
-
-  // Built once and rendered from either branch: the space's label is the same
-  // on both row shapes, and two copies of it would be free to drift.
-  const heading = (
-    <div className="space-heading">
-      <span className="space-name">{spaceLabel}</span>
-      {showAlias && <span className="space-alias">{alias}</span>}
-    </div>
-  );
+export function SpaceRow({ space }: { space: Space }) {
+  // Falls back to the id so the row says something. A space can be unnamed; a
+  // row cannot be blank. This is the fallback that must NEVER be passed on to
+  // anything that writes — handing it to a create sheet made a herdr
+  // coordinate an agent's suggested name.
+  const label = space.label ?? space.spaceId;
+  const state = spaceState(space);
 
   return (
-    <li
-      data-space-row
-      data-space-id={space.spaceId}
-      // A merged row (only !== null) IS both the space and its single pane —
-      // there is no separate sub-row to carry `data-pane-row`, so this row
-      // carries both attributes. A structured space's row never gets
-      // `data-pane-row`: its panes each carry their own below, and a rollup
-      // here would say the same thing twice.
-      {...(only ? { "data-pane-row": true, "data-state": only.state ?? "none" } : {})}
-    >
-      <div className="space-head">
-        {structured && (
-          <button
-            data-expand
-            type="button"
-            aria-expanded={open}
-            onClick={onToggle}
-          >
-            <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-            <span className="sr-only">{open ? "Collapse" : "Expand"} {spaceLabel}</span>
-          </button>
-        )}
-        {/* A merged row IS its single pane, so the whole row opens it — the
-            same `paneHash` link a structured space's sub-rows already carry.
-            Without it the commonest space shape (six in seven are 1:1:1) had
-            no route into the terminal at all: a pane you could see, name and
-            read a state off, and not open.
-
-            A merged row also shows the single pane's state and marker inside
-            the link; a structured one shows neither here, because its panes
-            each carry their own below and a rollup would say the same thing
-            twice.
-
-            Whatever gets added beside this anchor stays a SIBLING of it,
-            never a child: a <button> inside an <a> is invalid HTML and
-            unreachable by keyboard. */}
-        {only ? (
-          <a href={paneHash(only.paneId)}>
-            <PaneMarker pane={only} />
-            {heading}
-            <PaneState pane={only} />
-          </a>
-        ) : (
-          <>
-            {heading}
-            <span className="space-count">{countLabel}</span>
-          </>
-        )}
-        {/* A SIBLING of the anchor above, never a child of it: a <button>
-            inside an <a> is invalid HTML and unreachable by keyboard. */}
-        <RowActions
-          label={rowLabel}
-          renames={spaceRenames}
-          close={{ kind: "space", id: space.spaceId, panes }}
-          onChanged={onChanged}
-          senders={senders}
-        />
-      </div>
-
-      {structured && open && (
-        <ul className="space-tabs">
-          {space.tabs.map((t) => (
-            <li key={t.tabId}>
-              <ul>
-                {t.panes.map((p) => (
-                  <li key={p.paneId} data-pane-row data-state={p.state ?? "none"}>
-                    <a href={paneHash(p.paneId)}>
-                      <PaneMarker pane={p} />
-                      <span className="pane-heading">
-                        <span className="pane-name">{paneLabel(p)}</span>
-                        {/* A tab label is a CAPTION on the pane it labels, not
-                            a heading above a group of panes — a bare uppercase
-                            `<h3>` between rows read as a section header for
-                            the whole list (§16.2). An unnamed tab ("1") has no
-                            caption at all: repeating the row below is noise. */}
-                        {t.label !== null && <span className="pane-tab">{t.label}</span>}
-                      </span>
-                      <PaneState pane={p} />
-                    </a>
-                    {/* A pane sub-row reaches its own agent and the TAB that
-                        holds it — the tab has no row of its own on this
-                        screen, and its caption is right here. Its close takes
-                        the whole tab, which is what the consequence line has
-                        to say and why the tab's panes go with it. */}
-                    <RowActions
-                      label={paneLabel(p)}
-                      renames={[
-                        ...(p.harness !== null
-                          ? [{ kind: "agent", id: p.paneId, current: p.name } as RenameTarget]
-                          : []),
-                        { kind: "tab", id: t.tabId, current: t.label },
-                      ]}
-                      close={{ kind: "tab", id: t.tabId, panes: t.panes }}
-                      onChanged={onChanged}
-                      senders={senders}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      )}
+    <li data-space-row data-space-id={space.spaceId} data-state={state ?? "none"}>
+      <a href={spaceHash(space.spaceId)}>
+        {/* `StateMarker` carries the null-state rule for every surface that
+            shows one — see `ui/StateMarker.tsx`. */}
+        <StateMarker state={state} />
+        <span className="space-name">{label}</span>
+        {/* Colour is never the only channel: StatusDot is aria-hidden, and this
+            palette spends red and green on the two states that matter most. */}
+        <span className="space-state">{state ?? NO_AGENT}</span>
+        {/* A bare number, in mono, because it is a quantity to compare down a
+            column rather than a sentence to read. The pluralised
+            "2 tabs"/"1 pane" phrasing went with the merged row that needed to
+            explain its own shape. */}
+        <span className="space-count">{space.paneCount}</span>
+      </a>
     </li>
   );
-}
-
-/** A shell has no state, so it gets no StatusDot — that component's whole
- *  contract is that a dot MEANS one of four states. */
-function PaneMarker({ pane }: { pane: TreePane }) {
-  if (pane.state === null) return <span className="dot-none" aria-hidden="true" />;
-  return <StatusDot state={pane.state} />;
-}
-
-/** Colour is never the only channel — StatusDot is aria-hidden, so the state
- *  has to be readable as text right here. */
-function PaneState({ pane }: { pane: TreePane }) {
-  return <span className="pane-state">{pane.state ?? "no agent"}</span>;
 }

@@ -602,3 +602,48 @@ export interface CloseSpaceResult extends ActionResult {
   tabCount: number;
   paneCount: number;
 }
+
+/**
+ * `POST /api/spaces`'s success body — the new space, its first tab, and its
+ * first pane, read directly off `workspace.create`'s own envelope (§9.1's
+ * correction: there is no second snapshot read to find these ids).
+ */
+export interface CreateSpaceResult extends ActionResult {
+  spaceId: string;
+  tabId: string;
+  paneId: string;
+}
+
+/**
+ * `POST /api/spaces/:id/tabs`'s success body — same reasoning one level
+ * down, off `tab.create`'s envelope. `root_pane.pane_id` IS the new pane's
+ * id; nothing here re-reads the tree to find it.
+ */
+export interface CreateTabResult extends ActionResult {
+  tabId: string;
+  paneId: string;
+}
+
+/**
+ * `POST /api/panes/:id/agent`'s success body.
+ *
+ * `paneId` is echoed on success the same way `CloseTabResult` echoes what it
+ * already knew — the pane the agent started in. A FAILED start is reported
+ * through the ordinary `ActionResult.detail` on this same shape (worded to
+ * say the pane still exists; see the route), rather than a second response
+ * shape — mirroring `/api/panes/:id/text`'s "typed, but not run" precedent.
+ */
+export interface StartAgentResult extends ActionResult {
+  paneId: string;
+}
+
+/**
+ * `GET /api/harnesses`'s success body — the harness kinds THIS machine has
+ * installed (`server.agent_manifests`), for the create sheet's picker. Never
+ * hardcoded (§9.3): `AgentStartParams.kind` is a plain string in protocol
+ * 20, not an enum, so the only defensible allowlist is what is actually
+ * installed.
+ */
+export interface HarnessesResult extends ActionResult {
+  kinds: string[];
+}

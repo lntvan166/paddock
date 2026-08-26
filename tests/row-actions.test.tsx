@@ -4,11 +4,19 @@ import { click, render, settle, typeInto, unmount } from "./support/render";
 import { RequestFailed } from "@web/api";
 import { paneLabel } from "@web/components/pane-label";
 import type { RowSenders } from "@web/components/RowActions";
-import { Spaces } from "@web/components/Spaces";
+import { Space } from "@web/components/Space";
 import type { SpaceTree } from "@shared/types";
 
 /*
  * The row actions sheet: the `⋯` and what it opens.
+ *
+ * Task 8 moved every one of these controls off the Spaces LIST and onto the
+ * `#/space/<id>` screen: the space's own rename/close is the header's `⋯`
+ * (`Space.tsx`), and a tab's rename/close plus its root pane's agent rename
+ * is the `⋯` on that tab's row (`TabRow.tsx`). So every render here goes
+ * through `<Space>`, not `<Spaces>` — the wiring this file actually tests
+ * (which control reaches which target) is what moved, not the underlying
+ * writes, which are unchanged.
  *
  * Every fixture here uses invented names and `/srv/project` paths — the public
  * repo rule, and the one most likely to be broken by accident in a fixture.
@@ -25,7 +33,7 @@ const FLAT: SpaceTree = {
   }],
 };
 
-/** Two tabs, so the space row and the pane sub-rows are separate rows. */
+/** Two tabs, so the space's own control and each tab's are separate. */
 const STRUCTURED: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [{
@@ -37,8 +45,8 @@ const STRUCTURED: SpaceTree = {
   }],
 };
 
-/** A merged row whose pane has NO agent: the case where the row shows the
- *  space label and the pane's own identity, and the `⋯` has to announce both. */
+/** A tab whose only pane has NO agent — the case where its `⋯` offers no
+ *  agent rename at all. */
 const SHELL: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [{
@@ -109,75 +117,100 @@ test("every row carries a ⋯ that is visible and ENABLED, not an inert promise"
   // an action it could not perform, and was removed for it. And it is a
   // BUTTON on the row, not an unhinted long-press: §6.1 names that as the
   // touch equivalent of a hover-only affordance.
-  const merged = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={recorder().senders} />);
+  //
+  // One for the space (the screen's header) plus one per TAB — FLAT has a
+  // single, unsplit tab, so that is header(1) + tab(1) = 2. The old merged
+  // list row folded both into a single control; this screen never merges
+  // them, even on the commonest 1:1:1 shape.
+  const merged = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={recorder().senders} />);
   await settle();
-  expect(triggers(merged)).toHaveLength(1);
-  expect(triggers(merged)[0]!.disabled).toBe(false);
-  expect(triggers(merged)[0]!.textContent).toContain("⋯");
+  expect(triggers(merged)).toHaveLength(2);
+  for (const t of triggers(merged)) {
+    expect(t.disabled).toBe(false);
+    expect(t.textContent).toContain("⋯");
+  }
   await unmount();
 
-  // A structured space: one for the space, one for each pane sub-row.
-  const structured = await render(<Spaces onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
+  // A structured space: one for the space, one for each of its two tabs.
+  const structured = await render(<Space spaceId="w2" onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
   await settle();
   expect(triggers(structured)).toHaveLength(3);
   for (const t of triggers(structured)) expect(t.disabled).toBe(false);
   await unmount();
 });
 
-test("the ⋯ announces the row's full visible label, on a space row and a pane row", async () => {
+test("the ⋯ announces the row's full visible label, on the header's control and on each tab's", async () => {
   // The removed version diverged from the row it sat on: a shell row read
   // `bash` while its button announced `w3:p1`. `paneLabel` is the one home for
   // that expression (§16.6), so the test asserts against the helper rather
   // than against a string spelled a second time here.
-  const el = await render(<Spaces onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
+  const el = await render(<Space spaceId="w2" onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
   await settle();
 
-  const spaceTrigger = el.querySelector<HTMLButtonElement>(".space-head [data-row-actions]")!;
-  const visibleSpace = el.querySelector(".space-name")!.textContent!;
+  const spaceTrigger = el.querySelector<HTMLButtonElement>(".space-screen-head [data-row-actions]")!;
+  const visibleSpace = el.querySelector(".space-picker-name")!.textContent!;
   expect(spaceTrigger.getAttribute("aria-label")).toContain(visibleSpace);
 
-  const paneTriggers = [...el.querySelectorAll<HTMLButtonElement>(".space-tabs [data-row-actions]")];
-  const panes = STRUCTURED.spaces[0]!.tabs.flatMap((t) => t.panes);
-  expect(paneTriggers).toHaveLength(panes.length);
-  paneTriggers.forEach((t, i) => {
-    expect(t.getAttribute("aria-label")).toContain(paneLabel(panes[i]!));
+  const tabTriggers = [...el.querySelectorAll<HTMLButtonElement>(".tabs [data-row-actions]")];
+  const tabs = STRUCTURED.spaces[0]!.tabs;
+  expect(tabTriggers).toHaveLength(tabs.length);
+  // A tab's own label when it has one (`TabRow`'s `tabName`), or its root
+  // pane's label when it does not — the same rule `TabRow` renders by, so this
+  // asserts the `⋯` agrees with the row it sits on rather than re-deriving it.
+  tabTriggers.forEach((t, i) => {
+    const tab = tabs[i]!;
+    const expected = tab.label ?? paneLabel(tab.panes[0]!);
+    expect(t.getAttribute("aria-label")).toContain(expected);
   });
   await unmount();
 });
 
-test("a merged row's ⋯ announces the alias too, because the row shows it", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => SHELL} senders={recorder().senders} />);
-  await settle();
-  const label = triggers(el)[0]!.getAttribute("aria-label")!;
-  expect(label).toContain("docs-cleanup");
-  expect(label).toContain(paneLabel(SHELL.spaces[0]!.tabs[0]!.panes[0]!));
-  await unmount();
-});
-
 test("the sheet offers rename and close", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={recorder().senders} />);
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={recorder().senders} />);
   await settle();
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
   expect(sheet().textContent).toContain("Rename space");
   expect(sheet().textContent).toContain("Close space");
   await unmount();
 });
 
-test("a pane row reaches its agent and the tab that holds it", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
+test("the sheet carries no shadcn close button — every control in it clears 44px", async () => {
+  // shadcn's `SheetContent` defaults `showCloseButton` to true, and neither
+  // call site passed false. So every sheet got an absolutely positioned 16px
+  // `XIcon` at `top-4 right-4` with NO `min-width`/`min-height`, inside a
+  // feature whose CSS sets `2.75rem` on all eleven of its other controls — and
+  // `.row-actions-title` is mono with `overflow-wrap: anywhere`, so a long
+  // label wrapped UNDER it.
+  //
+  // Passed false rather than resized: Cancel/Back, Escape and the scrim already
+  // close the sheet, and fewer controls doing the same thing is the better fix.
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={recorder().senders} />);
   await settle();
-  await click(el.querySelector(".space-tabs [data-row-actions]"));
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
+  expect(sheet().querySelector('[data-slot="sheet-close"]')).toBeNull();
+  await unmount();
+});
+
+test("a tab row reaches its agent and the tab itself", async () => {
+  const el = await render(<Space spaceId="w2" onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
+  await settle();
+  await click(el.querySelector(".tabs [data-row-actions]"));
   expect(sheet().textContent).toContain("Rename agent");
   expect(sheet().textContent).toContain("Rename tab");
   expect(sheet().textContent).toContain("Close tab");
   await unmount();
 });
 
-test("a shell pane offers no agent rename — there is no agent to rename", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => SPLIT} senders={recorder().senders} />);
+test("a shell tab offers no agent rename — there is no agent to rename", async () => {
+  // Was SPLIT in the list version, picking the split tab's SECOND pane
+  // sub-row. `TabRow` renders no per-pane control any more — a split tab
+  // carries exactly one `⋯`, keyed to its ROOT pane — so there is no longer a
+  // row that is "the shell half of a split tab". The rule this test exists
+  // for (an agentless target offers no agent rename) still needs a case, and
+  // SHELL's tab — whose only, and therefore root, pane has no harness — is it.
+  const el = await render(<Space spaceId="w3" onBack={() => {}} load={async () => SHELL} senders={recorder().senders} />);
   await settle();
-  const paneTriggers = [...el.querySelectorAll<HTMLButtonElement>(".space-tabs [data-row-actions]")];
-  await click(paneTriggers[1]); // the shell half of the split
+  await click(el.querySelector(".tabs [data-row-actions]"));
   expect(sheet().textContent).not.toContain("Rename agent");
   expect(sheet().textContent).toContain("Rename tab");
   await unmount();
@@ -186,11 +219,11 @@ test("a shell pane offers no agent rename — there is no agent to rename", asyn
 test("a rename submits the typed label, and the tree is re-read afterwards", async () => {
   const { state, load } = counted(STRUCTURED);
   const { calls, senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={load} senders={senders} />);
+  const el = await render(<Space spaceId="w2" onBack={() => {}} load={load} senders={senders} />);
   await settle();
   const before = state.loads;
 
-  await click(el.querySelector(".space-tabs [data-row-actions]"));
+  await click(el.querySelector(".tabs [data-row-actions]"));
   await click(sheetButton("Rename agent"));
   await typeInto(sheet().querySelector("input")!, "api-refactor-2");
   await click(sheetButton("Save"));
@@ -205,9 +238,9 @@ test("a rename submits the typed label, and the tree is re-read afterwards", asy
 
 test("a space rename targets the space, not its pane", async () => {
   const { calls, senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={senders} />);
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={senders} />);
   await settle();
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
   await click(sheetButton("Rename space"));
   await typeInto(sheet().querySelector("input")!, "auth-work");
   await click(sheetButton("Save"));
@@ -221,9 +254,9 @@ test("an empty label cannot be submitted for a tab", async () => {
   // a clear. The route refuses it with a 400, and a control that lets you
   // submit something guaranteed to fail is a bad control.
   const { calls, senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={async () => STRUCTURED} senders={senders} />);
+  const el = await render(<Space spaceId="w2" onBack={() => {}} load={async () => STRUCTURED} senders={senders} />);
   await settle();
-  await click(el.querySelector(".space-tabs [data-row-actions]"));
+  await click(el.querySelector(".tabs [data-row-actions]"));
   await click(sheetButton("Rename tab"));
   await typeInto(sheet().querySelector("input")!, "");
   const save = sheetButton("Save");
@@ -236,9 +269,9 @@ test("an empty label cannot be submitted for a tab", async () => {
 
 test("a whitespace-only label cannot be submitted for a space either", async () => {
   const { calls, senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={senders} />);
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={senders} />);
   await settle();
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
   await click(sheetButton("Rename space"));
   await typeInto(sheet().querySelector("input")!, "   ");
   expect(sheetButton("Save").disabled).toBe(true);
@@ -251,11 +284,13 @@ test("a whitespace-only label cannot be submitted for a space either", async () 
 test("the agent's clear says what clearing does, and never calls it a reset", async () => {
   // Clearing does not restore a herdr-derived name — herdr does not re-derive
   // one — so the agent lands on paddock's own basename(cwd) fallback, which is
-  // a DIFFERENT label (§7.2).
+  // a DIFFERENT label (§7.2). The clear lives on the TAB's control now — the
+  // space's header control never carries an agent target (`Space.tsx`'s
+  // `spaceRenames` is space-only, on every space shape, not just this one).
   const { calls, senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={senders} />);
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={senders} />);
   await settle();
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".tabs [data-row-actions]"));
   const text = sheet().textContent ?? "";
   expect(text).toContain("Clear name");
   expect(text).toContain("folder");
@@ -269,19 +304,19 @@ test("the agent's clear says what clearing does, and never calls it a reset", as
 });
 
 test("a tab or a space is offered no clear at all", async () => {
-  const el = await render(<Spaces onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
+  const el = await render(<Space spaceId="w2" onBack={() => {}} load={async () => STRUCTURED} senders={recorder().senders} />);
   await settle();
-  // The space row: its only rename target is the space.
-  await click(el.querySelector(".space-head [data-row-actions]"));
+  // The space's own control: its only rename target is the space.
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
   expect(sheet().textContent).not.toContain("Clear");
   await unmount();
 });
 
 test("close is arm-then-confirm, and the confirmation states the consequence", async () => {
   const { calls, senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={senders} />);
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={senders} />);
   await settle();
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
 
   // Nothing is armed on open: the consequence is not on screen yet.
   expect(sheet().textContent).not.toContain("will be killed");
@@ -302,9 +337,9 @@ test("the consequence count comes off the tree on screen, and counts agents not 
   // The split tab holds a working agent and a shell. Closing it kills one
   // agent; saying "2" would be counting panes.
   const { senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={async () => SPLIT} senders={senders} />);
+  const el = await render(<Space spaceId="w4" onBack={() => {}} load={async () => SPLIT} senders={senders} />);
   await settle();
-  await click(el.querySelector(".space-tabs [data-row-actions]"));
+  await click(el.querySelector(".tabs [data-row-actions]"));
   await click(sheetButton("Close tab"));
   expect(sheet().textContent).toContain("1 working agent will be killed.");
   await unmount();
@@ -312,9 +347,9 @@ test("the consequence count comes off the tree on screen, and counts agents not 
 
 test("a close with no agent in it says what actually happens", async () => {
   const { senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={async () => SHELL} senders={senders} />);
+  const el = await render(<Space spaceId="w3" onBack={() => {}} load={async () => SHELL} senders={senders} />);
   await settle();
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
   await click(sheetButton("Close space"));
   expect(sheet().textContent).toContain("1 pane will close, no agent running.");
   await unmount();
@@ -331,11 +366,11 @@ test("the last space's close is NOT disabled — herdr's policy is unmeasured", 
     },
   });
   const { state, load } = counted(FLAT);
-  const el = await render(<Spaces onBack={() => {}} load={load} senders={senders} />);
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={load} senders={senders} />);
   await settle();
   expect(FLAT.spaces).toHaveLength(1);
 
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
   await click(sheetButton("Close space"));
   const confirm = sheetButton("Close space");
   expect(confirm.disabled).toBe(false);
@@ -354,9 +389,9 @@ test("a failed rename is surfaced with the server's own detail", async () => {
   const { senders } = recorder({
     renameSpace: async () => { throw new RequestFailed(400, "label must not be empty"); },
   });
-  const el = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={senders} />);
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={senders} />);
   await settle();
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
   await click(sheetButton("Rename space"));
   await typeInto(sheet().querySelector("input")!, "auth-work");
   await click(sheetButton("Save"));
@@ -368,9 +403,9 @@ test("a failed rename is surfaced with the server's own detail", async () => {
 
 test("a successful write closes the sheet", async () => {
   const { senders } = recorder();
-  const el = await render(<Spaces onBack={() => {}} load={async () => FLAT} senders={senders} />);
+  const el = await render(<Space spaceId="w1" onBack={() => {}} load={async () => FLAT} senders={senders} />);
   await settle();
-  await click(triggers(el)[0]);
+  await click(el.querySelector(".space-screen-head [data-row-actions]"));
   await click(sheetButton("Close space"));
   await click(sheetButton("Close space"));
   await settle();

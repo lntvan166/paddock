@@ -234,6 +234,25 @@ rendered as "as of 4 s ago" beside a refresh control. This also closes the
 
 ## 6. The Spaces screen
 
+> **SUPERSEDED 2026-08-25** by
+> `docs/design/2026-08-25-spaces-two-level-redesign.md`. The screen is a
+> two-level drill-down: `#/spaces` lists spaces only, `#/space/<id>` lists one
+> space's tabs and is where rename, close and create live.
+>
+> The measurement this section argues from is correct and still worth reading —
+> six of seven spaces held one tab and one pane, so a three-level browser
+> really would have spent two levels rendering one child each. The conclusion
+> drawn from it was wrong. It counted **children per space** and never counted
+> **controls per row**: with eleven spaces each carrying a link, a `⋯` and a
+> `+`, the shipped screen put 33 tap targets on one viewport while fitting all
+> eleven rows without a scroll. The second level's value was never vertical
+> space; it is that management affordances belong on the screen where you have
+> already chosen what you are managing.
+>
+> Read the successor for the layout. §6.1 below still binds, minus its "no
+> horizontal scroll rails" contrast — the rail is still refused, for the
+> measurement in the successor's §5.2.
+
 Route `#/spaces`, hash-routed like `#/settings`.
 
 **Layout: one adaptive vertical outline.** Not a drill-down, and not
@@ -465,6 +484,21 @@ split honest rather than merely convenient:
 for which `historyTimeoutMs()` is the existing precedent — `request()` already
 accepts a fourth argument for exactly this.
 
+> **Corrected 2026-08-25:** the sentence below is not what was built.
+> `launch_pending` is never read. It is a real field on herdr's `AgentInfo`,
+> and paddock deliberately does not model it — it sits in
+> `tests/herdr-schema-drift.test.ts`'s `IGNORED_FIELDS`, so the adapter never
+> carries it and nothing downstream can consult one. The
+> `starting claude…` notice comes from a CLIENT-SIDE launch store
+> (`src/web/launch.ts`), written by the create sheet before it navigates and
+> cleared when `POST /api/panes/:id/agent` answers — so the notice tracks
+> paddock's own request, not herdr's view of the pane. That matters to anyone
+> reading this to implement it: a herdr-driven notice would survive a reload
+> and a second tab, and this one does not. That is a known consequence of
+> tracking paddock's own request rather than herdr's state, not a claim this
+> section makes. The second sentence
+> stands exactly as written: a 200 never hides a failed start.
+
 While `launch_pending` is true the terminal shows `starting claude…`. Any
 herdr error is surfaced **inline and verbatim**; a 200 must never hide a failed
 start, or the operator is left watching a shell that silently never becomes an
@@ -486,6 +520,18 @@ every pane's cwd, so the quick picks are free. Collie asks the operator to type
 a filesystem path on a phone keyboard; that is the thing to improve on. No
 directory browsing — that needs a filesystem-listing endpoint, which is a
 security surface of its own and out of scope.
+
+**Say the round trip out loud: those quick picks are the tree's own
+TILDE-ISED cwds coming back.** `tree.ts` rewrites every `cwd` as `~/…` on the
+way out so a username never crosses the wire, so a pick the operator taps
+arrives at the create route as `~/project`, not as an absolute path — and
+herdr was measured (2026-08-25, live) to neither expand nor refuse a leading
+`~`: it starts the pane in the home directory and says nothing. So the tilde
+paddock invented has to be undone by paddock, server-side, before the value
+reaches herdr: `expandHome` in `tree.ts` is the exact inverse of `tildeise`
+and sits beside it, it is the ONLY function that mints the `HostPath` brand
+`CreateOpts.cwd` requires, and a tilde it cannot resolve (`~someone/…`, or
+`~/…` with no `HOME`) is refused with a 400 rather than forwarded.
 
 ---
 
@@ -797,6 +843,15 @@ session's `focused_pane_id` and `focused_workspace_id` were unchanged across a
 create, and unchanged again after the throwaway tab was closed. So creating
 from a phone cannot yank the desktop out from under someone sitting at it,
 which is what made this worth measuring rather than assuming.
+
+**Probe 5, extended 2026-08-25 — `workspace.create {focus: false}` does not
+steal focus either.** The original probe measured `tab.create` only, and a
+comment in `herdr/actions.ts` briefly cited it as covering both. Rather than
+soften the comment, the sibling call was measured the same way: a throwaway
+space was created with `focus: false`, `focused_pane_id` and
+`focused_workspace_id` were unchanged, and both were unchanged again after the
+cleanup close. Both create calls are now covered by measurement rather than by
+inference from a sibling endpoint.
 
 **Probe 1 — an empty label is ACCEPTED, and it is not a clear.** `tab.rename`
 with `label: ""` succeeds and the tab's label becomes the empty string — herdr
