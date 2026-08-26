@@ -176,7 +176,7 @@ if (command === "start") {
  * before there is a handler able to tear it down. See the comment there.
  */
 let tunnelBin: string | undefined;
-let tunnelAttach = false;
+let tunnelPublishRunning = false;
 let tunnelDeadlineMs: number | null = null;
 if (command === "tunnel") {
   const raw = values.get("--for");
@@ -196,13 +196,14 @@ if (command === "tunnel") {
   }
   tunnelDeadlineMs = parsed;
 
-  // `--attach`: publish the paddock ALREADY serving here, instead of being a
+  // `--publish-running`: publish the paddock ALREADY serving here, instead of
+  // being a second one.
   // second one. See `tunnel/proxy.ts` — this process gets no store, no hub, no
   // notifier and no herdr stream, only the gate and a proxy. That is what makes
   // it safe to run beside an instance the plain form must refuse to.
-  tunnelAttach = flags.has("--attach");
+  tunnelPublishRunning = flags.has("--publish-running");
 
-  const pre = await preflight({ dir: defaultConfigDir(), attach: tunnelAttach });
+  const pre = await preflight({ dir: defaultConfigDir(), publishRunning: tunnelPublishRunning });
   if (!pre.ok) {
     warn(pre.message);
     process.exit(1);
@@ -222,10 +223,10 @@ if (command === "doctor") {
 }
 
 /*
- * ATTACHED TUNNEL — and it exits here, above everything.
+ * PUBLISHING AN ALREADY-RUNNING PADDOCK — and it exits here, above everything.
  *
  * Placement is the design. Every line below builds a paddock: a store, a hub,
- * a notifier, a herdr stream. An attached run must build NONE of them, because
+ * a notifier, a herdr stream. A publishing run must build NONE of them, because
  * a second notifier is precisely what `preflight` refuses the plain form for —
  * every blocked agent would notify twice. Exiting above that state is what
  * makes "no second notifier" structural rather than a promise.
@@ -234,38 +235,38 @@ if (command === "doctor") {
  * published is the one already running, with its own single herdr stream and
  * its own single notifier, exactly as it was before the tunnel started.
  */
-if (command === "tunnel" && tunnelAttach) {
+if (command === "tunnel" && tunnelPublishRunning) {
   const upstream = { host: HOSTNAME, port: PORT };
 
-  // Checked BEFORE cloudflared starts. Attaching to nothing would publish a
+  // Checked BEFORE cloudflared starts. Publishing nothing would hand out a
   // URL that answers 502 for as long as it lives, and a link already handed
   // out is worse than a refusal at the terminal.
   if (!(await upstreamAlive(upstream))) {
     warn([
-      `paddock: nothing is serving on ${upstream.host}:${upstream.port} to attach to`,
+      `paddock: nothing is serving on ${upstream.host}:${upstream.port} to publish`,
       "",
-      "  `--attach` publishes a paddock that is ALREADY running here. Start one",
+      "  `--publish-running` publishes a paddock ALREADY running here. Start one",
       "  first, or drop the flag and let this command serve the dashboard itself:",
       "",
-      "    paddock            # in another terminal, then re-run with --attach",
+      "    paddock            # in another terminal, then re-run with the flag",
       "    paddock tunnel     # or let this one serve it",
     ].join("\n"));
     process.exit(1);
   }
 
   const pairing = new Pairing();
-  let attachedUrl: string | null = null;
+  let publicUrl: string | null = null;
   const code = await runTunnel({
     upstream,
     pairing,
     port: Number(process.env.PADDOCK_TUNNEL_PORT ?? 8788),
     bin: tunnelBin,
     deadlineMs: tunnelDeadlineMs,
-    setPublicUrl: (u) => { attachedUrl = u; },
-    // The attached process holds no settings of its own, and the upstream's
+    setPublicUrl: (u) => { publicUrl = u; },
+    // This process holds no settings of its own, and the upstream's
     // `publicUrl` is its business rather than this one's. The tunnel hostname
     // is the only origin this listener ever needs to accept.
-    publicHosts: () => (attachedUrl === null ? [] : [new URL(attachedUrl).host]),
+    publicHosts: () => (publicUrl === null ? [] : [new URL(publicUrl).host]),
     registerShutdown: (fn) => { onShutdown = fn; },
   });
   process.exit(code);

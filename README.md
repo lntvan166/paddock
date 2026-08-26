@@ -130,7 +130,17 @@ paddock stop
 ```
 
 `paddock tunnel` serves the dashboard itself, so it refuses to start beside a
-detached instance — `paddock stop` first, or run the tunnel in its place.
+detached instance — `paddock stop` first, or run the tunnel in its place. To
+keep the instance you already have, publish it instead:
+
+```bash
+paddock tunnel --publish-running
+```
+
+That form serves no dashboard of its own. It opens the pairing gate and proxies
+to the paddock already listening, so there is no second herdr connection and no
+second notifier — the reason the plain form refuses. It exits if nothing is
+listening rather than publishing a URL that answers 502.
 
 `paddock update` upgrades it; paddock never updates itself unasked. `paddock
 --demo` runs it with synthetic agents and no herdr.

@@ -34,7 +34,7 @@ export interface TunnelDeps {
    * What the gated listener serves.
    *
    * Absent under `upstream`, where there is no local app to serve — the
-   * attached tunnel forwards to a paddock in another process instead.
+   * publishing tunnel forwards to a paddock in another process instead.
    */
   app?: { fetch(req: Request): Response | Promise<Response> };
   hub?: Hub;
@@ -152,7 +152,7 @@ export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
         if (d.kind !== "pass") return gateResponse(d, req);
 
         // `/pair` is THIS listener's own, never proxied. The gate belongs to
-        // the attached process — the upstream has no pairing at all and would
+        // this process — the upstream has no pairing at all and would
         // answer 404, which is what shipped for a few minutes and made the
         // code on the terminal unusable. `pairOutcome` is shared with the app's
         // route so the two cannot answer a code differently.

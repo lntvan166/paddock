@@ -23,25 +23,25 @@ export async function preflight(opts: {
   check?: (dir: string) => Promise<StateCheck>;
   log?: (line: string) => void;
   /**
-   * Attaching, where a paddock already running is the POINT rather than the
-   * problem.
+   * Publishing a paddock that is already running, where that instance is the
+   * POINT rather than the problem.
    *
    * The refusal below exists because `paddock tunnel` is a whole second
    * paddock — its own herdr stream, its own notifier, two notifications per
-   * agent. An attached run builds none of those and proxies to the instance it
+   * agent. A publishing run builds none of those and proxies to the instance it
    * found, so the reason does not apply and the check is skipped.
    *
    * Only this check. cloudflared still has to exist, and everything after this
    * runs unchanged.
    */
-  attach?: boolean;
+  publishRunning?: boolean;
 }): Promise<Preflight> {
   const platform = opts.platform ?? process.platform;
   const check = opts.check ?? ((d: string) => checkState(d));
   const log = opts.log ?? warn;
 
   const state = await check(opts.dir);
-  if (state.kind === "running" && opts.attach !== true) {
+  if (state.kind === "running" && opts.publishRunning !== true) {
     return {
       ok: false,
       message: [
@@ -62,7 +62,7 @@ export async function preflight(opts: {
         "  or publish the one already running, without stopping it — this adds",
         "  no second herdr connection and no second notifier:",
         "",
-        "    `paddock tunnel --attach`",
+        "    `paddock tunnel --publish-running`",
       ].join("\n"),
     };
   }
