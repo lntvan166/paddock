@@ -59,12 +59,38 @@ const CONTROL_KEYS: ReadonlyArray<{ key: NavKey; label: string; hint: string }> 
   { key: "ctrl-d", label: "^D", hint: "End of input" },
   { key: "ctrl-z", label: "^Z", hint: "Suspend" },
   { key: "ctrl-l", label: "^L", hint: "Clear screen" },
+  { key: "ctrl-a", label: "^A", hint: "Start of line" },
+  { key: "ctrl-e", label: "^E", hint: "End of line" },
+  { key: "ctrl-u", label: "^U", hint: "Clear line" },
+  { key: "ctrl-w", label: "^W", hint: "Delete word" },
 ];
+
+/**
+ * What an AGENT pane may send.
+ *
+ * One key, and it is a herdr limit rather than a paddock preference: there is
+ * no `agent.send_text`, so an agent cannot receive a control character the way
+ * a shell can, and `agent.send_keys` accepts `C-c` and no other control key.
+ *
+ * It is also the only one that would mean anything. `^U` and `^W` act on a
+ * shell's readline buffer; an agent's prompt has no such buffer to edit.
+ */
+const AGENT_CONTROL_KEYS: ReadonlyArray<{ key: NavKey; label: string; hint: string }> =
+  CONTROL_KEYS.filter((k) => k.key === "ctrl-c");
 
 export interface KeypadProps {
   pad: KeypadPref;
   busy: boolean;
   onPress: (key: NavKey) => void;
+  /**
+   * Which control keys this pane can actually accept.
+   *
+   * `"shell"` gets all eight, because a pane with no harness takes control
+   * characters on the text path. `"agent"` gets `^C` alone — see
+   * `AGENT_CONTROL_KEYS`. The caller knows which it is; the pad does not
+   * guess, and must not, because guessing wrong renders a button that errors.
+   */
+  context?: "shell" | "agent";
 }
 
 /**
@@ -74,7 +100,8 @@ export interface KeypadProps {
  * is exactly the asymmetry §16.3 calls out: same control, different verb,
  * decided by the pane's `harness`.
  */
-export function Keypad({ pad, busy, onPress }: KeypadProps) {
+export function Keypad({ pad, busy, onPress, context = "agent" }: KeypadProps) {
+  const controls = context === "shell" ? CONTROL_KEYS : AGENT_CONTROL_KEYS;
   if (pad === "hidden") return null;
   return (
     <div className="term-keys" data-keypad={pad} role="group" aria-label="Send key">
@@ -108,7 +135,7 @@ export function Keypad({ pad, busy, onPress }: KeypadProps) {
       )}
       {pad === "full" && (
         <div className="term-keys-control">
-          {CONTROL_KEYS.map((k) => (
+          {controls.map((k) => (
             <Button
               key={k.key} type="button" variant="outline" className="term-key term-key-sm term-key-ctrl"
               data-key={k.key}

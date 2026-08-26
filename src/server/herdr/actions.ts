@@ -2,19 +2,23 @@ import { request } from "@server/herdr/socket";
 import type {
   HerdrAgentManifests, HerdrPaneRead, HerdrTabCreated, HerdrWorkspaceCreated,
 } from "@shared/herdr-api";
-import { HERDR_KEY, type AgentState, type NavKey } from "@shared/types";
+import { CTRL_CHAR, type AgentState, type NavKey } from "@shared/types";
 
 /**
- * A `NavKey` in the spelling herdr forwards to tmux.
+ * Whether this key has to travel as text, and the byte it becomes.
  *
- * The nav keys pass through unchanged — herdr has accepted those names since
- * 0.8.0. The control keys are translated, because tmux spells them `C-c` and
- * a button labelled `C-c` on a phone reads as noise. One map, at this
- * boundary, is the whole reason `HERDR_KEY` lives in shared types rather than
- * being spelled twice.
+ * herdr's `send_keys` enforces an allowlist its schema does not advertise —
+ * `up down left right enter esc escape tab space backspace C-c f1 f2`, and
+ * nothing else. Everything past that is `invalid_key`. `send_text` forwards
+ * bytes without inspecting them, so a control key reaches the pane as its
+ * control character instead.
+ *
+ * `C-c` is the one key both doors accept. It goes through THIS door with the
+ * rest, so a single mechanism serves the whole row and there is no key whose
+ * behaviour depends on which path it happened to take.
  */
-function wireKey(key: NavKey): string {
-  return HERDR_KEY[key] ?? key;
+function ctrlChar(key: NavKey): string | undefined {
+  return CTRL_CHAR[key];
 }
 
 
@@ -504,7 +508,24 @@ export function createActions(socketPath: string): HerdrActions {
     },
 
     async sendNavKey(target, key) {
-      await request(socketPath, "agent.send_keys", { target, keys: [wireKey(key)] });
+      // An AGENT pane keeps the KEY path, and cannot do otherwise: herdr has
+      // no `agent.send_text` — its agent verbs are `agent.prompt` (which
+      // submits a reply) and `agent.send_keys`. So the text trick the pane
+      // path uses is unavailable here.
+      //
+      // `C-c` is the one control key `send_keys` accepts, and it is the one
+      // control act that means anything against an agent anyway: the
+      // line-editing keys act on a shell's readline, which an agent's prompt
+      // does not have. Any other control key is refused below rather than
+      // silently sent as a literal name herdr would reject.
+      if (key === "ctrl-c") {
+        await request(socketPath, "agent.send_keys", { target, keys: ["C-c"] });
+        return;
+      }
+      if (CTRL_CHAR[key] !== undefined) {
+        throw new Error(`${key} is not available on an agent pane; only ctrl-c is`);
+      }
+      await request(socketPath, "agent.send_keys", { target, keys: [key] });
     },
 
     async sendReply(target, text) {
@@ -519,7 +540,14 @@ export function createActions(socketPath: string): HerdrActions {
     },
 
     async sendPaneKey(paneId, key) {
-      await request(socketPath, "pane.send_keys", { pane_id: paneId, keys: [wireKey(key)] });
+      // A control key is a BYTE on the text path; everything else is a named
+      // key on the key path. See `ctrlChar` for why the vocabulary splits.
+      const ch = ctrlChar(key);
+      if (ch !== undefined) {
+        await request(socketPath, "pane.send_text", { pane_id: paneId, text: ch });
+        return;
+      }
+      await request(socketPath, "pane.send_keys", { pane_id: paneId, keys: [key] });
     },
 
     async waitUntilUnblocked(target, timeoutMs) {
