@@ -55,3 +55,17 @@ src/server/embedded.ts
 # `git add -A` puts that in a public repo. Screenshots for docs are taken from
 # `--demo` and copied into docs/images deliberately.
 .playwright-mcp/
+
+# The same privacy reason, one directory up. A Playwright screenshot taken with
+# an explicit filename lands in the REPO ROOT rather than in `.playwright-mcp/`,
+# so the rule above does not cover it — and one did reach a commit: a settings
+# screenshot carrying a real Telegram chat id and a real tunnel hostname. It was
+# caught before any push and removed from history, but `make check-clean` cannot
+# be the net here, because it greps TEXT and this is pixels.
+#
+# Root-anchored on purpose: `docs/images/` and `public/` hold the project's own
+# images and are untouched.
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
