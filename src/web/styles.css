@@ -801,8 +801,7 @@ body {
    responsive sizing. Scoped to every `.card-row` input rather than just that
    one field, so Chat id / Cooldown / Public URL get the same breathing
    room instead of each needing its own rule. */
-.card-row input:not([type="checkbox"]),
-.card-row select {
+.card-row input:not([type="checkbox"]) {
   min-height: 2.75rem;
   min-width: 7rem;
   padding: 0 0.6rem;
@@ -816,6 +815,51 @@ body {
   border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--fg);
+}
+
+/* ── A settings row's value, not a form field ─────────────────────────────
+   The row already says "Theme" on its left. A bordered box repeats that
+   framing — you get a label AND a field, where the value alone is the answer —
+   and it puts a second heavy rectangle directly above Live updates' filled
+   Segmented control, so the two compete.
+
+   So: no border, no ground, the value in the dim voice, and a chevron. The
+   same treatment `.spaces-refresh` takes for the same reason — a value that
+   happens to be tappable, where the accent is spent on the control that MAKES
+   something rather than the one that reports a choice.
+
+   `font-size: 16px` is NOT free to change, and it is the one thing to leave
+   alone here. iOS Safari zooms the viewport when a focused field is under
+   16px and leaves you zoomed afterwards; a select is subject to that rule
+   exactly as an input is. The 13px prose step would sit better beside the
+   label and is not available.
+
+   The chevron is drawn from two gradients in `currentColor` rather than a
+   background-image or a codepoint: it follows the theme with no per-theme
+   rule, and `appearance: none` is what removes the platform's own arrow so
+   there are not two. Focus is untouched — the shared `:focus-visible` rule
+   already lists `select`, so the ring still lands on this.
+
+   This is the app's ONLY `.card-row select`. If a second one arrives that is
+   genuinely a form field rather than a settings value, give it a class rather
+   than widening this rule back out. */
+.card-row select {
+  min-height: 2.75rem;
+  padding: 0 1.1rem 0 0;
+  font-size: 16px;
+  text-align: right;
+  border: 0;
+  color: var(--fg-dim);
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: transparent;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 9px) center, calc(100% - 4px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
 }
 
 /* A one-line explanation below a `.card-row`. Replaces both `.settings-hint`
