@@ -448,6 +448,78 @@ body {
   padding: 0 var(--gutter) 0.75rem;
 }
 
+/* ── The bottom tab bar ──────────────────────────────────────────────────
+   Three destinations, labelled, within thumb reach.
+
+   Chrome, so it sits OUTSIDE `.screen-body` and never scrolls — the same
+   `flex: none` treatment the header gets, at the other end of the shell.
+
+   `padding-bottom` carries the safe-area inset because this is now the
+   bottom-most element on the screen: the shell's own inset would sit BELOW
+   the bar's ground, leaving a strip of page colour under it on a phone with a
+   home indicator. `.screen:has(.tab-bar)` drops the shell's copy so the two
+   cannot double up. */
+.tab-bar {
+  flex: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.screen:has(.tab-bar) { padding-bottom: 0; }
+
+.tab-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.5rem 0.25rem;
+  /* Comfortably past the 44px floor even before the safe-area inset: this is
+     the control you aim at one-handed, walking. */
+  min-height: 3.25rem;
+  justify-content: center;
+  color: var(--fg-dim);
+  text-decoration: none;
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+
+/* Colour AND weight, never colour alone — and `aria-current` in the markup
+   carries it to a screen reader, which neither of these reaches. */
+.tab-item[data-current="true"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tab-glyph-wrap { position: relative; display: inline-flex; }
+.tab-glyph { width: 22px; height: 22px; }
+.tab-label { line-height: 1.2; }
+
+/* The needs-you count. --danger, which this palette spends on exactly one
+   idea: an agent that has stopped and needs a person. */
+.tab-badge {
+  position: absolute;
+  bottom: 60%;
+  left: 60%;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.25rem;
+  border-radius: var(--r-full);
+  background: var(--danger);
+  color: #fff;
+  font-family: var(--mono);
+  /* --t-xs, the step this scale reserves for "counts and badges" — which is
+     literally what this is, and the one place that description fits exactly. */
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 1rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Message bands ───────────────────────────────────────────────────────
    `ConnectionBanner`, `ReleaseBanner`, `InstallHint`: three components that
    had written out the same band by hand as `px-3 py-2 text-[11px]`, which is
@@ -1572,9 +1644,9 @@ body {
    holds now: the shell owns that inset in its own block, and this selector is
    `.settings > .screen-body`, which cannot collide with it. Adding the inset
    back here would double it. */
-.settings > .screen-body {
-  padding-bottom: 5.5rem;
-}
+/* Nothing reserved. The save bar is a flex sibling now rather than a fixed
+   overlay, so it cannot cover the last field and there is nothing to clear —
+   see `.settings-save-bar`. */
 
 .settings-header {
   display: flex;
@@ -1793,17 +1865,25 @@ body {
   border: 1px solid var(--border);
 }
 
+/* A flex child of the shell, NOT `position: fixed`.
+   It used to be fixed at `bottom: 0`, with `.screen-body` reserving 5.5rem so
+   the bar could never cover the last field. Both of those stop working once
+   `TabBar` exists: a fixed bar at bottom 0 lands directly ON the tabs, and the
+   reservation became 88px of permanent dead space on top of the bar's own —
+   about 142px of a 844px phone, spent on nothing, whenever the form is clean.
+
+   Stacked instead: scroller, then save bar, then tabs. Nothing overlaps,
+   nothing is reserved, and the bar takes space only while it exists. The
+   safe-area inset belongs to the tab bar below it now — see `.tab-bar` — so
+   this no longer carries its own; two elements both padding for the home
+   indicator is how you get a double gap. */
 .settings-save-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.75rem var(--gutter);
-  padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--border);
   color: var(--fg);

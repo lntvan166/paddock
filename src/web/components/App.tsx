@@ -21,6 +21,7 @@ import {
   useAgentRoute, useSettingsRoute, useSpaceRoute, useSpacesRoute,
 } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
+import { TabBar } from "@web/components/TabBar";
 import { UpdateBar } from "@web/components/UpdateBar";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
 import { dismissedRelease, dismissRelease, shouldShowRelease } from "@web/release-notice";
@@ -30,7 +31,7 @@ import { closeFor, useNotificationSweep } from "@web/notifications";
 export function App() {
   const {
     agents, hostId, connected, lastMessageAt, updateAvailable, latestKnown, managedBy,
-    treeStaleAt, spacesAvailable, connect,
+    treeStaleAt, connect,
   } = useStore();
   const [now, setNow] = useState(() => Date.now());
   // Expanded by default. Collapsed, idle agents render as chips that carry a
@@ -465,14 +466,7 @@ export function App() {
             one element now that the header is chrome. They never nest, so the
             0.55 opacity cannot compound. */}
         <div {...staleAttrs(stale)}>
-          <HostHeader
-            hostId={hostId} agents={agents}
-            onOpenSettings={() => { location.hash = "#/settings"; }}
-            // `null` when this server has no session tree to read — `--demo`,
-            // most of all. The alternative shipped: a header control whose only
-            // possible outcome was the Spaces screen's own error state.
-            onOpenSpaces={spacesAvailable ? () => { location.hash = "#/spaces"; } : null}
-          />
+          <HostHeader hostId={hostId} agents={agents} />
         </div>
       </div>
 
@@ -551,6 +545,11 @@ export function App() {
           `.screen-body` is a flex column. */}
       <BuildStamp />
       </div>
+      {/* Chrome at the bottom, outside the scroller, so the three destinations
+          stay in thumb reach at any scroll position. Counted with `sectionFor`
+          here — the one rule — so the badge cannot contradict the header
+          sentence above it or the section headings below. */}
+      <TabBar current="agents" needsYou={groups["needs-you"].length} />
     </main>
   );
 }

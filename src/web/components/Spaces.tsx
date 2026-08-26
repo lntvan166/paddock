@@ -1,7 +1,9 @@
+import { sectionFor } from "@shared/types";
 import { plural } from "@web/format";
 import { useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
+import { TabBar } from "@web/components/TabBar";
 import { sortSpaces, treeCwds } from "@web/components/space-sort";
 import { SpaceRow } from "@web/components/SpaceRow";
 import { useSpaceTree } from "@web/components/use-space-tree";
@@ -30,7 +32,11 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
    *  test can observe the navigation instead of mutating the hash. */
   navigate?: (hash: string) => void;
 }) {
-  const { spacesAvailable } = useStore();
+  const { spacesAvailable, agents } = useStore();
+  // `sectionFor`, the one rule — never re-derived from raw state. This is the
+  // whole reason the badge earns its place: from here, a newly blocked agent
+  // was previously invisible.
+  const needsYou = agents.filter((a) => sectionFor(a) === "needs-you").length;
   const { tree, error, refresh } = useSpaceTree(load);
   const [now, setNow] = useState(() => Date.now());
 
@@ -89,7 +95,44 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
       </header>
 
       <div className="screen-body">
-      {error !== null && <p className="error" role="alert">{error}</p>}
+      {/* This server has no herdr session to read, so there is no tree and
+          never will be for this process — `--demo` above all.
+
+          SAID, not errored, and not hidden. The Spaces control used to be
+          REMOVED from the header in this case, on the reasoning that "an
+          absent control is worse than a working one and far better than a
+          broken one" — which was right about the broken part. But navigation
+          moved to `TabBar`, and a three-tab bar cannot drop to two: three is
+          the floor, and Apple is explicit that a tab must not be hidden when
+          its content is unavailable, and that an empty section should explain
+          why instead.
+
+          So the objection is answered where it actually lived — the
+          destination is no longer broken. `spacesAvailable` is the same
+          server-stated capability `canCreate` is gated on; never a demo flag,
+          never a hostname, never a device check.
+
+          Gated on `tree === null` as well, deliberately: the capability is
+          what the server SAYS, and a tree that actually loaded is a tree
+          regardless. Without that half this note would replace a perfectly
+          good list whenever the snapshot had not yet mentioned the
+          capability — `trackSpaces` leaves `undefined` alone precisely
+          because "a frame that does not say is not a frame that denies".
+
+          AN ERROR WINS, which is why it is tested first. "this paddock has no
+          herdr session" and "the read failed" are different claims and must
+          not look alike — the same rule `App.tsx` states for "no such pane"
+          versus "herdr did not answer". Ordered the other way round, a real
+          `socket refused` was rendered as a calm note about demo mode, which
+          is precisely the swallowed error this repo forbids. Caught by
+          `tests/spaces-screen.test.tsx`, not by review. */}
+      {error !== null ? (
+        <p className="error" role="alert">{error}</p>
+      ) : !spacesAvailable && tree === null ? (
+        <p className="dash-note">
+          This paddock has no herdr session to read, so there are no spaces to show.
+        </p>
+      ) : null}
 
       {tree !== null && (
         <ul className="spaces">
@@ -110,6 +153,7 @@ export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, 
         </footer>
       )}
       </div>
+      <TabBar current="spaces" needsYou={needsYou} />
     </main>
   );
 }

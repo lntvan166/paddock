@@ -1,7 +1,10 @@
 /**
- * Twelve hand-written glyphs: one per settings card, the two header controls
- * in `HostHeader` — Spaces and Settings — and the terminal's own two,
+ * Thirteen hand-written glyphs: one per settings card, the three in the
+ * bottom `TabBar` — Agents, Spaces and Settings — and the terminal's own two,
  * `KeyboardIcon` and `BackspaceIcon`.
+ *
+ * Spaces and Settings used to be the two controls in `HostHeader`'s top-right
+ * corner; they now label tabs instead, and `AgentsIcon` joined them.
  *
  * Icon libraries are tens of kilobytes of tree-shaken JavaScript for what is a
  * few hundred bytes of path data here, on a project whose bundle is deliberately
@@ -74,6 +77,17 @@ export function PlugIcon({ className }: IconProps) {
  * Four cells rather than a terminal outline: it has to be distinguishable from
  * `TerminalIcon`, and what the screen shows is a grid of spaces, not a shell.
  */
+/** The agent list. Three rows with a leading marker each — the dashboard's own
+ *  shape, which is what the tab opens. */
+export function AgentsIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <circle cx="4.5" cy="6" r="1.4" /><circle cx="4.5" cy="12" r="1.4" /><circle cx="4.5" cy="18" r="1.4" />
+    </Svg>
+  );
+}
+
 export function SpacesIcon({ className }: IconProps) {
   return (
     <Svg className={className}>

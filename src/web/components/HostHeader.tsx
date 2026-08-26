@@ -1,6 +1,6 @@
 import { sectionFor, type Agent, type Section } from "@shared/types";
 import { Mark } from "@web/components/Mark";
-import { SettingsIcon, SpacesIcon } from "@web/components/ui/icons";
+
 
 /**
  * The host label is only worth screen space when it distinguishes something.
@@ -13,46 +13,22 @@ import { SettingsIcon, SpacesIcon } from "@web/components/ui/icons";
 const DEFAULT_HOST_ID = "local";
 
 export function HostHeader({
-  hostId, agents, onOpenSettings, onOpenSpaces,
+  hostId, agents,
 }: {
   hostId: string | null;
+  /**
+   * Still required, and still counted with `sectionFor` — see the summary
+   * below. The header no longer NAVIGATES anywhere: `onOpenSettings` and
+   * `onOpenSpaces` moved to `TabBar`, which puts both destinations within
+   * thumb reach and gives them visible labels.
+   *
+   * Their old doc comments argued at length that they must be REQUIRED rather
+   * than optional, because an optional callback makes a dropped entry point a
+   * silent no-op instead of a compile error. That reasoning was right and is
+   * not lost: `TabBar`'s destinations are plain `href`s to the hashes the
+   * router already owns, so there is no callback left to drop.
+   */
   agents: Agent[];
-  /**
-   * REQUIRED, not optional. This is the only route into `#/settings`, and
-   * this branch already lost that entry point once. Optional made the
-   * callback's absence a type-checked non-event: a render that forgot to pass
-   * it compiled, and the gear silently did nothing. Tests that do not care
-   * about navigation pass `() => {}` — one explicit character of noise, in
-   * exchange for the compiler catching a dropped entry point.
-   *
-   * Follows the same "component takes a callback, the hash write lives in
-   * App.tsx" convention as AgentCard/AgentRow's `onSelect`.
-   */
-  onOpenSettings: () => void;
-  /**
-   * The only route into `#/spaces`, or `null` when there is no tree to show.
-   *
-   * REQUIRED, like `onOpenSettings`, for the same reason: an optional prop
-   * makes a dropped call site a silent no-op instead of a compile error. But
-   * `null` is a legitimate value, and it is the CAPABILITY answer — in `--demo`
-   * there is no herdr session, `GET /api/spaces` 404s honestly, and the button
-   * rendered here unconditionally was a control that always errored, in the
-   * mode README screenshots come from. `routes.ts` records the same defect
-   * class for `/ack`'s Dismiss button.
-   *
-   * Derived from the capability the server states, NEVER from a demo flag and
-   * never from anything about the device. An absent control is worse than a
-   * working one and far better than a broken one.
-   */
-  onOpenSpaces: (() => void) | null;
-  /**
-   * `latestKnown` was here, REQUIRED so that an edit which stopped passing it
-   * would be a type error rather than a silently absent line. The line it fed
-   * has moved to `ReleaseBanner`, so the prop is gone rather than left required
-   * and unrendered — a required prop nothing reads is the same trap pointing
-   * the other way. The guarantee now lives in `App.tsx`, which is the one
-   * caller that has the value.
-   */
 }) {
   // Counted by SECTION, never by raw state. Deriving these from `state` was how
   // the header came to read "2 needs you" over sections reading "NEEDS YOU · 1"
@@ -96,59 +72,16 @@ export function HostHeader({
             read, it is skipped, and an operator a version behind did not know.
             It is now `ReleaseBanner`, shown once and dismissible. Do not add a
             second copy here: one fact, one channel. */}
-        {/* Spaces and Settings, grouped in one cluster.
-            A bare `justify-between` row with THREE children strands the
-            middle one at the row's exact horizontal centre — the header's
-            most prominent line spending its centre on a control that has
-            nothing to do with the title beside it (§16.5). Wrapping the pair
-            gives the row two ends: the title owns the left, the controls
-            read as one cluster on the right. */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Offered only when the server says it can read a session tree —
-              see `onOpenSpaces` above.
-
-              Same shape and focus treatment as the settings button beside it —
-              a real button, not a hover-revealed affordance, since this is the
-              only route into #/spaces and must be reachable by touch on the
-              first tap.
-
-              A DRAWN glyph, not a codepoint. This was `▦` (U+25A6), whose
-              coverage in mobile system fonts is not something paddock gets to
-              assume — and a tofu box on the only route into #/spaces is a
-              button whose label is a rendering failure. `aria-label` carries
-              the name either way; the icon is `aria-hidden`. */}
-          {onOpenSpaces !== null && (
-            <button
-              type="button"
-              className="host-spaces-btn tap shrink-0"
-              aria-label="Spaces"
-              onClick={onOpenSpaces}
-            >
-              <SpacesIcon className="host-btn-glyph" />
-            </button>
-          )}
-          {/* A real button, not a hover-revealed affordance — the only route
-              into #/settings, so it must be reachable by touch on the first
-              tap, not discoverable only with a mouse.
-
-              A DRAWN glyph, like its neighbour. This was `⚙` (U+2699) at a
-              hand-picked 1rem, one of two controls in the same cluster (§16.5)
-              rendering its label by two different systems — and a codepoint
-              whose weight and baseline vary by platform in a way a 24px path
-              does not. */}
-          <button
-            type="button"
-            className="host-settings-btn tap shrink-0"
-            aria-label="Settings"
-            onClick={onOpenSettings}
-          >
-            <SettingsIcon className="host-btn-glyph" />
-          </button>
-        </div>
+        {/* Spaces and Settings USED to sit here, as two unlabelled 44px glyphs
+            in the top-right corner — the least reachable point on a phone held
+            in one hand, on a screen designed to be read one-handed. They are
+            tabs now, at the bottom, with labels. Do not put a navigation
+            control back in this corner. */}
       </div>
       {/* paddock's own sentence about the list, so sans — the counts inside it
-          are part of the sentence, not a data readout. */}
-      {/* `host-summary`, not `row-state`: this is a SENTENCE, and the scale
+          are part of the sentence, not a data readout.
+
+          `host-summary`, not `row-state`: this is a SENTENCE, and the scale
           reserves --t-xs for "eyebrows, ages, counts, badges: metadata" and
           --t-md for "anything you read". It was set one step below what the
           app's own rule prescribes, which is why the line that says how many

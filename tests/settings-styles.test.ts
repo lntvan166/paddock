@@ -91,31 +91,34 @@ test("the terminal font size still falls back to the responsive clamp", () => {
     .toBe("var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))");
 });
 
-test("the save bar clears the home indicator", () => {
-  // A fixed bar with no safe-area padding puts Save under the iOS gesture bar.
-  expect(declaration(".settings-save-bar", "padding-bottom")).toContain("env(safe-area-inset-bottom)");
+test("the bottom-most chrome clears the home indicator", () => {
+  // The guarantee is unchanged — nothing tappable may sit under the iOS
+  // gesture bar — but it moved with the layout. The save bar used to be
+  // `position: fixed` at the viewport bottom and carried the inset itself.
+  // `TabBar` is now the bottom-most element on every top-level screen, so the
+  // inset belongs to it; two elements both padding for the home indicator is
+  // how you get a double gap.
+  expect(declaration(".tab-bar", "padding-bottom")).toContain("env(safe-area-inset-bottom");
 });
 
-test("reserving space for the bar does not cost the page its safe-area inset", () => {
-  // Two separate paddings, and the original defect was them being one.
+test("the save bar cannot overlap the tabs, and reserves nothing to avoid it", () => {
+  // This replaces a test that asserted a 5.5rem reservation on the scroller.
+  // That reservation existed because the bar was `position: fixed` at
+  // `bottom: 0` — which, once `TabBar` exists, puts it directly ON the tabs.
+  // Two pinned bars at the same edge is not something padding can fix.
   //
-  // The clearance that stops the fixed save bar covering the last field now
-  // sits on the SCROLLING REGION. It has to: `.settings` is a `.screen`, and a
-  // screen is a fixed flex column whose own bottom padding would shorten the
-  // scroller rather than reserve space inside it — the last field would end up
-  // under the bar exactly as if nothing had been reserved.
-  expect(declaration(".settings > .screen-body", "padding-bottom")).toContain("5.5rem");
+  // So the bar is a flex sibling now: scroller, save bar, tabs, stacked. The
+  // guarantee the old test protected — the bar never covers the last field —
+  // holds by construction rather than by arithmetic, and the 88px that used to
+  // be reserved unconditionally (on top of the bar's own height, on a screen
+  // that is usually clean) is given back.
+  const body = ruleBody(".settings-save-bar");
+  expect(body).not.toContain("position: fixed");
+  expect(body).toContain("flex: none");
 
-  // And the home-indicator inset is the SHELL's, so reserving the bar's height
-  // can no longer overwrite it — which is what the rule this replaced was
-  // guarding against when both lived on the same element. Asserted here rather
-  // than only in a shell test because this pairing is the thing that broke.
-  expect(declaration(".screen", "padding-bottom")).toContain("env(safe-area-inset-bottom");
-
-  // The two must not both carry the inset, or a phone with a home indicator
-  // gets it twice and the last field floats above the bar by a stray 34px.
-  expect(declaration(".settings > .screen-body", "padding-bottom"))
-    .not.toContain("safe-area-inset-bottom");
+  // And nothing is reserved for it any more. A stale reservation would be
+  // silent dead space at the bottom of every Settings screen.
+  expect(() => ruleBody(".settings > .screen-body")).toThrow();
 });
 
 test("the save bar's button is a full touch target", () => {

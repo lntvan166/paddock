@@ -14,7 +14,9 @@ afterEach(async () => { await unmount(); });
 const NAMES = [
   "MonitorIcon", "ActivityIcon", "TerminalIcon", "BellIcon",
   "SendIcon", "LinkIcon", "RefreshIcon", "PlugIcon",
-  "SpacesIcon", "SettingsIcon", "KeyboardIcon", "BackspaceIcon",
+  // `AgentsIcon` joined when navigation moved to the bottom `TabBar`:
+  // Agents, Spaces and Settings are the three destinations now.
+  "AgentsIcon", "SpacesIcon", "SettingsIcon", "KeyboardIcon", "BackspaceIcon",
 ] as const;
 
 test("every icon the module exports is in the list the tests below walk", async () => {
@@ -24,7 +26,7 @@ test("every icon the module exports is in the list the tests below walk", async 
   expect(exported).toEqual([...NAMES].sort());
 });
 
-test("there is one glyph per settings card, plus the two header controls", () => {
+test("there is one glyph per settings card, plus the three tab destinations", () => {
   for (const n of NAMES) expect(typeof (icons as Record<string, unknown>)[n]).toBe("function");
 });
 

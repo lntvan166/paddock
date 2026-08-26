@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { sectionFor } from "@shared/types";
+import { useStore } from "@web/store";
 import type { HealthBody, NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 import {
   readPrefs, themeAttr, writePref,
@@ -12,6 +14,7 @@ import { PushSection } from "@web/components/settings/PushSection";
 import { InfoSection } from "@web/components/settings/InfoSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
+import { TabBar } from "@web/components/TabBar";
 
 interface SettingsProps {
   onBack: () => void;
@@ -27,6 +30,9 @@ interface SettingsProps {
  * is not.
  */
 export function Settings({ onBack }: SettingsProps) {
+  // Counted with `sectionFor`, the one rule. From this screen a newly blocked
+  // agent used to be invisible entirely.
+  const needsYou = useStore((s) => s.agents.filter((a) => sectionFor(a) === "needs-you").length);
   const [prefs, setPrefs] = useState<Prefs>(() => readPrefs());
 
   const [view, setView] = useState<SettingsView | null>(null);
@@ -457,6 +463,11 @@ export function Settings({ onBack }: SettingsProps) {
           configured. A form that never loaded cannot be saved — and now
           there is no Save button rendered at all until something is dirty. */}
       <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} />
+      {/* Below the save bar in the markup, and below it on screen: the save bar
+          acts on THIS view, the tabs leave it. Apple's rule — a tab bar
+          navigates, a toolbar acts on the current screen — is why the two are
+          different objects rather than one row of buttons. */}
+      <TabBar current="settings" needsYou={needsYou} />
     </main>
   );
 }
