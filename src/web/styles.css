@@ -147,6 +147,18 @@
      the gutter was introduced to remove. */
   --edge: 2px;
 
+  /* The inset INSIDE a control — a button's text from its border, a value from
+     its field's edge. Distinct from --gutter, which is where a BAND starts
+     against the screen; a control sits inside a band and cannot take the same
+     inset without its label touching its own edge.
+
+     One value, because there were five: 9.6px on inputs and small buttons,
+     11.2px on a prompt option, 12.8px on the update bar's button, 14.4px on
+     the settings and push buttons. Each was reasonable alone, and together
+     they meant two buttons a thumb's width apart wore different amounts of
+     air. */
+  --pad-control: 0.75rem;
+
   /* ── Radius ─────────────────────────────────────────────────────────────
      Two steps and a pill. There were ten values.
 
@@ -804,7 +816,7 @@ body {
 .card-row input:not([type="checkbox"]) {
   min-height: 2.75rem;
   min-width: 7rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   /* 16px is not a taste decision. iOS Safari zooms the viewport when a focused
      input's font-size is below 16px, and leaves you zoomed afterwards — which
      is what an operator hits every time they tap the Telegram token or the
@@ -1086,12 +1098,16 @@ body {
   }
 }
 
+/* No vertical padding, for the reason `.term-controls` gives below: the back
+   control is already a 2.75rem tap target, so 44px IS this bar's height. The
+   0.75rem it added top and bottom made a 69px title bar on a screen whose job
+   is showing the agent's output. */
 .term-header {
   flex: none;
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem var(--gutter);
+  padding: 0 var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1454,22 +1470,24 @@ body {
 .term-key:active { background: var(--border); }
 .term-key:disabled { opacity: 0.5; }
 
-/* Matches `.term-keys` above it, with a little more at the very bottom: this
-   is the last band before the screen edge, and the extra is thumb clearance
-   rather than rhythm. */
+/* The input is already 2.75rem, so no padding is needed above it — same rule
+   as `.term-header` and `.term-controls`. What is kept is the 0.5rem BELOW:
+   this is the last band before the screen edge, and on a phone with no home
+   indicator `env(safe-area-inset-bottom)` is 0, which would sit the field flat
+   against the glass. That half is thumb clearance, not rhythm. */
 .term-reply {
   flex: none;
   display: flex;
   gap: 0.5rem;
   background: var(--surface);
-  padding: 0.5rem var(--gutter) 0.75rem;
+  padding: 0 var(--gutter) 0.5rem;
 }
 
 .term-reply input {
   flex: 1;
   min-width: 0;
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   /* 16px for the same reason as `.card-row input`: below it, iOS zooms on
      focus. This is the field an operator types a reply to a blocked agent
      into, so a zoom here lands mid-conversation. */
@@ -1486,7 +1504,7 @@ body {
 
 .term-reply button {
   min-height: 2.75rem;
-  padding: 0 0.9rem;
+  padding: 0 var(--pad-control);
   border: 0;
   /* 0.4rem, matching every other control in the app. Still FILLED rather than
      bordered like `.settings-actions button`: this is the committing action,
@@ -1677,7 +1695,7 @@ body {
 
 .term-option {
   min-height: 2.75rem;
-  padding: 0.5rem 0.7rem;
+  padding: 0.5rem var(--pad-control);
   border: 1px solid var(--border);
   /* 0.4rem to match `.card-row input` and the rest of the card vocabulary.
      0.5rem here was the terminal's own radius, from before that vocabulary
@@ -1732,7 +1750,7 @@ body {
 .term-selected {
   flex: none;
   margin: 0;
-  padding: 0.4rem 0.7rem;
+  padding: 0.4rem var(--pad-control);
   font-size: var(--t-xs);
   color: var(--fg);
   overflow-wrap: anywhere;
@@ -1764,7 +1782,7 @@ body {
 
 .update-bar button {
   min-height: 2.75rem;
-  padding: 0 0.8rem;
+  padding: 0 var(--pad-control);
   border: 0;
   border-radius: var(--r-sm);
   /* An opacity treatment rather than a palette colour: this is a scrim over
@@ -1962,8 +1980,18 @@ body {
   /* 4.5rem, not 4rem: the 16px below needs a touch more room for a two-digit
      value plus padding. */
   width: 4.5rem;
+  /* CENTRED. The value here is one or two digits in a 72px box, and left
+     aligned it sat against the border with the rest of the field empty —
+     which reads as a broken input rather than a small number. Reported as
+     "the number box in wait…s is missing padding": the padding was there, the
+     alignment was what left the gap all on one side.
+
+     `.card-row input` is deliberately NOT centred. Those hold a URL, a chat id
+     and a millisecond count — values long enough to fill their field, where
+     centring a value that sometimes wraps and sometimes does not is worse. */
+  text-align: center;
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   /* 16px: iOS zooms a focused input below it, same as `.card-row input`.
      This rule declared `font-size: 16px` here AND `font-size: 0.8rem` as its
      last property, so the second one won and the field zoomed on every tap —
@@ -2001,7 +2029,7 @@ body {
 
 .settings-actions button {
   min-height: 2.75rem;
-  padding: 0 0.9rem;
+  padding: 0 var(--pad-control);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--surface);
@@ -2070,7 +2098,7 @@ body {
   position: sticky;
   top: 0.5rem;
   margin: 0.5rem 0;
-  padding: 0.55rem 0.8rem;
+  padding: 0.5rem var(--pad-control);
   border-radius: var(--r-sm);
   background: var(--surface);
   border: 1px solid var(--ok);
@@ -2854,7 +2882,7 @@ body {
 
 .row-actions-rename input {
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2883,7 +2911,7 @@ body {
 
 .row-actions-row > button {
   min-height: 2.75rem;
-  padding: 0 0.9rem;
+  padding: 0 var(--pad-control);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2971,7 +2999,7 @@ body {
 .create-form input,
 .create-form select {
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -2996,7 +3024,7 @@ body {
 
 .create-cwds > button {
   min-height: 2.75rem;
-  padding: 0 0.6rem;
+  padding: 0 var(--pad-control);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -3057,7 +3085,7 @@ body {
 .launch-failed > button {
   align-self: flex-start;
   min-height: 2.75rem;
-  padding: 0 0.7rem;
+  padding: 0 var(--pad-control);
   background: none;
   border: 1px solid var(--danger);
   border-radius: var(--r-sm);
@@ -3165,7 +3193,7 @@ body {
 .push-device-btn {
   min-height: 2.75rem;
   justify-self: start;
-  padding: 0 0.9rem;
+  padding: 0 var(--pad-control);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--surface);
