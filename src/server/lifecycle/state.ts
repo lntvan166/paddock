@@ -17,12 +17,25 @@ export interface Probe {
   argsOf(pid: number): string | null;
 }
 
-export type StateCheck =
+/**
+ * Anything tracked by pid in a state file: a serving paddock, a running
+ * tunnel. `args` is the `ps` identity, and BOTH fields are load-bearing —
+ * `checkRecord` refuses to call a record live on the pid alone, because pids
+ * are reused and the reused one is never the process you meant.
+ */
+export interface TrackedRecord {
+  pid: number;
+  args: string;
+}
+
+export type Check<T extends TrackedRecord> =
   | { kind: "none" }
   | { kind: "unreadable"; error: string }
-  | { kind: "stale"; state: PaddockState }
-  | { kind: "mismatch"; state: PaddockState; actual: string | null }
-  | { kind: "running"; state: PaddockState };
+  | { kind: "stale"; state: T }
+  | { kind: "mismatch"; state: T; actual: string | null }
+  | { kind: "running"; state: T };
+
+export type StateCheck = Check<PaddockState>;
 
 export function stateFile(dir: string): string {
   // NOT paddock.pid — a .pid file conventionally holds one integer, and
@@ -74,9 +87,21 @@ export const systemProbe: Probe = {
   argsOf: capturedArgs,
 };
 
-export async function writeState(dir: string, s: PaddockState): Promise<void> {
+/**
+ * Write one record atomically, at 0600, in a 0700 directory.
+ *
+ * Generic over the record because there is more than one now — a paddock's
+ * state and a tunnel's — and every property here is one a SECOND copy of this
+ * function would eventually get wrong: the tmp-then-rename that stops a reader
+ * seeing half a file, the `sync()` before it, and the explicit `chmod` that
+ * `open`'s mode argument does not guarantee under a umask.
+ */
+export async function writeRecord(
+  dir: string,
+  file: string,
+  s: unknown,
+): Promise<void> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  const file = stateFile(dir);
   const tmp = `${file}.tmp`;
   const fh = await open(tmp, "w", 0o600);
   try {
@@ -87,6 +112,10 @@ export async function writeState(dir: string, s: PaddockState): Promise<void> {
   }
   await chmod(tmp, 0o600); // `open`'s mode is subject to the umask; this is not
   await rename(tmp, file);
+}
+
+export async function writeState(dir: string, s: PaddockState): Promise<void> {
+  await writeRecord(dir, stateFile(dir), s);
 }
 
 export interface RecordStateDeps {
@@ -237,14 +266,25 @@ export async function removeOwnState(dir: string, pid: number): Promise<void> {
   if (mine) await removeState(dir);
 }
 
-export async function checkState(
-  dir: string,
+/**
+ * Read one pid-tracked state file and say what it describes.
+ *
+ * Generic over the record on purpose. Every branch below is a lesson paid for
+ * once — ENOENT is absence but EACCES is not, garbage is "not running" but
+ * never a SILENT one, `argsOf` throwing is "could not look" and not
+ * "mismatch" — and a second copy of this function for the tunnel would have
+ * had to relearn all of them. Only two things differ per record: which file,
+ * and what shape counts as valid.
+ */
+export async function checkRecord<T extends TrackedRecord>(
+  file: string,
+  valid: (v: unknown) => v is T,
   probe: Probe = systemProbe,
   log: (line: string) => void = termWarn,
-): Promise<StateCheck> {
+): Promise<Check<T>> {
   let raw: string;
   try {
-    raw = await readFile(stateFile(dir), "utf8");
+    raw = await readFile(file, "utf8");
   } catch (e) {
     // ENOENT — no file — is the ordinary case, not an error. Anything else
     // (EACCES, ENOTDIR, ...) is a real I/O failure and must NOT collapse into
@@ -254,11 +294,11 @@ export async function checkState(
     return { kind: "unreadable", error: (e as Error).message };
   }
 
-  let s: PaddockState;
+  let s: T;
   try {
-    s = JSON.parse(raw) as PaddockState;
-    if (typeof s.pid !== "number" || typeof s.args !== "string")
-      throw new Error("shape");
+    const parsed: unknown = JSON.parse(raw);
+    if (!valid(parsed)) throw new Error("shape");
+    s = parsed;
   } catch (e) {
     // "none" is the right answer — treating garbage as "running" would let one
     // garbled file block every start — but it must not be a silent one. This
@@ -266,7 +306,7 @@ export async function checkState(
     // `status` report "not running" while paddock is serving, so an operator
     // who is not told has no way to connect either symptom to its cause.
     log(
-      `paddock: ignoring unusable state file ${stateFile(dir)} (${(e as Error).message}) ` +
+      `paddock: ignoring unusable state file ${file} (${(e as Error).message}) ` +
         "— treating it as 'not running'",
     );
     return { kind: "none" };
@@ -294,4 +334,19 @@ export async function checkState(
   }
   if (actual !== s.args) return { kind: "mismatch", state: s, actual };
   return { kind: "running", state: s };
+}
+
+/** The shape guard `checkState` uses. Exported so a test can reach it. */
+export function isPaddockState(v: unknown): v is PaddockState {
+  const s = v as PaddockState;
+  return typeof s === "object" && s !== null &&
+    typeof s.pid === "number" && typeof s.args === "string";
+}
+
+export async function checkState(
+  dir: string,
+  probe: Probe = systemProbe,
+  log: (line: string) => void = termWarn,
+): Promise<StateCheck> {
+  return await checkRecord(stateFile(dir), isPaddockState, probe, log);
 }

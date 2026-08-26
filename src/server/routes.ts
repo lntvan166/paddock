@@ -758,7 +758,7 @@ export function createApp(deps: AppDeps) {
     app.post("/pair", async (c) => {
       const parsed = await strictJsonBody(c);
       if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
-      // The three outcomes live in `pairOutcome` — shared with the attached
+      // The three outcomes live in `pairOutcome` — shared with the publishing
       // tunnel's own listener, which serves no app at all and would otherwise
       // carry a transcribed copy of them. A refusal that differed between the
       // two modes is exactly the divergence that sharing prevents.

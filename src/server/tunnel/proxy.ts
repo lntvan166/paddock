@@ -1,7 +1,7 @@
 import type { ServerWebSocket } from "bun";
 
 /**
- * Where an attached tunnel forwards to: the paddock already serving locally.
+ * Where a publishing tunnel forwards to: the paddock already serving locally.
  */
 export interface Upstream {
   host: string;
@@ -22,7 +22,7 @@ export function upstreamOrigin(u: Upstream): string {
  * token — the origin check is what stops another process on this host POSTing
  * to a TCP port every uid can reach. Forwarded verbatim, a request arriving
  * from `https://something.trycloudflare.com` fails that check and every write
- * through an attached tunnel is refused with a 403 the operator cannot explain.
+ * through such a tunnel is refused with a 403 the operator cannot explain.
  *
  * So the proxy presents itself as what it is: a local client of the upstream.
  * The rule on the upstream is untouched and no case is loosened — the same fix
@@ -65,7 +65,7 @@ export async function proxyHttp(req: Request, u: Upstream): Promise<Response> {
     return new Response(
       JSON.stringify({
         ok: false,
-        detail: `the paddock this tunnel is attached to is not answering on ${u.host}:${u.port} (${detail})`,
+        detail: `the paddock this tunnel publishes is not answering on ${u.host}:${u.port} (${detail})`,
       }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
@@ -76,7 +76,7 @@ export async function proxyHttp(req: Request, u: Upstream): Promise<Response> {
  * The two ends of one proxied WebSocket.
  *
  * `up` is opened when the browser's socket opens and closed when it closes, so
- * an attached tunnel holds exactly one upstream socket per viewer rather than
+ * a publishing tunnel holds exactly one upstream socket per viewer rather than
  * one for the life of the process.
  */
 export interface ProxySocket {
@@ -142,7 +142,7 @@ export function closeUp(state: ProxySocket): void {
 /**
  * Is a paddock actually serving here?
  *
- * Attaching to nothing publishes a tunnel to a closed port — a public URL that
+ * Publishing nothing opens a tunnel to a closed port — a public URL that
  * answers 502 for as long as it lives. Checked once, before cloudflared is
  * started, so the failure is a refusal at the terminal rather than a broken
  * link already handed out.

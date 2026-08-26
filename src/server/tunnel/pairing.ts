@@ -149,7 +149,7 @@ export class Pairing {
  * What a pairing attempt means, without a framework around it.
  *
  * Extracted because two listeners must answer a code the SAME way: the app's
- * `/pair` route, and an attached tunnel's listener, which serves no app at all
+ * `/pair` route, and a publishing tunnel's listener, which serves no app at all
  * and would otherwise need a transcribed copy of these three outcomes. A
  * refusal that differs between the two modes — a different status, a different
  * sentence, a different attempt count — is the divergence this project keeps

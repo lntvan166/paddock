@@ -66,3 +66,28 @@ test("an unreadable state file does not block a tunnel, but is reported", async 
   // Never swallowed: the operator learns the file could not be read.
   expect(lines.join("\n")).toContain("EACCES");
 });
+
+test("publishRunning skips the running check, and ONLY that check", async () => {
+  // The whole point of the mode: a paddock already running is what it
+  // publishes, so the refusal above does not apply to it.
+  expect(await preflight(opts({ check: async () => RUNNING, publishRunning: true })))
+    .toEqual({ ok: true, bin: "/somewhere/cloudflared" });
+
+  // ...and nothing else is waived. A missing cloudflared is still fatal — a
+  // flag that skipped every check would publish nothing and say it worked.
+  const r = await preflight(opts({
+    check: async () => RUNNING, publishRunning: true, which: () => null,
+  }));
+  expect(r.ok).toBe(false);
+});
+
+test("the refusal offers the flag by the name the CLI actually accepts", async () => {
+  // Guards the rename. A refusal that names a flag the parser does not know is
+  // worse than no suggestion: the operator types it and gets a plain tunnel,
+  // two notifiers, and no error. `index.ts` reads `--publish-running`, so this
+  // asserts the exact string rather than "some flag is mentioned".
+  const r = await preflight(opts({ check: async () => RUNNING }));
+  if (r.ok) throw new Error("unreachable");
+  expect(r.message).toContain("paddock tunnel --publish-running");
+  expect(r.message).not.toContain("--attach");
+});
