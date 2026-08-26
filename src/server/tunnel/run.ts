@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
@@ -16,6 +17,8 @@ import { pairOutcome } from "@server/tunnel/pairing";
 import { errorCode } from "@server/startup-errors";
 import type { Pairing } from "@server/tunnel/pairing";
 import { qrMatrix } from "@server/qr";
+import { serveControl } from "@server/tunnel/control";
+import { controlSocket, recordTunnel, removeTunnelState } from "@server/tunnel/state";
 import { render, useColour } from "@server/tunnel/display";
 import { duration, warn } from "@server/term";
 
@@ -96,6 +99,16 @@ export interface TunnelDeps {
    * caller turns a `false` into a non-zero exit status. See `teardown`.
    */
   registerShutdown?: (fn: () => Promise<boolean>) => void;
+  /**
+   * Where to record this run so `paddock pair` and `paddock status` can find
+   * it, and where to put its control socket.
+   *
+   * Optional, and absent in most tests: a run without it publishes exactly as
+   * before and leaves nothing behind. `--detach` cannot work without it — a
+   * detached tunnel that recorded nothing would be a process nobody could ask
+   * for a code, which is the whole point of the mode.
+   */
+  record?: { dir: string; publishing?: number | null };
   now?: () => number;
 }
 
@@ -412,6 +425,8 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
    * runs: the listener closes and the state file is cleared either way. Report
    * and continue, then exit non-zero.
    */
+  let control: { stop: () => void } | null = null;
+
   const teardown = async (): Promise<boolean> => {
     // An already-torn-down run answers with the outcome it had, not with a
     // fresh `true` — a Ctrl-C arriving after a failed `--for` teardown must
@@ -447,6 +462,12 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
       console.info("paddock: no tunnel was running");
     }
     gated.stop();
+    control?.stop();
+    // The record goes when the tunnel does. Left behind, it would tell `pair`
+    // and `status` that a tunnel is up — and its pid check would call it
+    // `stale`, which is the right answer but a worse one than the file simply
+    // being gone.
+    if (deps.record !== undefined) await removeTunnelState(deps.record.dir);
     deps.setPublicUrl?.(null);
     // Only claimed when there was something to close. "tunnel closed" after
     // "no tunnel was running" is a log that contradicts itself two lines apart.
@@ -500,6 +521,53 @@ export async function runTunnel(deps: TunnelDeps): Promise<number> {
 
   deps.setPublicUrl?.(live.url);
   const startedAt = now();
+
+  /**
+   * The control socket, and the record that points at it.
+   *
+   * AFTER the URL is known and BEFORE the display loop, because both facts it
+   * publishes come from here: `url` is `live.url`, and the code is answered by
+   * calling `deps.pairing.current()` at request time rather than being copied
+   * anywhere. A detached run has no display loop to advance the code, so this
+   * socket is the only thing that ever will.
+   *
+   * A failure to record is not a failure to publish. The tunnel is up and
+   * carrying traffic by this point; `recordTunnel` says what went wrong and
+   * this run continues without being findable, exactly as a paddock whose
+   * state file could not be written keeps serving.
+   */
+  if (deps.record !== undefined) {
+    const socket = controlSocket(deps.record.dir);
+    // A socket left behind by a run that died without teardown would make the
+    // bind below fail — and `serveControl` throwing here would take down a
+    // tunnel that is already live. Cleared first, deliberately: at this point
+    // `recordTunnel`'s first-tunnel-wins check has not run yet, so this must
+    // not be treated as evidence that no other tunnel exists.
+    await rm(socket, { force: true });
+    try {
+      control = serveControl({
+        socket,
+        url: () => live.url,
+        current: () => deps.pairing.current(),
+      });
+    } catch (e) {
+      control = null;
+      warn(
+        `paddock: could not open the control socket at ${socket} (${String(e)}) — ` +
+          "`paddock pair` will not be able to read this tunnel's code",
+      );
+    }
+    if (control !== null) {
+      await recordTunnel(deps.record.dir, {
+        pid: process.pid,
+        url: live.url,
+        control: socket,
+        publishing: deps.record.publishing ?? null,
+        startedAt,
+        until: deps.deadlineMs != null ? startedAt + deps.deadlineMs : null,
+      });
+    }
+  }
   const deadline = deps.deadlineMs != null ? startedAt + deps.deadlineMs : null;
   const tty = deps.isTty ?? Boolean(process.stdout.isTTY);
   const colour = useColour(deps.env ?? process.env, tty);
