@@ -1825,8 +1825,11 @@ body {
   padding: 0.6rem 0.75rem;
   background: none;
   border: 0;
-  /* The screen's one accent control (§6) — the quiet dot rule this list
-     otherwise follows exactly. */
+  /* The one accent control in the screen's BODY (§6) — the quiet dot rule
+     this list otherwise follows exactly. Scoped to the body deliberately:
+     `.space-screen-head .term-back` below is also accent, by the same
+     app-wide back-navigation convention every screen uses, so "the one
+     accent control" is only true of the rows this list renders. */
   color: var(--accent);
   font: inherit;
   font-size: var(--t-md);
@@ -1934,8 +1937,10 @@ body {
 
 /* The screen's title, and the trigger that switches space (§5.2). It reads
    like `.spaces-head h2` — same size, same weight — and is deliberately NOT
-   accent-coloured: the screen's one accent control is the tab list's own
-   `+` (`.create-row`), and painting this too would spend it twice. The
+   accent-coloured: the one accent control in the screen's body is the tab
+   list's own `+` (`.create-row`), and painting this too would spend it
+   twice. (The header's back link is also accent, by the app-wide
+   back-navigation convention — see the note on `.create-row` above.) The
    caret is the only hint that a title is now a control. */
 .space-picker-btn {
   flex: 1;
@@ -2001,10 +2006,20 @@ body {
   cursor: pointer;
 }
 
-/* No visual distinction for the current row beyond `aria-current="true"`
-   itself: `.space-name` already renders every row's label at weight 600, so
-   a second weight rule here would be inert, and the sheet is reached from a
-   header that already names the space you are on. */
+/* The visible half of the current-row mark §5.2 asks for. `aria-current`
+   on the row (SpacePicker.tsx) reaches a screen reader, but a sighted
+   operator gets nothing from an ARIA attribute — and the no-self-navigate
+   guard already makes that row a no-op tap, so with no visible mark it read
+   as a control that does nothing. The header behind the scrim names the
+   current space too, but it sits behind a dimmed backdrop while this sheet
+   is open and is not a substitute for marking the row itself.
+   Colour AND a glyph, not colour alone — colour is never the only channel on
+   this screen. */
+.picker-current {
+  flex: none;
+  color: var(--accent);
+  font-weight: 700;
+}
 
 /* The row's own `⋯`, and the sheet it opens (RowActions.tsx).
 
