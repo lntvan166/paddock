@@ -290,6 +290,90 @@
   --accent-fg: #14161a;
 }
 
+/* ── Named themes ─────────────────────────────────────────────────────────
+   Chrome plus, where necessary, a tuned state colour. The MEANING is fixed in
+   every theme — red is an agent that has stopped and needs a person — and only
+   the hex may move, purely so it stays legible on that theme's own ground.
+   That distinction is the whole design: see
+   docs/design/2026-08-26-theme-picker-design.md.
+
+   Three of the values below deliberately differ from the canonical palette,
+   because the canonical value fails AA here. Each is noted where it appears.
+
+   Every ratio in this comment block is asserted by tests/themes.test.ts
+   against that theme's own --bg — do not hand-edit a value without re-running
+   it. Nothing here touches --term-bg/--term-fg (the agent's own escapes assume
+   a dark terminal) or --tile-* (they carry their own grounds at documented
+   ratios); the audit refuses a block that does. */
+
+:root[data-theme="dracula"] {
+  --bg: #282a36;
+  --surface: #343746;
+  --border: #44475a;
+  --fg: #f8f8f2;          /* 13.36 */
+  /* Lightened from Dracula's own comment colour #6272a4, which is 4.38. */
+  --fg-dim: #a2add0;      /* 6.39 */
+  --accent: #bd93f9;      /* 5.90 */
+  --accent-fg: #20222c;   /* 6.56 on accent */
+  --accent-wash: #322a44;
+  --danger-wash: #3a2430;
+  /* Lightened from Dracula red #ff5555, which is 4.31. */
+  --danger: #ff6e6e;      /* 5.23 */
+  --warn: #ffb86c;        /* 8.36 */
+  --ok: #69ff94;          /* 11.08 */
+}
+
+:root[data-theme="gruvbox-dark"] {
+  --bg: #282828;
+  --surface: #32302f;
+  --border: #504945;
+  --fg: #ebdbb2;          /* 10.75 */
+  --fg-dim: #bdae93;      /* 6.77 */
+  --accent: #fe8019;      /* 5.84 */
+  --accent-fg: #241f1a;   /* 6.47 on accent */
+  --accent-wash: #3a2e1f;
+  --danger-wash: #3a2422;
+  /* THE tuned value this design exists for. Gruvbox's own bright red #fb4934
+     measures 4.29 here — below AA, on the state that matters most. Same hue,
+     lightened until it clears, and still visibly red against #fe8019. */
+  --danger: #fd7166;      /* 5.43 */
+  --warn: #fabd2f;        /* 8.69 */
+  --ok: #b8bb26;          /* 7.14 */
+}
+
+:root[data-theme="gruvbox-light"] {
+  --bg: #fbf1c7;
+  --surface: #f2e5bc;
+  --border: #d5c4a1;
+  --fg: #3c3836;          /* 10.22 */
+  --fg-dim: #665c54;      /* 5.74 */
+  --accent: #af3a03;      /* 5.40 */
+  --accent-fg: #ffffff;   /* 6.12 on accent */
+  --accent-wash: #f2e0b8;
+  --danger-wash: #f5dfc8;
+  /* Gruvbox's DARK variants, not its bright ones: on a cream ground the bright
+     yellow and green measure 4.33 and 4.48. */
+  --danger: #9d0006;      /* 7.60 */
+  --warn: #79600a;        /* 5.30 */
+  --ok: #4c6a04;          /* 5.49 */
+}
+
+:root[data-theme="nord"] {
+  --bg: #2e3440;
+  --surface: #3b4252;
+  --border: #4c566a;
+  --fg: #eceff4;          /* 10.84 */
+  --fg-dim: #b8c2d4;      /* 6.96 */
+  --accent: #88c0d0;      /* 6.24 */
+  --accent-fg: #232830;   /* 7.40 on accent */
+  --accent-wash: #333c4a;
+  --danger-wash: #3b2f36;
+  /* Nord's own nord11 #bf616a measures 3.73 and is replaced. */
+  --danger: #ff7b72;      /* 4.95 */
+  --warn: #ebcb8b;        /* 8.00 */
+  --ok: #a3be8c;          /* 6.13 */
+}
+
 /* System fonts only. A webfont would be the single largest payload on a slow
    link, and SF/Segoe/Roboto read better at 12px than most alternatives. */
 html {
