@@ -248,9 +248,22 @@ export class Notifier {
     const s = this.o.settings.current();
     if (!s.notify.enabled) return;
     if (!s.notify.triggers.includes(state)) return;
+    // A FLAG, not an early return, and that distinction is the whole bug this
+    // replaced. This guard predates push: when Telegram was the only transport,
+    // "no token" and "nothing to do" were the same statement. They stopped
+    // being the same the moment a second transport existed, and nobody
+    // revisited it — so an operator who wanted push and not Telegram got
+    // silence, with no error anywhere, because delivery returned before
+    // `#sendPush` was ever reached.
+    //
+    // The tests did not catch it because the one that looks like it would —
+    // "a failing telegram does not suppress push" — configures a token and
+    // then fails the SEND. A failure happens after this line; an absent token
+    // happens before it. Two paths, one of them covered.
+    //
     // `isConfigured`, not `!== null`: the two differ for an empty string, and
     // an unset environment variable IS an empty string.
-    if (!isConfigured(s.telegram.token) || !isConfigured(s.telegram.chatId)) return;
+    const telegramReady = isConfigured(s.telegram.token) && isConfigured(s.telegram.chatId);
 
     const now = this.#now();
     // Dropped, never queued: a pile delivered when mute lifts describes
@@ -287,6 +300,16 @@ export class Notifier {
     // directions. `#sendPush` swallows its own faults, so it can never turn a
     // push failure into the "outside the send contract" path `#arm` describes.
     const pushed = this.#sendPush(a, state);
+
+    // Push has been dispatched; without Telegram there is nothing else to do.
+    // Everything below this line is Telegram's retry and error bookkeeping,
+    // and running it against a transport that was never configured would
+    // record failures for a thing the operator did not ask for.
+    if (!telegramReady) {
+      await pushed;
+      return;
+    }
+
     let r: { ok: boolean; detail: string | null };
     try {
       r = await this.o.send(m.text, m.replyMarkup);
