@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
-import { sortSpaces } from "@web/components/space-sort";
+import { sortSpaces, treeCwds } from "@web/components/space-sort";
 import { SpaceRow } from "@web/components/SpaceRow";
+import { useSpaceTree } from "@web/components/use-space-tree";
 import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
 
@@ -20,26 +21,9 @@ export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate 
    *  test can observe the navigation instead of mutating the hash. */
   navigate?: (hash: string) => void;
 }) {
-  const { treeStaleAt, spacesAvailable } = useStore();
-  const [tree, setTree] = useState<SpaceTree | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { spacesAvailable } = useStore();
+  const { tree, error, refresh } = useSpaceTree(load);
   const [now, setNow] = useState(() => Date.now());
-
-  const refresh = useCallback(async () => {
-    try {
-      setTree(await load());
-      setError(null);
-    } catch (err) {
-      // The last good tree is KEPT. An empty screen and a broken herdr must
-      // never look alike — that is the same rule the 502 in the route serves.
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [load]);
-
-  // Refetches on mount and whenever the server says the tree moved. The
-  // server sends `tree-stale` for STRUCTURE only, so this does not fire on
-  // every agent state change.
-  useEffect(() => { void refresh(); }, [refresh, treeStaleAt]);
 
   // The "as of" label ticks locally; the server is not asked for time.
   useEffect(() => {
@@ -47,20 +31,10 @@ export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate 
     return () => clearInterval(t);
   }, []);
 
-  /**
-   * Every working directory already in the tree, once each, in a stable order.
-   *
-   * The create sheet's quick picks (§9.3). Computed from the WHOLE tree rather
-   * than from anything narrower, and that is still right with only one
-   * consumer left: a new space commonly belongs in a folder some other space
-   * is already working in, so the useful list is every folder in use, not the
-   * ones near this control. The space screen computes its own for the same
-   * reason. Sorted so the list does not reshuffle between renders of the same
-   * tree.
-   */
-  const cwds = tree === null
-    ? []
-    : [...new Set(tree.spaces.flatMap((s) => s.tabs.flatMap((t) => t.panes.map((p) => p.cwd))))].sort();
+  // The create sheet's quick picks (§9.3) — every cwd in the WHOLE tree, not
+  // just this screen's, computed by `treeCwds` so this and the space screen
+  // agree on the rule.
+  const cwds = treeCwds(tree);
 
   /**
    * Whether the create control exists at all.

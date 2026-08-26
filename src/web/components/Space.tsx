@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
 import { RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
 import { SpacePicker } from "@web/components/SpacePicker";
+import { treeCwds } from "@web/components/space-sort";
 import { TabRow } from "@web/components/TabRow";
+import { useSpaceTree } from "@web/components/use-space-tree";
 import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
 
@@ -24,8 +25,10 @@ export function Space({
   spaceId, onBack, load = fetchSpaceTree, senders, createSenders, navigate,
 }: {
   spaceId: string;
-  /** Leaves for the list. There is only one route into this screen, so this
-   *  takes no target — see `App.tsx`. */
+  /** Leaves for the list. Unconditional rather than origin-aware, because the
+   *  picker (`SpacePicker.tsx`) moves SIDEWAYS between spaces — `#/space/w1`
+   *  to `#/space/w2` — rather than nesting one on top of another, so there is
+   *  no stack of prior spaces to pop back through. See `App.tsx`. */
   onBack: () => void;
   /** Injected for the same reason `Spaces` injects it: a test drives this
    *  without a network, and a failure is a value this renders rather than a
@@ -35,34 +38,15 @@ export function Space({
   createSenders?: CreateSenders;
   navigate?: (hash: string) => void;
 }) {
-  const { treeStaleAt, spacesAvailable } = useStore();
-  const [tree, setTree] = useState<SpaceTree | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      setTree(await load());
-      setError(null);
-    } catch (err) {
-      // The last good tree is KEPT. An empty screen and a broken herdr must
-      // never look alike.
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [load]);
-
-  // Refetches on mount and whenever the server says the tree MOVED. The server
-  // sends `tree-stale` for structure only, so this does not fire on every
-  // agent state change.
-  useEffect(() => { void refresh(); }, [refresh, treeStaleAt]);
+  const { spacesAvailable } = useStore();
+  const { tree, error, refresh } = useSpaceTree(load);
 
   const space = tree?.spaces.find((s) => s.spaceId === spaceId) ?? null;
 
   // Every cwd in the WHOLE tree, for the create sheet's quick picks (§9.3) —
   // not just this space's. A new tab commonly goes where another space already
-  // is.
-  const cwds = tree === null
-    ? []
-    : [...new Set(tree.spaces.flatMap((s) => s.tabs.flatMap((t) => t.panes.map((p) => p.cwd))))].sort();
+  // is. `treeCwds` so this and the spaces list agree on the rule.
+  const cwds = treeCwds(tree);
 
   // The same capability the entry point is gated on, never a demo flag and
   // never a device check: with no herdr session the create routes 404 honestly,
@@ -79,8 +63,10 @@ export function Space({
    * inlined the wrapper again for the normal state, which left two literal
    * copies of it and a comment claiming there was one.
    *
-   * There is only one route into this screen, so the back control takes no
-   * target.
+   * The back control takes no target because it needs none: the picker
+   * (`SpacePicker.tsx`) is a second route into this screen, but it switches
+   * spaces SIDEWAYS rather than nesting one on top of another, so there is
+   * never a stack of prior spaces for back to pop.
    */
   const screen = (headerExtra: React.ReactNode, body: React.ReactNode) => (
     <main className="dash mx-auto max-w-2xl safe-bottom">
