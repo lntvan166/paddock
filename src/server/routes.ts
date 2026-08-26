@@ -16,7 +16,7 @@ import type { PushStore } from "@server/push/store";
 import { b64urlDecode } from "@server/push/vapid";
 import type { AgentStore } from "@server/state/store";
 import type { Hub } from "@server/ws/hub";
-import { formatCode } from "@server/tunnel/pairing";
+import { formatCode, pairOutcome } from "@server/tunnel/pairing";
 import { setCookie } from "@server/tunnel/gate";
 import { EMBEDDED } from "@server/embedded";
 import { allowWrite, hostOf, refusalReason } from "@server/origin";
@@ -758,28 +758,17 @@ export function createApp(deps: AppDeps) {
     app.post("/pair", async (c) => {
       const parsed = await strictJsonBody(c);
       if (!parsed.ok) return c.json({ ok: false, detail: parsed.detail }, 400);
-      const code = parsed.body.code;
+      // The three outcomes live in `pairOutcome` — shared with the attached
+      // tunnel's own listener, which serves no app at all and would otherwise
+      // carry a transcribed copy of them. A refusal that differed between the
+      // two modes is exactly the divergence that sharing prevents.
+      //
       // A malformed body is NOT a guess and must not spend the budget —
-      // otherwise anyone can burn codes without ever sending one.
-      if (typeof code !== "string") {
-        return c.json({ ok: false, detail: "code must be a string" }, 400);
-      }
-
-      const r = pairing.attempt(code);
-      if (r.kind === "paired") {
-        c.header("set-cookie", setCookie(r.token));
-        return c.json({ ok: true });
-      }
-      if (r.kind === "burned") {
-        return c.json(
-          { ok: false, detail: "too many attempts — a new code is on the terminal" },
-          429,
-        );
-      }
-      return c.json(
-        { ok: false, detail: `that code is not right — ${r.remaining} attempts left` },
-        400,
-      );
+      // otherwise anyone can burn codes without ever sending one. That rule
+      // lives in `pairOutcome` now, with the outcomes it governs.
+      const out = pairOutcome(parsed.body.code, pairing);
+      if (out.token !== undefined) c.header("set-cookie", setCookie(out.token));
+      return c.json(out.body, out.status as 200 | 400 | 429);
     });
 
     /**

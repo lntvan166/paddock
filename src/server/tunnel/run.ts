@@ -7,7 +7,12 @@ import {
   type Child,
   type Tunnel,
 } from "@server/tunnel/cloudflared";
-import { decide, gateResponse } from "@server/tunnel/gate";
+import { decide, gateResponse, setCookie } from "@server/tunnel/gate";
+import {
+  bridgeWebSocket, closeUp, forwardUp, proxyHttp,
+  type ProxySocket, type Upstream,
+} from "@server/tunnel/proxy";
+import { pairOutcome } from "@server/tunnel/pairing";
 import { errorCode } from "@server/startup-errors";
 import type { Pairing } from "@server/tunnel/pairing";
 import { qrMatrix } from "@server/qr";
@@ -25,10 +30,27 @@ import { duration, warn } from "@server/term";
 const CLOUDFLARED_TAIL = 50;
 
 export interface TunnelDeps {
-  app: { fetch(req: Request): Response | Promise<Response> };
-  hub: Hub;
-  hostId: string;
-  store: AgentStore;
+  /**
+   * What the gated listener serves.
+   *
+   * Absent under `upstream`, where there is no local app to serve — the
+   * attached tunnel forwards to a paddock in another process instead.
+   */
+  app?: { fetch(req: Request): Response | Promise<Response> };
+  hub?: Hub;
+  hostId?: string;
+  store?: AgentStore;
+  /**
+   * Serve a paddock ALREADY RUNNING here rather than this process's own.
+   *
+   * `paddock tunnel` is a whole second paddock: it opens its own herdr stream
+   * and builds its own notifier, which is why running one beside an existing
+   * instance would notify twice for every agent. Attaching exists so a paddock
+   * that is already serving can be published without being stopped, and it
+   * works by having NO store, hub, notifier or herdr connection of its own —
+   * only the gate, and a proxy to the process that has them.
+   */
+  upstream?: Upstream;
   pairing: Pairing;
   /** 0 lets the OS pick, which is what the tests use. */
   port: number;
@@ -94,22 +116,77 @@ export interface TunnelDeps {
  * two renderings of one refusal would come to disagree.
  */
 export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
-  const server = Bun.serve<WsData>({
-    port: deps.port,
-    hostname: "127.0.0.1",
-    fetch(req, srv) {
-      const d = decide(req, (t) => deps.pairing.has(t));
-      if (d.kind !== "pass") return gateResponse(d, req);
+  const up = deps.upstream;
+  const server = up === undefined
+    ? Bun.serve<WsData>({
+      port: deps.port,
+      hostname: "127.0.0.1",
+      fetch(req, srv) {
+        const d = decide(req, (t) => deps.pairing.has(t));
+        if (d.kind !== "pass") return gateResponse(d, req);
 
-      // Past the gate, this listener serves EXACTLY what the plain one serves,
-      // from one definition — see `ws/serve.ts`. `null` means the request is
-      // not the socket route and belongs to the app.
-      const ws = tryUpgradeWs(req, srv, deps.publicHosts?.() ?? []);
-      if (ws !== null) return ws;
-      return deps.app.fetch(req);
-    },
-    websocket: hubWebSocket({ hub: deps.hub, hostId: deps.hostId, store: deps.store }),
-  });
+        // Past the gate, this listener serves EXACTLY what the plain one serves,
+        // from one definition — see `ws/serve.ts`. `null` means the request is
+        // not the socket route and belongs to the app.
+        const ws = tryUpgradeWs(req, srv, deps.publicHosts?.() ?? []);
+        if (ws !== null) return ws;
+        return deps.app!.fetch(req);
+      },
+      websocket: hubWebSocket({ hub: deps.hub!, hostId: deps.hostId!, store: deps.store! }),
+    })
+    /*
+     * ATTACHED. The gate is identical — `decide`/`gateResponse` above and here
+     * are the same two calls, so a refusal cannot differ between the two modes.
+     * What changes is only what a PASSING request reaches: another process
+     * rather than an app this one built.
+     *
+     * `tryUpgradeWs` is deliberately not used here. It exists to hand a socket
+     * to the local hub, and there is no local hub in this mode — the upgrade is
+     * accepted and then bridged upstream instead.
+     */
+    : Bun.serve<{ proxy: ProxySocket }>({
+      port: deps.port,
+      hostname: "127.0.0.1",
+      fetch(req, srv) {
+        const d = decide(req, (t) => deps.pairing.has(t));
+        if (d.kind !== "pass") return gateResponse(d, req);
+
+        // `/pair` is THIS listener's own, never proxied. The gate belongs to
+        // the attached process — the upstream has no pairing at all and would
+        // answer 404, which is what shipped for a few minutes and made the
+        // code on the terminal unusable. `pairOutcome` is shared with the app's
+        // route so the two cannot answer a code differently.
+        const path = new URL(req.url).pathname;
+        if (path === "/pair" && req.method === "POST") {
+          return (async () => {
+            let body: unknown;
+            try { body = await req.json(); } catch { body = null; }
+            const out = pairOutcome((body as { code?: unknown } | null)?.code, deps.pairing);
+            return new Response(JSON.stringify(out.body), {
+              status: out.status,
+              headers: {
+                "content-type": "application/json",
+                ...(out.token === undefined ? {} : { "set-cookie": setCookie(out.token) }),
+              },
+            });
+          })();
+        }
+
+        if (path === "/ws") {
+          const ok = srv.upgrade(req, { data: { proxy: { up: null, pending: [] } } });
+          // Bun returns false when the request was not a valid upgrade. Said,
+          // not swallowed: a silent 200 here looks to the browser like a
+          // socket that opened and then never spoke.
+          return ok ? undefined : new Response("upgrade failed", { status: 400 });
+        }
+        return proxyHttp(req, up);
+      },
+      websocket: {
+        open: (ws) => bridgeWebSocket(ws, up),
+        message: (ws, msg) => forwardUp(ws.data.proxy, msg as string | Uint8Array),
+        close: (ws) => closeUp(ws.data.proxy),
+      },
+    }) as unknown as ReturnType<typeof Bun.serve<WsData>>;
   // Bun types `port` as optional — a unix-socket server has none. This one is
   // a TCP listener on loopback, so it always has one, and a missing port means
   // there is nothing for cloudflared to point at. Loud, never defaulted: a

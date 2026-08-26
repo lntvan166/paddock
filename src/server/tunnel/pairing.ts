@@ -144,3 +144,52 @@ export class Pairing {
     return this.#sessions.size;
   }
 }
+
+/**
+ * What a pairing attempt means, without a framework around it.
+ *
+ * Extracted because two listeners must answer a code the SAME way: the app's
+ * `/pair` route, and an attached tunnel's listener, which serves no app at all
+ * and would otherwise need a transcribed copy of these three outcomes. A
+ * refusal that differs between the two modes — a different status, a different
+ * sentence, a different attempt count — is the divergence this project keeps
+ * finding wherever one rendering was copied.
+ *
+ * Returns data, never a `Response`: one caller shapes it through Hono and the
+ * other through `Bun.serve`.
+ */
+/** What `Pairing.attempt` answers. Named so `pairOutcome` can be typed against
+ *  it without depending on the class that produces it. */
+export type PairAttempt =
+  | { kind: "paired"; token: string }
+  | { kind: "wrong"; remaining: number }
+  | { kind: "burned" };
+
+export function pairOutcome(
+  code: unknown,
+  /** Structural, not the class: `routes.ts` is handed a `deps.pairing` shaped
+   *  like this rather than the concrete `Pairing`, and narrowing to the one
+   *  method used keeps both callers and every test fake valid. */
+  pairing: { attempt(code: string): PairAttempt },
+): {
+  status: number;
+  body: { ok: boolean; detail?: string };
+  /** Present only on success — the caller sets it as `set-cookie`. */
+  token?: string;
+} {
+  if (typeof code !== "string") {
+    return { status: 400, body: { ok: false, detail: "code must be a string" } };
+  }
+  const r = pairing.attempt(code);
+  if (r.kind === "paired") return { status: 200, body: { ok: true }, token: r.token };
+  if (r.kind === "burned") {
+    return {
+      status: 429,
+      body: { ok: false, detail: "too many attempts — a new code is on the terminal" },
+    };
+  }
+  return {
+    status: 400,
+    body: { ok: false, detail: `that code is not right — ${r.remaining} attempts left` },
+  };
+}

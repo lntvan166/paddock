@@ -33,6 +33,7 @@ import { parseArgs, parseDuration, USAGE } from "@server/cli";
 import { HERDR_PROTOCOL, type HerdrSessionSnapshot } from "@shared/herdr-api";
 import type { SpaceTree } from "@shared/types";
 import { Pairing } from "@server/tunnel/pairing";
+import { upstreamAlive } from "@server/tunnel/proxy";
 import { preflight, tunnelHint } from "@server/tunnel/preflight";
 import { runTunnel } from "@server/tunnel/run";
 import { VERSION } from "@server/version";
@@ -175,6 +176,7 @@ if (command === "start") {
  * before there is a handler able to tear it down. See the comment there.
  */
 let tunnelBin: string | undefined;
+let tunnelAttach = false;
 let tunnelDeadlineMs: number | null = null;
 if (command === "tunnel") {
   const raw = values.get("--for");
@@ -194,7 +196,13 @@ if (command === "tunnel") {
   }
   tunnelDeadlineMs = parsed;
 
-  const pre = await preflight({ dir: defaultConfigDir() });
+  // `--attach`: publish the paddock ALREADY serving here, instead of being a
+  // second one. See `tunnel/proxy.ts` — this process gets no store, no hub, no
+  // notifier and no herdr stream, only the gate and a proxy. That is what makes
+  // it safe to run beside an instance the plain form must refuse to.
+  tunnelAttach = flags.has("--attach");
+
+  const pre = await preflight({ dir: defaultConfigDir(), attach: tunnelAttach });
   if (!pre.ok) {
     warn(pre.message);
     process.exit(1);
@@ -211,6 +219,56 @@ const socketPath =
 // socketPath — everything between that and here builds plain objects.
 if (command === "doctor") {
   process.exit(await runDoctor({ socketPath }));
+}
+
+/*
+ * ATTACHED TUNNEL — and it exits here, above everything.
+ *
+ * Placement is the design. Every line below builds a paddock: a store, a hub,
+ * a notifier, a herdr stream. An attached run must build NONE of them, because
+ * a second notifier is precisely what `preflight` refuses the plain form for —
+ * every blocked agent would notify twice. Exiting above that state is what
+ * makes "no second notifier" structural rather than a promise.
+ *
+ * So this process is the gate and a proxy, nothing else. The paddock being
+ * published is the one already running, with its own single herdr stream and
+ * its own single notifier, exactly as it was before the tunnel started.
+ */
+if (command === "tunnel" && tunnelAttach) {
+  const upstream = { host: HOSTNAME, port: PORT };
+
+  // Checked BEFORE cloudflared starts. Attaching to nothing would publish a
+  // URL that answers 502 for as long as it lives, and a link already handed
+  // out is worse than a refusal at the terminal.
+  if (!(await upstreamAlive(upstream))) {
+    warn([
+      `paddock: nothing is serving on ${upstream.host}:${upstream.port} to attach to`,
+      "",
+      "  `--attach` publishes a paddock that is ALREADY running here. Start one",
+      "  first, or drop the flag and let this command serve the dashboard itself:",
+      "",
+      "    paddock            # in another terminal, then re-run with --attach",
+      "    paddock tunnel     # or let this one serve it",
+    ].join("\n"));
+    process.exit(1);
+  }
+
+  const pairing = new Pairing();
+  let attachedUrl: string | null = null;
+  const code = await runTunnel({
+    upstream,
+    pairing,
+    port: Number(process.env.PADDOCK_TUNNEL_PORT ?? 8788),
+    bin: tunnelBin,
+    deadlineMs: tunnelDeadlineMs,
+    setPublicUrl: (u) => { attachedUrl = u; },
+    // The attached process holds no settings of its own, and the upstream's
+    // `publicUrl` is its business rather than this one's. The tunnel hostname
+    // is the only origin this listener ever needs to accept.
+    publicHosts: () => (attachedUrl === null ? [] : [new URL(attachedUrl).host]),
+    registerShutdown: (fn) => { onShutdown = fn; },
+  });
+  process.exit(code);
 }
 
 const hostId = DEMO ? DEMO_HOST_ID : (process.env.PADDOCK_HOST_ID ?? "local");
