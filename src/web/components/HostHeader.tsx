@@ -66,10 +66,7 @@ export function HostHeader({
     n("idle") > 0 ? `${n("idle")} idle` : null,
   ].filter(Boolean);
   return (
-    <header
-      className="px-3 py-2.5"
-      style={{ borderBottom: "1px solid var(--border)" }}
-    >
+    <header className="host-head">
       {/* Two rows, not one.
           Everything used to sit on a single line: wordmark, host id, the whole
           section summary, and the gear. At the type sizes this file now uses
@@ -151,7 +148,12 @@ export function HostHeader({
       </div>
       {/* paddock's own sentence about the list, so sans — the counts inside it
           are part of the sentence, not a data readout. */}
-      <p className="row-state mt-1">
+      {/* `host-summary`, not `row-state`: this is a SENTENCE, and the scale
+          reserves --t-xs for "eyebrows, ages, counts, badges: metadata" and
+          --t-md for "anything you read". It was set one step below what the
+          app's own rule prescribes, which is why the line that says how many
+          agents need you read as fine print. */}
+      <p className="host-summary">
         {parts.length ? parts.join(" · ") : "no agents"}
       </p>
     </header>

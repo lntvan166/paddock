@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useState, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
 import type { ActionResult, Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
 import { elapsedLabel } from "@web/components/elapsed";
@@ -37,9 +37,9 @@ export function AgentCard({
 }) {
   // Same palette as `StatusDot`: red for the one state that needs a person.
   const accent = agent.state === "blocked" ? "var(--danger)" : "var(--ok)";
-  // Border AND fill for a blocked agent. The border alone is a thin signal on
-  // a phone held at arm's length, and this is the only card that means "work
-  // has stopped until you answer".
+  // Edge AND fill for a blocked agent. The edge alone is a thin signal on a
+  // phone held at arm's length, and this is the only card that means "work has
+  // stopped until you answer".
   const surface = agent.state === "blocked" ? "var(--danger-wash)" : "var(--surface)";
   const [busy, setBusy] = useState(false);
   // acknowledge() never throws — a failed dismissal (e.g. a 409 because the
@@ -69,8 +69,12 @@ export function AgentCard({
 
   return (
     <article
-      className="tap mx-2 mb-1.5 rounded-lg p-3"
-      style={{ background: surface, border: `1px solid ${accent}` }}
+      // Full-bleed, and the accent is a LEFT EDGE rather than a border on all
+      // four sides — see `.agent-card` in styles.css for why. The two colours
+      // are handed over as custom properties because the state-to-colour rule
+      // belongs here, with the state, while the geometry belongs there.
+      className="tap agent-card"
+      style={{ "--card-ground": surface, "--card-accent": accent } as CSSProperties}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}
@@ -85,7 +89,7 @@ export function AgentCard({
           : undefined
       }
     >
-      <header className="flex items-center gap-2.5">
+      <header className="flex items-center gap-3">
         {/* The harness tile, which this card did NOT carry.
             `AgentRow` had it and `AgentCard` did not, so the claude mark and
             the `CO` initials appeared on the working and idle rows — the ones
@@ -100,12 +104,12 @@ export function AgentCard({
           {elapsedLabel(now - agent.stateSince, agent.stateSinceExact)}
         </span>
       </header>
-      <p className="row-task mt-2">{agent.task}</p>
+      <p className="row-task">{agent.task}</p>
       {/* Shape, colour and word together. The card is already red or green and
           already says which — the icon is the channel that survives when the
           other two do not, and red-and-green is the pair this palette spends on
           exactly these two states. */}
-      <p className="row-state mt-2 flex items-center gap-1">
+      <p className="row-state flex items-center gap-1">
         <StateIcon state={agent.state} />
         {agent.state === "blocked" ? "Waiting for input" : "Finished"}
       </p>
@@ -113,7 +117,7 @@ export function AgentCard({
         <>
           <button
             type="button"
-            className="tap mt-2.5 rounded px-2.5 py-1.5 font-semibold"
+            className="tap self-start rounded px-3 py-2 font-semibold"
             style={{
               fontSize: "var(--t-md)",
               border: "1px solid var(--fg-dim)", color: "var(--fg-dim)",
@@ -125,7 +129,7 @@ export function AgentCard({
             Dismiss
           </button>
           {result && !result.ok && (
-            <p className="mt-1" style={{ fontSize: "var(--t-md)", color: "var(--danger)" }} role="alert">
+            <p style={{ fontSize: "var(--t-md)", color: "var(--danger)" }} role="alert">
               {result.detail ?? "Could not dismiss."}
             </p>
           )}

@@ -403,7 +403,7 @@ export function App() {
     return (
       <main className="screen">
         <div className="screen-body">
-          <p className="px-3 py-6 text-[11px]" style={{ color: "var(--fg-dim)" }}>Opening…</p>
+          <p className="dash-note">Opening…</p>
         </div>
       </main>
     );
@@ -526,7 +526,7 @@ export function App() {
                       />
                     ))
                   : (
-                    <div className="flex flex-wrap gap-1.5 px-3 pb-3">
+                    <div className="chip-row">
                       {list.map((a) => (
                         <AgentChip
                           key={a.agentId} agent={a}
@@ -540,9 +540,7 @@ export function App() {
         })}
 
         {agents.length === 0 && !stale && (
-          <p className="px-3 py-6 text-[11px]" style={{ color: "var(--fg-dim)" }}>
-            No agents detected.
-          </p>
+          <p className="dash-note">No agents detected.</p>
         )}
 
       </div>

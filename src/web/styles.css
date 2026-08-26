@@ -102,6 +102,37 @@
      is the longest of the three prior stacks. */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* ── The gutter ─────────────────────────────────────────────────────────
+     Where a line of content starts, for every band that spans the screen.
+
+     Defined once because it was not. Measured across the app, content began
+     at SEVEN different distances from the edge: 9.6px (`.term-controls`,
+     `.term-keys`), 11.2px (`.term-pane`), 12px (the dashboard rows and three
+     screen headers), 14.4px (`.row-actions-*`, `.create-form`), 18.4px (the
+     terminal's back label), 19.2px (`.term-options`, from a 0.6rem margin plus
+     0.6rem padding) and 20px (an `AgentCard`, from `mx-2` plus `p-3`).
+
+     No single one of those was a mistake, which is exactly why there were
+     seven: each was chosen for its own rule, and nothing named the shared
+     idea. The visible cost was on the dashboard, where an attention card sat
+     8px further in than the row below it and the icon column jogged sideways
+     as you scrolled past.
+
+     1rem, not the 0.75rem the majority used: the ONE band that cannot take
+     horizontal padding is the terminal's output pane, and every other band
+     now aligns with the rest of the app rather than with it.
+
+     Not part of a general spacing scale — that is a separate piece of work.
+     This is one named decision that many rules share. */
+  --gutter: 1rem;
+
+  /* The attention edge: the stripe that marks a band as needing a person.
+     Named because two rules must agree on it AND because each of them has to
+     subtract it from its own left padding — a border displaces content, so an
+     edge added without that subtraction quietly re-creates the misalignment
+     the gutter was introduced to remove. */
+  --edge: 2px;
+
   /* ── Type scale ─────────────────────────────────────────────────────────
      Four steps, and every piece of type in the app picks one of them.
 
@@ -319,8 +350,85 @@ body {
 }
 
 /* Every row is bare: the two sections that need attention render AgentCard
-   instead, which carries its own border and accent. */
-.row { border-top: 1px solid var(--border); }
+   instead, which carries its own accent.
+
+   The padding moved here from `px-3 py-2.5` in the JSX so the row and the card
+   share one gutter — they are the same list, and they used to disagree by 8px.
+   Vertical stays 0.75rem, which is what `py-2.5` (10px) rounded to; the row is
+   the densest thing on the screen and did not need loosening. */
+.row {
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem var(--gutter);
+}
+
+/* ── The attention card ───────────────────────────────────────────────────
+   A blocked or freshly-finished agent, in `Needs you` and `Ready`.
+
+   FULL-BLEED, where this used to be `mx-2 rounded-lg`: floating the card
+   inset its contents by 20px against the 12px of every row around it, so the
+   icon column stepped sideways at each section boundary — the single most
+   visible symptom of the seven gutters.
+
+   Attention is carried by a 2px left edge plus the wash, rather than by a
+   border on all four sides. On a phone held at arm's length a full-width band
+   is louder than a floating rounded rectangle, not quieter, and it lets the
+   card align with everything else instead of being the exception. The colour
+   is unchanged: `--danger` for blocked, `--ok` for finished.
+
+   `--card-accent` and `--card-ground` are set inline by AgentCard.tsx, which
+   is where the state-to-colour rule lives — the same two values it used to
+   pass to `border` and `background` directly. */
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem var(--gutter);
+  /* The edge is 2px of BORDER, and a border displaces the content behind it —
+     so without this the card's tile landed at 18px while every row's landed at
+     16px. A 2px jog instead of the 8px one this work removed is still a jog,
+     and it is the exact defect the gutter exists to prevent. Measured, not
+     reasoned about: the injected probe read 18. */
+  padding-left: calc(var(--gutter) - var(--edge));
+  border-top: 1px solid var(--border);
+  border-left: var(--edge) solid var(--card-accent);
+  background: var(--card-ground);
+}
+
+/* The section eyebrow. Same gutter as the rows it introduces — it used to be
+   `px-3` against the card's 20px, so even the label was out of line with what
+   it labelled. */
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 1rem var(--gutter) 0.5rem;
+  color: var(--fg-dim);
+}
+
+/* The dashboard's own header. Was `px-3 py-2.5` inline. */
+.host-head {
+  padding: 0.75rem var(--gutter);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The collapsed-Idle chip row, aligned with the rows it stands in for. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0 var(--gutter) 0.75rem;
+}
+
+/* "No agents detected.", "Opening…" — paddock talking about the list, so it
+   takes the gutter like the list does. */
+.dash-note {
+  padding: 1.5rem var(--gutter);
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+}
 
 /* ── Two voices ───────────────────────────────────────────────────────────
    The one idea the dashboard's typography carries: mono is what the MACHINE
@@ -373,6 +481,21 @@ body {
 /* The state word beside its icon. Paddock's voice, so sans. */
 .row-state {
   font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
+
+/* The dashboard header's summary sentence — "1 needs you · 2 working".
+   --t-md, not --t-xs. This scale's own definitions put "eyebrows, ages,
+   counts, badges: metadata" at --t-xs and "anything you read: prose, labels,
+   controls" at --t-md, and this line is a sentence: it is the one place that
+   says, in words, how many agents want something from you. It was set a step
+   below what that rule prescribes, which is why it read as fine print on the
+   screen whose whole job is answering that question at a glance.
+   The counts INSIDE it are part of the sentence, not a data readout, so this
+   stays sans and does not take `.ident`. */
+.host-summary {
+  margin-top: 0.25rem;
+  font-size: var(--t-md);
   color: var(--fg-dim);
 }
 
@@ -698,8 +821,8 @@ body {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
@@ -719,7 +842,12 @@ body {
    screen and a 60x24 one everywhere else — measured on the Spaces screen. The
    third instance of that shape found in this review: a correct rule scoped to a
    place the element also appears somewhere else. */
-.term-back { font-weight: 600; min-height: 2.75rem; padding: 0 0.4rem; }
+/* No horizontal padding of its own. It used to carry 0.4rem on top of the
+   header's 0.75rem, which put the one word you aim at 18.4px from the edge
+   while everything below it started at 12px — the largest single contributor
+   to the ragged left edge down this screen. The 44px target is kept by
+   `min-height` plus the header's own row height, not by padding. */
+.term-back { font-weight: 600; min-height: 2.75rem; padding: 0; }
 
 /* `center`, not `baseline`: the state is a DOT now, and an empty flex item has
    no text baseline — its bottom margin edge would be aligned to the agent
@@ -764,7 +892,16 @@ body {
   min-height: 0;
   min-width: 0;
   margin: 0;
-  padding: 0.6rem 0.7rem;
+  /* FULL-BLEED horizontally, and the one band on this screen that opts out of
+     `--gutter`. The pane is a viewport onto what the agent drew, not a column
+     of paddock's own text: its content is already aligned by construction, it
+     scrolls sideways rather than wrapping, and it is measured in COLUMNS
+     VISIBLE — see the font-size note below, whose floor was corrected once
+     because ~46 columns clipped an 80-column TUI mid-word. 0.7rem of side
+     padding cost roughly two columns for no gain, on the axis this pane is
+     tuned for. `tests/gutter.test.ts` asserts this exemption rather than
+     leaving it to look like an oversight. */
+  padding: 0.75rem 0;
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -844,7 +981,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.6rem;
+  padding: 0.5rem var(--gutter);
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
@@ -866,8 +1003,8 @@ body {
 .term-keys {
   flex: none;
   display: grid;
-  gap: 0.35rem;
-  padding: 0.5rem 0.6rem;
+  gap: 0.5rem;
+  padding: 0.75rem var(--gutter);
   background: var(--surface);
 }
 
@@ -1033,7 +1170,7 @@ body {
   display: flex;
   gap: 0.5rem;
   background: var(--surface);
-  padding: 0.5rem 0.75rem 0.75rem;
+  padding: 0.75rem var(--gutter);
 }
 
 .term-reply input {
@@ -1208,14 +1345,32 @@ body {
    less deliberate than the settings screen. Kept as a grid rather than folded
    into `.card` because it also has to scroll — a long prompt must not push the
    reply bar off-screen, which is what `max-height` is for. */
+/* The prompt block: the agent's real options, under your thumb.
+   A full-width BAND with a left edge in --danger, not a rounded card floating
+   in a 0.6rem margin. Three reasons, in order of weight:
+
+   Its content started at 19.2px — a 0.6rem margin plus 0.6rem padding — which
+   was the furthest-in thing on the screen, so the one block you are meant to
+   act on was also the one least aligned with everything around it.
+
+   It is the same idea as a blocked `AgentCard` on the dashboard, and now it is
+   drawn the same way. Two representations of "this agent has stopped and needs
+   you" that look like two different components is exactly the kind of
+   disagreement `.agent-card`'s own note is about.
+
+   And a card inside a fixed column already bounded at 42rem was a border
+   inside a border. The band still scrolls at 40vh, which is what actually
+   protects a long option list. */
 .term-options {
   flex: none;
   display: grid;
-  gap: 0.4rem;
-  margin: 0.5rem 0.6rem 0;
-  padding: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  gap: 0.5rem;
+  padding: 0.75rem var(--gutter);
+  /* Compensated for the edge, exactly as `.agent-card` is and for the same
+     measured reason. */
+  padding-left: calc(var(--gutter) - var(--edge));
+  border-top: 1px solid var(--border);
+  border-left: var(--edge) solid var(--danger);
   background: var(--surface);
   max-height: 40vh;
   overflow-y: auto;
@@ -1380,7 +1535,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1835,7 +1990,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.6rem 0.75rem;
+  padding: 0.75rem var(--gutter);
   border-bottom: 1px solid var(--border);
 }
 
