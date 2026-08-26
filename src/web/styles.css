@@ -16,7 +16,7 @@
   --border: #e3e5e9;
   --fg: #14161a;
   --fg-dim: #5f6672;
-  --accent: #4a55c7;
+  --accent: #b4542e;
   --warn: #9a6600;
   --ok: #1a7f37;
   /* Red is the loudest colour in the app and is spent on ONE thing: an agent
@@ -39,7 +39,7 @@
      operator cannot read off the file. Used by the prompt option Enter would
      commit, which is the only place in the app that needs to say "this one"
      without saying "danger" or "done". */
-  --accent-wash: #eef0fb;
+  --accent-wash: #fbeee6;
 
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
@@ -84,12 +84,26 @@
      thresholds, correctly applied, rather than one number copied across. */
   --tile-claude: #D97757;
 
-  /* Text on an --accent fill. Defined once rather than per theme because
-     --accent is a saturated blue in BOTH themes, so the readable foreground
-     does not change with the ground: 6.15:1 on the light accent and 4.70:1 on
-     the dark one, both clearing 4.5:1 for text. It exists because the Send
-     button hardcoded #fff, and a literal colour is the one thing this
-     stylesheet is not allowed to contain. */
+  /* Text on an --accent fill — and PER THEME, which it did not used to be.
+     This is the token that made a warm accent possible at all, so the reason
+     is worth stating exactly.
+
+     In dark mode the interaction colour has to clear two bars that pull in
+     opposite directions: legible as TEXT on #08090a, and legible UNDER its own
+     label when it fills a button. With a white label the window where both
+     hold is luminance 0.175-0.183 — not a range, a coincidence. The old dark
+     indigo sat at 0.173, just below it, scoring 4.24 as text (under AA) and
+     4.70 on the fill. That near-miss is what pinned the accent to a
+     mid-saturated blue: no warmer hue could take white at all.
+
+     A near-black label in dark mode removes the constraint entirely. Rust then
+     scores 7.58 as text and 6.89 under its label, against indigo's 4.24 and
+     4.70 — better on both, not a trade. Light mode keeps white (4.94:1).
+
+     So this is defined in all three theme blocks, like a colour, and
+     tests/tokens.test.ts now guards it as one. A single value here is what a
+     future edit will reach for; it would silently put white on the light rust
+     fill or near-black on the dark one. */
   --accent-fg: #ffffff;
 
   /* Defined ONCE, not per theme, for the same reason --term-bg and --tile-*
@@ -242,12 +256,14 @@
     --border: #1f2126;
     --fg: #f7f8f8;
     --fg-dim: #8a8f98;
-    --accent: #5e6ad2;
+    --accent: #e08a63;
     --warn: #e0a838;
     --ok: #3fb950;
     --danger: #f85149;
     --danger-wash: #2a1416;
-    --accent-wash: #1b1f3a;
+    --accent-wash: #33210f;
+    /* Near-black ON the rust fill — see --accent-fg above. */
+    --accent-fg: #14161a;
   }
 }
 
@@ -258,12 +274,13 @@
   --border: #1f2126;
   --fg: #f7f8f8;
   --fg-dim: #8a8f98;
-  --accent: #5e6ad2;
+  --accent: #e08a63;
   --warn: #e0a838;
   --ok: #3fb950;
   --danger: #f85149;
   --danger-wash: #2a1416;
-  --accent-wash: #1b1f3a;
+  --accent-wash: #33210f;
+  --accent-fg: #14161a;
 }
 
 /* System fonts only. A webfont would be the single largest payload on a slow

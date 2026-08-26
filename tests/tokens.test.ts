@@ -3,6 +3,11 @@ import { expect, test } from "bun:test";
 const TOKENS = [
   "--bg", "--surface", "--border", "--fg", "--fg-dim", "--accent", "--warn", "--ok", "--danger", "--danger-wash",
   "--accent-wash",
+  // Per theme since the accent became rust. Its label is white on the light
+  // fill and near-black on the dark one — a single value would silently put
+  // one of them on the wrong ground, and nothing else asserts a computed
+  // colour. See the token's own note in styles.css.
+  "--accent-fg",
 ];
 
 async function css(): Promise<string> {
