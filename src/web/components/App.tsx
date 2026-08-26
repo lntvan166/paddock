@@ -25,6 +25,7 @@ import { UpdateBar } from "@web/components/UpdateBar";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
 import { dismissedRelease, dismissRelease, shouldShowRelease } from "@web/release-notice";
 import { readPrefs, themeAttr } from "@web/prefs";
+import { closeFor, useNotificationSweep } from "@web/notifications";
 
 export function App() {
   const {
@@ -79,6 +80,13 @@ export function App() {
   const showSettings = useSettingsRoute();
   const openSpaceId = useSpaceRoute();
   const showSpaces = useSpacesRoute();
+
+  useNotificationSweep(agents);
+  useEffect(() => {
+    // You are looking at it. Whatever the lock screen still says about this
+    // agent, it is no longer news.
+    if (openId !== null) void closeFor(openId);
+  }, [openId]);
 
   useEffect(() => {
     connect();
