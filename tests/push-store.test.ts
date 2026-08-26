@@ -3,6 +3,7 @@ import { chmod, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PushStore } from "@server/push/store";
+import { hashEndpoint } from "@shared/device-key";
 
 const dir = () => mkdtemp(join(tmpdir(), "paddock-push-"));
 const SUB = {
@@ -68,7 +69,7 @@ test("subscriptions add, list and remove", async () => {
   const d = await dir();
   const s = await PushStore.load(d);
   await s.add(SUB);
-  expect(s.list()).toEqual([SUB]);
+  expect(s.list()).toEqual([{ ...SUB, deviceKey: await hashEndpoint(SUB.endpoint) }]);
   await s.remove(SUB.endpoint);
   expect(s.list()).toEqual([]);
 });
@@ -87,7 +88,7 @@ test("re-subscribing the same endpoint replaces rather than duplicates", async (
 test("subscriptions survive a reload", async () => {
   const d = await dir();
   await (await PushStore.load(d)).add(SUB);
-  expect((await PushStore.load(d)).list()).toEqual([SUB]);
+  expect((await PushStore.load(d)).list()).toEqual([{ ...SUB, deviceKey: await hashEndpoint(SUB.endpoint) }]);
 });
 
 test("removing an endpoint that is not there is not an error", async () => {
@@ -95,4 +96,20 @@ test("removing an endpoint that is not there is not an error", async () => {
   const s = await PushStore.load(d);
   await s.remove("https://fcm.googleapis.com/fcm/send/never-existed");
   expect(s.list()).toEqual([]);
+});
+
+test("a subscription is stored with its device key, and an old file is backfilled", async () => {
+  // The key is persisted rather than derived per notification so the
+  // notifier's roster getter can be synchronous: an await between reading the
+  // cooldown and stamping it would open an interleaving window `#fire` does
+  // not have today.
+  const d = await mkdtemp(join(tmpdir(), "paddock-push-"));
+  await writeFile(join(d, "push.json"), JSON.stringify({
+    keys: { publicKey: "BP4z", privateKey: { kty: "EC", crv: "P-256", d: "x" } },
+    subscriptions: [{ endpoint: "https://push.example.com/send/legacy", p256dh: "p", auth: "a" }],
+  }));
+  const s = await PushStore.load(d);
+  const stored = s.list()[0]!;
+  expect(stored.deviceKey).toBe(await hashEndpoint("https://push.example.com/send/legacy"));
+  expect(s.deviceKeys()).toEqual(new Set([stored.deviceKey]));
 });
