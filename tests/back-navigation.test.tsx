@@ -6,7 +6,7 @@ import { afterEach, expect, test } from "bun:test";
 import { act } from "react";
 import { App } from "@web/components/App";
 import { Spaces } from "@web/components/Spaces";
-import { useStore, type ClientState } from "@web/store";
+import { applyMessage, useStore, type ClientState } from "@web/store";
 import { prunePanes } from "@web/pane-cache";
 import { agent, click, render, settle, stubFetch, unmount } from "./support/render";
 import type { SpaceTree } from "@shared/types";
@@ -219,6 +219,68 @@ test("a shell pane opened from a space returns there, labelled generically", asy
   await settle();
 
   expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to this space");
+
+  await click(host.querySelector(".term-back"));
+  expect(location.hash).toBe("#/space/w9");
+});
+
+test("a shell opened from a space survives a live promotion: the origin ref outlives the pane's own unmount/remount", async () => {
+  // This branch raised the stakes on `paneOriginRef`: the ref now carries a
+  // SPACE ID, not a boolean, and a promotion unmounts `PaneTerminal` and
+  // mounts `AgentTerminal` under the same pane id — a real remount, not a
+  // re-render, so anything holding the origin has to be a ref on `App`
+  // itself, which never unmounts, rather than component state that would
+  // reset with the pane. The existing promotion test
+  // (tests/pane-deep-link.test.tsx) sets `location.hash` BEFORE render, so
+  // its origin is null and the back target is the dashboard both before and
+  // after — it cannot observe the ref surviving. This one opens from a real
+  // space via a real `hashchange`, so there is a non-null origin to lose.
+  useStore.setState({ connect: () => {} });
+  location.hash = "#/space/w9";
+
+  let harness: string | null = null;
+  const { fn } = stubFetch({
+    "/api/spaces": () => treeWith(harness),
+    "/api/panes/": () => ({ lines: ["operator@dev-box:/srv/project$ ls"], source: "recent_unwrapped" }),
+    "/output": () => ({ lines: ["out"], source: "visible" }),
+    "/prompt": () => ({ question: null, options: null, selected: null, raw: "" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<App />);
+  await settle();
+  expect(host.querySelector(".space-screen-head")).not.toBeNull();
+
+  // The real navigation `paneOriginRef` has to notice: away from
+  // `#/space/w9`, into the shell.
+  await act(async () => { location.hash = "#/pane/w9%3Ap1"; });
+  await settle();
+
+  expect(host.querySelector("section.term")).not.toBeNull();
+  expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to this space");
+
+  // Promote it: the tree flips to a harness first (the hub sends
+  // `tree-stale` immediately), then the store gets the agent one delta
+  // later — the same two-step order `pane-deep-link.test.tsx` drives.
+  harness = "claude";
+  await act(async () => {
+    useStore.setState((s) => applyMessage(s, { type: "tree-stale", serverTime: Date.now() }));
+  });
+  await settle();
+
+  await act(async () => {
+    useStore.setState((s) => applyMessage(s, {
+      type: "snapshot", hostId: "dev-box", serverTime: Date.now(),
+      agents: [agent({ agentId: "w9:p1", name: "docs-cleanup", workspaceId: "w9", workspaceLabel: "docs-cleanup" })],
+    }));
+  });
+  await settle();
+
+  // Still the same destination — the ref must have survived the shell's own
+  // unmount and the agent view's mount under the same pane id — but the
+  // label has upgraded now that `agents` carries a `workspaceLabel`.
+  expect(host.querySelector("section.term")).not.toBeNull();
+  expect(host.querySelector(".term-back")?.getAttribute("aria-label")).toBe("Back to docs-cleanup");
 
   await click(host.querySelector(".term-back"));
   expect(location.hash).toBe("#/space/w9");

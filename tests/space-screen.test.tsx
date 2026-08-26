@@ -73,6 +73,29 @@ test("the space's own actions are in the header, and the tabs' are on their rows
   expect(host.querySelectorAll("[data-tab-row] [aria-label^='Actions']").length).toBe(2);
 });
 
+test("a space that exists but has zero tabs renders empty, distinguishably from loading", async () => {
+  // This stopped being hypothetical: `Space.tsx` renders a real, tabless
+  // space as an empty `<ul className="tabs">`, and with `spacesAvailable`
+  // false that is a blank body — the same shape "still loading" renders. The
+  // two must not look alike: "an empty screen and a broken herdr must never
+  // look alike" is this file's own rule, and it applies just as much to "no
+  // agent" as it does to "herdr is down".
+  const EMPTY: SpaceTree = {
+    readAt: 1_700_000_000_000,
+    spaces: [
+      { spaceId: "w5", label: "flaky-test-fix", tabCount: 0, paneCount: 0, tabs: [] },
+    ],
+  };
+  const host = await render(<Space spaceId="w5" onBack={() => {}} load={load(EMPTY)} />);
+  expect(host.querySelectorAll("[data-tab-row]").length).toBe(0);
+  expect(host.textContent).not.toContain("gone");
+  // What loading does NOT render: the picker and the space's own `⋯`. Their
+  // presence here is what pins this as "a real, empty space" rather than
+  // "the tree has not answered yet" — the loading branch renders neither.
+  expect(host.querySelector("[data-space-picker]")).not.toBeNull();
+  expect(host.querySelector(".space-screen-head [aria-label^='Actions']")).not.toBeNull();
+});
+
 test("a space id that addresses nothing says so, and never renders an empty list", async () => {
   // An empty tab list is indistinguishable from a real space that has none —
   // the same "an empty screen and a broken herdr must never look alike" rule
