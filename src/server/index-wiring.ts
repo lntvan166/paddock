@@ -22,15 +22,25 @@ import type { VapidKeys } from "@server/push/vapid";
 export function buildPushSender(
   store: Pick<PushStore, "keys" | "list" | "remove">,
   send: (target: PushTarget, keys: VapidKeys, payload: string) => Promise<PushOutcome>,
-): ((p: { name: string; state: AgentState; agentId: string }) => Promise<void>) | null {
+): ((p: {
+  name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string>;
+}) => Promise<void>) | null {
   const keys = store.keys();
   if (keys === null) return null;
   return async (payload) => {
-    const body = JSON.stringify(payload);
+    // Destructured OFF, not merely unused: `content` is what gets encrypted,
+    // and a push payload is `{name, state, agentId}` and nothing else because
+    // it renders on a lock screen.
+    const { skipDeviceKeys, ...content } = payload;
+    const body = JSON.stringify(content);
     // Sequential, not Promise.all: `remove` rewrites the store's list, and a
     // concurrent prune racing another send's read is a subscription lost to a
     // write that never saw it.
     for (const target of store.list()) {
+      // Already showing this agent on that device. Withheld here rather than
+      // filtered upstream so the notifier states the policy and the transport
+      // applies it — `notifier.ts` owns every decision, this file owns none.
+      if (skipDeviceKeys.has(target.deviceKey)) continue;
       const out = await send(target, keys, body);
       if (out.kind === "gone") {
         await store.remove(target.endpoint);

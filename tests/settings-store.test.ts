@@ -276,3 +276,21 @@ test("an explicit notify.telegram wins over a legacy notify.enabled", async () =
   await s.load();
   expect(s.current().notify.telegram).toBe(false);
 });
+
+test("skipWhileViewing defaults off while the feature lands", async () => {
+  const s = new SettingsStore(await dir(), {});
+  await s.load();
+  expect(s.current().notify.skipWhileViewing).toBe(false);
+});
+
+test("a non-boolean skipWhileViewing falls back to the default", async () => {
+  // A hand-edited settings.json is a documented use, so a wrong type must
+  // degrade rather than throw — the rule `triggers` and `settleMs` follow.
+  expect(migrate({ notify: { skipWhileViewing: "yes" } }, () => {}).notify.skipWhileViewing)
+    .toBe(false);
+});
+
+test("a stored skipWhileViewing survives a load", async () => {
+  expect(migrate({ notify: { skipWhileViewing: true } }, () => {}).notify.skipWhileViewing)
+    .toBe(true);
+});

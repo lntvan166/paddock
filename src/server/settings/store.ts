@@ -12,6 +12,9 @@ export interface Settings {
     settleMs: Record<NotifyTrigger, number>;
     mutedUntil: number | null;
     cooldownMs: number;
+    /** See `SettingsView["notify"].skipWhileViewing` — the on-disk half of
+     *  the same field. Defaults off; a later task flips the default to true. */
+    skipWhileViewing: boolean;
   };
   /** Push is off until the operator turns it on. The keypair and the device
    *  list are NOT here — they are state, and they live in push.json. */
@@ -62,6 +65,10 @@ const defaults = (): Settings => ({
   notify: {
     telegram: false, triggers: ["blocked"], settleMs: { ...DEFAULT_SETTLE_MS },
     mutedUntil: null, cooldownMs: DEFAULT_COOLDOWN_MS,
+    // Off on purpose: a half-wired presence store must not be able to
+    // withhold a real notification. A later task flips this default once
+    // presence is fully wired through.
+    skipWhileViewing: false,
   },
   push: { enabled: false },
   publicUrl: null,
@@ -213,6 +220,8 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
         num(n.cooldownMs, d.notify.cooldownMs),
         MIN_COOLDOWN_MS, Number.MAX_SAFE_INTEGER, "cooldownMs", log,
       ),
+      skipWhileViewing: typeof n.skipWhileViewing === "boolean"
+        ? n.skipWhileViewing : d.notify.skipWhileViewing,
     },
     // Explicitly, like every other field here: a shallow merge is what let a
     // v1 file load with no settleMs and silently restore the edge-firing bug.

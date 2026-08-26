@@ -26,6 +26,14 @@ export interface SettingsView {
      *  misread by a phone in one zone and a server in another. */
     mutedUntil: number | null;
     cooldownMs: number;
+    /**
+     * Withhold a push from a device that is currently showing that agent's
+     * pane, until it stops showing it.
+     *
+     * Push ONLY. A device key identifies one browser; a Telegram chat can be
+     * read from a laptop, so presence can make no claim about it.
+     */
+    skipWhileViewing: boolean;
   };
   push: {
     enabled: boolean;

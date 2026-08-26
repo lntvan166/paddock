@@ -35,11 +35,33 @@ export interface NotifierOpts {
    *
    * Takes the payload rather than composed text: a push notification is
    * rendered by `sw.js` from structured fields, where Telegram receives a
-   * string. `{name, state, agentId}` and NOTHING else — `a.task` is
-   * agent-authored text and this one lands on a lock screen.
+   * string. `{name, state, agentId}` and NOTHING else reaches the lock
+   * screen — `a.task` is agent-authored text. `skipDeviceKeys` rides along
+   * on this same call but is an ARGUMENT to the sender, not content: the
+   * sender strips it before the body is built. See `index-wiring.ts`.
    */
-  sendPush?: (payload: { name: string; state: AgentState; agentId: string }) => Promise<void>;
+  sendPush?: (
+    payload: { name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string> },
+  ) => Promise<void>;
+  /**
+   * Which DEVICES have this agent's pane open and awake, from
+   * `state/presence.ts`. A getter, read at send time: a viewer can arrive or
+   * leave between two notifications.
+   */
+  viewers?: (agentId: string) => Set<string>;
+  /**
+   * Every subscribed device's key. Needed to answer "is EVERY device already
+   * showing this?", which is a different question from "is anyone".
+   *
+   * Synchronous, which is why `push.json` persists the key rather than this
+   * hashing endpoints on demand: an await here would sit between reading the
+   * cooldown and stamping it.
+   */
+  pushDeviceKeys?: () => Set<string>;
 }
+
+/** Shared empty set, so the no-presence path allocates nothing per send. */
+const EMPTY_KEYS: ReadonlySet<string> = new Set<string>();
 
 /**
  * The message for one settled transition: name, state, and a way in.
@@ -271,6 +293,24 @@ export class Notifier {
     // was armed, so muting during a settle window still silences.
     if (s.notify.mutedUntil !== null && now < s.notify.mutedUntil) return;
 
+    // WHO IS ALREADY LOOKING. Decided here, above the cooldown stamp, and the
+    // position is the point: a withheld push makes no request at all, so there
+    // is nothing to rate-limit, and spending the cooldown would delay the
+    // deferred re-fire by up to `cooldownMs` for no reason anyone could name.
+    // The stamp's own comment is about a send that was MADE and FAILED, which
+    // this is not.
+    const skip = s.notify.skipWhileViewing
+      ? this.o.viewers?.(a.agentId) ?? EMPTY_KEYS
+      : EMPTY_KEYS;
+    const roster = this.o.pushDeviceKeys?.() ?? EMPTY_KEYS;
+    // `roster.size > 0` guards the case where nothing is subscribed: an empty
+    // roster is not suppression, and reading it as "every device is viewing"
+    // would silence push for an operator with no devices to silence.
+    const pushWithheld = roster.size > 0 && [...roster].every((k) => skip.has(k));
+    // Task 5 replaces this with the deferral. Returning here is already
+    // correct for "withhold"; what it lacks is the memory to fire later.
+    if (pushWithheld && !telegramReady) return;
+
     const since = now - (this.#lastSentAt.get(a.agentId) ?? Number.NEGATIVE_INFINITY);
     if (since < s.notify.cooldownMs) {
       // DEFER, not drop. The cooldown bounds how often paddock may speak
@@ -299,7 +339,13 @@ export class Notifier {
     // it would never run — and the two transports must be independent in both
     // directions. `#sendPush` swallows its own faults, so it can never turn a
     // push failure into the "outside the send contract" path `#arm` describes.
-    const pushed = this.#sendPush(a, state);
+    //
+    // Gated on `pushWithheld` rather than always dispatched: the guard above
+    // only refuses to fire AT ALL when NEITHER transport has anything to do,
+    // so a ready Telegram still reaches this line with push fully withheld —
+    // and every device in `roster` is already in `skip` when that is true, so
+    // there is no device left for a real sender to tell anything.
+    const pushed = pushWithheld ? Promise.resolve() : this.#sendPush(a, state, skip);
 
     // Push has been dispatched; without Telegram there is nothing else to do.
     // Everything below this line is Telegram's retry and error bookkeeping,
@@ -360,11 +406,11 @@ export class Notifier {
    * reaching the delta path would take the dashboard down to deliver a
    * notification, which is exactly backwards.
    */
-  async #sendPush(a: Agent, state: NotifyTrigger): Promise<void> {
+  async #sendPush(a: Agent, state: NotifyTrigger, skipDeviceKeys: ReadonlySet<string>): Promise<void> {
     const send = this.o.sendPush;
     if (send === undefined) return;
     try {
-      await send({ name: a.name, state, agentId: a.agentId });
+      await send({ name: a.name, state, agentId: a.agentId, skipDeviceKeys: new Set(skipDeviceKeys) });
     } catch (e) {
       console.info(`paddock: push failed for ${a.name}: ${(e as Error).message}`);
     }

@@ -73,6 +73,7 @@ function demoSettings(mutedUntil: number | null = null): SettingsView {
       settleMs: { blocked: 5_000, done: 10_000 },
       mutedUntil,
       cooldownMs: 60_000,
+      skipWhileViewing: false,
     },
     // No keypair, because the demo is a static bundle with no server behind it
     // — there is nothing to subscribe TO. A null public key is the honest
