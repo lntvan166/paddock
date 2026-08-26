@@ -1640,6 +1640,14 @@ body {
   font-size: var(--t-md);
 }
 
+/* "That space is gone." (Space.tsx) — a plain fact, not a failure, so it
+   gets prose's own dim voice rather than `.error`'s danger treatment. */
+.empty {
+  margin: 0.6rem 0.75rem;
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+}
+
 .spaces {
   list-style: none;
   margin: 0;
@@ -1650,50 +1658,31 @@ body {
   border-top: 1px solid var(--border);
 }
 
-.space-head {
+/* The row's only tap target (§5.1: no `⋯`, no `+` on any row) — the whole
+   row IS the link, so its layout lives here now rather than on a
+   `.space-head` wrapper div that SpaceRow.tsx no longer renders. */
+[data-space-row] > a {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   min-height: 2.75rem;
   padding: 0.6rem 0.75rem;
-}
-
-[data-expand] {
-  flex: none;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: 0;
-  color: var(--fg-dim);
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-/* Holds the space's label and, on a merged row, its pane's alias
-   underneath it — a column so the two stack rather than compete for the
-   same line. `flex: 1` / `min-width: 0` live here rather than on
-   `.space-name` alone, now that there can be two lines to shrink together. */
-.space-heading {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+  color: inherit;
+  text-decoration: none;
 }
 
 /* The scan target, same voice as an agent's name on the dashboard: an
    identifier you match, set in mono. Truncated rather than wrapped — a name
-   that wraps pushes the row's trailing content (the pane count, or the state
-   text on a merged row) off a narrow phone. The `⋯` this used to cite is gone;
-   see SpaceRow.tsx's note for the plan that brings it back. ALWAYS the space's own
-   label, on every row shape: a merged row used to show its pane's identity
-   here instead, which hid the space's label on most rows (six of seven are
-   1:1:1) — and a later plan's workspace.rename writes exactly this field, so
-   a row that never showed it would make that rename look like it did
-   nothing. */
+   that wraps pushes the row's trailing content (the state word, the count)
+   off a narrow phone. ALWAYS the space's own label: a later plan's
+   workspace.rename writes exactly this field, so a row that never showed it
+   would make that rename look like it did nothing. */
 .space-name {
+  /* Grows into the row's free space so it truncates instead of the sibling
+     state/count spans — there is no `.space-heading` wrapper any more to
+     carry `flex: 1` on its behalf; the row (`SpaceRow.tsx`, `SpacePicker.tsx`)
+     is a flat run of marker, name, state, count. */
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1704,46 +1693,13 @@ body {
   font-weight: 600;
 }
 
-/* The merged pane's own identity, shown only when it differs from
-   `.space-name` above (SpaceRow.tsx computes `showAlias`) — a shell has no
-   name, so its title is the one thing that identifies it, and the space
-   label alone would leave it unlabelled in every practical sense. Smaller
-   and dimmer than the name it sits under: it is a clarification, not a
-   second identity competing with the space's own. */
-.space-alias {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono);
-  letter-spacing: -0.02em;
+/* The state word beside the marker (§6: colour is never the only channel —
+   `StateMarker` is `aria-hidden`). Shared by the space list row and the
+   space picker row, which is why it is not scoped to either. */
+.space-state {
+  flex: none;
   font-size: var(--t-xs);
   color: var(--fg-dim);
-}
-
-/* A merged row's whole label block is a link into the terminal — the same
-   treatment `.space-tabs [data-pane-row] a` gives a structured space's
-   sub-rows, so the two row shapes behave identically under a thumb.
-
-   A real flex ITEM, not `display: contents`: contents would leave the anchor
-   with no box, so the gaps between marker, name and state would not be
-   tappable, and it is still the shape several screen readers drop an
-   interactive element over. `flex: 1` and `min-height` instead give the link
-   the row's full height and all of its slack, which is what makes it a
-   phone-sized target. Horizontal padding is the row's own (`.space-head`),
-   so nothing is doubled.
-
-   No colour of its own beyond `inherit`: a row that turns link-blue would be
-   the only blue text in the app. */
-.space-head > a {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex: 1;
-  min-width: 0;
-  min-height: 2.75rem;
-  color: inherit;
-  text-decoration: none;
 }
 
 .space-count {
@@ -1753,54 +1709,134 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* A space's children are visibly BRACKETED — a left rule plus indent, closed
-   at the bottom — so the space reads as a container you can see the end of,
-   rather than a flat run of rows indistinguishable from the row above them
-   (§16.2). `border-left` and `margin-left` reuse `--border`, the same token
-   every other rule in this file draws from: no new colour for containment. */
-.space-tabs {
-  list-style: none;
-  margin: 0 0.75rem 0.4rem;
-  padding: 0 0 0.4rem;
-  border-left: 2px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.space-tabs > li + li { border-top: 1px solid var(--border); }
-
-.space-tabs ul {
+/* ── Tab rows, one level down (§5.3) ─────────────────────────────────────
+   A space's own tabs, and their pane sub-rows when a tab is split. There is
+   no third level: a pane has no children, so TabRow.tsx never nests another
+   one of these. Style A (§6): hairline dividers, no per-row card, no border
+   around a row — the same channel `.spaces` above uses for the same reason. */
+.tabs {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-/* Scoped to sub-rows inside `.space-tabs`, not `[data-pane-row]` generally —
-   a MERGED row (a flat space's single pane) also carries `data-pane-row` for
-   the reason SpaceRow.tsx documents, but its layout comes entirely from
-   `.space-head` above. Styling `[data-pane-row]` unscoped would apply a
-   second, conflicting flex layout to that same row. */
-.space-tabs [data-pane-row] {
-  display: flex;
-  align-items: center;
+[data-tab-row] {
   border-top: 1px solid var(--border);
 }
 
-.space-tabs [data-pane-row] a {
+.tab-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+}
+
+/* The row's link, when the tab has a root pane. TabRow.tsx renders a bare
+   `.tab-heading` with no anchor when it does not, which needs no rule of its
+   own here: `.tab-heading` already carries the `flex: 1` that makes either
+   shape fill the row. */
+.tab-head > a {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex: 1;
   min-width: 0;
   min-height: 2.75rem;
-  padding: 0 0.75rem;
   color: inherit;
   text-decoration: none;
 }
 
+/* Holds the tab's name, in a column of its own — the same shape
+   `.pane-heading` below gives a pane one level down, so a future second line
+   on either has somewhere to go without a second rule. */
+.tab-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  letter-spacing: -0.02em;
+  font-size: var(--t-lg);
+  font-weight: 600;
+}
+
+/* A split tab's pane count, shown INSTEAD OF the root pane's own state
+   (TabRow.tsx) — with more than one pane, the row's state question moves
+   down a level, to the sub-rows below. A quantity to compare down a column,
+   so tabular figures like `.space-count`. */
+.tab-count {
+  flex: none;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A split tab's own sub-rows — the end of the tree. No bracket, no left
+   rule, no surface of its own: hairline dividers only (§6), the same
+   channel every other row boundary in this file uses. */
+.tab-panes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Unscoped, unlike the `.space-tabs [data-pane-row]` rule this replaces:
+   this attribute has exactly one caller now (TabRow.tsx's split sub-rows).
+   The old scope existed because a MERGED space row used to share the same
+   attribute for an unrelated layout, which is gone with `.space-head`. */
+[data-pane-row] {
+  border-top: 1px solid var(--border);
+}
+
+/* Indented under the tab row above it, so a split tab's panes read as
+   nested without a left rule or a card. */
+[data-pane-row] a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem 0 1.75rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The `+` that adds a tab (§16.7's `variant="row"`), as the last row of the
+   list it adds to. There is no header position on this screen that would say
+   "a tab in this space" the way the Spaces header's `+` says "a space" —
+   see `.create-btn` below — so this one says it in words instead. */
+.tab-create {
+  border-top: 1px solid var(--border);
+}
+
+.create-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.75rem;
+  background: none;
+  border: 0;
+  /* The screen's one accent control (§6) — the quiet dot rule this list
+     otherwise follows exactly. */
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--t-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* Holds the pane's name and, when its tab is named, the tab's label
    underneath it — a column so the two stack rather than compete for the same
-   line. Same shape as `.space-heading` above, one level down. */
+   line. Same shape as `.tab-heading` above, one level up. */
 .pane-heading {
   flex: 1;
   min-width: 0;
@@ -1816,20 +1852,6 @@ body {
   font-family: var(--mono);
   letter-spacing: -0.02em;
   font-size: var(--t-md);
-}
-
-/* A CAPTION on the pane it labels, not a heading above a group of panes — the
-   defect this replaces was a bare uppercase `<h3>` between rows, read by an
-   operator as a section header for the whole list (§16.2). Prose, not a
-   glyph, so it sits on the `--t-*` scale like everything else here rather
-   than carving out an off-scale exemption. */
-.pane-tab {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--t-xs);
-  color: var(--fg-dim);
 }
 
 .pane-state {
@@ -1882,6 +1904,107 @@ body {
   font: inherit;
   cursor: pointer;
 }
+
+/* ── The space screen's own header (§5.2) ──────────────────────────────────
+   Same shape as `.spaces-head` above it — a back control, then whatever the
+   screen offers instead of a bare title. Here that is the space picker and
+   the space's own `⋯`, not a second copy of that header's rules, because
+   `.space-picker-btn` needs to look like a title and `.spaces-head button`'s
+   accent would paint it like the create control it is not. */
+.space-screen-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Scoped to the back link specifically, not `.space-screen-head button`
+   generally — a bare element rule here would also catch `.space-picker-btn`,
+   which is deliberately NOT accent (see below). */
+.space-screen-head .term-back {
+  min-height: 2.75rem;
+  padding: 0 0.5rem;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The screen's title, and the trigger that switches space (§5.2). It reads
+   like `.spaces-head h2` — same size, same weight — and is deliberately NOT
+   accent-coloured: the screen's one accent control is the tab list's own
+   `+` (`.create-row`), and painting this too would spend it twice. The
+   caret is the only hint that a title is now a control. */
+.space-picker-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+  padding: 0 0.5rem;
+  background: none;
+  border: 0;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.space-picker-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-xl);
+  font-weight: 600;
+}
+
+.space-picker-caret {
+  flex: none;
+  color: var(--fg-dim);
+  font-size: var(--t-md);
+  line-height: 1;
+}
+
+/* `.space-picker-sheet` gets no rule of its own beyond `.row-actions-sheet`,
+   which it also carries (SpacePicker.tsx) and which already gives it its
+   background, radius, `max-height`/`overflow-y`, and the safe-area inset in
+   its OWN `padding-bottom` — a second `padding-bottom` on `.space-picker-sheet`,
+   at the same specificity, is exactly how that inset gets silently dropped
+   (the trap `.settings` documents above). The class is the hook a future
+   rule would attach to, not a selector missing one now. */
+
+.space-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A tap target too, same 44px floor as every row in this file — this is a
+   row of a SWITCH, not a menu of prose links. Border-top on every row
+   including the first, matching `.row-actions-menu > button` right below
+   the sheet's own header divider. */
+[data-picker-row] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.9rem;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* No visual distinction for the current row beyond `aria-current="true"`
+   itself: `.space-name` already renders every row's label at weight 600, so
+   a second weight rule here would be inert, and the sheet is reached from a
+   header that already names the space you are on. */
 
 /* The row's own `⋯`, and the sheet it opens (RowActions.tsx).
 
@@ -2061,9 +2184,9 @@ body {
   background: none;
   border: 0;
   color: var(--accent);
-  /* Sizes the `+` GLYPH, not text — the same exemption `[data-expand]` and the
-     arrow keys carry, and for the same reason: on the 13px prose step a `+`
-     sat in the middle of a 44px target and read as an empty button. */
+  /* Sizes the `+` GLYPH, not text — the same exemption the arrow keys carry,
+     and for the same reason: on the 13px prose step a `+` sat in the middle
+     of a 44px target and read as an empty button. */
   font-size: 1.375rem;
   line-height: 1;
   cursor: pointer;

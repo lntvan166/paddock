@@ -145,7 +145,6 @@ const OFF_SCALE = [
   // Arrow keys size a SYMBOL, not text. On the text scale a 16px arrow sat in
   // the middle of an 80px target and read as an empty button.
   '.term-key[data-key="right"]',
-  "[data-expand]",    // sizes the ▸/▾ chevron GLYPH, not text
   // Sizes the `+` GLYPH the create controls carry (§16.7), not text. On the
   // 13px prose step a `+` sat in the middle of a 44px target and read as an
   // empty button — the same defect the arrow keys above record.
@@ -318,4 +317,16 @@ test("the no-state marker is a complete shape, not a dashed circle", async () =>
   expect(rule!.body).not.toContain("dashed");
   // A square, so it cannot be mistaken for `idle`'s hollow ring.
   expect(rule!.body).not.toContain("9999px");
+});
+
+test("every off-scale exception still names a selector the stylesheet has", async () => {
+  // A list of exceptions that outlives the rules it excused stops being a
+  // record of deliberate choices and becomes noise — and the failure mode of a
+  // scanner is someone silencing it. `[data-expand]` is the first entry to go
+  // stale: nothing collapses on either Spaces screen any more.
+  const css = await Bun.file("src/web/styles.css").text();
+  const selectors = new Set(rules(css).map((r) => r.sel));
+  for (const sel of OFF_SCALE) {
+    expect(selectors.has(sel)).toBe(true);
+  }
 });
