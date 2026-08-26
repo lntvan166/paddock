@@ -37,6 +37,7 @@ export const USAGE = [
   "       paddock update [--check]  install the latest release",
   "       paddock doctor            can this paddock talk to your herdr?",
   "       paddock tunnel [--for D]  publish it on a quick tunnel, gated by a code",
+  "       paddock tunnel --attach   publish the paddock already running here",
   "                                 D is 30m, 2h or 7d",
   "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",

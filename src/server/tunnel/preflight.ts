@@ -22,13 +22,26 @@ export async function preflight(opts: {
   which?: (bin: string) => string | null;
   check?: (dir: string) => Promise<StateCheck>;
   log?: (line: string) => void;
+  /**
+   * Attaching, where a paddock already running is the POINT rather than the
+   * problem.
+   *
+   * The refusal below exists because `paddock tunnel` is a whole second
+   * paddock — its own herdr stream, its own notifier, two notifications per
+   * agent. An attached run builds none of those and proxies to the instance it
+   * found, so the reason does not apply and the check is skipped.
+   *
+   * Only this check. cloudflared still has to exist, and everything after this
+   * runs unchanged.
+   */
+  attach?: boolean;
 }): Promise<Preflight> {
   const platform = opts.platform ?? process.platform;
   const check = opts.check ?? ((d: string) => checkState(d));
   const log = opts.log ?? warn;
 
   const state = await check(opts.dir);
-  if (state.kind === "running") {
+  if (state.kind === "running" && opts.attach !== true) {
     return {
       ok: false,
       message: [
@@ -45,6 +58,11 @@ export async function preflight(opts: {
         "  notifier. Every blocked agent would notify you twice.",
         "",
         "    `paddock stop && paddock tunnel`",
+        "",
+        "  or publish the one already running, without stopping it — this adds",
+        "  no second herdr connection and no second notifier:",
+        "",
+        "    `paddock tunnel --attach`",
       ].join("\n"),
     };
   }
