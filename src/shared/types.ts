@@ -199,6 +199,16 @@ export interface ParsedPrompt {
 export interface ActionResult {
   ok: boolean;
   detail?: string;
+  /**
+   * The screen the action produced, when the route settled and read one.
+   *
+   * Optional because not every action has a screen to report — a rename does
+   * not. The pane `/text` and `/key` routes DO: they wait `KEY_SETTLE_MS` and
+   * read, so the browser can paint the result on this round trip instead of
+   * discovering it on a poll that may have backed off toward ten seconds.
+   */
+  lines?: string[];
+  source?: string;
 }
 
 /**
@@ -219,7 +229,30 @@ export interface ActionResult {
  */
 export const NAV_KEYS = [
   "up", "down", "left", "right", "enter", "esc", "tab", "space", "backspace",
+  // Control keys, in tmux's own spelling because that is what herdr forwards.
+  //
+  // `pane.send_keys` takes an UNCONSTRAINED `string[]` in herdr's schema, so
+  // the vocabulary was never herdr's limit — it was this list. Verified on a
+  // throwaway pane against herdr 0.8.2: `sleep 300` running, `C-c` sent, and
+  // the pane came back to a clean prompt.
+  //
+  // These four and no more, because each answers a question an operator on a
+  // phone actually has: stop this (`C-c`), end input (`C-d`), background it
+  // (`C-z`), clear the screen (`C-l`). A general-purpose key-send endpoint
+  // remains refused — see `OPTION_KEY_RE` in routes.ts.
+  "ctrl-c", "ctrl-d", "ctrl-z", "ctrl-l",
 ] as const;
+
+/**
+ * A `NavKey` as herdr spells it.
+ *
+ * The wire name is tmux's (`C-c`), and the UI name is readable (`ctrl-c`).
+ * One map, at the boundary, so the UI never has to know tmux's spelling and
+ * herdr never sees paddock's.
+ */
+export const HERDR_KEY: Partial<Record<NavKey, string>> = {
+  "ctrl-c": "C-c", "ctrl-d": "C-d", "ctrl-z": "C-z", "ctrl-l": "C-l",
+};
 
 export type NavKey = (typeof NAV_KEYS)[number];
 

@@ -426,6 +426,17 @@ export function PaneTerminal({
     setOutput(lines);
     setError(null);
     setStalled(false);
+    // Back to the floor, for the same reason `onVisible` below resets it: an
+    // applied screen means an ACTION just happened, and whatever backoff had
+    // built up was measured against a pane nobody was touching. A shell that
+    // has just been given a command is the least likely pane in the session to
+    // stay unchanged, and it is the one moment the operator is watching.
+    //
+    // Without this, the route's settled screen lands instantly and then the
+    // NEXT frame — the command's actual output — waits out a backoff of up to
+    // MAX_REFRESH_MS. That is half the "terminal is slow" report; the other
+    // half was the route not answering with a screen at all.
+    intervalRef.current = floorRef.current;
   }, [paneId]);
 
   useImperativeHandle(ref, () => ({ apply }), [apply]);
@@ -732,6 +743,12 @@ export function PaneTerminal({
     try {
       const res = await onSendText(text, true);
       if (res.ok) {
+        // The route settles and reads now, so the command's own screen comes
+        // back on THIS response. Applying it here is what makes Enter feel
+        // immediate; it also resets the poll to its floor (see `apply`), so
+        // the output that follows arrives at the fast cadence rather than
+        // whatever backoff the idle shell had built up.
+        if (res.lines) apply(res.lines, null);
         setShellReply("");
       } else {
         // Surfaced, never swallowed: a command that did not reach the shell
@@ -762,6 +779,10 @@ export function PaneTerminal({
     setShellFeedback(null);
     try {
       const res = await onSendKey(key);
+      // Same round trip as `submitShellText`: the route settled and read, so
+      // the key's effect is in hand rather than a poll away. This is what makes
+      // ^C feel like an interrupt instead of a request.
+      if (res.ok && res.lines) apply(res.lines, null);
       if (!res.ok) setShellFeedback({ detail: res.detail ?? "Key failed." });
     } catch (err) {
       // See `submitShellText`'s note just above: `sendPaneKey` rejects rather

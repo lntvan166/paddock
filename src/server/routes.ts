@@ -1095,7 +1095,22 @@ export function createApp(deps: AppDeps) {
             return c.json({ ok: false, detail: `typed, but not run: ${detail}` }, 502);
           }
         }
-        return c.json({ ok: true });
+        // Settle, then read, then return the screen the command produced.
+        //
+        // This route used to answer `{ok:true}` alone and leave the browser to
+        // discover the result on its next poll. That poll backs off toward
+        // MAX_REFRESH_MS while a pane is quiet, so on an idle shell — which is
+        // most shells, most of the time — Enter could take the better part of
+        // ten seconds to show anything. The operator reported it as "the
+        // terminal is slow"; it was neither the terminal nor slow, it was a
+        // round trip that never carried the answer back.
+        //
+        // The agent `/key` route above has settled-and-read since it shipped.
+        // This is the same pattern, and the pane routes were the ones missing
+        // it. A read costs ~2 ms against herdr; KEY_SETTLE_MS dominates.
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readPane(id);
+        return c.json({ ok: true, lines: out.lines, source: out.source });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not send text to pane \`${id}\`: ${detail}`);
@@ -1128,7 +1143,12 @@ export function createApp(deps: AppDeps) {
           return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/key" }, 409);
         }
         await actions.sendPaneKey(id, key);
-        return c.json({ ok: true });
+        // Settled and read for the reason the `/text` route above gives: a
+        // shell's poll has backed off, so the key's effect has to travel back
+        // on this response or it waits for the next tick.
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readPane(id);
+        return c.json({ ok: true, lines: out.lines, source: out.source });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not send key to pane \`${id}\`: ${detail}`);

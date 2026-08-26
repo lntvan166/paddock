@@ -5,15 +5,23 @@ import { sortSpaces, treeCwds } from "@web/components/space-sort";
 import { SpaceRow } from "@web/components/SpaceRow";
 import { useSpaceTree } from "@web/components/use-space-tree";
 import { useStore } from "@web/store";
+import type { RowSenders } from "@web/components/RowActions";
 import type { SpaceTree } from "@shared/types";
 
 /**
  * `load` is injected so the tests can drive this without a network, and so a
  * failure is a value this component renders rather than a thrown promise.
  */
-export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate }: {
+export function Spaces({ onBack, load = fetchSpaceTree, senders, createSenders, navigate }: {
   onBack: () => void;
   load?: () => Promise<SpaceTree>;
+  /** The row `⋯`'s writes — rename and close, space-scoped.
+   *
+   *  This prop was DELETED when the rows lost their controls, and is back with
+   *  them. That is the prop doing its job: it exists exactly as long as
+   *  something on this screen writes, and its absence was the compiler's way
+   *  of saying nothing did. */
+  senders?: RowSenders;
   /** The create sheet's writes, injected for the same reason `load` is: a
    *  component test drives a create without a network. */
   createSenders?: CreateSenders;
@@ -82,7 +90,7 @@ export function Spaces({ onBack, load = fetchSpaceTree, createSenders, navigate 
       {tree !== null && (
         <ul className="spaces">
           {sortSpaces(tree.spaces).map((s) => (
-            <SpaceRow key={s.spaceId} space={s} />
+            <SpaceRow key={s.spaceId} space={s} onChanged={() => void refresh()} senders={senders} />
           ))}
         </ul>
       )}

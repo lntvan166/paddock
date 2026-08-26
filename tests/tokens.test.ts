@@ -330,3 +330,28 @@ test("every off-scale exception still names a selector the stylesheet has", asyn
     expect(selectors.has(sel)).toBe(true);
   }
 });
+
+test("a space row lays its control out at the trailing edge, not underneath", async () => {
+  // The defect this pins shipped: the `⋯` came back to the row and the row had
+  // no layout for a second child, so the button stacked BENEATH the link it
+  // belongs to. Nothing in the suite noticed, because every assertion about
+  // that row was about which elements exist rather than where they sit.
+  //
+  // Three declarations make the difference, and each fails differently:
+  // without `display: flex` on the row the control drops to its own line;
+  // without `flex: 1` on the link the control sits next to the text instead of
+  // at the edge; without `min-width: 0` a long space name stops the name
+  // ellipsising and pushes the count off a narrow screen.
+  const css = await Bun.file("src/web/styles.css").text();
+  const row = rules(css).find((r) => r.sel === "[data-space-row]");
+  const link = rules(css).find((r) => r.sel === "[data-space-row] > a");
+  const dots = rules(css).find((r) => r.sel === "[data-space-row] > [data-row-actions]");
+
+  expect(row?.body).toContain("display: flex");
+  expect(link?.body).toContain("flex: 1");
+  expect(link?.body).toContain("min-width: 0");
+  // The control must not shrink when a long name competes for the line.
+  expect(dots?.body).toContain("flex: none");
+  // And it stays a full touch target — the whole reason it is worth reaching.
+  expect(dots?.body).toContain("min-height: 2.75rem");
+});

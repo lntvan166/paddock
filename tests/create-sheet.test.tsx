@@ -168,12 +168,18 @@ test("neither + exists when the server does not say it can read a tree", async (
   expect(el.querySelectorAll("[data-create]")).toHaveLength(0);
   // And nothing was read on the operator's behalf either.
   expect(calls).toEqual([]);
-  // The rest of the screen is untouched: the rows are still here. They carry
-  // no control of their own regardless of this capability — Task 8 moved
-  // every row-level control off this screen — so what is pinned is that
-  // turning the capability off costs the list nothing IT still had.
+  // The rest of the screen is untouched: the rows are still here, and each
+  // still carries its own `⋯`.
+  //
+  // That `⋯` is deliberately NOT gated on this capability, and the distinction
+  // is the point of these two assertions sitting together. Creating needs a
+  // herdr session to create INTO, so a `+` without one is a control that always
+  // errors. Renaming and closing act on a space the tree already returned — if
+  // the row is on screen, its target exists. Gating them on the same flag would
+  // hide working controls because an unrelated one would not work.
   expect(el.querySelectorAll("[data-space-row]")).toHaveLength(2);
-  expect(el.querySelectorAll("[data-space-row] button")).toHaveLength(0);
+  expect(el.querySelectorAll("[data-space-row] [data-row-actions]")).toHaveLength(2);
+  expect(el.querySelectorAll("[data-space-row] [data-create]")).toHaveLength(0);
   await unmount();
 });
 

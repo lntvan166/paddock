@@ -90,7 +90,12 @@ test("text reaches sendPaneText verbatim", async () => {
   const { app, calls } = harness(async () => TREE);
   const res = await post(app, "/api/panes/w1:p2/text", { text: "ls -la\n" });
   expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ ok: true });
+  // `{ok:true}` PLUS the screen the action produced. The route settles and
+  // reads now, so the result travels back on this response instead of waiting
+  // for a poll that has backed off — see the note on the route. Asserting the
+  // whole body rather than just `ok` is deliberate: the screen IS the fix, and
+  // a test that ignored it would pass against the version that regressed.
+  expect(await res.json()).toEqual({ ok: true, lines: [], source: "recent_unwrapped" });
   expect(calls).toEqual(["text:w1:p2:ls -la\n"]);
 });
 
@@ -161,7 +166,12 @@ test("an allowlisted key reaches sendPaneKey", async () => {
   const { app, calls } = harness(async () => TREE);
   const res = await post(app, "/api/panes/w1:p2/key", { key: "enter" });
   expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ ok: true });
+  // `{ok:true}` PLUS the screen the action produced. The route settles and
+  // reads now, so the result travels back on this response instead of waiting
+  // for a poll that has backed off — see the note on the route. Asserting the
+  // whole body rather than just `ok` is deliberate: the screen IS the fix, and
+  // a test that ignored it would pass against the version that regressed.
+  expect(await res.json()).toEqual({ ok: true, lines: [], source: "recent_unwrapped" });
   expect(calls).toEqual(["key:w1:p2:enter"]);
 });
 
@@ -220,7 +230,12 @@ test("submit: true types the command AND runs it — one tap on Send is one comm
   const { app, calls } = harness(async () => TREE);
   const res = await post(app, "/api/panes/w1:p2/text", { text: "ls", submit: true });
   expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ ok: true });
+  // `{ok:true}` PLUS the screen the action produced. The route settles and
+  // reads now, so the result travels back on this response instead of waiting
+  // for a poll that has backed off — see the note on the route. Asserting the
+  // whole body rather than just `ok` is deliberate: the screen IS the fix, and
+  // a test that ignored it would pass against the version that regressed.
+  expect(await res.json()).toEqual({ ok: true, lines: [], source: "recent_unwrapped" });
   expect(calls).toEqual(["text:w1:p2:ls", "key:w1:p2:enter"]);
 });
 
