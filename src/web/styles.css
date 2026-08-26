@@ -815,7 +815,12 @@ body {
    a fifth empty cell would read as a missing key. */
 .term-keys-control {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* `auto-fit` with a floor rather than a fixed count: a shell shows eight of
+     these and an agent shows one, and a fixed `repeat(4, 1fr)` would stretch
+     that single `^C` across a quarter of the row on one screen and leave three
+     empty cells on the other. The floor keeps a key wide enough to read and
+     tall enough to hit. */
+  grid-template-columns: repeat(auto-fit, minmax(3.25rem, 1fr));
   gap: 0.35rem;
   /* A gap above, because the break between "move the cursor" and "interrupt
      what is running" is the point of the split. Without it the row reads as

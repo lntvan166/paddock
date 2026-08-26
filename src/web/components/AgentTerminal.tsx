@@ -494,7 +494,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               shell case (§16.3) so the two cannot drift apart. Only `onPress`
               differs: this one calls the agent's own `press`, wired to
               `agent.send_keys`. */}
-          <Keypad pad={keypad} busy={busy} onPress={(k) => void press(k)} />
+          <Keypad pad={keypad} busy={busy} onPress={(k) => void press(k)} context="agent" />
 
           <form
             className="term-reply"

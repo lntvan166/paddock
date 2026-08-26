@@ -965,7 +965,7 @@ export function PaneTerminal({
           )}
 
           {onSendKey && (
-            <Keypad pad={shellKeypad} busy={shellBusy} onPress={(k) => void pressShellKey(k)} />
+            <Keypad pad={shellKeypad} busy={shellBusy} onPress={(k) => void pressShellKey(k)} context="shell" />
           )}
 
           <form

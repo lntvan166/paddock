@@ -229,32 +229,48 @@ export interface ActionResult {
  */
 export const NAV_KEYS = [
   "up", "down", "left", "right", "enter", "esc", "tab", "space", "backspace",
-  // Control keys, in tmux's own spelling because that is what herdr forwards.
-  //
-  // `pane.send_keys` takes an UNCONSTRAINED `string[]` in herdr's schema, so
-  // the vocabulary was never herdr's limit — it was this list. Verified on a
-  // throwaway pane against herdr 0.8.2: `sleep 300` running, `C-c` sent, and
-  // the pane came back to a clean prompt.
-  //
-  // These four and no more, because each answers a question an operator on a
-  // phone actually has: stop this (`C-c`), end input (`C-d`), background it
-  // (`C-z`), clear the screen (`C-l`). A general-purpose key-send endpoint
-  // remains refused — see `OPTION_KEY_RE` in routes.ts.
+  // Control keys. These do NOT travel as `send_keys` — see `CTRL_CHAR` below.
   "ctrl-c", "ctrl-d", "ctrl-z", "ctrl-l",
+  "ctrl-a", "ctrl-e", "ctrl-u", "ctrl-w",
 ] as const;
 
+export type NavKey = (typeof NAV_KEYS)[number];
+
 /**
- * A `NavKey` as herdr spells it.
+ * The control keys, and the byte each one actually sends.
  *
- * The wire name is tmux's (`C-c`), and the UI name is readable (`ctrl-c`).
- * One map, at the boundary, so the UI never has to know tmux's spelling and
- * herdr never sees paddock's.
+ * MEASURED, after shipping four of these broken. herdr's `pane.send_keys`
+ * advertises an unconstrained `string[]` in its schema and then enforces a
+ * hard allowlist underneath: `up down left right enter esc escape tab space
+ * backspace C-c f1 f2`, and nothing else. `C-c` is accepted; `C-d`, `C-z` and
+ * `C-l` are refused with `invalid_key`. Verifying ONE key and generalising to
+ * four is how three of them shipped doing nothing.
+ *
+ * `pane.send_text` has no such allowlist — it forwards bytes. So a control key
+ * travels as its CONTROL CHARACTER through the text path, which is both how
+ * these four came to work and why four more could be added beside them: the
+ * vocabulary is no longer herdr's allowlist, it is ASCII.
+ *
+ * Kept as explicit codepoints rather than computed from the letter, because
+ * `charCodeAt(0) - 96` is a rule a reader has to decode and this is a table
+ * they can check against `ascii(7)`. `tests/control-keys.test.ts` asserts the
+ * two agree, so the table cannot drift from the rule.
  */
-export const HERDR_KEY: Partial<Record<NavKey, string>> = {
-  "ctrl-c": "C-c", "ctrl-d": "C-d", "ctrl-z": "C-z", "ctrl-l": "C-l",
+export const CTRL_CHAR: Partial<Record<NavKey, string>> = {
+  "ctrl-a": "\u0001", // line start
+  "ctrl-c": "\u0003", // interrupt
+  "ctrl-d": "\u0004", // end of input
+  "ctrl-e": "\u0005", // line end
+  "ctrl-l": "\u000c", // clear screen
+  "ctrl-u": "\u0015", // clear line
+  "ctrl-w": "\u0017", // delete word
+  "ctrl-z": "\u001a", // suspend
 };
 
-export type NavKey = (typeof NAV_KEYS)[number];
+/** Whether this key travels as text rather than through `send_keys`. */
+export function isCtrlKey(key: NavKey): boolean {
+  return key in CTRL_CHAR;
+}
 
 export function isNavKey(value: unknown): value is NavKey {
   return typeof value === "string" && (NAV_KEYS as readonly string[]).includes(value);
