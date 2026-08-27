@@ -569,7 +569,6 @@ export function App() {
           what an empty list leaves in charge. */}
       {spacesAvailable && (
         <QuickAdd
-          cwds={[]}
           // A deliberate no-op, like `AgentTerminal`'s rename. Every other
           // caller re-reads the TREE because that is what its screen renders;
           // this screen renders the agent store, and a new pane reaches it on

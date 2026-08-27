@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DropdownMenu } from "radix-ui";
+import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
+import { treeCwds } from "@web/components/space-sort";
 import { AgentsIcon, TerminalIcon } from "@web/components/ui/icons";
+import type { SpaceTree } from "@shared/types";
 
 /**
  * Start something from the dashboard.
@@ -30,15 +33,48 @@ import { AgentsIcon, TerminalIcon } from "@web/components/ui/icons";
  * add to — that is what the space screen's own "New tab" row is for — so the
  * natural target is a fresh space holding the new pane.
  */
-export function QuickAdd({ cwds, onChanged, senders, navigate }: {
-  /** Quick-pick folders, the same list the Spaces screen passes down. */
-  cwds: string[];
+export function QuickAdd({ onChanged, senders, navigate, load = fetchSpaceTree }: {
   onChanged: () => void;
   senders?: CreateSenders;
   navigate?: (hash: string) => void;
+  /** Injected for the same reason `Spaces` injects it: a test drives this
+   *  without a network. */
+  load?: () => Promise<SpaceTree>;
 }) {
   const [open, setOpen] = useState(false);
   const [sheet, setSheet] = useState<"shell" | "agent" | null>(null);
+  const [cwds, setCwds] = useState<string[]>([]);
+
+  /**
+   * The folder quick picks, read when a choice is made.
+   *
+   * Reported from a phone: the folder field is hard, "user doesn't have their
+   * machine when they click that and doesn't remember the structure". Typing a
+   * path from memory on a phone keyboard is the worst input this app asks for,
+   * and the dial shipped with an EMPTY pick list, which made it the only
+   * create control with no help at all.
+   *
+   * It has to come from the TREE and cannot come from the agent store, which
+   * is what the dashboard already holds: `toSpaceTree` tilde-ises a pane's cwd
+   * (`~/project`) while the adapter leaves an agent's raw (`/home/…/project`).
+   * The field round-trips the tilde-ised form — `expandHome` is its exact
+   * inverse on the way back — so raw paths here would both look wrong and
+   * come back wrong.
+   *
+   * Read on CHOICE, not on mount: this is a tree fetch on a screen that
+   * renders no tree, so it is owed only once the operator has said they are
+   * creating something. A failure leaves the list empty, which is exactly
+   * where this started — the field still takes anything typed, and blank still
+   * asks herdr for its own default.
+   */
+  useEffect(() => {
+    if (sheet === null) return;
+    let live = true;
+    void load()
+      .then((tree) => { if (live) setCwds(treeCwds(tree)); })
+      .catch(() => { if (live) setCwds([]); });
+    return () => { live = false; };
+  }, [sheet, load]);
 
   const start = (preset: "shell" | "agent") => {
     // Close the dial first. Leaving it open behind the sheet would put two

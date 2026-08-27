@@ -116,7 +116,7 @@ export function CreateSheet({
   variant = "glyph",
   openWhen,
   onOpenChange,
-  preset = "shell",
+  preset,
 }: {
   target: CreateTarget;
   /** Every cwd already in the tree, offered as quick picks (§9.3). The
@@ -200,6 +200,17 @@ export function CreateSheet({
     if (kinds.length === 0) return;
     setKind((current) => (current === SHELL ? kinds[0]! : current));
   }, [open, preset, kinds]);
+
+  /**
+   * The dial's flow, where the point is speed.
+   *
+   * `preset` is only ever passed by `QuickAdd`, so it doubles as "this was
+   * started from the dial" without a second prop that could disagree with it.
+   * Quick mode hides the two fields the operator has already answered — the
+   * picker (answered by which entry they chose) and the agent name (derived
+   * from the one name they type) — leaving a name and a folder.
+   */
+  const quick = preset !== undefined;
 
   const isSpace = target.kind === "space";
   const what = isSpace ? "space" : "tab";
@@ -381,7 +392,13 @@ export function CreateSheet({
           onSubmit={(e) => { e.preventDefault(); void submit(); }}
         >
           <label>
-            <span>{isSpace ? "Space name" : "Tab name"}</span>
+            {/* In quick mode this ONE field names both. `name` is already
+                derived from `label` for a space create (see `nameSource`), so
+                the agent field below is a view of what was typed here — and a
+                second box showing a slug of the box above it is not a
+                decision, it is a repetition. Labelled for what it makes rather
+                than for the record it makes it in. */}
+            <span>{quick ? "Name" : isSpace ? "Space name" : "Tab name"}</span>
             <input
               type="text"
               data-field="label"
@@ -392,7 +409,9 @@ export function CreateSheet({
             />
           </label>
 
-          <label>
+          {/* Hidden in quick mode: the dial's entry IS this answer. Still
+              RENDERED in the normal flow, where nothing has been asked yet. */}
+          {!quick && <label>
             <span>Start</span>
             {/* The installed kinds, plus a plain shell. Both are wanted: a
                 shell is genuinely usable now that §16.3 gave it input, and it
@@ -406,9 +425,13 @@ export function CreateSheet({
               <option value={SHELL}>plain shell — no agent</option>
               {kinds.map((k) => <option key={k} value={k}>{k}</option>)}
             </select>
-          </label>
+          </label>}
 
-          {kind !== SHELL && (
+          {/* Hidden in quick mode: `name` is derived from the one name field
+              above, so this would be a second box showing a slug of the first.
+              It stays in the normal flow, where the space and the agent are
+              genuinely two names an operator may want to differ. */}
+          {!quick && kind !== SHELL && (
             <label>
               <span>Agent name</span>
               {/* Pre-filled and editable. Pre-filled from the SPACE's label,
