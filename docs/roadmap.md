@@ -123,6 +123,37 @@ surprise.
   paddock" keyboard button, which is a better tap target and still lands in
   Safari.
 
+- **Shipping paddock as a herdr plugin — OPTIONAL, never the main flow.**
+  herdr has a real plugin API (measured on 0.8.2: `plugin.list`/`link`/`enable`
+  and a `herdr plugin` CLI omitted from top-level `--help`), manifests declare
+  `startup` commands, and Collie — which solves the same problem — ships exactly
+  that way: "It is a Herdr plugin, so Herdr does the fetching and building."
+  That would give paddock a one-line install and would make the boot-order race
+  disappear at the source rather than being waited out by
+  `herdr/await-start.ts`.
+
+  **The operator's objection is the reason it stays optional**, and it is
+  stronger than the upside: paddock's reachability is a TUNNEL decision, and a
+  plugin cannot know which one is in play. A quick tunnel is ephemeral, public,
+  and gated only by a pairing code; a named tunnel is durable, owns its
+  hostname, and sits behind Access. Those want different lifecycles — one is
+  started per session and torn down, the other outlives paddock restarts
+  entirely (it is a separate process that survives them). A herdr plugin
+  starting paddock would be managing the half that does not decide anything,
+  while the half that does — which tunnel, and whether it is up — stays outside
+  its knowledge. It would look like paddock is managed and leave the actual
+  reachability unmanaged.
+
+  So: a plugin manifest may exist as an ALTERNATIVE install for someone who
+  wants herdr to own the process, and the standalone binary plus an explicit
+  `paddock tunnel` remains the documented path. Nothing about the plugin may
+  become load-bearing for reachability.
+
+  Unprobed either way: whether `startup` supervises a long-lived process or
+  fires a short command and forgets it. Fifteen minutes with a throwaway
+  manifest answers it, and the answer only decides whether the optional path is
+  available at all.
+
 - **Spawning an agent from paddock.** Feasible, measured against herdr
   protocol 19, and deliberately unbuilt — see
   `docs/design/2026-08-19-notifications-and-settings-design.md` §10 for the
@@ -217,35 +248,41 @@ surprise.
 
 ## Known v2 gaps
 
-- **The schema-drift guarantee covers v2's READ call only.** `CLAUDE.md` and
-  `docs/gotchas.md` both state that a herdr field rename becomes a build
-  error. That holds for v1's three payloads — `AgentInfo`, `WorkspaceInfo`,
-  and the `pane.agent_status_changed` event — plus the `agent.read` response
-  envelope (`HerdrPaneRead` / `HerdrPaneReadResult`), which
-  `src/shared/herdr-api.d.ts` declares and `tests/herdr-schema-drift.test.ts`
-  checks against the installed herdr.
+- ~~**The schema-drift guarantee covers v2's READ call only.**~~ *Resolved.*
+  It now covers the write half too. `agent.send_keys`, `agent.prompt` and
+  `agent.wait` have declared response envelopes (`HerdrOk`,
+  `HerdrAgentPrompted`, `HerdrAgentWaited`), and all four driving calls have
+  declared request params (`HerdrAgentSendKeysParams`,
+  `HerdrAgentPromptParams`, `HerdrAgentWaitParams`, `HerdrAgentReadParams`) —
+  every one of them a named `$def` upstream, so
+  `tests/herdr-schema-drift.test.ts` compares them to the installed herdr the
+  way it already did for the read path.
 
-  The read call was added because the gap this entry used to describe stopped
-  being hypothetical: `actions.ts` read `result.text` from `agent.read` for
-  the whole of v2, herdr sends the text at `result.read.text`, and the
-  predicted failure — an empty output pane and `options: null` degrading
-  tap-to-answer to the free-text box — is exactly what shipped, found by
-  running against a live herdr rather than by a test.
+  What this entry used to rest on was measurement plus fakes, and that is the
+  part worth naming: the shapes HAD been measured against herdr 0.8.0 and
+  reflected in `tests/actions.test.ts`'s fakes, but a fake is paddock's own
+  belief about the wire, so it agrees with the code by construction and keeps
+  agreeing after herdr renames the field underneath both.
 
-  **Still not covered:** `agent.send_keys`, `agent.prompt` and `agent.wait`,
-  and the request *params* of all four methods, which remain hand-written
-  object literals. Their responses are known (`{ type: "ok" }`,
-  `{ type: "agent_prompted", agent }`, `{ type: "agent_info", agent }` —
-  measured against herdr 0.8.0 and reflected in `tests/actions.test.ts`'s
-  fakes) but are not typed, and none of the three is read for a value, so a
-  drift there fails loudly at the socket rather than silently. That is why
-  the read path was closed first.
+  Every parameter is declared, including the ones paddock does not send, with
+  no ignore list: choosing not to send a parameter is only a DECISION while it
+  is visible, and as an absence it cannot be told apart from not knowing it
+  exists. A new upstream parameter therefore fails the test, which is the
+  point.
 
-  Closing the rest means extending `scripts/gen-herdr-types.ts` to the request
-  params and remaining response shapes and adding them to the drift test — a
-  task-sized piece of work the v2 plan never scoped, deliberately recorded
-  here rather than half-done. **Until then, treat a herdr protocol bump as
-  requiring a manual re-read of `actions.ts` against the live schema.**
+  The guard has two halves and both were mutation-checked. Renaming a field on
+  a declared interface fails `tsc` through the `satisfies Record<keyof T,
+  true>` in the test file; declaring a field herdr does not have fails
+  `bun test`. And `actions.ts`'s call sites now carry `satisfies`, so a drift
+  is a build error where the request is BUILT rather than only in a test —
+  measured: changing `keys` to `key` at one call site fails `tsc` by name.
+
+  Note `agent.read` requires `source` upstream and both paddock call sites
+  send it; a test asserts that pairing rather than leaving it to be rediscovered.
+
+  So `make types` + `make check` now answers a herdr protocol bump for these
+  calls, and the manual re-read of `actions.ts` this entry prescribed is no
+  longer the only defence.
 
 - ~~**`MAX_READ_LINES` (2000) is not a usable request against an idle
   agent.**~~ *Resolved, by routing around the ceiling rather than raising it.*

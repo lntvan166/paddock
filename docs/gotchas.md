@@ -6,7 +6,7 @@ one, recorded here so they are not reintroduced.
 | Failure | Cause | Design response |
 |---|---|---|
 | Every row shows the same label | Label derived from `basename(cwd)`; agents commonly share a working directory | `name` from `agent.list` is the primary label. `basename(cwd)` is the fallback for an unnamed agent, and ONLY with the disambiguation `toAgents` adds — this is the defect the project exists to prevent |
-| A field is always empty | Read from the wrong object (pane vs workspace vs agent) | Generated types make a rename a build error — for the three v1 payloads and the `agent.read` envelope only; see the coverage limit in `docs/roadmap.md` |
+| A field is always empty | Read from the wrong object (pane vs workspace vs agent) | Generated types make a rename a build error — the v1 payloads, the `agent.read` envelope, the four structural write envelopes, and (since protocol 20) the request params and response envelopes of `agent.send_keys`, `agent.prompt`, `agent.wait` and `agent.read`. `actions.ts` asserts each request body with `satisfies`, so a drift fails where the request is built, not only in a test |
 | Events dropped with no error | Push script ends `curl -s … >/dev/null 2>&1; exit 0` | Log receipt at INFO; `/api/health` exposes `lastEventAt` |
 | Sensitive paths in access logs | Payload sent as a GET query string | POST bodies only |
 | A subprocess's log lines flash and vanish | Child output and a once-a-second `ESC[H ESC[J` repaint share stdout | Buffer the child's lines while the display owns the screen, print the tail on every failure path — never silence them |

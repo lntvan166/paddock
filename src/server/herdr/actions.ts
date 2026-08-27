@@ -1,6 +1,9 @@
 import { request } from "@server/herdr/socket";
 import type {
-  HerdrAgentManifests, HerdrPaneRead, HerdrTabCreated, HerdrWorkspaceCreated,
+  HerdrAgentManifests, HerdrAgentPrompted, HerdrAgentPromptParams,
+  HerdrAgentReadParams, HerdrAgentSendKeysParams, HerdrAgentWaited,
+  HerdrAgentWaitParams, HerdrOk, HerdrPaneRead, HerdrTabCreated,
+  HerdrWorkspaceCreated,
 } from "@shared/herdr-api";
 import { ctrlChar, isCtrlKey, type AgentState, type NavKey } from "@shared/types";
 
@@ -444,7 +447,7 @@ export function createActions(socketPath: string): HerdrActions {
       // A history read gets its own, much larger ceiling — see historyTimeoutMs.
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
         target, source, lines: bounded, format: "ansi", strip_ansi: false,
-      }, scrollback ? historyTimeoutMs() : undefined);
+      } satisfies HerdrAgentReadParams, scrollback ? historyTimeoutMs() : undefined);
       const text = res.read.text;
       // "".split("\n") is [""], not [] — a genuinely empty pane must report
       // no lines, not one blank line.
@@ -496,7 +499,7 @@ export function createActions(socketPath: string): HerdrActions {
     async readDetection(target) {
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
         target, source: "detection", lines: 60, format: "text", strip_ansi: true,
-      });
+      } satisfies HerdrAgentReadParams);
       return res.read.text;
     },
 
@@ -504,7 +507,9 @@ export function createActions(socketPath: string): HerdrActions {
       // NOT `wireKey`: an option key is the prompt's own DIGIT ("1".."N"),
       // validated by `OPTION_KEY_RE` at the route. It is not a `NavKey` and has
       // no control-key spelling to translate.
-      await request(socketPath, "agent.send_keys", { target, keys: [key] });
+      await request<HerdrOk>(socketPath, "agent.send_keys", {
+        target, keys: [key],
+      } satisfies HerdrAgentSendKeysParams);
     },
 
     async sendNavKey(target, key) {
@@ -519,17 +524,23 @@ export function createActions(socketPath: string): HerdrActions {
       // does not have. Any other control key is refused below rather than
       // silently sent as a literal name herdr would reject.
       if (key === "ctrl-c") {
-        await request(socketPath, "agent.send_keys", { target, keys: ["C-c"] });
+        await request<HerdrOk>(socketPath, "agent.send_keys", {
+          target, keys: ["C-c"],
+        } satisfies HerdrAgentSendKeysParams);
         return;
       }
       if (isCtrlKey(key)) {
         throw new Error(`${key} is not available on an agent pane; only ctrl-c is`);
       }
-      await request(socketPath, "agent.send_keys", { target, keys: [key] });
+      await request<HerdrOk>(socketPath, "agent.send_keys", {
+        target, keys: [key],
+      } satisfies HerdrAgentSendKeysParams);
     },
 
     async sendReply(target, text) {
-      await request(socketPath, "agent.prompt", { target, text });
+      await request<HerdrAgentPrompted>(socketPath, "agent.prompt", {
+        target, text,
+      } satisfies HerdrAgentPromptParams);
     },
 
     async sendPaneText(paneId, text) {
@@ -556,9 +567,9 @@ export function createActions(socketPath: string): HerdrActions {
       // `idle`, so a `working`-only wait reports a false failure on every
       // rejection — confirmed during the probe, where answering "Yes" also
       // settled on idle once the command finished.
-      await request(socketPath, "agent.wait", {
+      await request<HerdrAgentWaited>(socketPath, "agent.wait", {
         target, until: ["working", "idle", "done"], timeout_ms: budget,
-      }, budget + WAIT_TRANSPORT_MARGIN_MS);
+      } satisfies HerdrAgentWaitParams, budget + WAIT_TRANSPORT_MARGIN_MS);
     },
 
     async renameAgent(target, name) {

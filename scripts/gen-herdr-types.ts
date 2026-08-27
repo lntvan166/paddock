@@ -190,6 +190,80 @@ export interface HerdrPaneInfo {
   revision: number;
 }
 
+/**
+ * Request params for the four calls that DRIVE an agent, and the responses of
+ * the three that only acknowledge.
+ *
+ * These were hand-written object literals with nothing comparing them to
+ * anything. Their shapes had been measured against a live herdr and reflected
+ * in \`tests/actions.test.ts\`'s fakes — but a fake is paddock's own belief
+ * about the wire, so it agrees with the code by construction and keeps
+ * agreeing after herdr renames the field underneath both. Declaring them is
+ * what lets \`tests/herdr-schema-drift.test.ts\` compare them to the installed
+ * herdr, which is where the "a rename is a build error" claim in
+ * docs/gotchas.md actually comes from.
+ *
+ * Every parameter is declared, including the ones paddock does not send. Not
+ * sending one is only a DECISION while it is visible; as an absence it is
+ * indistinguishable from not knowing it exists.
+ */
+
+/** \`agent.send_keys\` params. \`keys\` is an allowlist herdr does not advertise —
+ *  see \`herdr/actions.ts\` for the measured set. */
+export interface HerdrAgentSendKeysParams {
+  target: string;
+  keys: string[];
+}
+
+/** \`agent.prompt\` params — the call that SUBMITS a reply, not one that types. */
+export interface HerdrAgentPromptParams {
+  target: string;
+  text: string;
+  wait?: HerdrAgentWaitOptions | null;
+}
+
+/** The inline wait \`agent.prompt\` can carry, and \`agent.wait\`'s own tail. */
+export interface HerdrAgentWaitOptions {
+  timeout_ms?: number | null;
+  until?: HerdrAgentStatus[];
+}
+
+/** \`agent.wait\` params. paddock waits on LEAVING blocked, never on reaching
+ *  a particular state — see \`waitUntilUnblocked\`. */
+export interface HerdrAgentWaitParams {
+  target: string;
+  timeout_ms?: number | null;
+  until?: HerdrAgentStatus[];
+}
+
+/** \`agent.read\` params. \`source\` and \`target\` are REQUIRED upstream, and
+ *  every paddock call site sends both. */
+export interface HerdrAgentReadParams {
+  target: string;
+  source: HerdrReadSource;
+  lines?: number | null;
+  format?: HerdrReadFormat;
+  strip_ansi?: boolean;
+}
+
+/** The bare acknowledgement — \`agent.send_keys\`'s whole response. */
+export interface HerdrOk {
+  type: "ok";
+}
+
+/** \`agent.prompt\` -> the agent as it stands once the reply is submitted. */
+export interface HerdrAgentPrompted {
+  type: "agent_prompted";
+  agent: HerdrAgentRaw;
+}
+
+/** \`agent.wait\` -> the agent as it stands once the wait resolves. This is how
+ *  paddock learns a blocked agent moved on. */
+export interface HerdrAgentWaited {
+  type: "agent_info";
+  agent: HerdrAgentRaw;
+}
+
 /** \`session.snapshot\` -> result.snapshot. The whole tree in one call. */
 export interface HerdrSessionSnapshot {
   workspaces: HerdrWorkspaceInfo[];

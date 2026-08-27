@@ -14,6 +14,13 @@ import type {
   HerdrWorkspaceCreated,
   HerdrWorkspaceInfo,
   HerdrWorkspaceRaw,
+  HerdrAgentSendKeysParams,
+  HerdrAgentPromptParams,
+  HerdrAgentWaitParams,
+  HerdrAgentReadParams,
+  HerdrOk,
+  HerdrAgentPrompted,
+  HerdrAgentWaited,
 } from "@shared/herdr-api";
 
 // scripts/gen-herdr-types.ts derives only `protocol` and the AgentStatus enum
@@ -563,4 +570,110 @@ test.skipIf(!HAVE_HERDR)("HerdrAgentManifests has not drifted from the installed
     DECLARED_AGENT_MANIFESTS_FIELDS,
     IGNORED_AGENT_MANIFESTS_FIELDS,
   );
+});
+
+// ---- the WRITE calls: request params, and the three response envelopes ----
+//
+// `docs/roadmap.md` recorded these as the remaining hole: the four write
+// methods' request params and the responses of `agent.send_keys`,
+// `agent.prompt` and `agent.wait` were hand-written object literals with
+// nothing comparing them to anything. Their shapes had been MEASURED against
+// herdr 0.8.0 and reflected in `tests/actions.test.ts`'s fakes — but a fake is
+// paddock's own belief, so it agrees with the code by construction and would
+// go on agreeing after herdr renamed the field underneath both.
+//
+// This is the file that makes the "a herdr rename is a build error" claim in
+// docs/gotchas.md true for the write half, not just the read half. The read
+// half was closed first because it had already broken in production: `actions.ts`
+// read `result.text` for the whole of v2 where herdr sends `result.read.text`,
+// and the symptom was an empty pane plus tap-to-answer degrading silently to
+// the free-text box.
+
+const DECLARED_SEND_KEYS_PARAM_FLAGS = {
+  target: true,
+  keys: true,
+} satisfies Record<keyof HerdrAgentSendKeysParams, true>;
+
+const DECLARED_PROMPT_PARAM_FLAGS = {
+  target: true,
+  text: true,
+  wait: true,
+} satisfies Record<keyof HerdrAgentPromptParams, true>;
+
+const DECLARED_WAIT_PARAM_FLAGS = {
+  target: true,
+  timeout_ms: true,
+  until: true,
+} satisfies Record<keyof HerdrAgentWaitParams, true>;
+
+const DECLARED_READ_PARAM_FLAGS = {
+  target: true,
+  source: true,
+  lines: true,
+  format: true,
+  strip_ansi: true,
+} satisfies Record<keyof HerdrAgentReadParams, true>;
+
+const PARAM_CASES = [
+  ["AgentSendKeysParams", DECLARED_SEND_KEYS_PARAM_FLAGS],
+  ["AgentPromptParams", DECLARED_PROMPT_PARAM_FLAGS],
+  ["AgentWaitParams", DECLARED_WAIT_PARAM_FLAGS],
+  ["AgentReadParams", DECLARED_READ_PARAM_FLAGS],
+] as const;
+
+test.skipIf(!HAVE_HERDR)("the write calls' request params have not drifted", async () => {
+  const schema = await liveSchema();
+  for (const [name, flags] of PARAM_CASES) {
+    const live = schema.schemas.request.$defs[name];
+    expect(live, `${name} is still a named $def`).toBeDefined();
+    // No ignore list on purpose: a parameter paddock does not send is still a
+    // parameter it must know exists, because the choice not to send it is only
+    // a decision while it is visible. A NEW upstream parameter failing here is
+    // the point.
+    expectNoDrift(Object.keys(live.properties), Object.keys(flags), []);
+  }
+});
+
+test.skipIf(!HAVE_HERDR)("agent.read still REQUIRES source, which every paddock call site sends", async () => {
+  // Not a shape check but a contract one: `source` is required upstream, and
+  // both `readOutput` and `readDetection` pass it. If herdr ever made it
+  // optional, or paddock ever dropped it, one of those two facts moves.
+  const schema = await liveSchema();
+  expect(schema.schemas.request.$defs.AgentReadParams.required).toContain("source");
+  expect(schema.schemas.request.$defs.AgentReadParams.required).toContain("target");
+});
+
+const DECLARED_OK_FLAGS = { type: true } satisfies Record<keyof HerdrOk, true>;
+
+const DECLARED_PROMPTED_FLAGS = {
+  type: true,
+  agent: true,
+} satisfies Record<keyof HerdrAgentPrompted, true>;
+
+const DECLARED_WAITED_FLAGS = {
+  type: true,
+  agent: true,
+} satisfies Record<keyof HerdrAgentWaited, true>;
+
+const ENVELOPE_CASES = [
+  ["ok", DECLARED_OK_FLAGS, false],
+  ["agent_prompted", DECLARED_PROMPTED_FLAGS, true],
+  ["agent_info", DECLARED_WAITED_FLAGS, true],
+] as const;
+
+test.skipIf(!HAVE_HERDR)("the write calls' response envelopes have not drifted", async () => {
+  const schema = await liveSchema();
+  const variants: any[] = schema.schemas.success_response.$defs.ResponseResult.oneOf;
+  for (const [discriminator, flags, carriesAgent] of ENVELOPE_CASES) {
+    const variant = variants.find((v) => v.properties?.type?.const === discriminator);
+    expect(variant, `the ${discriminator} variant is still there`).toBeDefined();
+    if (carriesAgent) {
+      // The `agent` these carry is an AgentInfo, which is what makes them worth
+      // typing: `agent.wait` is how paddock learns a blocked agent moved on.
+      expect(variant.properties.agent.$ref).toBe(
+        "#/schemas/success_response/$defs/AgentInfo",
+      );
+    }
+    expectNoDrift(Object.keys(variant.properties), Object.keys(flags), []);
+  }
 });
