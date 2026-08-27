@@ -25,6 +25,14 @@ import { AgentsIcon, SettingsIcon, SpacesIcon } from "@web/components/ui/icons";
  */
 export type TabKey = "agents" | "spaces" | "settings";
 
+/** The hash each tab is addressed by, beside the list it belongs to so the
+ *  two cannot drift apart. */
+export const TAB_HASH: Record<TabKey, string> = {
+  agents: "#/",
+  spaces: "#/spaces",
+  settings: "#/settings",
+};
+
 const TABS: { key: TabKey; label: string; hash: string; Icon: typeof SpacesIcon }[] = [
   { key: "agents", label: "Agents", hash: "#/", Icon: AgentsIcon },
   { key: "spaces", label: "Spaces", hash: "#/spaces", Icon: SpacesIcon },
@@ -34,6 +42,7 @@ const TABS: { key: TabKey; label: string; hash: string; Icon: typeof SpacesIcon 
 export function TabBar({
   current,
   needsYou,
+  onSelect,
 }: {
   current: TabKey;
   /**
@@ -50,6 +59,19 @@ export function TabBar({
    * deliver.
    */
   needsYou: number;
+  /**
+   * What a tap does INSTEAD of navigating.
+   *
+   * The anchor keeps a real `href` so the URL stays copyable and a
+   * middle-click or ⌘-click still opens it — but an ordinary left tap is
+   * cancelled and reported here. `App`'s `goTab` then updates the hash with
+   * `replaceState`, which pushes no history entry.
+   *
+   * WHY: tabs are peers, not a stack. A pushed entry hands the browser's back
+   * gesture a destination, and back-through-visited-tabs is a second
+   * horizontal gesture meaning something different from the pager's swipe.
+   */
+  onSelect: (key: TabKey) => void;
 }) {
   return (
     <nav className="tab-bar" aria-label="Sections">
@@ -60,6 +82,14 @@ export function TabBar({
             key={key}
             className="tab-item tap"
             href={hash}
+            onClick={(e) => {
+              // Left click with no modifier only. Stealing a ⌘/ctrl/shift
+              // click would break opening a destination in a new tab or
+              // window, which the real `href` above exists to allow.
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+              e.preventDefault();
+              onSelect(key);
+            }}
             // `aria-current`, not just a colour: the active tab is signalled by
             // hue and weight, and neither reaches a screen reader.
             aria-current={isCurrent ? "page" : undefined}

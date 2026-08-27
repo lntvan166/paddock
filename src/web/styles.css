@@ -769,7 +769,47 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.screen:has(.tab-bar) { padding-bottom: 0; }
+/* `.screen:has(.tab-bar)` lived here. No screen contains a tab bar any
+   more — `.app-shell` holds the one instance as a sibling — so the rule had
+   nothing left to match. */
+
+/* A tap that looks like it landed.
+
+   The stylesheet had seven transitions in it and none on the controls a
+   finger hits: tapping a row did nothing visible until the next screen
+   painted, which on a slow link reads as a missed tap and invites a second.
+
+   `:active` only. A hover state latches on a phone and stays lit, which reads
+   as "still selected" on a row the operator has already left — the same
+   reason CLAUDE.md bans hover-only affordances.
+
+   120ms, and the scale is deliberately small: this is an acknowledgement, not
+   an animation. Past ~150ms it stops reading as a response. The global
+   prefers-reduced-motion clamp covers all of it. */
+.row-open {
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.row-open:active {
+  background: var(--surface);
+  transform: scale(0.985);
+}
+
+/* The row is the most-tapped control but not the only one: a row that
+   responds beside a menu button that does not reads as the button being
+   broken. */
+.row-actions-btn,
+.icon-tile {
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.row-actions-btn:active,
+.icon-tile:active { transform: scale(0.92); }
+
+.tab-item {
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tab-item:active { transform: scale(0.96); }
 
 .tab-item {
   display: flex;
@@ -2380,6 +2420,77 @@ body {
    `width: min(100%, 42rem)` is 42rem = Tailwind's `max-w-2xl`, which the
    screens were already using; stating it here means a fixed element still
    agrees with the column the app has always been. */
+/* The outer column: routed content above, the one tab bar below.
+
+   `.screen` is `position: fixed; inset: 0`, so a tab bar hoisted OUT of it
+   needs something to be hoisted into — this is that thing. It takes over the
+   fixed full-viewport role and the 42rem column, and `.screen` inside it
+   becomes an ordinary flex child.
+
+   The safe-area inset moves to `.tab-bar`, which is now the bottom-most
+   element. Leaving it on `.screen` would put a strip of page colour under the
+   bar on a phone with a home indicator. */
+.app-shell {
+  position: fixed;
+  inset: 0;
+  width: min(100%, 42rem);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The transitioning region. The tab bar is OUTSIDE it, which is what stops
+   the bar being animated or rebuilt. */
+.pager-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* `touch-action: pan-y` hands vertical scrolling to the browser and keeps
+   horizontal for the pager, so a list still scrolls at full native speed
+   while a sideways drag is ours to interpret. */
+.pager-track {
+  display: flex;
+  height: 100%;
+  touch-action: pan-y;
+  will-change: transform;
+}
+
+/* Settles over 280ms on release; absent while a finger is down, so the track
+   tracks 1:1 instead of chasing it. The global prefers-reduced-motion block
+   clamps this like every other transition. */
+.pager-track.is-settling {
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pager-page {
+  flex: 0 0 100%;
+  min-width: 0;
+  position: relative;
+}
+
+/* Each page is a full-height column in its own right. */
+.pager-page > .screen {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  margin-inline: 0;
+  padding-bottom: 0;
+}
+
+.app-shell .screen {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  margin-inline: 0;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 0;
+}
+
 .screen,
 .term {
   position: fixed;

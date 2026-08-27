@@ -1,4 +1,3 @@
-import { sectionFor } from "@shared/types";
 
 /**
  * How old a tree read has to be before its age is worth screen space.
@@ -11,7 +10,6 @@ const STALE_AFTER_S = 10;
 import { useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
-import { TabBar } from "@web/components/TabBar";
 import { sortSpaces, treeCwds } from "@web/components/space-sort";
 import { SpaceRow } from "@web/components/SpaceRow";
 import { useSpaceTree } from "@web/components/use-space-tree";
@@ -23,7 +21,9 @@ import type { SpaceTree } from "@shared/types";
  * `load` is injected so the tests can drive this without a network, and so a
  * failure is a value this component renders rather than a thrown promise.
  */
-export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate }: {
+export function Spaces({ active = true, load = fetchSpaceTree, senders, createSenders, navigate }: {
+  /** Whether this is the tab in front. Acted on in the poll-gating task. */
+  active?: boolean;
   load?: () => Promise<SpaceTree>;
   /** The row `⋯`'s writes — rename and close, space-scoped.
    *
@@ -39,12 +39,14 @@ export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate
    *  test can observe the navigation instead of mutating the hash. */
   navigate?: (hash: string) => void;
 }) {
-  const { spacesAvailable, agents } = useStore();
+  const { spacesAvailable } = useStore();
+  // The needs-you count moved to `App`, which now owns the single `TabBar`.
+  // Deriving it here as well was two screens computing one number — the exact
+  // shape of the bug `HostHeader`'s counts comment records.
   // `sectionFor`, the one rule — never re-derived from raw state. This is the
   // whole reason the badge earns its place: from here, a newly blocked agent
   // was previously invisible.
-  const needsYou = agents.filter((a) => sectionFor(a) === "needs-you").length;
-  const { tree, error, refresh } = useSpaceTree(load);
+  const { tree, error, refresh } = useSpaceTree(load, active);
   const [now, setNow] = useState(() => Date.now());
 
   // The "as of" label ticks locally; the server is not asked for time.
@@ -189,7 +191,6 @@ export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate
       )}
 
       </div>
-      <TabBar current="spaces" needsYou={needsYou} />
     </main>
   );
 }

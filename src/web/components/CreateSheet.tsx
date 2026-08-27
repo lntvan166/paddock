@@ -501,7 +501,17 @@ export function CreateSheet({
 
           <div className="row-actions-row">
             <button type="button" onClick={() => show(false)}>Cancel</button>
-            <button type="submit" data-create-submit disabled={busy || unnamed}>
+            <button
+              type="submit"
+              data-create-submit
+              disabled={busy || unnamed}
+              // Keeps focus in the input for the length of the tap — see
+              // AgentTerminal's Send for the phone report behind this: a
+              // pointerdown that blurs the input dismisses the keyboard, the
+              // layout reflows, and the button moves out from under the finger
+              // before the click lands.
+              onPointerDown={(e) => { e.preventDefault(); }}
+            >
               {kind === SHELL ? `Create ${what}` : `Create ${what} and start ${kind}`}
             </button>
           </div>

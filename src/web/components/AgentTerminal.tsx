@@ -558,7 +558,26 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
             {/* Filled, not outline: this is the committing action. The keys above
                 are `outline` because pressing one is cheap and reversible; sending a
                 reply to an agent is neither. */}
-            <Button type="submit" disabled={busy || !reply.trim()}>Send</Button>
+            <Button
+              type="submit"
+              disabled={busy || !reply.trim()}
+              // Keeps focus in the input for the length of the tap.
+              //
+              // Reported from a phone: "type something but cannot send, i must
+              // click enter then send." A tap begins with a pointerdown, which
+              // moves focus off the input; iOS then dismisses the keyboard, the
+              // layout reflows upward by the keyboard's height, and this button
+              // is no longer under the finger when the tap completes — so no
+              // click ever arrives. Pressing return first puts the keyboard
+              // away, after which the layout is still and one tap works, which
+              // is exactly the "enter, then send" workaround.
+              //
+              // Cancelling the default here does not stop the click; it only
+              // stops the focus change that moves the target out from under it.
+              onPointerDown={(e) => { e.preventDefault(); }}
+            >
+              Send
+            </Button>
           </form>
         </>
       }

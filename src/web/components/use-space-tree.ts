@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { useStore } from "@web/store";
 import type { SpaceTree } from "@shared/types";
@@ -26,7 +26,21 @@ const SPACE_POLL_MS = 3_000;
  * `load` is injected so a test can drive this without a network, and so a
  * failure is a value the caller renders rather than a thrown promise.
  */
-export function useSpaceTree(load: () => Promise<SpaceTree> = fetchSpaceTree): {
+export function useSpaceTree(
+  load: () => Promise<SpaceTree> = fetchSpaceTree,
+  /**
+   * Whether this tree is the one in front of the operator.
+   *
+   * `document.hidden` used to be the whole question, and was right while
+   * exactly one screen rendered at a time. The pager mounts all three, so the
+   * document is visible while this screen sits one swipe away — and two
+   * off-screen tabs polling herdr every three seconds is work with no reader.
+   *
+   * Defaults to `true` so `Space.tsx`, a pushed screen that is always the one
+   * in front when it exists, needs no change.
+   */
+  active = true,
+): {
   tree: SpaceTree | null;
   error: string | null;
   refresh: () => Promise<void>;
@@ -64,7 +78,20 @@ export function useSpaceTree(load: () => Promise<SpaceTree> = fetchSpaceTree): {
    * case for a screen like this, and polling herdr every three seconds for a
    * tree nobody is looking at is a cost with no reader.
    */
+  // Whether this screen was already in front last time the effect ran. Only a
+  // TRANSITION into active is worth a catch-up read; being active at mount is
+  // not, because the effect above has just done that exact read. Refreshing
+  // unconditionally here made every mount fetch the tree twice — caught by
+  // `space-screen.test.tsx`, which counts the reads.
+  const wasActive = useRef(active);
+
   useEffect(() => {
+    if (!active) { wasActive.current = false; return; }
+    // Arriving on the tab refreshes at once rather than waiting out a full
+    // interval with a stale screen in front of the operator — the same
+    // reasoning the `visibilitychange` handler below already gives.
+    if (!wasActive.current) void refresh();
+    wasActive.current = true;
     const tick = () => { if (!document.hidden) void refresh(); };
     const timer = setInterval(tick, SPACE_POLL_MS);
     // Catch up immediately on return rather than waiting out a full interval
@@ -76,7 +103,7 @@ export function useSpaceTree(load: () => Promise<SpaceTree> = fetchSpaceTree): {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refresh]);
+  }, [refresh, active]);
 
   return { tree, error, refresh };
 }

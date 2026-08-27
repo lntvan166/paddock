@@ -27,7 +27,15 @@ export async function settle(): Promise<void> {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
 
-export async function render(node: React.ReactNode): Promise<HTMLElement> {
+export async function render(node: React.ReactNode, into?: HTMLElement): Promise<HTMLElement> {
+  // `into` re-renders through the EXISTING root rather than making a new one,
+  // which is the only way to ask "did this node survive the update?". A fresh
+  // root would rebuild the tree either way and answer the question wrongly.
+  if (into !== undefined && into === host && root !== null) {
+    await act(async () => { root!.render(node); });
+    await settle();
+    return host;
+  }
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -205,4 +213,27 @@ export async function pointerOpen(node: Element | null | undefined): Promise<voi
     (node as HTMLElement).click();
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
+}
+
+/**
+ * Drive a hook without inventing a component for it.
+ *
+ * A hook's effects are the interesting part — a poll that keeps running, a
+ * listener that is never removed — and those only exist once something mounts
+ * it. This renders the smallest possible host and hands back a `rerender` so a
+ * test can change the hook's arguments, which is how "becoming active" is
+ * observed at all.
+ */
+export async function renderHook<P>(
+  use: (props: P) => unknown,
+  initial: P,
+): Promise<{ rerender: (next: P) => Promise<void> }> {
+  function Probe(props: { p: P }) {
+    use(props.p);
+    return null;
+  }
+  const el = await render(<Probe p={initial} />);
+  return {
+    rerender: async (next: P) => { await render(<Probe p={next} />, el); },
+  };
 }

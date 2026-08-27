@@ -23,21 +23,21 @@ afterEach(async () => { await unmount(); });
  */
 
 test("renders the three destinations with visible labels", async () => {
-  const host = await render(<TabBar current="agents" needsYou={0} />);
+  const host = await render(<TabBar current="agents" needsYou={0} onSelect={() => {}} />);
   const items = [...host.querySelectorAll(".tab-item")];
   expect(items.length).toBe(3);
   expect(items.map((i) => i.textContent?.trim())).toEqual(["Agents", "Spaces", "Settings"]);
 });
 
 test("marks exactly one destination current, for assistive tech too", async () => {
-  const host = await render(<TabBar current="settings" needsYou={0} />);
+  const host = await render(<TabBar current="settings" needsYou={0} onSelect={() => {}} />);
   const current = [...host.querySelectorAll('[aria-current="page"]')];
   expect(current.length).toBe(1);
   expect(current[0]?.textContent?.trim()).toBe("Settings");
 });
 
 test("badges the Agents tab when something needs you", async () => {
-  const host = await render(<TabBar current="settings" needsYou={2} />);
+  const host = await render(<TabBar current="settings" needsYou={2} onSelect={() => {}} />);
   const badge = host.querySelector(".tab-badge");
   expect(badge, "a needs-you count must be visible from every screen").not.toBeNull();
   expect(badge!.textContent).toBe("2");
@@ -46,7 +46,7 @@ test("badges the Agents tab when something needs you", async () => {
 });
 
 test("says 'agent', singular, when exactly one needs you", async () => {
-  const host = await render(<TabBar current="agents" needsYou={1} />);
+  const host = await render(<TabBar current="agents" needsYou={1} onSelect={() => {}} />);
   expect(host.querySelector(".tab-badge")?.getAttribute("aria-label")).toBe("1 agent needs you");
 });
 
@@ -54,7 +54,7 @@ test("shows no badge when nothing needs you", async () => {
   // A zero badge is a permanent red dot that means nothing, which is exactly
   // how a badge stops being read. Apple: "Reserve badges for critical
   // information so you don't dilute their impact and meaning."
-  const host = await render(<TabBar current="agents" needsYou={0} />);
+  const host = await render(<TabBar current="agents" needsYou={0} onSelect={() => {}} />);
   expect(host.querySelector(".tab-badge")).toBeNull();
 });
 
@@ -69,7 +69,7 @@ test("keeps the Spaces tab even when this server has no session tree", async () 
   // content is unavailable… If a section is empty, explain why its content is
   // unavailable." So the tab stays and the DESTINATION is made honest instead;
   // the original objection was that it errored, not that it existed.
-  const host = await render(<TabBar current="agents" needsYou={0} />);
+  const host = await render(<TabBar current="agents" needsYou={0} onSelect={() => {}} />);
   expect([...host.querySelectorAll(".tab-item")].map((i) => i.textContent?.trim()))
     .toContain("Spaces");
 });

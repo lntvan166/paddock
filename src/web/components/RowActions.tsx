@@ -320,7 +320,18 @@ export function RowActions({ label, renames, close, onChanged, onOpenChange, sen
               {/* Disabled on an empty or whitespace-only draft: the request it
                   would send is one the route refuses (§17), so the control
                   says so instead of sending it. */}
-              <button type="submit" disabled={busy || draft.trim() === ""}>Save</button>
+              <button
+                type="submit"
+                disabled={busy || draft.trim() === ""}
+                // Keeps focus in the input for the length of the tap — see
+                // AgentTerminal's Send for the phone report behind this: a
+                // pointerdown that blurs the input dismisses the keyboard, the
+                // layout reflows, and the button moves out from under the finger
+                // before the click lands.
+                onPointerDown={(e) => { e.preventDefault(); }}
+              >
+                Save
+              </button>
             </div>
           </form>
         )}

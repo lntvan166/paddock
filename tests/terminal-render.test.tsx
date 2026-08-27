@@ -541,3 +541,35 @@ test("the blocked pill says its word without an illegible glyph", async () => {
   expect(pill.textContent).toContain("blocked");
   expect(pill.querySelector("svg")).toBeNull();
 });
+
+test("tapping Send does not blur the reply box first", async () => {
+  // Reported from a phone: "type something but cannot send, i must click enter
+  // then send."
+  //
+  // The mechanism is the classic soft-keyboard one. A tap on Send begins with
+  // a pointerdown, which moves focus off the input; iOS then dismisses the
+  // keyboard, the layout reflows upward by the keyboard's height, and the
+  // button is no longer under the finger when the tap completes — so no click
+  // ever reaches it. Pressing the keyboard's return key first puts the
+  // keyboard away, after which the layout is still and Send works. Hence
+  // "enter, then send".
+  //
+  // Cancelling the default on pointerdown keeps focus in the input, so the
+  // keyboard stays up, nothing reflows, and the first tap lands.
+  const host = await render(<AgentTerminal agent={agent()} onBack={() => {}} />);
+  await settle();
+
+  const input = host.querySelector("#term-reply-input") as HTMLInputElement;
+  const send = [...host.querySelectorAll("button")]
+    .find((b) => b.textContent?.trim() === "Send") as HTMLButtonElement;
+  expect(input, "no reply box").not.toBeNull();
+  expect(send, "no Send button").not.toBeNull();
+
+  const down = new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 });
+  send.dispatchEvent(down);
+
+  expect(
+    down.defaultPrevented,
+    "Send lets the pointerdown blur the input, which on iOS drops the first tap",
+  ).toBe(true);
+});
