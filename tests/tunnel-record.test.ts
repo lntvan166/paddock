@@ -44,6 +44,31 @@ function capture() {
   };
 }
 
+
+/**
+ * Wait until the tunnel has actually recorded itself.
+ *
+ * This replaced `await Bun.sleep(30)`, which was a guess at how long an async
+ * write takes and lost that guess often: measured on this machine the file
+ * failed 4 runs out of 5 under load, reading `none` because 30ms had elapsed
+ * and the record had not yet landed. It is the flake that had been failing CI
+ * intermittently and blocking `make build`.
+ *
+ * Polling asserts the CONDITION rather than a duration, so it is fast when the
+ * machine is idle and still correct when it is not. The deadline is generous
+ * because it only matters when something is genuinely wrong: a real failure
+ * still fails, just a second later.
+ */
+async function recorded(dir: string, deadlineMs = 2_000) {
+  const until = Date.now() + deadlineMs;
+  for (;;) {
+    const got = await checkTunnelState(dir);
+    if (got.kind === "running") return got;
+    if (Date.now() > until) return got;
+    await Bun.sleep(5);
+  }
+}
+
 test("a recording run is findable, answers its code, and cleans up after itself", async () => {
   const dir = await mkdtemp(join(tmpdir(), "paddock-record-"));
   const reg: { teardown: (() => Promise<boolean>) | null } = { teardown: null };
@@ -57,10 +82,8 @@ test("a recording run is findable, answers its code, and cleans up after itself"
       record: { dir },
       registerShutdown: (fn) => { reg.teardown = fn; },
     });
-    await Bun.sleep(30);
-
-    // Findable: the record names this process and the URL that was published.
-    const got = await checkTunnelState(dir);
+    // Waits for the RECORD, not for a duration — see `recorded` above.
+    const got = await recorded(dir);
     expect(got.kind).toBe("running");
     if (got.kind !== "running") throw new Error("unreachable");
     expect(got.state.pid).toBe(process.pid);
@@ -102,6 +125,12 @@ test("a run given no dir records nothing and leaves no socket", async () => {
       ...base(), port: 0, startTunnel: fake,
       registerShutdown: (fn) => { reg.teardown = fn; },
     });
+    // A FIXED sleep, deliberately, and the only one left in this file. The
+    // others waited for something to appear and were replaced by `recorded`;
+    // this one asserts that nothing appears, and absence cannot be polled for
+    // — a poll would return immediately on the first look and prove nothing.
+    // A short wait gives an erroneous write time to happen so the assertion
+    // has something to catch.
     await Bun.sleep(30);
     expect((await checkTunnelState(dir)).kind).toBe("none");
     expect(await Bun.file(controlSocket(dir)).exists()).toBe(false);
@@ -124,7 +153,9 @@ test("a socket left behind by a dead run does not stop the next one binding", as
       ...d, port: 0, startTunnel: fake, record: { dir },
       registerShutdown: (fn) => { reg.teardown = fn; },
     });
-    await Bun.sleep(30);
+    // Waits for the record, which is written alongside the control socket —
+    // so this no longer races the socket into existence either.
+    await recorded(dir);
     const ask = await askControl(controlSocket(dir));
     expect(ask.ok, `control socket should answer: ${JSON.stringify(ask)}`).toBe(true);
     await reg.teardown!();
@@ -144,8 +175,9 @@ test("the upstream port is recorded when publishing a running paddock", async ()
       record: { dir, publishing: 8787 },
       registerShutdown: (fn) => { reg.teardown = fn; },
     });
-    await Bun.sleep(30);
-    const got = await checkTunnelState(dir);
+    // Same race as the first test had: this one also waited a fixed 30ms for a
+    // record and read `none` when the machine was busy.
+    const got = await recorded(dir);
     if (got.kind !== "running") throw new Error(`expected running, got ${got.kind}`);
     expect(got.state.publishing).toBe(8787);
     await reg.teardown!();
