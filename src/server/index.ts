@@ -32,10 +32,10 @@ import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/
 import { checkState, recordState, removeOwnState } from "@server/lifecycle/state";
 import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
-import { Notifier, fanOut, type NotifierOpts } from "@server/notify/notifier";
+import { Notifier, type NotifierOpts } from "@server/notify/notifier";
 import { PushStore } from "@server/push/store";
 import { sendPush } from "@server/push/send";
-import { buildPushSender } from "@server/index-wiring";
+import { buildPushSender, deltaSink } from "@server/index-wiring";
 import { parseArgs, parseDuration, USAGE } from "@server/cli";
 import { HERDR_PROTOCOL, type HerdrSessionSnapshot } from "@shared/herdr-api";
 import type { SpaceTree } from "@shared/types";
@@ -640,15 +640,12 @@ if (DEMO) {
   // Every tick goes through the store, so `/api/agents` and a browser that
   // loads the page an hour in both see current state — not startup state.
   //
-  // DELIBERATELY `hub.queue` alone, NOT `fanOut(hub, notifier)`. The demo
-  // agents are synthetic and cycle through `blocked` and `done` on a timer;
-  // wiring the notifier here would fire real Telegram messages, at a
-  // synthetic agent's tempo, to whatever chat the operator has configured —
-  // and `--demo` is the mode README screenshots are taken in. This is the one
-  // legitimate instance of the bypass `docs/roadmap.md` warns about under
-  // "Nothing guards index.ts's call site for the delta fan-out": a future
-  // guard against that bypass must exempt this line rather than "fix" it.
-  demo = createDemoSource({ store, onDelta: (d) => hub.queue(d) });
+  // `deltaSink(hub, null)` — the null is the point. A demo must never fire real
+  // Telegram messages or pushes about synthetic agents, and this says so as an
+  // ARGUMENT rather than by quietly omitting the notifier. The two modes are now
+  // one call, so an edit cannot make the herdr branch look like this one by
+  // accident; see `index-wiring.ts`.
+  demo = createDemoSource({ store, onDelta: deltaSink(hub, null) });
   store.replaceAll(demo.snapshot(), Date.now());
   // Reads answer, writes refuse. `demoTree` is read fresh on every call so its
   // `readAt` is the moment it was asked — the Spaces screen renders "as of 3s
@@ -693,7 +690,7 @@ if (DEMO) {
     // Fan out, do not replace: the hub keeps every browser current, and the
     // notifier is a leaf hanging off the composition root so that neither
     // store.ts nor hub.ts has to learn that Telegram exists.
-    onDelta: fanOut(hub, notifier),
+    onDelta: deltaSink(hub, notifier),
     // The event-driven refreshes and the 30s healing reconcile are awaited by
     // nobody, so a rejection there used to be a log line and nothing more.
     // Arming the keeper makes a background failure self-heal instead.

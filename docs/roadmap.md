@@ -265,23 +265,28 @@ surprise.
   `visible`/`recent_unwrapped` ceiling for a plain shell pane, which has no
   journal to fall back to and is unaffected by this work.
 
-- **Nothing guards `index.ts`'s call site for the delta fan-out.**
-  `fanOut()` in `server/notify/notifier.ts` is covered
-  (`tests/notify-wiring.test.ts`) and breaking its body turns that test red,
-  but `index.ts` wires it in with one line —
-  `onDelta: fanOut(hub, notifier)` — that no test touches. A future edit to
-  `index.ts` that bypassed `fanOut` entirely and went back to
-  `onDelta: (d) => hub.queue(d)` would pass every test in the suite while
-  silently disabling notifications: the browser fan-out still works, so
-  nothing user-visible breaks, and the notifier simply never sees another
-  delta again. Closing this means moving that composition out of `index.ts`
-  into a side-effect-free module a test can import directly, without booting
-  `Bun.serve` and the herdr socket the way exercising `index.ts` itself
-  would require. Note that the `--demo` branch one `if` away is a legitimate
-  instance of exactly that bypass — it wires `onDelta: (d) => hub.queue(d)`
-  deliberately, so a demo run cannot fire real Telegram messages about
-  synthetic agents — so whatever closes this gap has to distinguish the two
-  call sites rather than forbid the shape.
+- ~~**Nothing guards `index.ts`'s call site for the delta fan-out.**~~
+  *Resolved.* The two wirings were differently shaped —
+  `onDelta: fanOut(hub, notifier)` for herdr and `onDelta: (d) => hub.queue(d)`
+  for `--demo` — so an edit that made the first look like the second passed
+  every test: the browser fan-out keeps working, nothing user-visible breaks,
+  and the notifier never sees another delta.
+
+  Both modes now call one function, `deltaSink` in `server/index-wiring.ts`,
+  and the demo says so by passing `null` rather than by omitting a
+  destination. The bypass is an argument a reader can see, it is REQUIRED so a
+  caller cannot forget the decision, and `tests/notify-wiring.test.ts` pins
+  both behaviours — a notifier reaches both destinations, a null still reaches
+  the hub — rather than forbidding a shape the demo legitimately wants.
+  `fanOut` was retired rather than kept alongside it: two functions doing one
+  job is how one of them learns the demo bypass and the other does not.
+
+  Worth recording why this stopped being theoretical. The same shape — a
+  decision living in `index.ts`, the one file with no test harness — silently
+  disabled the stale-tab bar on every installed paddock for months, because
+  `currentBuildId` read `dist/index.html` off disk while the binary served the
+  embedded copy. See `build-id.ts`'s `indexHtmlFor`. This entry described the
+  hazard; that one is the hazard having already happened somewhere else.
 
 - **Three component tests emit React `act()` warnings that a green
   `make test` doesn't surface.** `tests/settings-view.test.tsx`,

@@ -1,4 +1,5 @@
 import type { AgentState } from "@shared/types";
+import type { Delta } from "@server/state/store";
 import type { PushOutcome, PushTarget } from "@server/push/send";
 import type { PushStore } from "@server/push/store";
 import type { VapidKeys } from "@server/push/vapid";
@@ -52,5 +53,40 @@ export function buildPushSender(
         console.info(`paddock: push to ${new URL(target.endpoint).origin} failed: ${out.detail}`);
       }
     }
+  };
+}
+
+/**
+ * Where a delta goes: the browsers, and the notifier when there is one.
+ *
+ * WHY THIS IS A FUNCTION AND NOT TWO LINES IN `index.ts`. It used to be two
+ * lines, and they were differently shaped:
+ *
+ *     onDelta: fanOut(hub, notifier)       // herdr
+ *     onDelta: (d) => hub.queue(d)         // --demo
+ *
+ * An edit that made the first look like the second would pass the whole suite.
+ * The browser fan-out keeps working, nothing user-visible breaks, and the
+ * notifier simply never sees another delta again — so paddock stops telling
+ * anyone their agent is blocked, which is the entire reason it exists.
+ * `docs/roadmap.md` recorded that as a gap; `build-id.ts`'s `indexHtmlFor`
+ * records the same shape of defect actually happening, silently, for months.
+ *
+ * A guard could not just forbid the hub-only shape, because `--demo` wants it:
+ * a demo must not fire real Telegram messages about synthetic agents. So both
+ * modes call THIS, and the demo says so by passing `null` — the bypass becomes
+ * an argument a reader can see rather than a line that differs by omission.
+ * `null` is required, not optional, so a caller cannot forget the decision.
+ *
+ * The hub goes first. A notifier settling a trigger or awaiting a push must
+ * never sit between a delta and the screen showing it.
+ */
+export function deltaSink(
+  hub: { queue: (d: Delta) => void },
+  notifier: { observe: (d: Delta) => void } | null,
+): (d: Delta) => void {
+  return (d) => {
+    hub.queue(d);
+    notifier?.observe(d);
   };
 }

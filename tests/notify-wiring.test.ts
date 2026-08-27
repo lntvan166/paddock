@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
-import { fanOut, Notifier } from "@server/notify/notifier";
-import { buildPushSender } from "@server/index-wiring";
+import { buildPushSender, deltaSink } from "@server/index-wiring";
 import type { Delta } from "@server/state/store";
 import type { Agent } from "@shared/types";
 
@@ -19,36 +18,11 @@ const agent = (state: Agent["state"]): Agent => ({
   acknowledgedAt: null,
   hasJournal: false,
 });
-
-// The regression this guards: wiring the notifier by REPLACING
-// `onDelta: (d) => hub.queue(d)` rather than adding to it, which silently
-// stops every browser updating while notifications appear to work. `fanOut`
-// is the single function both `index.ts` and this test call, so a change that
-// drops either destination from `fanOut` itself fails here.
-test("a delta reaches BOTH the hub and the notifier", async () => {
-  let queued = 0;
-  const hubStub = { queue: (_d: Delta) => { queued++; } };
-  const seen: string[] = [];
-  const notifier = new Notifier({
-    settings: {
-      current: () => ({
-        telegram: { token: "1:A", chatId: "5" },
-        notify: { telegram: true, triggers: ["blocked"], settleMs: { blocked: 0, done: 0 },
-                  mutedUntil: null, cooldownMs: 0 },
-        publicUrl: null,
-      }),
-    } as never,
-    send: async (t: string) => { seen.push(t); return { ok: true, detail: null }; },
-  });
-
-  const onDelta = fanOut(hubStub, notifier);
-  onDelta({ upserted: [agent("working")], removedIds: [] });
-  onDelta({ upserted: [agent("blocked")], removedIds: [] });
-  await Bun.sleep(1);
-
-  expect(queued).toBe(2);
-  expect(seen).toHaveLength(1);
-});
+// The hub/notifier split is covered by `deltaSink` at the foot of this file.
+// `fanOut` used to live in `notifier.ts` and be tested here; it was retired
+// rather than kept beside `deltaSink`, because two functions doing one job is
+// the divergence this project keeps warning about — one would learn the demo
+// bypass and the other would not.
 
 const FAKE_KEYS = { publicKey: "BP4z", privateKey: { kty: "EC", crv: "P-256", d: "x" } };
 const P256DH = "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
@@ -146,4 +120,63 @@ test("the skip set never reaches the payload", async () => {
     name: "docs-cleanup", state: "blocked", agentId: "w1:p1", skipDeviceKeys: new Set(["dk-other"]),
   });
   expect(JSON.parse(bodies[0]!)).toEqual({ name: "docs-cleanup", state: "blocked", agentId: "w1:p1" });
+});
+
+// ---- the CALL SITE, not just the function it calls ------------------------
+//
+// `deltaSink`'s body being right was never the gap. The gap was `index.ts`
+// CHOOSING it. The wiring read
+//
+//     onDelta: fanOut(hub, notifier)          // herdr
+//     onDelta: (d) => hub.queue(d)            // --demo
+//
+// two differently-shaped lines, and an edit making the first look like the
+// second would pass the whole suite: the browser fan-out keeps working, nothing
+// user-visible breaks, and the notifier never sees another delta — so paddock
+// stops telling anyone their agent is blocked, which is why it exists.
+//
+// Not hypothetical. The same shape — a decision living in `index.ts`, the one
+// file with no test harness — silently disabled the stale-tab bar on every
+// installed paddock for months while the tests around it stayed green.
+//
+// A guard cannot forbid the hub-only shape, because `--demo` wants it: a demo
+// must not fire real Telegram messages about synthetic agents. So both modes
+// call one function, and these tests pin the distinction rather than syntax.
+
+test("with a notifier, a delta reaches both destinations", () => {
+  const queued: Delta[] = [];
+  const observed: Delta[] = [];
+  const d: Delta = { upserted: [agent("blocked")], removedIds: [] };
+
+  deltaSink({ queue: (x) => queued.push(x) }, { observe: (x) => observed.push(x) })(d);
+
+  expect(queued).toEqual([d]);
+  expect(observed).toEqual([d]);
+});
+
+test("without one — the demo — the hub still gets everything", () => {
+  const queued: Delta[] = [];
+  const d: Delta = { upserted: [agent("done")], removedIds: [] };
+
+  deltaSink({ queue: (x) => queued.push(x) }, null)(d);
+
+  expect(queued, "a demo must still update the browser").toEqual([d]);
+});
+
+test("omitting the notifier argument does not compile", () => {
+  // The bypass has to be stated. An optional parameter would put the decision
+  // back where a reader cannot see it.
+  const d: Delta = { upserted: [], removedIds: [] };
+  // @ts-expect-error the second argument is required
+  deltaSink({ queue: () => {} })(d);
+});
+
+test("the hub is served first, so a notifier cannot delay a screen", () => {
+  const order: string[] = [];
+  deltaSink(
+    { queue: () => order.push("hub") },
+    { observe: () => order.push("notifier") },
+  )({ upserted: [], removedIds: [] });
+
+  expect(order).toEqual(["hub", "notifier"]);
 });
