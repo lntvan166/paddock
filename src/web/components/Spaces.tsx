@@ -1,4 +1,13 @@
 import { sectionFor } from "@shared/types";
+
+/**
+ * How old a tree read has to be before its age is worth screen space.
+ *
+ * The screen re-reads on every write and on `tree-stale`, so in normal use the
+ * age sits at zero and the line said nothing all day. Ten seconds is the point
+ * at which "this might have moved" starts being true rather than pedantic.
+ */
+const STALE_AFTER_S = 10;
 import { useEffect, useState } from "react";
 import { fetchSpaceTree } from "@web/api";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
@@ -48,6 +57,9 @@ export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate
   // just this screen's, computed by `treeCwds` so this and the space screen
   // agree on the rule.
   const cwds = treeCwds(tree);
+  /** Seconds since the tree was read, which is what the refresh control
+   *  reports once it is old enough to be worth reporting. */
+  const age = tree === null ? 0 : Math.max(0, Math.round((now - tree.readAt) / 1000));
 
   /**
    * Whether the create control exists at all.
@@ -90,8 +102,23 @@ export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate
             statement about one read, and splitting it across the top and bottom
             of the screen made it two. */}
         {tree !== null && (
-          <button type="button" className="spaces-refresh tap" onClick={() => void refresh()}>
-            as of {Math.max(0, Math.round((now - tree.readAt) / 1000))}s ago ⟳
+          <button
+            type="button" className="spaces-refresh tap" onClick={() => void refresh()}
+            aria-label={`Read ${age}s ago — read again`}
+          >
+            {/* The AGE is shown only once it is worth knowing.
+                This screen is on demand, and the original note stands: an
+                implied-live one would be a guess rendered as a fact. But a
+                counter reading "as of 0s ago" the whole time you are looking at
+                a freshly-read screen is noise that says nothing — it announces
+                staleness that is not there, right beside the title.
+                So under STALE_AFTER_S the control is the glyph alone, which is
+                still a full 44px target and still says "you may read again";
+                past it the age appears, because then it IS news. The
+                `aria-label` carries the number either way, so nothing is lost
+                to a screen reader at any age. */}
+            {age >= STALE_AFTER_S && <span className="spaces-age">as of {age}s ago </span>}
+            ⟳
           </button>
         )}
         {/* §16.7: the `+` that makes a SPACE lives in the header of the screen

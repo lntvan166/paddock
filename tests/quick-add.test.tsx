@@ -79,7 +79,10 @@ test("choosing Terminal opens the sheet on a new SPACE", async () => {
   await settle();
   const sheet = document.querySelector(".create-sheet, .row-actions-sheet");
   expect(sheet, "the create sheet did not open").not.toBeNull();
-  expect(sheet!.textContent).toContain("New space");
+  // Titled for what was ASKED FOR, not for the record produced — the
+  // description one line down still says a space is what gets made.
+  expect(sheet!.textContent).toContain("New terminal");
+  expect(sheet!.textContent).toContain("A new space, with one tab and one pane in it.");
 });
 
 test("the dial renders no trigger of its own inside the sheet", async () => {
@@ -155,4 +158,16 @@ test("the folder picker is offered the tree's own folders", async () => {
   await settle();
   const picks = [...document.querySelectorAll(".create-cwds > button")].map((b) => b.textContent);
   expect(picks, "the tree's folders are not offered as quick picks").toContain("~/project");
+});
+
+test("choosing Agent titles the sheet for the agent, not the record", async () => {
+  const host = await render(
+    <QuickAdd onChanged={() => {}} senders={senders} load={async () => TREE} />,
+  );
+  await settle();
+  await pointerOpen(host.querySelector(".quick-add-fab"));
+  await settle();
+  await click([...document.querySelectorAll(".quick-add-item")][0]);
+  await settle();
+  expect(document.querySelector(".row-actions-title")?.textContent).toBe("New agent");
 });

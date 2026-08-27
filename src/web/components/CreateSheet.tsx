@@ -218,7 +218,21 @@ export function CreateSheet({
    *  IS the honest answer for an unnamed space — it is what the row shows, and
    *  the sheet must agree with the row it opened from. */
   const where = isSpace ? "" : target.spaceLabel ?? target.spaceId;
-  const title = isSpace ? "New space" : `New tab in ${where}`;
+  /**
+   * Named for what the operator ASKED FOR, not for the record it produces.
+   *
+   * From the dial they tapped "Agent" or "Terminal", so "New space" answered a
+   * question nobody had asked — and it made the sheet look like the wrong one
+   * had opened. Reported as: its name should be "new agent" instead of space.
+   *
+   * The structural truth is not hidden, it has just moved to where it belongs:
+   * the description below still says "A new space, with one tab and one pane in
+   * it", so what is actually created is one line down rather than absent. Title
+   * carries intent, description carries mechanism.
+   */
+  const title = quick
+    ? (preset === "agent" ? "New agent" : "New terminal")
+    : isSpace ? "New space" : `New tab in ${where}`;
 
   /**
    * The name the agent gets, unless the operator says otherwise.

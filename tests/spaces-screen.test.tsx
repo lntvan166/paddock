@@ -165,3 +165,28 @@ test("an unnamed space is named by its id, because a blank row is not a row", as
   const host = await render(<Spaces load={load(UNNAMED)} />);
   expect(textsOf(host, "[data-space-row] .space-name")).toEqual(["w7"]);
 });
+
+test("a fresh read shows the glyph alone; an old one says how old", async () => {
+  // The screen is on demand, and the original rule stands: an implied-live one
+  // would be a guess rendered as a fact. But it re-reads on every write and on
+  // `tree-stale`, so the age sat at "as of 0s ago" all day — announcing a
+  // staleness that was not there, beside the title. Under the threshold the
+  // control is the glyph alone; past it the age appears, because then it is
+  // news. The `aria-label` carries the number at every age.
+  const fresh = await render(
+    <Spaces load={async () => ({ spaces: [], readAt: Date.now() })} />,
+  );
+  await settle();
+  expect(fresh.querySelector(".spaces-refresh")?.textContent?.trim()).toBe("⟳");
+  expect(fresh.querySelector(".spaces-refresh")?.getAttribute("aria-label"))
+    .toContain("0s ago");
+  await unmount();
+
+  const old = await render(
+    <Spaces load={async () => ({ spaces: [], readAt: Date.now() - 60_000 })} />,
+  );
+  await settle();
+  const text = old.querySelector(".spaces-refresh")?.textContent ?? "";
+  expect(text).toContain("as of");
+  expect(text).toContain("60s ago");
+});
