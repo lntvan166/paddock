@@ -640,9 +640,18 @@ body {
   position: fixed;
   z-index: 30;
   right: var(--gutter);
-  /* Above the tab bar, which is 3.25rem plus whatever the home indicator
-     takes. Expressed as that sum rather than a guessed number. */
-  bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px) + 0.75rem);
+  /* One gap above the bottom of the region it floats over — and nothing more.
+
+     It used to add the tab bar's height and the home-indicator inset, because
+     the bar sat INSIDE the screen and this button, being `position: fixed`,
+     was measured against the viewport. Neither is true now. The bar is chrome
+     outside the pager, and `.pager-track` carries a transform, which per CSS
+     makes IT the containing block for fixed-position descendants — so this is
+     measured against the track, whose bottom edge already IS the tab bar's
+     top. Keeping those terms counted the same clearance twice and floated the
+     button 64px up instead of 12px: measured at 390×844, button bottom y=726
+     against a tab bar starting at y=790. */
+  bottom: 0.75rem;
   width: 2.75rem;
   height: 2.75rem;
   border: 0;
@@ -678,10 +687,10 @@ body {
    in padding instead.
 
    Scoped with `:has()` so only a screen that CARRIES the button gives up the
-   space, the same shape as `.screen:has(.tab-bar)` above. Spelled as the
-   button's own two numbers rather than one rounded figure, so resizing the
-   button shows up here as a contradiction instead of silently re-covering the
-   last row. */
+   space. Spelled as the button's own two numbers — its height, then its offset
+   from the bottom of the region it floats over — plus one gap of breathing
+   room, so resizing or moving the button shows up here as a contradiction
+   instead of silently re-covering the last row. A test asserts the two agree. */
 .screen:has(.quick-add-fab) > .screen-body {
   padding-bottom: calc(2.75rem + 0.75rem + 0.75rem);
 }

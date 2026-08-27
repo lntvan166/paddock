@@ -76,3 +76,37 @@ test("only screens with the button pay for it", () => {
   const scoped = css.includes(".screen:has(.quick-add-fab)");
   expect(scoped, "the reservation is not scoped to screens that have the button").toBe(true);
 });
+
+test("the button does not clear the tab bar twice", () => {
+  // `.quick-add-fab` is `position: fixed`, and its `bottom` used to include the
+  // tab bar's height because the bar sat INSIDE the screen and the button was
+  // measured against the viewport.
+  //
+  // The bar is chrome now, outside the pager. And `.pager-track` carries a
+  // transform, which per CSS makes it the containing block for fixed-position
+  // descendants — so the button is measured against the TRACK, whose bottom
+  // edge is already the tab bar's top. Keeping the tab-bar term counted that
+  // clearance a second time and floated the button 64px up instead of 12px.
+  //
+  // Measured at 390×844 when it shipped: button bottom y=726, tab bar top
+  // y=790.
+  const body = ruleBody(".quick-add-fab");
+  const bottom = /bottom:\s*([^;]+);/.exec(body)?.[1] ?? "";
+  expect(bottom, "the button still clears a tab bar that is no longer above it")
+    .not.toContain("3.25rem");
+});
+
+test("the reservation still matches whatever the button actually occupies", () => {
+  // The two numbers have to move together: change the button's offset without
+  // changing the padding and the last row goes back under it.
+  const fab = ruleBody(".quick-add-fab");
+  const height = Number(/height:\s*([\d.]+)rem/.exec(fab)?.[1]);
+  const offset = Number(/bottom:\s*([\d.]+)rem/.exec(fab)?.[1]);
+  expect(height, "could not read the button height").toBeGreaterThan(0);
+  expect(offset, "could not read the button offset").toBeGreaterThan(0);
+
+  const reserved = remsIn(ruleBody(".screen:has(.quick-add-fab) > .screen-body"))
+    .reduce((a, b) => a + b, 0);
+  expect(reserved, "the reservation no longer covers the button's footprint")
+    .toBeGreaterThanOrEqual(height + offset);
+});
