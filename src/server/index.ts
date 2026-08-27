@@ -594,6 +594,15 @@ const notifier = new Notifier({
    * further, ideally on a subscription they can afford to lose.
    */
   clearPush: process.env.PADDOCK_CLEAR_PUSH === "1",
+  /**
+   * On. See `NotifierOpts.replaceStale`.
+   *
+   * Safe where `clearPush` was not: every push on this path renders a
+   * notification, so `userVisibleOnly: true` is honoured and the penalty that
+   * appeared to cost a subscription cannot apply. `PADDOCK_REPLACE_STALE=0`
+   * turns it off for anyone who would rather a stale alert than a replaced one.
+   */
+  replaceStale: process.env.PADDOCK_REPLACE_STALE !== "0",
   sendPush: pushSender(),
   viewers: (agentId) => presence.viewers(agentId),
   // A synchronous read of what `push.json` already stores — see

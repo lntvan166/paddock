@@ -477,6 +477,7 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
 | `PADDOCK_NO_UPDATE_CHECK` | unset | `1` disables the update check completely. |
+| `PADDOCK_REPLACE_STALE` | on | `0` stops paddock overwriting a notification that has stopped being true. Safe by default — every push on this path renders something. |
 | `PADDOCK_CLEAR_PUSH` | **off** | `1` re-enables clearing a notification once it stops being true. It appeared to cost a live subscription — see below. |
 | `PADDOCK_VERSION` | `0.0.0-dev` | Build-time only, injected by `bun build --define`. Not read at runtime. |
 
@@ -541,6 +542,17 @@ delivery of the alerts paddock exists to send. Default off.
 **Recovery, if a subscription goes quiet.** Unsubscribe and re-subscribe from
 Settings on the device. That mints a new endpoint; a penalty attaches to the
 old one. Confirm a plain alert arrives before turning anything else on.
+
+**What shipped instead: `PADDOCK_REPLACE_STALE`, on by default.** Same trigger
+and same gate, but it SHOWS the new state over the stale entry rather than
+showing nothing — reusing the tag, so iOS replaces rather than stacks, with
+`renotify: false` so it lands without alerting again. Every push on that path
+renders a notification, so the contract is kept and this penalty cannot apply.
+The operator is left with one entry that reads truthfully instead of one that
+lies. Confirmed by measurement that push on a FRESH endpoint works normally
+with the same server, code, phone and VAPID key — only the endpoint differed,
+which is what rules out force-quitting as the cause and leaves the clear pushes
+responsible.
 
 **Lesson recorded, because it was the real mistake.** This was made the default
 on the strength of one success that had already been identified as confounded,

@@ -72,6 +72,11 @@ self.addEventListener("push", function (event) {
     // transition-based dedup and is the difference between a glance and a
     // pocketful.
     tag: agentId,
+    // Same tag REPLACES rather than stacks. Left at its default `false`,
+    // `renotify` means a replacement lands without alerting again — which is
+    // the whole point when an agent has merely stopped being blocked and the
+    // operator is not being told anything new enough to buzz for.
+    renotify: false,
     data: { agentId: agentId },
   }));
 });

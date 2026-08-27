@@ -56,6 +56,24 @@ export interface NotifierOpts {
    */
   clearPush?: boolean;
 
+  /**
+   * Replace a notification that has stopped being true, rather than leaving it
+   * to lie.
+   *
+   * The same trigger as `clearPush` and the same reason — an alert saying
+   * "blocked" outlives the block whenever the operator solves it elsewhere and
+   * never touches the phone, and `sweep()` cannot help because it runs in the
+   * page. The difference is what reaches the lock screen: this SHOWS a
+   * notification carrying the new state, reusing the tag so it replaces the
+   * stale entry instead of stacking beside it.
+   *
+   * That is why this is on by default and `clearPush` is not. Every push here
+   * renders something, so the `userVisibleOnly: true` contract is kept and the
+   * cumulative penalty that cost a live subscription during the clear-push
+   * experiment cannot apply. Replacing by tag is what tags are for.
+   */
+  replaceStale?: boolean;
+
   sendPush?: (
     payload: {
       name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string>;
@@ -321,7 +339,15 @@ export class Notifier {
       // the `userVisibleOnly: true` contract, the penalty for breaches is
       // cumulative, and spending them on notifications nobody ever saw is the
       // fastest way to lose the subscription for no benefit at all.
-      if (this.o.clearPush === true && pushedState !== undefined) void this.#sendClear(a);
+      // Only ever ONE of these, and only when a push actually reached a lock
+      // screen for this agent. `clearPush` closes the entry and shows nothing,
+      // which breaches `userVisibleOnly` and is off by default after it
+      // appeared to cost a subscription; `replaceStale` shows the new state
+      // over the old entry, which breaches nothing.
+      if (pushedState !== undefined) {
+        if (this.o.clearPush === true) void this.#sendClear(a);
+        else if (this.o.replaceStale !== false) void this.#sendReplacement(a);
+      }
       return;
     }
 
@@ -548,6 +574,31 @@ export class Notifier {
    * does not arrive leaves a stale notification, which is the status quo, and
    * that is never worth taking the dashboard down for.
    */
+  /**
+   * Overwrite a stale notification with what is true now.
+   *
+   * `skipDeviceKeys` is EMPTY for the same reason the clear's is: that set
+   * withholds an ALERT from a device already showing this agent, which is
+   * exactly the device holding the entry that has gone stale.
+   *
+   * No `clear` flag, so `sw.js` takes its ordinary path and calls
+   * `showNotification`. The tag does the rest — same tag, so iOS replaces the
+   * entry rather than adding one, and without `renotify` it does so without
+   * alerting again.
+   */
+  async #sendReplacement(a: Agent): Promise<void> {
+    const send = this.o.sendPush;
+    if (send === undefined) return;
+    try {
+      await send({
+        name: a.name, state: a.state, agentId: a.agentId, skipDeviceKeys: new Set(),
+      });
+      console.info(`paddock: replaced stale notification for ${a.name} (${a.agentId}) with ${a.state}`);
+    } catch (e) {
+      console.info(`paddock: stale replacement failed for ${a.name}: ${(e as Error).message}`);
+    }
+  }
+
   async #sendClear(a: Agent): Promise<void> {
     const send = this.o.sendPush;
     if (send === undefined) return;

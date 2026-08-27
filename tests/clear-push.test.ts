@@ -30,7 +30,7 @@ type Sent = {
 };
 
 /** The same shape `tests/notifier.test.ts` uses, plus the experiment flag. */
-function harness(clearPush: boolean, over: { settleMs?: Record<string, number> } = {}) {
+function harness(clearPush: boolean, over: { settleMs?: Record<string, number>; replaceStale?: boolean } = {}) {
   const sent: Sent[] = [];
   const store = {
     current: () => ({
@@ -46,6 +46,7 @@ function harness(clearPush: boolean, over: { settleMs?: Record<string, number> }
   const n = new Notifier({
     settings: store as never,
     clearPush,
+    replaceStale: over.replaceStale ?? false,
     send: async () => ({ ok: true, detail: null }),
     sendPush: async (p: Sent) => { sent.push(p); },
   } as never);
@@ -167,4 +168,61 @@ test("an ordinary alert still shows a notification", () => {
   // stopped rendering, push would be silently dead and nothing else would say
   // so.
   expect(sw).toContain("self.registration.showNotification(title");
+});
+
+
+/**
+ * The replacement path — what shipped instead of clearing.
+ *
+ * Same trigger, same gate, but it SHOWS the new state over the stale entry
+ * rather than showing nothing. That is the whole difference: every push here
+ * renders a notification, so `userVisibleOnly: true` is honoured and the
+ * penalty that appeared to cost a live subscription cannot apply.
+ */
+
+test("leaving a trigger replaces the stale notification", async () => {
+  const { sent, n } = harness(false, { replaceStale: true });
+  see(n, "working");
+  see(n, "blocked");
+  await Bun.sleep(20);
+  see(n, "working");
+  await Bun.sleep(20);
+
+  const after = sent[sent.length - 1]!;
+  expect(after.state, "the replacement does not carry the new state").toBe("working");
+  expect(after.agentId, "a replacement must reuse the tag, or it stacks").toBe("w1:p1");
+  expect(after.clear, "a replacement must not take the render-nothing path").toBeUndefined();
+});
+
+test("nothing was shown, nothing is replaced", async () => {
+  // The same gate the clear path needed, for a cheaper reason: a replacement
+  // with no stale entry to overwrite is just an unsolicited notification.
+  const { sent, n } = harness(false, {
+    replaceStale: true, settleMs: { blocked: 60_000, done: 60_000 },
+  });
+  see(n, "idle");
+  see(n, "done");      // arms a 60s timer — nothing is announced
+  see(n, "working");
+  await Bun.sleep(20);
+  expect(sent, "sent an unsolicited notification for an alert nobody saw").toEqual([]);
+});
+
+test("clearing and replacing are never both sent", async () => {
+  // Two pushes for one transition would show the new state and then close it,
+  // or the reverse depending on arrival order — a race with no right answer.
+  const { sent, n } = harness(true, { replaceStale: true });
+  see(n, "working");
+  see(n, "blocked");
+  await Bun.sleep(20);
+  const before = sent.length;
+  see(n, "working");
+  await Bun.sleep(20);
+  expect(sent.length - before, "one transition produced two follow-up pushes").toBe(1);
+  expect(sent[sent.length - 1]!.clear, "clearPush should win when explicitly on").toBe(true);
+});
+
+test("the worker asks not to re-alert on a replacement", () => {
+  // Without this the phone buzzes again to tell the operator an agent stopped
+  // needing them, which is the opposite of the point.
+  expect(sw).toContain("renotify: false");
 });
