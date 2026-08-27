@@ -1,10 +1,24 @@
 import "./support/dom";
 import { readFileSync } from "node:fs";
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { PAGER_TABS, Pager } from "@web/components/Pager";
-import { render, settle, unmount } from "./support/render";
+import { render, settle, stubFetch, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
+
+// The pager mounts all three real screens, and two of them poll. Without a
+// stub those requests hit the global `fetch` — which `stubFetch` makes a
+// SINGLE shared slot — so a poller here can record into another test file's
+// call log and fail an assertion that has nothing to do with the pager. It
+// did exactly that to `prefs-applied.test.tsx`.
+beforeEach(() => {
+  stubFetch({
+    "/api/spaces": () => ({ readAt: 0, spaces: [] }),
+    "/api/agents": () => ({ agents: [] }),
+    "/api/health": () => ({ ok: true }),
+    "/api/settings": () => ({ notify: { triggers: [] }, push: { enabled: false, devices: 0 } }),
+  });
+});
 
 /**
  * The track that holds the three tab destinations.
@@ -20,15 +34,15 @@ test("all three destinations are mounted at once", async () => {
   // neighbouring screen already on screen when the drag begins — there is no
   // time to mount one. It is also what deletes the Spaces reload bug: a screen
   // that never unmounts never resets to its empty state.
-  await render(<Pager index={0} onIndexChange={() => {}} />);
+  const host = await render(<Pager index={0} onIndexChange={() => {}} />);
   await settle();
-  expect(document.querySelectorAll(".pager-page").length).toBe(3);
+  expect(host.querySelectorAll(".pager-page").length).toBe(3);
 });
 
 test("the pages are in tab order", async () => {
-  await render(<Pager index={0} onIndexChange={() => {}} />);
+  const host = await render(<Pager index={0} onIndexChange={() => {}} />);
   await settle();
-  const ids = [...document.querySelectorAll(".pager-page")]
+  const ids = [...host.querySelectorAll(".pager-page")]
     .map((p) => (p as HTMLElement).dataset.tab);
   expect(ids).toEqual([...PAGER_TABS]);
 });
@@ -36,12 +50,12 @@ test("the pages are in tab order", async () => {
 test("the track is offset by whole pages", async () => {
   const host = await render(<Pager index={0} onIndexChange={() => {}} />);
   await settle();
-  const track = document.querySelector(".pager-track") as HTMLElement;
+  const track = host.querySelector(".pager-track") as HTMLElement;
   expect(track.style.transform).toContain("0%");
 
   await render(<Pager index={2} onIndexChange={() => {}} />, host);
   await settle();
-  const after = document.querySelector(".pager-track") as HTMLElement;
+  const after = host.querySelector(".pager-track") as HTMLElement;
   expect(after.style.transform, "the track did not move to the third page").toContain("-200%");
 });
 
@@ -49,18 +63,18 @@ test("only the front page is exposed to assistive tech", async () => {
   // Three mounted screens means two of them are off-screen but present. Left
   // unmarked, a screen reader reads all three as one long page and the tab bar
   // stops meaning anything.
-  await render(<Pager index={1} onIndexChange={() => {}} />);
+  const host = await render(<Pager index={1} onIndexChange={() => {}} />);
   await settle();
-  const pages = [...document.querySelectorAll(".pager-page")] as HTMLElement[];
+  const pages = [...host.querySelectorAll(".pager-page")] as HTMLElement[];
   expect(pages.map((p) => p.getAttribute("aria-hidden"))).toEqual(["true", null, "true"]);
 });
 
 test("the track carries no tab bar", async () => {
   // The bar is AppShell's, outside the transitioning region. One inside the
   // track would be three bars again — and they would slide with the content.
-  await render(<Pager index={0} onIndexChange={() => {}} />);
+  const host = await render(<Pager index={0} onIndexChange={() => {}} />);
   await settle();
-  expect(document.querySelectorAll(".tab-bar").length).toBe(0);
+  expect(host.querySelectorAll(".tab-bar").length).toBe(0);
 });
 
 test("the track's order and the tab bar's order are the same list", () => {
@@ -93,7 +107,7 @@ test("a finished settle drops the classes that describe movement", async () => {
   // Otherwise `is-settling` outlives the transition and takes will-change with
   // it, which is the same bug wearing a different class name.
   const host = await render(<Pager index={0} onIndexChange={() => {}} />);
-  const track = document.querySelector(".pager-track")! as HTMLElement;
+  const track = host.querySelector(".pager-track")! as HTMLElement;
   track.classList.add("is-settling", "is-dragging");
 
   track.dispatchEvent(new Event("transitionend", { bubbles: true }));

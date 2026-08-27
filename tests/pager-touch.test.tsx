@@ -1,9 +1,20 @@
 import "./support/dom";
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { Pager } from "@web/components/Pager";
-import { render, settle, unmount } from "./support/render";
+import { render, settle, stubFetch, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
+
+// See the note in `pager.test.tsx`: the three real screens poll, and global
+// fetch is one shared slot across concurrently-running files.
+beforeEach(() => {
+  stubFetch({
+    "/api/spaces": () => ({ readAt: 0, spaces: [] }),
+    "/api/agents": () => ({ agents: [] }),
+    "/api/health": () => ({ ok: true }),
+    "/api/settings": () => ({ notify: { triggers: [] }, push: { enabled: false, devices: 0 } }),
+  });
+});
 
 /**
  * Touch wiring only.
@@ -31,8 +42,8 @@ test("a vertical drag is left to the browser", async () => {
   // The lists scroll. If the pager claims a vertical drag, scrolling breaks —
   // the worst possible trade for a feature nobody asked to replace it with.
   const calls: number[] = [];
-  await render(<Pager index={0} onIndexChange={(i) => calls.push(i)} />);
-  const track = document.querySelector(".pager-track")!;
+  const host = await render(<Pager index={0} onIndexChange={(i) => calls.push(i)} />);
+  const track = host.querySelector(".pager-track")!;
 
   fire(track, "touchstart", 200, 400);
   const moved = fire(track, "touchmove", 202, 300);
@@ -44,8 +55,8 @@ test("a vertical drag is left to the browser", async () => {
 });
 
 test("a horizontal drag is claimed", async () => {
-  await render(<Pager index={0} onIndexChange={() => {}} />);
-  const track = document.querySelector(".pager-track")!;
+  const host = await render(<Pager index={0} onIndexChange={() => {}} />);
+  const track = host.querySelector(".pager-track")!;
 
   fire(track, "touchstart", 300, 400);
   const moved = fire(track, "touchmove", 200, 402);
@@ -58,8 +69,8 @@ test("a tap is not a drag", async () => {
   // Rows are tappable. A gesture that never crosses the axis lock must leave
   // the tap alone, or every row press becomes a failed swipe.
   const calls: number[] = [];
-  await render(<Pager index={1} onIndexChange={(i) => calls.push(i)} />);
-  const track = document.querySelector(".pager-track")!;
+  const host = await render(<Pager index={1} onIndexChange={(i) => calls.push(i)} />);
+  const track = host.querySelector(".pager-track")!;
 
   fire(track, "touchstart", 200, 400);
   const moved = fire(track, "touchmove", 202, 401);
@@ -71,8 +82,8 @@ test("a tap is not a drag", async () => {
 });
 
 test("a cancelled touch settles the track instead of leaving it mid-drag", async () => {
-  await render(<Pager index={1} onIndexChange={() => {}} />);
-  const track = document.querySelector(".pager-track")! as HTMLElement;
+  const host = await render(<Pager index={1} onIndexChange={() => {}} />);
+  const track = host.querySelector(".pager-track")! as HTMLElement;
 
   fire(track, "touchstart", 300, 400);
   fire(track, "touchmove", 200, 401);
@@ -87,8 +98,8 @@ test("a second finger abandons the gesture", async () => {
   // A pinch or a two-finger scroll is not a page turn. Continuing to track the
   // first finger through one would slide the page under a zoom.
   const calls: number[] = [];
-  await render(<Pager index={0} onIndexChange={(i) => calls.push(i)} />);
-  const track = document.querySelector(".pager-track")!;
+  const host = await render(<Pager index={0} onIndexChange={(i) => calls.push(i)} />);
+  const track = host.querySelector(".pager-track")!;
 
   fire(track, "touchstart", 300, 400);
   const t1 = { identifier: 1, target: track, clientX: 200, clientY: 400 } as unknown as Touch;
@@ -106,8 +117,8 @@ test("a committed drag reports the new index once", async () => {
   // The callback is what actually changes tab — `App` turns it into a
   // replaceState. Reporting twice would write history twice for one swipe.
   const calls: number[] = [];
-  await render(<Pager index={0} onIndexChange={(i) => calls.push(i)} />);
-  const track = document.querySelector(".pager-track")!;
+  const host = await render(<Pager index={0} onIndexChange={(i) => calls.push(i)} />);
+  const track = host.querySelector(".pager-track")!;
 
   fire(track, "touchstart", 300, 400);
   fire(track, "touchmove", 200, 401);
@@ -133,8 +144,8 @@ test("no touchmove listener exists until a finger is down", async () => {
   // Attached only for the life of a gesture, an idle screen carries no such
   // listener at all.
   const track = { added: 0, removed: 0 };
-  await render(<Pager index={0} onIndexChange={() => {}} />);
-  const el = document.querySelector(".pager-track")! as HTMLElement;
+  const host = await render(<Pager index={0} onIndexChange={() => {}} />);
+  const el = host.querySelector(".pager-track")! as HTMLElement;
 
   const add = el.addEventListener.bind(el);
   const remove = el.removeEventListener.bind(el);
@@ -162,8 +173,8 @@ test("a cancelled gesture also releases the listener", async () => {
   // touchcancel is what iOS sends when the system takes over. Leaving the
   // listener attached there would reproduce the slow-scroll bug and leave no
   // gesture behind to explain it.
-  await render(<Pager index={1} onIndexChange={() => {}} />);
-  const el = document.querySelector(".pager-track")! as HTMLElement;
+  const host = await render(<Pager index={1} onIndexChange={() => {}} />);
+  const el = host.querySelector(".pager-track")! as HTMLElement;
   let removed = 0;
   const remove = el.removeEventListener.bind(el);
   el.removeEventListener = ((t: string, ...rest: unknown[]) => {

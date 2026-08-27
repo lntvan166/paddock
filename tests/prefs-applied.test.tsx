@@ -210,8 +210,16 @@ test("the keypad-auto setting is a device pref, written to this browser only", a
 
   expect(localStorage.getItem("paddock.term.keypad.auto")).toBe("0");
   expect(readPrefs().keypadAuto).toBe(false);
-  // Nothing was WRITTEN to the server. A request carrying a body is a write,
-  // and a device pref that reached the server would apply to every device the
-  // operator opens paddock on.
-  expect(calls.filter((c) => c.body !== undefined)).toEqual([]);
+  // Nothing was WRITTEN to the SETTINGS endpoint. A request carrying a body is
+  // a write, and a device pref that reached the server would apply to every
+  // device the operator opens paddock on.
+  //
+  // Scoped to that endpoint rather than to every call with a body. `stubFetch`
+  // replaces the ONE global fetch, so any other component alive at the same
+  // moment — a poller in a concurrently-running test file, for instance —
+  // records into this same array. Asserting on all traffic made this test a
+  // detector of unrelated background work; asserting on the endpoint it is
+  // about says what it means and is what it always meant.
+  expect(calls.filter((c) => c.body !== undefined && c.url.includes("/api/settings")))
+    .toEqual([]);
 });
