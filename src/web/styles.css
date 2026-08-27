@@ -773,6 +773,44 @@ body {
    more — `.app-shell` holds the one instance as a sibling — so the rule had
    nothing left to match. */
 
+/* A tap that looks like it landed.
+
+   The stylesheet had seven transitions in it and none on the controls a
+   finger hits: tapping a row did nothing visible until the next screen
+   painted, which on a slow link reads as a missed tap and invites a second.
+
+   `:active` only. A hover state latches on a phone and stays lit, which reads
+   as "still selected" on a row the operator has already left — the same
+   reason CLAUDE.md bans hover-only affordances.
+
+   120ms, and the scale is deliberately small: this is an acknowledgement, not
+   an animation. Past ~150ms it stops reading as a response. The global
+   prefers-reduced-motion clamp covers all of it. */
+.row-open {
+  transition:
+    background 120ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.row-open:active {
+  background: var(--surface);
+  transform: scale(0.985);
+}
+
+/* The row is the most-tapped control but not the only one: a row that
+   responds beside a menu button that does not reads as the button being
+   broken. */
+.row-actions-btn,
+.icon-tile {
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.row-actions-btn:active,
+.icon-tile:active { transform: scale(0.92); }
+
+.tab-item {
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tab-item:active { transform: scale(0.96); }
+
 .tab-item {
   display: flex;
   flex-direction: column;
