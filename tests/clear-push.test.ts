@@ -12,12 +12,16 @@ import type { Agent } from "@shared/types";
  * paddock closed nothing of ours is alive on that device. A push is the only
  * lever left.
  *
- * On by default since it was measured working on a real iPhone, with
- * `PADDOCK_CLEAR_PUSH=0` as the way out. It still breaks the
- * `userVisibleOnly: true` contract every subscription is made under, and the
- * penalty for that is cumulative — so these tests pin the gate that stops a
- * clear being spent on a notification nobody ever saw, which is the safety
- * mechanism rather than mere tidiness.
+ * OFF by default. It worked once on a real iPhone and then push stopped
+ * delivering entirely in the same session — no alert for any agent, with
+ * clears already disabled, while the subscription stayed present and every
+ * send kept reporting success. That is what a penalised subscription looks
+ * like, and `userVisibleOnly: true` exists to enforce exactly that penalty.
+ *
+ * These tests still matter, because the path remains behind
+ * `PADDOCK_CLEAR_PUSH=1`. The gate they pin — never clear a notification that
+ * was not actually shown — is the safety mechanism, not tidiness: every clear
+ * spends a breach, and one spent on a notification nobody saw buys nothing.
  */
 
 type Sent = {

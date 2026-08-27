@@ -477,7 +477,7 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
 | `PADDOCK_NO_UPDATE_CHECK` | unset | `1` disables the update check completely. |
-| `PADDOCK_CLEAR_PUSH` | on | `0` stops paddock closing a notification once it stops being true — see below. |
+| `PADDOCK_CLEAR_PUSH` | **off** | `1` re-enables clearing a notification once it stops being true. It appeared to cost a live subscription — see below. |
 | `PADDOCK_VERSION` | `0.0.0-dev` | Build-time only, injected by `bun build --define`. Not read at runtime. |
 
 ### `PADDOCK_CLEAR_PUSH`
@@ -517,18 +517,35 @@ cumulative, the gate above is a safety mechanism and not merely tidiness —
 every clear spent on a notification nobody saw brings that penalty closer for
 no benefit.
 
-**What was measured, and what was not.** On a real iPhone, 2026-08-27: a blocked
-alert cleared itself off the lock screen when the agent was unblocked from the
-laptop, with the phone untouched, and the server logged the clear it had sent.
-Two earlier observations were discarded as confounded — one where the
+**What was measured, and what happened next.** On a real iPhone, 2026-08-27: a
+blocked alert cleared itself off the lock screen when the agent was unblocked
+from the laptop, with the phone untouched, and the server logged the clear it
+had sent. Two earlier observations were discarded as confounded — one where the
 notification was tapped, which dismisses any notification, and one where the
 alert was only looked for AFTER answering, so a working clear and a missing
 notification are indistinguishable.
 
-Durability is NOT measured and cannot be in one session: whether iOS goes on
-tolerating render-nothing pushes over weeks is a question only time answers. If
-push ever goes silent, set `PADDOCK_CLEAR_PUSH=0`, restart, and re-subscribe
-from Settings.
+**Then push stopped working entirely, in the same session.** No alert arrived
+for any agent — including a `done` on an unrelated one — with clears already
+disabled, while the subscription stayed present in the store, Apple kept
+accepting every send, and nothing was logged as failed. Accepted and then not
+delivered is what a penalised subscription looks like, and it is precisely the
+cumulative penalty `userVisibleOnly: true` exists to enforce.
+
+**This is not proven and cannot be from one device.** An iOS PWA that has been
+force-quit may also stop being woken, and this experiment's own test procedure
+kept asking for exactly that, so the two explanations are tangled. But the
+trade is settled either way: a tidy Notification Center is not worth risking
+delivery of the alerts paddock exists to send. Default off.
+
+**Recovery, if a subscription goes quiet.** Unsubscribe and re-subscribe from
+Settings on the device. That mints a new endpoint; a penalty attaches to the
+old one. Confirm a plain alert arrives before turning anything else on.
+
+**Lesson recorded, because it was the real mistake.** This was made the default
+on the strength of one success that had already been identified as confounded,
+while the durability caveat sat in this very file unheeded. A measurement that
+cannot be taken in one session should not set a default in that session.
 
 ### `PADDOCK_NO_UPDATE_CHECK`, and the file beside `settings.json`
 

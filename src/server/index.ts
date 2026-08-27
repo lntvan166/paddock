@@ -573,16 +573,27 @@ const notifier = new Notifier({
    * the dashboard must take effect without a restart.
    */
   /**
-   * On, with an off switch. See `NotifierOpts.clearPush`.
+   * OFF. Turned back off after it appeared to cost a live subscription.
    *
-   * Measured on a real iPhone, 2026-08-27: a blocked alert cleared itself off
-   * the lock screen when the agent was unblocked from the laptop, with the
-   * phone untouched, and the server logged the clear it had sent. What is NOT
-   * measured is durability — whether iOS goes on tolerating pushes that render
-   * nothing over weeks. `PADDOCK_CLEAR_PUSH=0` is the way out if push ever
-   * goes quiet.
+   * It worked, briefly: on 2026-08-27 a blocked alert cleared itself off a
+   * real iPhone's lock screen, untouched, with the server logging the clear.
+   * Within the same session push then stopped delivering ENTIRELY — no alert
+   * for any agent, including a `done` on an unrelated one, with clears already
+   * disabled — while the subscription stayed present and every send kept
+   * reporting success. Accepted and then not delivered is what a penalised
+   * subscription looks like, and it is the exact cumulative penalty
+   * `userVisibleOnly: true` exists to enforce.
+   *
+   * Not proven, and it cannot be from one device: an iOS PWA that has been
+   * force-quit may also stop being woken, and this experiment's own test
+   * instructions kept asking for exactly that. Either way the trade is settled
+   * — a tidy Notification Center is not worth risking the delivery of the
+   * alerts paddock exists to send.
+   *
+   * `PADDOCK_CLEAR_PUSH=1` re-enables it for anyone who wants to measure
+   * further, ideally on a subscription they can afford to lose.
    */
-  clearPush: process.env.PADDOCK_CLEAR_PUSH !== "0",
+  clearPush: process.env.PADDOCK_CLEAR_PUSH === "1",
   sendPush: pushSender(),
   viewers: (agentId) => presence.viewers(agentId),
   // A synchronous read of what `push.json` already stores — see
