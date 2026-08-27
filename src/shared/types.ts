@@ -755,3 +755,35 @@ export interface StartAgentResult extends ActionResult {
 export interface HarnessesResult extends ActionResult {
   kinds: string[];
 }
+
+/**
+ * One command an agent's own project offers, for the reply field's
+ * autocomplete.
+ *
+ * Read from the agent's WORKING DIRECTORY, never from the operator's home:
+ * `<cwd>/.claude/commands/<name>.md` and `<cwd>/.claude/skills/<name>/SKILL.md`.
+ * That
+ * choice is why this is per-agent rather than global — two agents in different
+ * repositories offer different commands, and paddock already carries `cwd` on
+ * every `Agent`, so the list costs no new herdr call.
+ *
+ * What it deliberately cannot contain: the harness's BUILT-IN commands
+ * (`/clear`, `/compact`, `/model`). Those live inside the harness binary and
+ * are on no filesystem, which is why Collie ships a hand-curated catalogue
+ * instead of enumerating. paddock offers what the project actually declares
+ * and does not pretend to know the rest.
+ */
+export interface AgentCommand {
+  /** With its leading slash, as it would be typed. */
+  command: string;
+  /** First line of the document's frontmatter `description`, or null. */
+  description: string | null;
+  /**
+   * Which layout it came from, shown so an operator can tell one kind from
+   * another without opening any of them.
+   *
+   * `plugin` entries are namespaced in `command` — `/superpowers:brainstorming`,
+   * never `/brainstorming` — because that is how the harness accepts them.
+   */
+  source: "command" | "skill" | "plugin";
+}

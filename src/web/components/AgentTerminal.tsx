@@ -1,16 +1,62 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ActionResult, Agent, NavKey, ParsedPrompt } from "@shared/types";
-import { answerWithKey, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendText } from "@web/api";
+import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
+import {
+  answerWithKey, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendText,
+  uploadImage,
+} from "@web/api";
+import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
+import { CommandList } from "@web/components/CommandList";
 import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
-import { Input } from "@web/components/shadcn/input";
 import { RowActions } from "@web/components/RowActions";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
+import { ImageIcon } from "@web/components/ui/icons";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
   emptyJournal, journalFor, updateJournal, type JournalState,
 } from "@web/pane-cache";
 import { readPrefs, type KeypadPref } from "@web/prefs";
+
+/**
+ * How tall the reply field may grow before it scrolls instead.
+ *
+ * Five lines at the field's 16px floor. The floor is not negotiable — below it
+ * iOS zooms on focus, mid-conversation — so this is expressed in pixels rather
+ * than rem for the same reason the field's own font-size is.
+ */
+const REPLY_MAX_PX = 132;
+
+/**
+ * One image attached but not yet sent.
+ *
+ * `token` is identity, not decoration: two uploads can finish out of order, and
+ * a positional update would then fill the wrong chip. `path === null` means the
+ * upload is still in flight.
+ */
+interface Attachment {
+  token: object;
+  label: string;
+  path: string | null;
+  /**
+   * An object URL for the local file, or null where the browser has no
+   * `createObjectURL` (or refused one).
+   *
+   * Made from the file the operator just chose, so the thumbnail is on screen
+   * before the upload finishes and costs nothing on the wire. It PINS the image
+   * in memory until revoked, which on a page that stays open for days is a leak
+   * — so every path that drops an attachment revokes it.
+   */
+  thumb: string | null;
+}
+
+/** An object URL, or null rather than throwing where the API is absent. */
+function thumbFor(file: Blob): string | null {
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * An agent's controls, wrapped around the pane transcript every pane has.
@@ -137,6 +183,85 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
   const [promptLoaded, setPromptLoaded] = useState(false);
   const [reply, setReply] = useState("");
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
+
+  /**
+   * The commands this agent's project declares.
+   *
+   * Fetched ONCE per agent, not per keystroke: the list is a handful of
+   * entries, so it is smaller than the round trip that would filter it, and a
+   * request per character would put the network between a thumb and a list.
+   * Filtering is `web/commands.ts`, locally.
+   *
+   * A failure leaves it empty and says nothing. The autocomplete is a
+   * convenience on top of a field that has to keep working, so a project
+   * paddock cannot read costs the list and no more — there is deliberately no
+   * error surface for a feature the operator never asked for.
+   */
+  /**
+   * Images attached but not yet sent.
+   *
+   * STATE, not text in the field. The operator reads a name — `shot.png`, or
+   * `[image 2]` for a capture that arrived without one — while the agent
+   * receives an absolute path, so the two cannot be the same string. Composed
+   * at send (`submitReply`), which is also what keeps a fifty-character path
+   * out of the way of the words being typed.
+   *
+   * A `null` path means the upload is STILL IN FLIGHT. The chip appears the
+   * moment a file is chosen, because a photo over a tunnel takes seconds and
+   * silence reads as breakage — and it cannot be sent or removed until the
+   * path arrives, since composing a message around a file that has no path yet
+   * would send nothing for it.
+   */
+  const [attached, setAttached] = useState<Attachment[]>([]);
+  const attachRef = useRef<HTMLInputElement>(null);
+
+  const [commands, setCommands] = useState<AgentCommand[]>([]);
+  useEffect(() => {
+    let live = true;
+    setCommands([]);
+    void fetchCommands(agent.agentId)
+      .then((r) => { if (live) setCommands(r.commands); })
+      .catch(() => { /* the field still works; see above */ });
+    return () => { live = false; };
+  }, [agent.agentId]);
+
+  /**
+   * Where the caret is, so the command being edited is the one searched.
+   *
+   * Tracked rather than derived, because a command may sit ANYWHERE in the
+   * reply — `please run /ch` — so "the end of the value" is not good enough
+   * once the operator moves back into a line they have already written.
+   */
+  const [caret, setCaret] = useState(0);
+  const replyRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * A caret position to restore after a pick, or null.
+   *
+   * React owns the field's value, so setting it moves the caret to the end —
+   * which is wrong when the command was spliced into the middle of a sentence
+   * and the operator's words continue after it. Applied in an effect because it
+   * has to happen AFTER the new value has been committed to the DOM.
+   */
+  const [pendingCaret, setPendingCaret] = useState<number | null>(null);
+  useEffect(() => {
+    if (pendingCaret === null) return;
+    const el = replyRef.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(pendingCaret, pendingCaret);
+    }
+    setPendingCaret(null);
+  }, [pendingCaret]);
+
+  /**
+   * The term the field is asking about, or null when it is an ordinary reply.
+   *
+   * Derived from the value and the caret rather than from a keystroke, so a
+   * slash inside a word — `src/web`, `http://…` — is never mistaken for a
+   * command, while one after a space is.
+   */
+  const query = commandQuery(reply, caret);
+  const matches = query === null ? null : filterCommands(commands, query);
   /** The transcript, so a key press can push the screen it just produced. */
   const pane = useRef<PaneTerminalHandle>(null);
 
@@ -253,14 +378,126 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
     setBusy(false);
   };
 
+  /**
+   * Upload what the picker returned, and show it as a chip.
+   *
+   * Uploaded on CHOICE rather than on send, so a refusal — the wrong type, or
+   * a file too large — is reported while the operator is still looking at the
+   * picker's outcome, not after they have written a message around it. The
+   * server's own sentence is shown verbatim; it knows what it refused and why.
+   *
+   * The input is cleared afterwards so choosing the same file twice still
+   * fires a change event.
+   */
+  const attach = async (files: ArrayLike<File> | null) => {
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      // A camera capture often arrives with no filename; a Photo Library pick
+      // usually has one. Numbered by position so two chips are never ambiguous.
+      const label = file.name || `[image ${attached.length + 1}]`;
+      // Shown BEFORE the request, keyed by identity rather than by index: two
+      // uploads can finish out of order, and a positional update would then
+      // fill the wrong chip.
+      const token = {};
+      const thumb = thumbFor(file);
+      setAttached((prev) => [...prev, { token, label, path: null, thumb }]);
+      try {
+        const saved = await uploadImage(agent.agentId, file);
+        setAttached((prev) => prev.map((a) => (a.token === token ? { ...a, path: saved.path } : a)));
+        setFeedback(null);
+      } catch (err) {
+        // Withdrawn, not left pending: a chip that never resolves would block
+        // Send forever with no way back.
+        if (thumb) URL.revokeObjectURL(thumb);
+        setAttached((prev) => prev.filter((a) => a.token !== token));
+        setFeedback({ ok: false, detail: err instanceof Error ? err.message : "Upload failed." });
+      }
+    }
+    if (attachRef.current) attachRef.current.value = "";
+  };
+
+  /**
+   * A pasted image, which is the common case and the one the picker serves
+   * worst: a screenshot is already on the clipboard, and reaching it through
+   * Photos is three taps for a file the operator is holding.
+   *
+   * TEXT PASTE IS LEFT ALONE — no `preventDefault`, no interception. Pasting a
+   * command or an error message into the reply is ordinary use, and swallowing
+   * every paste to catch the images would break it.
+   *
+   * `files` is where Safari puts a pasted image; `items` is checked as well
+   * because it is the older shape and costs one line.
+   */
+  const pasted = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const data = e.clipboardData;
+    if (!data) return;
+
+    const fromFiles = Array.from(data.files ?? []);
+    const fromItems = Array.from(data.items ?? [])
+      .filter((it) => it.kind === "file")
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f !== null);
+    const images = (fromFiles.length > 0 ? fromFiles : fromItems)
+      .filter((f) => f.type.startsWith("image/"));
+
+    if (images.length === 0) return;
+    // Only now: the browser must not ALSO paste a filename into the field.
+    e.preventDefault();
+    void attach(images);
+  };
+
+  /**
+   * Grow the field to fit what is in it, up to a ceiling.
+   *
+   * Measured from `scrollHeight` after clearing the inline height, because a
+   * stale height makes `scrollHeight` report the old size and the field then
+   * only ever grows. Runs on every value change, including the one a picked
+   * command splices in.
+   */
+  useEffect(() => {
+    const el = replyRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    // happy-dom does no layout, so `scrollHeight` is 0 there — guarded, or the
+    // field would collapse to nothing in a test and, worse, in any browser that
+    // reported 0 for a hidden pane.
+    if (el.scrollHeight > 0) el.style.height = `${Math.min(el.scrollHeight, REPLY_MAX_PX)}px`;
+  }, [reply]);
+
+  /** Any upload still in flight. Send waits for it; see `attached`. */
+  const uploading = attached.some((a) => a.path === null);
+
+  /**
+   * Release every thumbnail when this agent's view goes away.
+   *
+   * Read through a ref rather than a dependency, so the cleanup sees the LAST
+   * attachments rather than the ones present when the effect was created — an
+   * effect keyed on `attached` would revoke a URL that is still on screen the
+   * moment a second image is added. `AgentDetail` mounts this keyed by agent
+   * id, so switching agents runs this.
+   */
+  const held = useRef<Attachment[]>([]);
+  held.current = attached;
+  useEffect(() => () => {
+    for (const a of held.current) if (a.thumb) URL.revokeObjectURL(a.thumb);
+  }, []);
+
   const submitReply = async (text: string) => {
     setBusy(true);
     // `sendText`, NOT `answerWithText`. The latter answers a prompt and is
     // refused with a 409 the moment the agent stops being blocked — which is
     // three states out of four, and was why this box always failed.
-    const res = await sendText(agent.agentId, text);
+    // Paths first, then the words. The agent needs the path before it can be
+    // told what to do with the image, and this is the only place the two are
+    // ever joined — the field itself never held a path.
+    const composed = [...attached.map((a) => a.path ?? ""), text]
+      .filter((p) => p !== "")
+      .join(" ");
+    const res = await sendText(agent.agentId, composed);
     if (res.ok) {
       setReply("");
+      for (const a of attached) if (a.thumb) URL.revokeObjectURL(a.thumb);
+      setAttached([]);
       pane.current?.apply(res.lines);
       setFeedback(null);
     } else {
@@ -540,19 +777,136 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               `agent.send_keys`. */}
           <Keypad pad={keypad} busy={busy} onPress={(k) => void press(k)} context="agent" />
 
+          {attached.length > 0 && (
+            <div className="term-atts">
+              {attached.map((a, i) => (
+                <span className="term-att" key={a.label + String(i)} data-pending={a.path === null ? "" : undefined}>
+                  {a.thumb && <img className="term-att-thumb" src={a.thumb} alt="" />}
+                  <span className="term-att-name">{a.label}</span>
+                  {a.path === null ? (
+                    <span className="term-att-spin" role="status" aria-label="Uploading" />
+                  ) : (
+                    <button
+                      type="button"
+                      className="term-att-x"
+                      // Visible, not a swipe or a long-press: removing an
+                      // attachment must not need a gesture only someone who
+                      // already knows would find.
+                      aria-label={`Remove ${a.label}`}
+                      onPointerDown={(e) => { e.preventDefault(); }}
+                      onClick={() => {
+                        if (a.thumb) URL.revokeObjectURL(a.thumb);
+                        setAttached((prev) => prev.filter((_, at) => at !== i));
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {matches !== null && (
+            <CommandList
+              matches={matches}
+              exhausted={commands.length === 0}
+              busy={busy}
+              // Splices the typed token, keeping whatever surrounds it: the
+              // command may be the second half of a sentence, and assigning
+              // the whole value would delete the words around it. The appended
+              // space closes the list and is where an argument goes.
+              onPick={(c) => {
+                const next = replaceCommandToken(reply, caret, c.command);
+                setReply(next.value);
+                setCaret(next.caret);
+                setPendingCaret(next.caret);
+              }}
+            />
+          )}
+
           <form
             className="term-reply"
             onSubmit={(e) => {
               e.preventDefault();
-              if (reply.trim()) void submitReply(reply.trim());
+              // An attachment ALONE is a legitimate message — "look at this" —
+              // so the guard cannot key on the text. Keying it on `reply` made
+              // an image with no words silently unsendable.
+              if (uploading) return;
+              if (reply.trim() || attached.length > 0) void submitReply(reply.trim());
             }}
           >
+            <label className="sr-only" htmlFor="term-attach-input">Attach an image</label>
+            <input
+              id="term-attach-input"
+              ref={attachRef}
+              className="sr-only"
+              type="file"
+              // The phone's own picker — Photo Library, Take Photo, Files —
+              // for free, and the only list of types worth declaring is the
+              // one the server will actually accept.
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              multiple
+              onChange={(e) => void attach(e.target.files)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="term-attach"
+              disabled={busy}
+              aria-label="Attach an image"
+              onPointerDown={(e) => { e.preventDefault(); }}
+              onClick={() => attachRef.current?.click()}
+            >
+              <ImageIcon />
+            </Button>
             <label className="sr-only" htmlFor="term-reply-input">Reply</label>
-            <Input
+            {/* A TEXTAREA, not an input, and grown from its own content.
+
+                A three-sentence instruction to an agent scrolled out of sight
+                in a single-line field, so the operator committed text they
+                could not read — which is the same objection paddock already
+                makes about the agent's own options. One row at rest, because
+                the transcript is what this screen is for; it grows to five and
+                then scrolls.
+
+                `rows={1}` plus a height set from `scrollHeight` rather than a
+                CSS `field-sizing`: that property is not in Safari on the
+                versions this has to work on, and this field is the one control
+                a phone operator cannot do without. */}
+            <textarea
               id="term-reply-input"
+              ref={replyRef}
+              className="term-reply-field"
+              rows={1}
               value={reply}
               disabled={busy}
-              onChange={(e) => setReply(e.target.value)}
+              onChange={(e) => {
+                setReply(e.target.value);
+                // `selectionStart` is null for input types that have no
+                // selection; the end of the value is where typing leaves it.
+                setCaret(e.target.selectionStart ?? e.target.value.length);
+              }}
+              onKeyDown={(e) => {
+                // Return makes a NEWLINE here, which a textarea does for free.
+                // The single-line field it replaced submitted on Return, so a
+                // keyboard would otherwise be left with no way to send at all —
+                // hence the modifier. Both modifiers, because a Mac has no Ctrl
+                // under that thumb.
+                if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey)) return;
+                e.preventDefault();
+                if (uploading) return;
+                if (reply.trim() || attached.length > 0) void submitReply(reply.trim());
+              }}
+              onPaste={pasted}
+              // The caret also moves without the value changing — a tap into
+              // the middle of the line, or an arrow key — and the list has to
+              // follow it, or it would keep offering matches for a token the
+              // operator has already left.
+              onSelect={(e) => {
+                const el = e.currentTarget;
+                setCaret(el.selectionStart ?? el.value.length);
+              }}
               placeholder="Type a reply…"
             />
             {/* Filled, not outline: this is the committing action. The keys above
@@ -560,7 +914,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                 reply to an agent is neither. */}
             <Button
               type="submit"
-              disabled={busy || !reply.trim()}
+              disabled={busy || uploading || (!reply.trim() && attached.length === 0)}
               // Keeps focus in the input for the length of the tap.
               //
               // Reported from a phone: "type something but cannot send, i must

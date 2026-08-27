@@ -1,7 +1,7 @@
 /**
- * Fourteen hand-written glyphs: one per settings card, the three in the
- * bottom `TabBar` — Agents, Spaces and Settings — and the terminal's own two,
- * `KeyboardIcon` and `BackspaceIcon`.
+ * Fifteen hand-written glyphs: one per settings card, the three in the
+ * bottom `TabBar` — Agents, Spaces and Settings — and the terminal's own
+ * three, `KeyboardIcon`, `BackspaceIcon` and `ImageIcon`.
  *
  * Spaces and Settings used to be the two controls in `HostHeader`'s top-right
  * corner; they now label tabs instead, and `AgentsIcon` joined them.
@@ -50,6 +50,18 @@ export function BellIcon({ className }: IconProps) {
 
 export function SendIcon({ className }: IconProps) {
   return <Svg className={className}><path d="M21 3L10 14M21 3l-7 18-4-7-7-4z" /></Svg>;
+}
+
+/** The attach control, left of the reply field. A frame with a sun and a hill:
+ *  the same shape every messaging app uses for "a picture goes here". */
+export function ImageIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
+    </Svg>
+  );
 }
 
 export function LinkIcon({ className }: IconProps) {

@@ -7,6 +7,7 @@ import {
 import type { ActionResult, NavKey, OutputResult, PaneOutput } from "@shared/types";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { groupLines } from "@web/lines";
+import { useKeyboardInset } from "@web/keyboard-inset";
 import { mergeSnapshot } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 import { applyPatch, digestOf } from "@shared/screen";
@@ -344,6 +345,18 @@ export function PaneTerminal({
   sendText: onSendText, sendKey: onSendKey,
   ref,
 }: PaneTerminalProps) {
+  /**
+   * Publish `--kb-inset` for as long as a terminal is on screen.
+   *
+   * `true` rather than a condition: this shell is `position: fixed` and its
+   * foot carries the reply row, so it needs the inset the whole time it is
+   * mounted — unlike a sheet, which needs it only while open. The hook's own
+   * note warned against a listener living for the life of the PAGE; this one
+   * lives for the life of one screen and is torn down with it, which is the
+   * scope that warning was protecting.
+   */
+  useKeyboardInset(true);
+
   // Seeded from the cache, so a re-opened pane has its screen on the first
   // render rather than after a round trip.
   const [output, setOutput] = useState<string[]>(() => screenFor(paneId)?.lines ?? []);

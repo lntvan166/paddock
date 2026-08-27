@@ -30,14 +30,22 @@ export function isSessionId(value: string): boolean {
  *
  * A LIST because `CLAUDE_CONFIG_DIR` is per-profile and one machine can hold
  * several Claude homes. Comma-separated, trimmed, empties dropped.
+ *
+ * Split into `claudeHomes` (the bases) and `claudeRoots` (those plus
+ * `projects`) because `commands/read.ts` needs the bases to find user commands,
+ * skills and the plugin registry. One parse of `CLAUDE_CONFIG_DIR`, not two —
+ * a second copy is a divergence waiting for the day the variable grows a rule.
  */
-export function claudeRoots(env: Record<string, string | undefined>, home: string): string[] {
+export function claudeHomes(env: Record<string, string | undefined>, home: string): string[] {
   const configured = (env.CLAUDE_CONFIG_DIR ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s !== "");
-  const dirs = configured.length > 0 ? configured : [join(home, ".claude")];
-  return dirs.map((d) => join(d, "projects"));
+  return configured.length > 0 ? configured : [join(home, ".claude")];
+}
+
+export function claudeRoots(env: Record<string, string | undefined>, home: string): string[] {
+  return claudeHomes(env, home).map((d) => join(d, "projects"));
 }
 
 /**

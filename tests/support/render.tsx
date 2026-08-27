@@ -157,9 +157,20 @@ export async function fire(node: Element, event: Event): Promise<void> {
  * has to be inside `act`, because that is when the controlled input's
  * `onChange` runs.
  */
-export async function typeInto(node: HTMLInputElement, value: string): Promise<void> {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  if (!setter) throw new Error("no native value setter on HTMLInputElement.prototype");
+export async function typeInto(
+  node: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+): Promise<void> {
+  // The setter lives on the ELEMENT'S OWN prototype: React tracks the value it
+  // last wrote, and only the native setter for that element type updates the
+  // property React is watching. Using the input setter on a textarea silently
+  // does nothing, which is how a reply field that grew multiple lines would
+  // have quietly broken every test that types into it.
+  const proto = node.tagName === "TEXTAREA"
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (!setter) throw new Error(`no native value setter on ${node.tagName}.prototype`);
   await act(async () => {
     node.dispatchEvent(new Event("focusin", { bubbles: true }));
     setter.call(node, value);

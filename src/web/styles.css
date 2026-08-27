@@ -1767,6 +1767,211 @@ body {
    this is the last band before the screen edge, and on a phone with no home
    indicator `env(safe-area-inset-bottom)` is 0, which would sit the field flat
    against the glass. That half is thumb clearance, not rhythm. */
+/* Attached images, above the reply row.
+   A chip per image: the name the operator recognises, and a visible ✕. The
+   PATH is never here — it is composed at send — so the row's width is bounded
+   by a filename rather than by a fifty-character absolute path. */
+.term-atts {
+  flex: none;
+  display: flex;
+  gap: 0.35rem;
+  /* The bottom value is not symmetry — it was MISSING, and the chips sat
+     directly on the attach button with no gap at all. Reported from a phone as
+     "should have padding", and visible in the screenshot: two stacked controls
+     touching reads as one broken control. */
+  padding: 0.35rem var(--gutter) 0.4rem;
+  overflow-x: auto;
+}
+
+.term-att {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  /* Left padding is small because a THUMBNAIL leads now, not text; a chip
+     with no thumbnail keeps its own breathing room via the gap. */
+  padding: 0.2rem;
+  gap: 0.35rem;
+  font-size: var(--t-xs);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+/* The actual image, at chip height. `object-fit: cover` rather than contain:
+   a screenshot is tall and thin, and letterboxing it into a square shows mostly
+   empty box — cropping to the centre shows pixels, which is the whole point of
+   having a thumbnail rather than only a filename. */
+.term-att-thumb {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--r-sm);
+  object-fit: cover;
+  /* A ground for the moment before it decodes, and for an image with alpha. */
+  background: var(--surface);
+}
+
+.term-att-name {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Its own touch target, not just a glyph: this is the only way to undo an
+   attachment, and a swipe or long-press would be the invisible gesture class
+   this project's UI rules exclude. */
+.term-att-x {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+}
+
+/* Left of the field, where every messaging app puts it.
+   SECONDARY, explicitly. `.term-reply button` above fills every button in the
+   row with `--accent` — deliberately, because Send is the committing action —
+   and this one inherited it, so the row rendered as two identical accent blocks
+   flanking the field and the attach control read as a second Send. Squareness
+   was not enough; the colour is what says which button commits. Demoted in the
+   vocabulary `.term-reply button:disabled` already uses for "not the primary
+   action here". */
+.term-reply .term-attach {
+  flex: none;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+}
+
+.term-reply .term-attach:disabled { opacity: 0.5; }
+
+/* 3. An upload in flight, in place of the ✕.
+   A photo over a tunnel takes seconds, and silence in that gap reads as
+   breakage — which is exactly how it was reported. */
+.term-att[data-pending] { color: var(--fg-dim); }
+
+.term-att-spin {
+  flex: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin: 0 0.42rem;
+  border-radius: var(--r-full);
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: term-att-spin 0.7s linear infinite;
+}
+
+@keyframes term-att-spin { to { transform: rotate(360deg); } }
+
+/* Reduced motion gets a STATIC marker rather than nothing: the point is that
+   something is happening, and removing the indicator would remove the message
+   along with the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .term-att-spin {
+    animation: none;
+    border-color: var(--accent);
+    border-top-color: var(--accent);
+    opacity: 0.6;
+  }
+}
+
+/* The reply field's command list.
+   Sits directly above `.term-reply`, so what is being chosen and where it
+   lands are adjacent. Scrolls internally and is height-capped: the transcript
+   is what this screen is for, and a project with fifty commands must not take
+   it. Every colour is a token, defined on bare `:root` — a value that existed
+   only under `prefers-color-scheme` is the bug this project's rules name. */
+.term-cmds {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  background: var(--surface);
+  padding: 0.35rem var(--gutter) 0.25rem;
+  /* ~4 rows, then it scrolls. Measured against a 390x844 screen with the
+     keyboard up, where the transcript has roughly 300px left. */
+  max-height: 13rem;
+  overflow-y: auto;
+}
+
+.term-cmd {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 100%;
+  /* The touch floor this file applies to `.tap` and `.term-keys`. A row that
+     sends nothing is still a row a thumb has to hit on the first try. */
+  min-height: 2.75rem;
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.term-cmd:disabled { opacity: 0.5; }
+
+.term-cmd-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.term-cmd-name {
+  font-family: var(--mono);
+  font-size: var(--t-md);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Which of the two layouts it came from, so a project command and a skill are
+   distinguishable without opening either. A hue difference only — both read as
+   the same kind of thing, which they are. */
+.term-cmd-src {
+  flex: none;
+  font-size: var(--t-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.05rem 0.28rem;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+}
+
+/* One line. Descriptions are trigger guidance written for a model, and the
+   server already clips them at 120 characters; this is the second guard, for
+   the width rather than the length. */
+.term-cmd-desc {
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.term-cmd-empty {
+  margin: 0;
+  padding: 0.5rem 0.55rem;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
+
 .term-reply {
   flex: none;
   display: flex;
@@ -1775,7 +1980,7 @@ body {
   padding: 0 var(--gutter) 0.5rem;
 }
 
-.term-reply input {
+.term-reply input, .term-reply .term-reply-field {
   flex: 1;
   min-width: 0;
   min-height: 2.75rem;
@@ -1792,6 +1997,26 @@ body {
   background: var(--bg);
   color: var(--fg);
   font: inherit;
+}
+
+/* The reply field's multi-line half — AFTER the shared rule above, not before.
+   This block first sat ahead of it and set `padding: 0.6rem`, which the shared
+   `padding: 0 var(--pad-control)` then overrode: measured in a browser as
+   `paddingTop: 0`, a 24px line at the top of a 44px box with 20px of dead space
+   under it. An input centres its single line for free; a textarea does not, so
+   the padding IS the centring and losing it silently is what "not in the
+   centre" looked like.
+
+   The arithmetic is exact rather than eyeballed: 24px line-height plus 10px
+   above and below is 44px, which is `min-height` and is what the attach and
+   Send buttons measure — so one line centres, and `scrollHeight` agrees with
+   `min-height` instead of fighting it by two pixels. */
+.term-reply .term-reply-field {
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.5;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .term-reply button {
@@ -2553,6 +2778,31 @@ body {
   display: flex;
   flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* The terminal's foot, held above the on-screen keyboard.
+   AFTER the rule above, deliberately: `inset: 0` sets `bottom` too, so a lift
+   declared earlier would lose to it — the same cascade mistake that left the
+   reply field's text against its top edge one change before this.
+
+   WHY THE TERMINAL NEEDS THIS AT ALL. iOS overlays the keyboard on the layout
+   viewport instead of shrinking it, so a `position: fixed` shell keeps its foot
+   under the keyboard and the reply row is typed into blind. Reported from a
+   phone: open an agent, focus the field immediately, and the keyboard covers
+   it — while doing the same slowly works, because that case was being rescued
+   by Safari shifting the VISUAL viewport to reveal the focused field. That
+   reveal is a heuristic computed against the layout at the moment of focus, so
+   focusing mid-mount — transcript still painting, field still sizing — leaves
+   it computed against a layout that then changes. Correctness was resting on
+   something that only usually fires.
+
+   `keyboard-inset.ts` excluded the terminal on the grounds that its layout
+   "must not move when the keyboard opens". That is the reasoning that changed:
+   the movement is the fix, not the cost. The transcript gets shorter while you
+   type — which is what every messaging app does, and plainly better than
+   typing blind. */
+.term {
+  bottom: var(--kb-inset, 0px);
 }
 
 /* The one scrolling region inside a shell. Everything that is not chrome goes

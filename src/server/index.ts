@@ -12,6 +12,9 @@ import {
   type Subscription,
 } from "@server/herdr/socket";
 import { connectWithWait, resolveWaitMs } from "@server/herdr/await-start";
+import { readAgentCommands } from "@server/commands/read";
+import { claudeHomes } from "@server/journal/files";
+import { saveImage } from "@server/uploads/store";
 import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { toSpaceTree } from "@server/herdr/tree";
@@ -887,6 +890,21 @@ const appDeps = {
   // off the operator's own disk, the same reasoning that keeps demo mode
   // from opening a real herdr connection.
   journal: DEMO ? demoJournal : createJournalReader(defaultRoots(process.env, homedir())),
+  // Omitted entirely in DEMO, which makes the route answer with an empty list.
+  // Two reasons, and the second is the load-bearing one: a demo has no project
+  // to read, and README screenshots are taken in this mode — a real
+  // enumeration would put the operator's own command names and descriptions
+  // into an image destined for a public repository. That is exactly the
+  // fixture leak `CLAUDE.md` says gets past reviewers.
+  readCommands: DEMO
+    ? undefined
+    : (cwd: string) => readAgentCommands(cwd, claudeHomes(process.env, homedir())),
+  // Omitted in DEMO for the same reason `readCommands` is, but with a sharper
+  // edge: a demo that accepted an upload and dropped it would LOOK like it
+  // worked. Absent, the route says "not configured" and means it.
+  saveImage: DEMO
+    ? undefined
+    : (bytes: Uint8Array) => saveImage(defaultConfigDir(), bytes, Date.now()),
   sessionFor: (id: string) => (DEMO ? demoSessionFor(id) : (supervisor?.sessionFor(id) ?? null)),
   health: () => ({
     ok: true,

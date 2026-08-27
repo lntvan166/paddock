@@ -22,8 +22,10 @@ import { EMBEDDED } from "@server/embedded";
 import { allowWrite, hostOf, refusalReason } from "@server/origin";
 import { warn } from "@server/term";
 import type { JournalReader } from "@server/journal/read";
+import { MAX_IMAGE_BYTES, type SavedImage } from "@server/uploads/store";
 import {
   isNavKey,
+  type AgentCommand,
   type HealthBody,
   type NotifyTrigger,
   type SettingsPatch,
@@ -544,6 +546,23 @@ export interface AppDeps {
   push?: PushStore;
   /** Reads a harness's own session log. Omit in tests that do not exercise it. */
   journal?: JournalReader;
+  /**
+   * The commands an agent's project declares, read from its working directory.
+   *
+   * Injected for the same reason `journal` is: the route must be exercisable
+   * without a filesystem. Omitted in `--demo`, where there is no project to
+   * read and a real enumeration would put an operator's own command names into
+   * the mode README screenshots come from.
+   */
+  readCommands?: (cwd: string) => Promise<AgentCommand[]>;
+  /**
+   * Writes one attached image and returns where it landed.
+   *
+   * Injected so the route is exercisable with no filesystem, and OMITTED in
+   * `--demo`: a demo that appeared to accept an upload and quietly dropped it
+   * would be exactly the mislabelled control this project bans.
+   */
+  saveImage?: (bytes: Uint8Array) => Promise<SavedImage | { refused: string }>;
   /** The server-side session id for an agent. Never crosses the socket. */
   sessionFor?: (agentId: string) => HerdrAgentSession | null;
   /**
@@ -816,6 +835,78 @@ export function createApp(deps: AppDeps) {
     if (page.detail !== null) reportJournalMiss(agent.agentId, page.detail);
     else clearJournalMiss(agent.agentId);
     return c.json({ ok: true, ...page });
+  });
+
+  /**
+   * The commands this agent's own project declares, for the reply field's
+   * autocomplete.
+   *
+   * A POST with no body, like `/api/panes/:id/output` beside it and for that
+   * route's stated reason: every per-agent read here is one shape, and an
+   * empty payload does not earn a second one. Nothing is read from the body.
+   *
+   * `cwd` is taken from the agent's OWN record and never from the request.
+   * That is the whole of this route's path safety: no directory the browser
+   * names can be read, because the browser names none.
+   *
+   * Every failure answers 200 with an empty list. The autocomplete is a
+   * convenience on top of a field that has to keep working, so an unreadable
+   * project must cost the operator the list and nothing else — a 500 here
+   * would surface as a red error for a feature they never asked for. The
+   * reasons are logged rather than swallowed.
+   */
+  app.post("/api/agents/:id/commands", async (c) => {
+    const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+    if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+    if (!deps.readCommands) return c.json({ ok: true, commands: [] });
+    // An empty cwd is reachable — `toAgent` defaults herdr's missing `cwd` to
+    // "" — and joining it would resolve against paddock's OWN process
+    // directory, which has nothing to do with this agent.
+    if (agent.cwd === "") return c.json({ ok: true, commands: [] });
+
+    try {
+      return c.json({ ok: true, commands: await deps.readCommands(agent.cwd) });
+    } catch (err) {
+      console.error(`commands: could not read ${agent.cwd}`, err);
+      return c.json({ ok: true, commands: [] });
+    }
+  });
+
+  /**
+   * Attach an image, on its way to an agent.
+   *
+   * The ONE route in paddock that accepts arbitrary bytes and writes them to
+   * disk. Raw body rather than multipart: there is one field, and a multipart
+   * parser is a larger surface than the thing it would carry.
+   *
+   * Refusals are 400 with the reason in `detail`, which the client puts in
+   * front of the operator verbatim — `saveImage` owns what is acceptable (type
+   * sniffed from the bytes, never taken from a header) and this route owns only
+   * how that answer is delivered.
+   *
+   * The size guard here is on the DECLARED length, deliberately ahead of
+   * reading the body: buffering half a gigabyte to discover it is too large is
+   * the denial of service, not the defence against it. `saveImage` checks the
+   * real length again, because a declared one is a claim.
+   */
+  app.post("/api/agents/:id/image", async (c) => {
+    const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+    if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+    if (!deps.saveImage) {
+      return c.json({ ok: false, detail: "image upload is not configured" }, 404);
+    }
+
+    const declared = Number(c.req.header("content-length") ?? "0");
+    if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
+      return c.json({
+        ok: false,
+        detail: `images are limited to ${Math.floor(MAX_IMAGE_BYTES / (1024 * 1024))} MB`,
+      }, 413);
+    }
+
+    const saved = await deps.saveImage(new Uint8Array(await c.req.arrayBuffer()));
+    if ("refused" in saved) return c.json({ ok: false, detail: saved.refused }, 400);
+    return c.json({ ok: true, path: saved.path, name: saved.name });
   });
 
   const pairing = deps.pairing;

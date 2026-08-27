@@ -1,5 +1,5 @@
 import type {
-  ActionResult, CloseSpaceResult, CloseTabResult, CreateSpaceResult, CreateTabResult,
+  ActionResult, AgentCommand, CloseSpaceResult, CloseTabResult, CreateSpaceResult, CreateTabResult,
   HarnessesResult, HistoryResult, KeyResult, NavKey, OutputResult,
   PaneOutput, ParsedPrompt, SpaceTree, StartAgentResult,
 } from "@shared/types";
@@ -121,6 +121,64 @@ export async function fetchOutput(
  */
 export async function fetchPaneOutput(id: string, f: Fetch = fetch): Promise<PaneOutput> {
   return readJson<PaneOutput>(paneUrl(id, "output"), {}, f);
+}
+
+/**
+ * The commands this agent's project declares, for the reply field's
+ * autocomplete.
+ *
+ * Fetched ONCE per agent rather than per keystroke, and filtered locally by
+ * `web/commands.ts`: a project declares a handful of commands, so the whole
+ * list is smaller than the round trip that would fetch a filtered one — and a
+ * request per character would put the network between a thumb and a list on
+ * exactly the link paddock exists to work over.
+ *
+ * A POST with an empty body, like `fetchPaneOutput` above and for its reason.
+ */
+/**
+ * Attach one image, and get back the path an agent can open.
+ *
+ * A RAW body, not JSON and not multipart: there is exactly one field, and
+ * base64 inside JSON would inflate a phone photo by a third for nothing. The
+ * server sniffs the type from the bytes, so the `content-type` here is a
+ * courtesy rather than something it trusts.
+ *
+ * Rejects with the server's own `detail` on refusal — the wrong file type, or
+ * one too large — so the caller can put that sentence in front of the operator
+ * verbatim rather than inventing one.
+ */
+export async function uploadImage(
+  id: string,
+  file: Blob,
+  f: Fetch = fetch,
+): Promise<{ path: string; name: string }> {
+  const res = await f(url(id, "image"), {
+    method: "POST",
+    headers: { "content-type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!res.ok) {
+    const detail = await detailFrom(res);
+    throw new RequestFailed(res.status, detail ?? `upload failed: ${res.status}`);
+  }
+
+  // Checked in the BODY too, unlike every other read here — which trust the
+  // status and say so. The difference is the consequence: a false success on
+  // this route hands the operator a path to a file that was never written, and
+  // they then tell an agent to open it. A wrong screen is recoverable; a
+  // confident wrong path is the mislabelled control this project bans.
+  const body = (await res.json()) as { ok?: boolean; detail?: string; path?: string; name?: string };
+  if (body.ok === false || typeof body.path !== "string" || typeof body.name !== "string") {
+    throw new RequestFailed(res.status, body.detail ?? "upload failed");
+  }
+  return { path: body.path, name: body.name };
+}
+
+export async function fetchCommands(
+  id: string,
+  f: Fetch = fetch,
+): Promise<{ commands: AgentCommand[] }> {
+  return readJson<{ commands: AgentCommand[] }>(url(id, "commands"), {}, f);
 }
 
 export async function fetchPrompt(id: string, f: Fetch = fetch) {
