@@ -11,6 +11,7 @@ import {
   request,
   type Subscription,
 } from "@server/herdr/socket";
+import { connectWithWait, resolveWaitMs } from "@server/herdr/await-start";
 import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { toSpaceTree } from "@server/herdr/tree";
@@ -50,8 +51,9 @@ import { say, warn } from "@server/term";
 import { BootLog } from "@server/boot-log";
 import {
   errorCode,
+  herdrNeverAppearedMessage,
   herdrUnreachableMessage,
-  inspectSocketPath,
+  herdrWaitingMessage,
   isDiagnosableHerdrFailure,
   listeningLine,
   nonLoopbackBindWarning,
@@ -752,46 +754,72 @@ if (DEMO) {
     onFatal: () => process.exit(1),
   });
 
-  try {
-    const check = await checkProtocol(socketPath);
-    herdrProtocol = check.kind === "newer" ? check.herdr : HERDR_PROTOCOL;
-    if (check.kind === "newer") {
-      // Reported once, at INFO: this is the ordinary case now, not a problem.
-      // herdr bumps its protocol often and mostly additively, and the fields
-      // paddock reads are verified against live data below.
-      console.info(
-        `herdr protocol ${check.herdr} is newer than this paddock (built for ${check.paddock});` +
-          " verifying the fields paddock reads against agent.list",
-      );
-    }
+  // Bounded wait rather than a bare try/catch: a herdr that is not up YET is
+  // not the same failure as a herdr answering with an incompatible protocol,
+  // and this used to exit for both. See `herdr/await-start.ts` for which
+  // failures are waited on and why the wait has a ceiling.
+  const waitMs = resolveWaitMs(process.env);
+  const started = await connectWithWait({
+    socketPath,
+    budgetMs: waitMs,
+    connect: async () => {
+      const check = await checkProtocol(socketPath);
+      if (check.kind === "newer") {
+        // Reported once, at INFO: this is the ordinary case now, not a problem.
+        // herdr bumps its protocol often and mostly additively, and the fields
+        // paddock reads are verified against live data below.
+        console.info(
+          `herdr protocol ${check.herdr} is newer than this paddock (built for ${check.paddock});` +
+            " verifying the fields paddock reads against agent.list",
+        );
+      }
 
-    await supervisor.start();
+      // `!` for the same reason the keeper's refresh() above uses it: assigned
+      // unconditionally at construction, but inside a closure TS cannot see it.
+      await supervisor!.start();
+      return check.kind === "newer" ? check.herdr : HERDR_PROTOCOL;
+    },
+    onWaiting: (_err, pathKind) =>
+      warn(herdrWaitingMessage(socketPath, pathKind, waitMs)),
+  });
 
-    // The startup half of the shape check. `start()` has just reconciled, so
-    // this verdict is about real data. Refusing here is deliberate: rendering
-    // every agent in one wrong state, or every row under the same label, is
-    // worse than not starting, because the operator would act on it.
-    const shape = supervisor.shape;
-    if (shape.kind === "broken") {
-      // Worded for BOTH causes. A verdict can be broken because a required
-      // field is gone OR because agent_status carries a value outside the
-      // generated enum, and "missing fields" would misdescribe the second —
-      // sending the operator to look for an absent key that is right there.
-      console.error(
-        "paddock: refusing to start — herdr's agent.list does not match what paddock reads",
-      );
-      process.exit(1);
+  if (started.kind !== "ready") {
+    // Unchanged reporting: a mismatch speaks for itself, a diagnosable
+    // failure gets the sentence built for it, and anything else keeps its
+    // stack. `gaveUp` lands here too — after the wait, an absent herdr is
+    // exactly the failure it always was.
+    const { err, pathKind } = started;
+    // Only when it genuinely SLEPT. `waitedMs > 0` was the wrong test: a few
+    // milliseconds elapse during the one immediate attempt even with the
+    // budget set to 0, so it claimed a wait that never happened. More than one
+    // attempt is exactly "it backed off and tried again".
+    if (started.kind === "gaveUp" && started.attempts > 1) {
+      warn(herdrNeverAppearedMessage(started.waitedMs, started.attempts));
     }
-  } catch (err) {
     if (err instanceof ProtocolMismatchError) warn(err.message);
-    else {
-      const kind = inspectSocketPath(socketPath);
-      // Only what we can diagnose. A parse bug wearing a "cannot reach herdr"
-      // message is harder to debug than the raw throw it replaced.
-      if (isDiagnosableHerdrFailure(err, kind))
-        warn(herdrUnreachableMessage(socketPath, err, kind));
-      else console.error(err);
-    }
+    else if (isDiagnosableHerdrFailure(err, pathKind))
+      warn(herdrUnreachableMessage(socketPath, err, pathKind));
+    else console.error(err);
+    process.exit(1);
+  }
+  herdrProtocol = started.protocol;
+
+  // The startup half of the shape check. `start()` has just reconciled, so
+  // this verdict is about real data. Refusing here is deliberate: rendering
+  // every agent in one wrong state, or every row under the same label, is
+  // worse than not starting, because the operator would act on it.
+  //
+  // Never waited on: this is a LIVE herdr giving a real answer, and it will
+  // give the same one in a minute.
+  const shape = supervisor.shape;
+  if (shape.kind === "broken") {
+    // Worded for BOTH causes. A verdict can be broken because a required
+    // field is gone OR because agent_status carries a value outside the
+    // generated enum, and "missing fields" would misdescribe the second —
+    // sending the operator to look for an absent key that is right there.
+    console.error(
+      "paddock: refusing to start — herdr's agent.list does not match what paddock reads",
+    );
     process.exit(1);
   }
 }

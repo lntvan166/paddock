@@ -473,6 +473,7 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_TUNNEL_PORT` | `8788` | `paddock tunnel` only: the SECOND loopback port, the one wrapped in the pairing gate and the only one `cloudflared` is pointed at. `PADDOCK_PORT` stays completely ungated. |
 | `PADDOCK_HOST_ID` | `local` | The label for this machine in the header. |
 | `PADDOCK_HERDR_SOCKET` | `$HOME/.config/herdr/herdr.sock` | Where herdr's socket is. |
+| `PADDOCK_HERDR_WAIT_MS` | `60000` | How long a paddock started BEFORE herdr waits for the socket to appear, in ms. `0` refuses immediately, which is what paddock did before the wait existed. Only a missing or unserved socket is waited on — a wrong path, an unreadable one, or a protocol mismatch still fails at once. Anything unparseable falls back to the default rather than to `0`. |
 | `PADDOCK_CONFIG_DIR` | `$HOME/.config/paddock` | Where `settings.json` and `update-check.json` live. |
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |

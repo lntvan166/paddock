@@ -317,8 +317,51 @@ surprise.
   tampered update is not merely a bad dashboard, it is a remote hand on every
   agent paddock can reach.
 
-- **`index.ts` exits on any herdr connection failure at startup, not only a
-  protocol mismatch.** The startup block wraps `checkProtocol()` and
+- ~~**`index.ts` exits on any herdr connection failure at startup, not only a
+  protocol mismatch.**~~ *Resolved 2026-08-27 by `server/herdr/await-start.ts`.*
+  `connectWithWait` wraps `checkProtocol()` plus `supervisor.start()` and
+  retries with the keeper's own `backoffWithJitter` for a bounded budget —
+  `PADDOCK_HERDR_WAIT_MS`, default 60s, `0` for the old immediate refusal.
+
+  **The retry classification is the decision, not the loop.** Waited on: a
+  MISSING socket, and an errno failure against a socket that IS there (herdr
+  bound it but is not serving yet, or a stale socket is about to be replaced).
+  Never waited on, because time cannot fix any of them: a
+  `ProtocolMismatchError` (the keeper's existing rule), a path that is not a
+  socket, a path that cannot be examined, and any failure paddock cannot
+  diagnose — no errno against a healthy socket, which is a paddock bug or a
+  herdr error that already reads as a sentence, and burying it for a minute
+  before reporting "herdr never appeared" would describe the wrong problem.
+  The `agent.list` shape verdict stays fatal too: that is a LIVE herdr giving
+  a real answer.
+
+  **Bounded rather than infinite, deliberately.** The old refusal is good
+  advice from a process about to exit — `herdrUnreachableMessage` names the
+  path and says to start herdr. Retrying forever would turn a mistyped
+  `PADDOCK_HERDR_SOCKET` into a process that hangs with no output. So the wait
+  says once that it is waiting (`herdrWaitingMessage`, which deliberately does
+  NOT repeat "run paddock again" — an operator who follows that mid-wait kills
+  a paddock seconds from coming up), and on expiry prints how long it waited
+  over how many attempts before the unchanged refusal.
+
+  **What this does NOT fix:** a herdr that takes longer than the budget, or
+  one that dies later and never returns. Docker was already covered —
+  `docker-compose.yml` sets `restart: unless-stopped` — and the bare binary
+  ships no unit file, so a shipped systemd unit remains the honest answer for
+  that and is complementary to this, not replaced by it.
+
+  Two things worth knowing for whoever touches it next. The retry is safe
+  because `supervisor.start()` is `reconcile()` then `resubscribe()` then
+  `setInterval`: a throw from either await leaves no healing timer behind, and
+  `resubscribe()` records its subscription key only after a successful open.
+  And `tests/cli.test.ts` plus `tests/startup-errors.test.ts` now set
+  `PADDOCK_HERDR_WAIT_MS: "0"` in the env their spawns inherit — `runVerb`'s
+  "fails fast (ENOENT), not hang" comment depends on it, and without it the
+  `start` case's detached child outlives the `spawnSync` timeout that kills
+  only its parent, which is the stray-paddock hazard the entry below warns of.
+
+  The original entry, for the reasoning: The startup block wraps
+  `checkProtocol()` and
   `supervisor.start()` in one `try`/`catch` and calls `process.exit(1)` for
   either a `ProtocolMismatchError` or anything else the two throw — so a
   herdr that simply is not up yet (socket refused, socket absent) kills

@@ -113,6 +113,68 @@ export function herdrUnreachableMessage(
 }
 
 /**
+ * What the operator is told while paddock WAITS for herdr, rather than
+ * refusing to start without it.
+ *
+ * Separate from `herdrUnreachableMessage` because that message ends by telling
+ * the operator to start herdr and run paddock again. That is correct advice
+ * from a process that is about to exit and wrong from one that is waiting:
+ * nothing needs re-running, and an operator who follows it kills a paddock
+ * that was seconds from coming up.
+ *
+ * Only the two waitable kinds are accepted. `not-a-socket` and `unreadable`
+ * are never waited on (see `herdr/await-start.ts`), so passing one here is a
+ * compile error rather than a message that would claim paddock is waiting for
+ * something it has already given up on.
+ */
+export function herdrWaitingMessage(
+  socketPath: string,
+  kind: Extract<SocketPathKind, "missing" | "socket">,
+  budgetMs: number,
+): string {
+  const seconds = Math.round(budgetMs / 1000);
+  const head: string[] = {
+    missing: [
+      `paddock: no herdr socket at ${socketPath} yet — waiting up to ${seconds}s`,
+      "  paddock reads herdr over that socket, and starts as soon as herdr creates it",
+    ],
+    socket: [
+      `paddock: nothing is answering the herdr socket at ${socketPath} yet — waiting up to ${seconds}s`,
+      "  the socket is there, so herdr is either still starting or has just stopped",
+    ],
+  }[kind];
+
+  return [
+    ...head,
+    "  if herdr does not appear, paddock reports that and exits rather than waiting on",
+    "  a herdr that is not coming",
+  ].join("\n");
+}
+
+/**
+ * The line that precedes the ordinary unreachable message when a bounded wait
+ * ran out.
+ *
+ * Worth a line of its own because the message that follows — "start herdr
+ * first, then run paddock again" — reads, on its own, like paddock never
+ * tried. An operator who has just watched a supervised paddock exit needs to
+ * know the difference between "it refused immediately" and "it waited a minute
+ * and herdr never came", because those point at different problems: the first
+ * at the socket path, the second at whatever should have started herdr.
+ */
+export function herdrNeverAppearedMessage(
+  waitedMs: number,
+  attempts: number,
+): string {
+  // Sub-second in ms: "waited 0s" reads as "did not wait", which is the one
+  // thing this line exists to deny. Only reachable with a small configured
+  // budget, which is what the tests use.
+  const spent = waitedMs < 1000 ? `${waitedMs}ms` : `${Math.round(waitedMs / 1000)}s`;
+  const tries = attempts === 1 ? "1 attempt" : `${attempts} attempts`;
+  return `paddock: waited ${spent} for herdr over ${tries}, and it did not appear`;
+}
+
+/**
  * Where the listener BINDS, and what the operator is told when that is not
  * loopback.
  *

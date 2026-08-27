@@ -3,7 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  herdrNeverAppearedMessage,
   herdrUnreachableMessage,
+  herdrWaitingMessage,
   inspectSocketPath,
   isDiagnosableHerdrFailure,
   isLoopbackBind,
@@ -37,6 +39,10 @@ function runServer(args: string[], env: Record<string, string> = {}) {
       ...process.env,
       PADDOCK_NO_UPDATE_CHECK: "1",
       PADDOCK_CONFIG_DIR: CONFIG,
+      // No startup wait. Every spawn in this file asserts what the operator is
+      // TOLD, and the bounded wait for an absent herdr would otherwise cost a
+      // full budget per test. Overridable by a caller that wants the wait.
+      PADDOCK_HERDR_WAIT_MS: "0",
       ...env,
     },
     stdout: "pipe",
@@ -265,4 +271,82 @@ test("listeningLine does not offer a wildcard as a URL", () => {
   const line = listeningLine("0.0.0.0", 8787);
   expect(line).not.toContain("http://0.0.0.0");
   expect(line).toContain("all interfaces");
+});
+
+// Waiting for herdr, as opposed to refusing to start without it.
+//
+// `herdrUnreachableMessage` ends by telling the operator to "run paddock
+// again", which is right when paddock is about to exit and wrong while it is
+// waiting: nothing needs re-running, and an operator told to re-run it will
+// kill a paddock that was seconds from coming up.
+test("the waiting message says how long it will wait, and for what", () => {
+  const said = herdrWaitingMessage("/p/herdr.sock", "missing", 60_000);
+
+  expect(said, "names the path").toContain("/p/herdr.sock");
+  expect(said, "bounds the wait in seconds, not milliseconds").toContain("60s");
+});
+
+test("the waiting message never tells the operator to run paddock again", () => {
+  for (const kind of ["missing", "socket"] as const) {
+    const said = herdrWaitingMessage("/p/herdr.sock", kind, 60_000);
+    expect(said, `${kind} must not send the operator to re-run paddock`).not.toContain(
+      "run paddock again",
+    );
+  }
+});
+
+test("waiting for an absent socket reads differently from an unserved one", () => {
+  const missing = herdrWaitingMessage("/p/herdr.sock", "missing", 60_000);
+  const unserved = herdrWaitingMessage("/p/herdr.sock", "socket", 60_000);
+
+  expect(missing.split("\n")[0]).not.toBe(unserved.split("\n")[0]);
+});
+
+test("giving up reports how long paddock waited and how often it tried", () => {
+  const said = herdrNeverAppearedMessage(60_000, 6);
+
+  expect(said, "bounds the wait in seconds").toContain("60s");
+  expect(said, "says how many attempts it made").toContain("6");
+  // The one thing it must not read as: a paddock that never tried.
+  expect(said.toLowerCase()).toContain("waited");
+});
+
+// The wiring, through the real entry point. Everything above sets
+// `PADDOCK_HERDR_WAIT_MS: "0"`, so without this nothing proves `index.ts`
+// actually waits — and `docs/roadmap.md` already records that a silent bypass
+// in `index.ts` is the kind of edit the suite cannot see.
+//
+// The budget is 2s rather than the 300ms this started as: `backoffWithJitter`
+// spreads the first delay over 0-500ms, and a budget that small ends the wait
+// BEFORE the first sleep on the runs where the jitter comes in high — one
+// attempt, no wait, and a test that passes about half the time. 2s always
+// clears the first delay.
+test("an absent herdr is waited for, said out loud, and then given up on", () => {
+  const absent = join(CONFIG, "not-here-either.sock");
+  const r = runServer([], {
+    PADDOCK_HERDR_SOCKET: absent,
+    PADDOCK_HERDR_WAIT_MS: "2000",
+  });
+
+  expect(r.code, "a herdr that never appears still means no dashboard").not.toBe(0);
+  const said = r.err + r.out;
+  expect(said.toLowerCase(), "say that it is waiting, while it waits").toContain(
+    "waiting up to",
+  );
+  expect(said.toLowerCase(), "then say it waited and gave up").toContain(
+    "did not appear",
+  );
+  expect(
+    said,
+    "a waiting paddock must not be told to run paddock again mid-wait",
+  ).toContain(absent);
+  expectNoRawTrace(said);
+});
+
+test("a sub-second wait is reported in milliseconds, not as 0s", () => {
+  // "waited 0s" reads as "did not wait", which is the one thing this line
+  // exists to deny. Only reachable with a small configured budget, but that is
+  // exactly what the tests above set.
+  expect(herdrNeverAppearedMessage(420, 2)).toContain("420ms");
+  expect(herdrNeverAppearedMessage(420, 2)).not.toContain("0s");
 });

@@ -145,6 +145,7 @@ function runServer(args: string[], extraEnv: Record<string, string> = {}) {
     // No network, and never the operator's real config directory.
     PADDOCK_NO_UPDATE_CHECK: "1",
     PADDOCK_CONFIG_DIR: CONFIG,
+    PADDOCK_HERDR_WAIT_MS: "0",
     ...extraEnv,
   } as Record<string, string>;
   // Dropped unless a caller asked for it. The Makefile exports a
@@ -196,6 +197,12 @@ test("the reserved verbs still exit 2 and still point at the roadmap", () => {
 // path and fail fast (ENOENT), not hang — but `timeout` is a safety net
 // regardless: a real serving instance keeps the event loop alive forever, and
 // an un-timed spawnSync would hang this test suite rather than fail it.
+//
+// `PADDOCK_HERDR_WAIT_MS: "0"` is what keeps "fail fast" true. An absent
+// socket is now WAITED on (`herdr/await-start.ts`), so without this the child
+// of the `start` case lives for the whole budget — and `spawnSync`'s timeout
+// kills only the parent, leaving a detached paddock behind exactly as
+// `docs/roadmap.md` warns.
 function runVerb(verb: string, extraArgs: string[] = []) {
   const r = Bun.spawnSync(["bun", "src/server/index.ts", verb, ...extraArgs], {
     env: {
@@ -203,6 +210,7 @@ function runVerb(verb: string, extraArgs: string[] = []) {
       PADDOCK_NO_UPDATE_CHECK: "1",
       PADDOCK_CONFIG_DIR: CONFIG,
       PADDOCK_HERDR_SOCKET: join(CONFIG, "no-such-herdr.sock"),
+      PADDOCK_HERDR_WAIT_MS: "0",
       // An OS-assigned free port, not the default 8787. `status` and `stop`
       // now probe the port for an instance no state file describes, and the
       // default port is exactly where the developer's OWN paddock is
