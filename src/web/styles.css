@@ -663,6 +663,29 @@ body {
 /* The + becomes an ×. Radix stamps `data-state` on the trigger, the same
    mechanism `sheet.tsx` already animates from — so this does not invent a
    second way of saying "open". */
+/* Room at the end of the list for the button that floats over it.
+
+   Reported from a phone: with a long agent list the LAST row's `⋯` could not
+   be tapped — the button covered it, and at the bottom of the scroll there is
+   nothing left to move the row out from under. Measured at 390×844 with eight
+   agents, the overlap was 34px.
+
+   A fixed overlay over a scroll container has to pay for its footprint in that
+   container's padding. `.settings-save-bar` records this repository learning
+   the same lesson from the other end, and taking the other way out: it stopped
+   being a fixed overlay and became a flex sibling, so it covers nothing. A FAB
+   cannot do that — floating over the content is the whole point — so it pays
+   in padding instead.
+
+   Scoped with `:has()` so only a screen that CARRIES the button gives up the
+   space, the same shape as `.screen:has(.tab-bar)` above. Spelled as the
+   button's own two numbers rather than one rounded figure, so resizing the
+   button shows up here as a contradiction instead of silently re-covering the
+   last row. */
+.screen:has(.quick-add-fab) > .screen-body {
+  padding-bottom: calc(2.75rem + 0.75rem + 0.75rem);
+}
+
 .quick-add-fab .quick-add-glyph {
   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
