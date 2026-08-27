@@ -39,8 +39,6 @@ export function Spaces({ active = true, load = fetchSpaceTree, senders, createSe
    *  test can observe the navigation instead of mutating the hash. */
   navigate?: (hash: string) => void;
 }) {
-  void active;
-
   const { spacesAvailable } = useStore();
   // The needs-you count moved to `App`, which now owns the single `TabBar`.
   // Deriving it here as well was two screens computing one number — the exact
@@ -48,7 +46,7 @@ export function Spaces({ active = true, load = fetchSpaceTree, senders, createSe
   // `sectionFor`, the one rule — never re-derived from raw state. This is the
   // whole reason the badge earns its place: from here, a newly blocked agent
   // was previously invisible.
-  const { tree, error, refresh } = useSpaceTree(load);
+  const { tree, error, refresh } = useSpaceTree(load, active);
   const [now, setNow] = useState(() => Date.now());
 
   // The "as of" label ticks locally; the server is not asked for time.

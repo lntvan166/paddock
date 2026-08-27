@@ -214,3 +214,26 @@ export async function pointerOpen(node: Element | null | undefined): Promise<voi
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
+
+/**
+ * Drive a hook without inventing a component for it.
+ *
+ * A hook's effects are the interesting part — a poll that keeps running, a
+ * listener that is never removed — and those only exist once something mounts
+ * it. This renders the smallest possible host and hands back a `rerender` so a
+ * test can change the hook's arguments, which is how "becoming active" is
+ * observed at all.
+ */
+export async function renderHook<P>(
+  use: (props: P) => unknown,
+  initial: P,
+): Promise<{ rerender: (next: P) => Promise<void> }> {
+  function Probe(props: { p: P }) {
+    use(props.p);
+    return null;
+  }
+  const el = await render(<Probe p={initial} />);
+  return {
+    rerender: async (next: P) => { await render(<Probe p={next} />, el); },
+  };
+}
