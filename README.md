@@ -34,6 +34,9 @@ walk back and look.
 - **triage** — grouped into *needs you*, *working*, *idle*, not alphabetically
 - **read** — full ANSI colour; prose reflows to the screen, tables keep their columns
 - **answer** — the agent's own option labels, and what Enter will commit before you tap it
+- **reply properly** — a field that grows to what you wrote, slash-command
+  autocomplete read from the project's own `.claude`, and a screenshot attached
+  by pasting it
 - **notify** — a Telegram message when an agent needs you, sent only once the
   state has held, with mute and a per-agent cooldown. [settings →](docs/settings.md)
 - **reach it in one command** — `paddock tunnel` publishes a temporary URL

@@ -72,8 +72,27 @@ surprise.
   for every agent without a journal, which remains most of them in v2, and
   for any journal-hinted agent that has fallen back.
 
-- **Stuck-agent detection.** `working` for more than N minutes with no output
-  change is worth surfacing. `pane.output_matched` may serve.
+- **Stuck-agent detection**, but NOT on the signal this entry used to name.
+  It said "`working` for more than N minutes with no output change", and the
+  operator's own usage refutes the first half: a three-hour agent is ordinary
+  here, so a timer would fire on every healthy one. Elapsed time is not the
+  signal; a liveness one is.
+
+  What paddock has for free, for every agent, is what `agent.list` already
+  carries — `state`, `stateSince`, and `task` from `terminal_title_stripped`.
+  Output is fetched ON DEMAND only (`POST /api/agents/:id/output`, driven by the
+  UI), so the server holds no output for an agent nobody has open: detecting
+  "output stopped changing" server-side would mean polling `agent.read` for
+  every agent forever, which is new continuous herdr traffic in a project whose
+  README sells adaptive polling. `store.ts` already compares `a.task !== b.task`
+  to decide whether to emit a delta, so a `taskSince` mirroring `stateSince`
+  would be small — but whether that line MOVES while a healthy agent works is
+  unmeasured, and `docs/gotchas.md` records nothing about it. Measure that
+  before building anything on it; `pane.output_matched` remains unexamined too.
+
+  Deliberately not built: the operator has not hit the failure it would catch,
+  and a detector for an unobserved failure resting on an unmeasured heartbeat is
+  two guesses stacked.
 - **Preact swap** if first-load size disappoints (~45 KB → ~4 KB gzipped,
   same API).
 - ~~**Per-agent deep links**~~ (`/#/agent/<name>`) so a notification opens the

@@ -805,3 +805,67 @@ session does not silently re-litigate them.
     deliberate choice, and Dracula has no light variant to switch to.
 
     See `docs/design/2026-08-26-theme-picker-design.md`.
+
+26. **An attached image lands in a directory paddock owns, never the agent's
+    working directory.** The upload route is the only code in paddock that
+    accepts arbitrary bytes and writes them to disk, and decision 3 gives this
+    listener no authentication of its own — so reachability IS authority here.
+    Writing into the agent's `cwd` would be more convenient for the agent, which
+    could then be handed a relative path, and it would make "anything that can
+    reach paddock can write into your repository" true. It is not worth it: the
+    agent reads an absolute path just as well, so the whole benefit was
+    cosmetic while the cost was a write primitive aimed at a git working tree.
+
+    Three refusals travel with that choice, and each replaces a default that
+    would have been a guess. The TYPE is sniffed from the bytes rather than
+    taken from `content-type`, because a declared type is a claim by the caller
+    and this file is one a coding agent is then told to open. HEIC is refused
+    even though it is what an iPhone camera writes — Safari converts a Photo
+    Library pick to JPEG on upload, so it rarely fires, and when it does,
+    refusing names the problem at the moment of attaching instead of letting the
+    agent fail to open a file it cannot read. And the NAME is generated here,
+    never the client's: a phone filename can collide, carry separators, or be a
+    path.
+
+    Cleanup runs on every write rather than on a timer. The directory only grows
+    when an upload happens, so that is the moment growth occurs — and it reports
+    into a log the operator is already reading, where a background sweep would
+    fail at three in the morning unseen. Two bounds, because either alone leaks:
+    age never touches thirty photos uploaded this afternoon, and a byte cap
+    never touches one file forgotten for a year. One floor overrides the byte
+    cap — nothing under an hour old is evicted for size — because a burst must
+    not drop the image the operator is about to name, and an agent may re-read a
+    path later in the same conversation.
+
+    What this does NOT do is delete on removal: tapping a chip's ✕ withdraws the
+    attachment from the composer, and the file waits for the prune. Deleting it
+    then would need paddock to delete files on demand, which is a capability it
+    has never had and which this feature did not earn.
+
+27. **The terminal screen tracks the keyboard inset, reversing decision-by-comment
+    in `keyboard-inset.ts`.** That module's own note excluded the terminal's
+    reply box from the inset it publishes for sheets, on the grounds that the
+    terminal "is NOT in a fixed sheet and whose layout must not move when the
+    keyboard opens". The first half was wrong and the second half was the wrong
+    trade.
+
+    `.term` IS `position: fixed; inset: 0`. On iOS the keyboard overlays the
+    layout viewport rather than shrinking it, so a fixed shell keeps its foot
+    underneath the keyboard and the reply row at that foot is typed into blind —
+    the identical failure that module documents for sheets.
+
+    It appeared to work because Safari shifts the VISUAL viewport to reveal a
+    focused field. That reveal is a heuristic computed against the layout as it
+    stands at the moment of focus, so focusing during mount — transcript still
+    painting, reply field still sizing itself — leaves it computed against a
+    layout that then changes. Reported from a phone as "quick focus hides the
+    UI, opening slowly works well", which is the shape of a correctness
+    guarantee resting on something that only usually fires.
+
+    So the layout moves after all, and the movement is the fix rather than the
+    cost: the transcript gets shorter while the keyboard is up, which is what
+    every messaging app does and is plainly better than typing blind. The lift
+    is declared AFTER the shared `position: fixed; inset: 0` rule, because
+    `inset` sets `bottom` and a lift declared earlier loses to it — the same
+    cascade mistake that had just left the reply field's own text against its
+    top edge.
