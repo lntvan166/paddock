@@ -477,7 +477,7 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
 | `PADDOCK_NO_UPDATE_CHECK` | unset | `1` disables the update check completely. |
-| `PADDOCK_REPLACE_STALE` | on | `0` stops paddock overwriting a notification that has stopped being true. Safe by default — every push on this path renders something. |
+| `PADDOCK_REPLACE_STALE` | off | `1` overwrites a notification that has stopped being true with the new state. Safe — every push on this path renders something — but it leaves an entry behind, which is not what was asked for. |
 | `PADDOCK_CLEAR_PUSH` | **off** | `1` re-enables clearing a notification once it stops being true. It appeared to cost a live subscription — see below. |
 | `PADDOCK_VERSION` | `0.0.0-dev` | Build-time only, injected by `bun build --define`. Not read at runtime. |
 

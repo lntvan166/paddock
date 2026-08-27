@@ -597,12 +597,19 @@ const notifier = new Notifier({
   /**
    * On. See `NotifierOpts.replaceStale`.
    *
-   * Safe where `clearPush` was not: every push on this path renders a
-   * notification, so `userVisibleOnly: true` is honoured and the penalty that
-   * appeared to cost a subscription cannot apply. `PADDOCK_REPLACE_STALE=0`
-   * turns it off for anyone who would rather a stale alert than a replaced one.
+   * OFF by default, on request. It is SAFE where `clearPush` was not — every
+   * push on this path renders something, so `userVisibleOnly: true` holds —
+   * but safe is not the same as wanted. Replacing "blocked" with "working"
+   * leaves an entry behind, and an operator who has already solved the thing
+   * at their desk does not want to be told it is solved. The ask was for the
+   * entry to go, and a replacement is not that.
+   *
+   * Kept rather than deleted because it is the only version of this that
+   * cannot cost a subscription, which makes it the right default for anyone
+   * who would rather a truthful entry than a stale one.
+   * `PADDOCK_REPLACE_STALE=1` turns it on.
    */
-  replaceStale: process.env.PADDOCK_REPLACE_STALE !== "0",
+  replaceStale: process.env.PADDOCK_REPLACE_STALE === "1",
   sendPush: pushSender(),
   viewers: (agentId) => presence.viewers(agentId),
   // A synchronous read of what `push.json` already stores — see
