@@ -356,3 +356,56 @@ test("a reconcile that fails does not fail the rename that already worked", asyn
   expect(await res.json()).toEqual({ ok: true });
   expect(calls).toContain("reconcile");
 });
+
+test("a duplicate name is refused in words, not in herdr's own dump", async () => {
+  // MEASURED against a live herdr, and it answers what docs/roadmap.md
+  // recorded as unknown: herdr REFUSES a duplicate agent name. Its message is
+  //
+  //   herdr agent.rename failed [agent_name_taken]: agent name obsidian is
+  //   already used; candidates: terminal_id=… pane_id=… cwd=/home/…/project
+  //
+  // Relayed verbatim that put a terminal id, a pane id and an absolute HOME
+  // PATH on a screen the operator may hand over or screenshot — the same
+  // disclosure §16.6 removed from a row — while telling them nothing about
+  // picking a name.
+  const { app } = harness(async () => TREE, {
+    renameAgent: async () => {
+      throw new Error(
+        "herdr agent.rename failed [agent_name_taken]: agent name api-refactor "
+        + "is already used; candidates: terminal_id=term_abc pane_id=w1:p9 "
+        + "workspace_id=w1 tab_id=w1:t1 cwd=~/project status=Idle",
+      );
+    },
+  });
+  const res = await app.request("/api/agents/w1:p1/name", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "api-refactor" }),
+  });
+  expect(res.status).toBe(502);
+  const body = await res.json() as { ok: boolean; detail: string };
+  expect(body.detail).toContain("api-refactor");
+  expect(body.detail).toContain("unique");
+  // The parts that must NOT reach a screen.
+  // The fixture uses a tilde path because `make check-clean` refuses a
+  // literal /home/ even in a test — so this asserts the SHAPE that must not
+  // survive: herdr's candidate dump, whatever form its cwd arrives in.
+  expect(body.detail).not.toContain("cwd=");
+  expect(body.detail).not.toContain("terminal_id");
+  expect(body.detail).not.toContain("pane_id");
+});
+
+test("an unrecognised herdr failure is relayed verbatim, never paraphrased", async () => {
+  // Guards the guard. A message paddock does not recognise is one it must not
+  // reword: guessing at an unknown herdr error is how a report becomes
+  // misleading, and the operator loses the only accurate text there was.
+  const { app } = harness(async () => TREE, {
+    renameAgent: async () => { throw new Error("herdr socket refused"); },
+  });
+  const res = await app.request("/api/agents/w1:p1/name", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "api-refactor" }),
+  });
+  expect((await res.json() as { detail: string }).detail).toBe("herdr socket refused");
+});

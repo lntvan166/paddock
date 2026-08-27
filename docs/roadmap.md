@@ -413,11 +413,29 @@ surprise.
     measured; `tests/create-routes.test.ts` asserts paddock stays inside it,
     which proves paddock's arithmetic and nothing about herdr's.
   - That herdr accepts a **slug** as `name` — its charset (paddock's `slug`
-    emits `[a-z0-9-]`), its length (paddock bounds it at `MAX_LABEL_LEN`, herdr
-    at nothing known), and what happens on a **collision** with an existing
-    agent of the same name. paddock's own disambiguation renders duplicates as
-    `claude`, `claude 2`; whether herdr refuses, renames, or accepts a duplicate
-    is unknown.
+    emits `[a-z0-9-]`) and its length (paddock bounds it at `MAX_LABEL_LEN`,
+    herdr at nothing known) are still unmeasured.
+
+    **The collision half is now measured, from use rather than from a probe.**
+    An operator cleared an agent's name and renamed it back to a name another
+    agent held; herdr REFUSED, and `agent.rename` is where it surfaced:
+
+        herdr agent.rename failed [agent_name_taken]: agent name obsidian is
+        already used; candidates: terminal_id=… pane_id=… workspace_id=…
+        cwd=<absolute path> status=Idle
+
+    So of "refuses, renames, or accepts a duplicate" the answer is REFUSES,
+    with a machine-readable code. Two consequences already acted on: the route
+    translates `agent_name_taken` into a sentence an operator can act on, and
+    it stops relaying that message verbatim — it carries a terminal id, a pane
+    id and the agent's absolute working directory, and `detail` is rendered
+    in the UI. Every
+    other herdr failure is still relayed word for word, because a message
+    paddock does not recognise is one it must not paraphrase.
+
+    Note this says nothing about `agent.start`, which is what this section is
+    about: a rename collides against agents that already exist, where a spawn
+    might collide earlier or differently. Still unproven there.
   - That the ~30 s block **resolves** rather than surfacing a false "the agent
     did not start". `HERDR_TIMEOUT_MS` is 10 s and this call overrides it
     per-call; if that override does not take effect the way the schema implies,

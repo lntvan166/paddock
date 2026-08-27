@@ -639,6 +639,38 @@ function detailOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * A rename refusal an operator can read.
+ *
+ * MEASURED, and it answers a question `docs/roadmap.md` recorded as unknown:
+ * herdr REFUSES a duplicate agent name rather than renaming or accepting it.
+ * The refusal arrives as
+ *
+ *   herdr agent.rename failed [agent_name_taken]: agent name obsidian is
+ *   already used; candidates: terminal_id=… pane_id=… workspace_id=…
+ *   cwd=/home/…/project status=Idle
+ *
+ * which is relayed straight into `detail` and rendered in the UI. Two problems
+ * with that, and only the second is cosmetic: it puts a terminal id, a pane
+ * id and an ABSOLUTE HOME PATH on a screen the operator may hand to someone or
+ * screenshot — the disclosure §16.6 went out of its way to remove from a row —
+ * and it says none of that to the person trying to pick a name.
+ *
+ * So this one code gets a sentence. Every other failure is relayed verbatim,
+ * because a message paddock does not recognise is one it must not paraphrase:
+ * guessing at an unknown herdr error is how a report becomes misleading.
+ */
+function renameDetail(err: unknown): string {
+  const raw = detailOf(err);
+  if (!raw.includes("agent_name_taken")) return raw;
+  // The name herdr objected to, read back out of its own message rather than
+  // from the request — so what is quoted is what herdr actually compared.
+  const taken = /agent name (\S+) is already used/.exec(raw)?.[1];
+  return taken === undefined
+    ? "That name is already used by another agent."
+    : `Another agent is already called \`${taken}\`. Names have to be unique.`;
+}
+
 export function createApp(deps: AppDeps) {
   const app = new Hono();
   const now = deps.now ?? Date.now;
@@ -1028,9 +1060,11 @@ export function createApp(deps: AppDeps) {
         }
         return c.json({ ok: true });
       } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        warn(`agents: could not rename \`${agent.agentId}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        // The LOG keeps herdr's full message — the candidate ids are exactly
+        // what someone debugging this needs. The RESPONSE gets the readable
+        // one, because that is what an operator sees.
+        warn(`agents: could not rename \`${agent.agentId}\`: ${detailOf(err)}`);
+        return c.json({ ok: false, detail: renameDetail(err) }, 502);
       }
     });
 

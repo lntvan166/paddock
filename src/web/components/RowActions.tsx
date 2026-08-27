@@ -254,10 +254,18 @@ export function RowActions({ label, renames, close, onChanged, onOpenChange, sen
           <SheetDescription className="row-actions-scope">{scopeOf(close?.kind)}</SheetDescription>
         </SheetHeader>
 
-        {error !== null && <p className="error" role="alert">{error}</p>}
+        {/* Rendered per VIEW below rather than once here.
+            It used to sit at the top of the sheet, above the menu and the
+            form — so a rename that failed put its message off the top of a
+            scrolled sheet with the keyboard up, and the operator saw the
+            action fail with nothing to read. An error belongs beside the
+            control that produced it. */}
 
         {mode.view === "menu" && (
           <div className="row-actions-menu">
+            {/* `Clear name` fires from this view, so its failure belongs here
+                too. */}
+            {error !== null && <p className="error" role="alert">{error}</p>}
             {renames.map((target) => (
               <button
                 key={`${target.kind}:${target.id}`}
@@ -306,6 +314,7 @@ export function RowActions({ label, renames, close, onChanged, onOpenChange, sen
                 onChange={(e) => setDraft(e.target.value)}
               />
             </label>
+            {error !== null && <p className="error" role="alert">{error}</p>}
             <div className="row-actions-row">
               <button type="button" onClick={() => setMode({ view: "menu" })}>Back</button>
               {/* Disabled on an empty or whitespace-only draft: the request it
@@ -321,6 +330,7 @@ export function RowActions({ label, renames, close, onChanged, onOpenChange, sen
             <p id={consequenceId} className="row-actions-consequence">
               {consequence(close.kind, close.panes)}
             </p>
+            {error !== null && <p className="error" role="alert">{error}</p>}
             <div className="row-actions-row">
               <button type="button" onClick={() => setMode({ view: "menu" })}>Cancel</button>
               {/* The second tap. Never disabled on a count of one space:

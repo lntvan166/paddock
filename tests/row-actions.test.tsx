@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { click, render, settle, typeInto, unmount } from "./support/render";
 import { RequestFailed } from "@web/api";
 import { paneLabel } from "@web/components/pane-label";
-import type { RowSenders } from "@web/components/RowActions";
+import { RowActions, type RowSenders } from "@web/components/RowActions";
 import { Space } from "@web/components/Space";
 import type { SpaceTree } from "@shared/types";
 
@@ -411,4 +411,40 @@ test("a successful write closes the sheet", async () => {
   await settle();
   expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
   await unmount();
+});
+
+test("a failed rename shows its reason beside the Save that failed", async () => {
+  // The message used to render at the TOP of the sheet, above the menu and the
+  // form. On a phone — sheet scrolled, keyboard up — that put it off the top
+  // of the visible area, so the operator tapped Save, nothing appeared to
+  // happen, and the only explanation was somewhere they could not see.
+  // Reported as: it should show the exact error instead of just a 502.
+  const host = await render(
+    <RowActions
+      label="api-refactor"
+      renames={[{ kind: "agent", id: "w1:p1", current: "api-refactor" }]}
+      onChanged={() => {}}
+      senders={recorder({
+        renameAgent: async () => { throw new Error("Another agent is already called `obsidian`."); },
+      }).senders}
+    />,
+  );
+  await settle();
+  await click(host.querySelector(".row-actions-btn"));
+  await settle();
+  await click([...document.querySelectorAll(".row-actions-menu button")][0]);
+  await settle();
+  await click(document.querySelector(".row-actions-rename button[type=submit]"));
+  await settle();
+
+  const form = document.querySelector(".row-actions-rename")!;
+  const err = form.querySelector(".error");
+  expect(err, "the failure is not shown inside the form that produced it").not.toBeNull();
+  expect(err!.textContent).toContain("already called");
+  // And it sits directly above the buttons, so it shares their patch of
+  // screen rather than scrolling off somewhere else. Asserted by child order
+  // rather than `compareDocumentPosition`, which happy-dom answers 0 to for
+  // every pair — a check that would pass on any arrangement at all.
+  const kids = [...form.children];
+  expect(kids.indexOf(err!)).toBe(kids.findIndex((n) => n.classList.contains("row-actions-row")) - 1);
 });
