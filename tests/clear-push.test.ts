@@ -24,14 +24,14 @@ type Sent = {
 };
 
 /** The same shape `tests/notifier.test.ts` uses, plus the experiment flag. */
-function harness(clearPush: boolean) {
+function harness(clearPush: boolean, over: { settleMs?: Record<string, number> } = {}) {
   const sent: Sent[] = [];
   const store = {
     current: () => ({
       telegram: { token: "1:A", chatId: "555" },
       notify: {
         telegram: false, triggers: ["blocked", "done"],
-        settleMs: { blocked: 0, done: 0 }, mutedUntil: null, cooldownMs: 0,
+        settleMs: over.settleMs ?? { blocked: 0, done: 0 }, mutedUntil: null, cooldownMs: 0,
       },
       publicUrl: "https://paddock.example.com",
       push: { enabled: true },
@@ -53,8 +53,16 @@ const see = (n: Notifier, state: Agent["state"]) =>
   n.observe({ upserted: [at(state)], removedIds: [] } as never);
 
 test("leaving blocked sends a clear, once the experiment is on", async () => {
+  // settleMs is 0 in this harness, so the alert really is announced before the
+  // agent moves on — which is what earns the clear.
   const { sent, n } = harness(true);
+  // First sight never notifies — paddock cannot tell "just blocked" from
+  // "blocked an hour ago" — so the agent has to be seen somewhere else first.
+  see(n, "working");
   see(n, "blocked");
+  await Bun.sleep(20);
+  expect(sent.filter((s) => s.clear !== true).length, "no alert was announced").toBe(1);
+
   see(n, "working");
   await Bun.sleep(20);
   const clears = sent.filter((s) => s.clear === true);
@@ -62,11 +70,35 @@ test("leaving blocked sends a clear, once the experiment is on", async () => {
   expect(clears[0]!.agentId).toBe("w1:p1");
 });
 
+test("a trigger that never got announced is never cleared", async () => {
+  // Reported from the live run, and the reason this gate exists at all: a
+  // trigger ARMS a timer and waits out its settle window. An agent that
+  // finishes and starts again inside that window leaves `done` having shown
+  // nothing — and the first version of this experiment still fired a clear,
+  // closing a notification that had never existed.
+  //
+  // It is not merely wasted work. Every clear deliberately breaches
+  // `userVisibleOnly: true`, the penalty for breaches is cumulative, and
+  // spending them on notifications nobody saw is the fastest way to lose the
+  // subscription for no benefit at all.
+  const { sent, n } = harness(true, { settleMs: { blocked: 60_000, done: 60_000 } });
+  see(n, "done");        // arms a 60s timer — nothing is announced
+  see(n, "working");     // leaves the trigger well inside the window
+  await Bun.sleep(20);
+  expect(sent.filter((s) => s.clear !== true), "an alert escaped the settle window").toEqual([]);
+  expect(
+    sent.filter((s) => s.clear === true),
+    "cleared a notification that was never shown",
+  ).toEqual([]);
+});
+
 test("with the experiment off, nothing is sent", async () => {
   // The default. A push that renders nothing is a contract breach, so it must
   // take a deliberate act to enable — never a code path that drifts on.
   const { sent, n } = harness(false);
+  see(n, "working");
   see(n, "blocked");
+  await Bun.sleep(20);
   see(n, "working");
   await Bun.sleep(20);
   expect(sent.filter((s) => s.clear === true)).toEqual([]);
@@ -90,7 +122,9 @@ test("a clear reaches every device, including the one showing it", async () => {
   // nothing would look broken: the push would send, succeed, and change
   // nothing.
   const { sent, n } = harness(true);
+  see(n, "working");
   see(n, "blocked");
+  await Bun.sleep(20);
   see(n, "working");
   await Bun.sleep(20);
   const clear = sent.find((s) => s.clear === true);

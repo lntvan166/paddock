@@ -132,6 +132,15 @@ export class Notifier {
    *  what removes v2's optimistic-write-and-revert dance: one map was doing
    *  both jobs, and every subtlety in the old comments came from that. */
   #lastNotified = new Map<string, AgentState>();
+  /**
+   * Agents for which a PUSH actually went out, and in what state.
+   *
+   * `#lastNotified` cannot answer this: it is written only on the Telegram
+   * success path, so a push-only operator never sets it — which is most of
+   * them. The clear experiment needs "did a notification reach a lock screen",
+   * and this is the only record of that.
+   */
+  #pushedFor = new Map<string, AgentState>();
   /** Last send ATTEMPT (not success) per agent, for the cooldown. */
   #lastSentAt = new Map<string, number>();
   /**
@@ -251,6 +260,7 @@ export class Notifier {
     // earned and its first real notification is silently dropped.
     this.#lastNotified.delete(agentId);
     this.#lastSentAt.delete(agentId);
+    this.#pushedFor.delete(agentId);
     // A send that was already in flight for the removed agent resumes with no
     // episode to match, so it writes nothing — which is what removal means.
     this.#episode.delete(agentId);
@@ -283,6 +293,11 @@ export class Notifier {
     // have the NEXT episode's timer fire, find `#lastNotified` still equal to
     // the state it is about to announce, and drop the send — silently, with
     // no error and nothing on `/api/health`, for the rest of the pane's life.
+    // Read BEFORE the deletes below, because the clear branch needs it: the
+    // only record of whether a push ever actually reached a lock screen for
+    // this agent.
+    const pushedState = this.#pushedFor.get(a.agentId);
+    this.#pushedFor.delete(a.agentId);
     this.#lastNotified.delete(a.agentId);
     // The episode this deferral belonged to is over. Left in place, a later
     // `reconsider` would announce a state the agent has already left.
@@ -295,9 +310,18 @@ export class Notifier {
       // with paddock closed nothing of ours is alive on that device. A push is
       // the only thing that can still reach it.
       //
-      // Gated on `prev` having been a trigger, so a working → idle move sends
-      // nothing: there was never a notification for it to close.
-      if (this.o.clearPush === true && isTrigger(prev)) void this.#sendClear(a);
+      // Gated on something having ACTUALLY been announced, not merely on the
+      // previous state having been a trigger. Those come apart constantly: a
+      // trigger arms a timer and waits out its settle window, so an agent that
+      // finishes and starts again inside ten seconds leaves `done` having
+      // shown nothing. Measured on a live session — four clears went out and
+      // several closed notifications that had never existed.
+      //
+      // That is not merely wasted work. Every clear is a deliberate breach of
+      // the `userVisibleOnly: true` contract, the penalty for breaches is
+      // cumulative, and spending them on notifications nobody ever saw is the
+      // fastest way to lose the subscription for no benefit at all.
+      if (this.o.clearPush === true && pushedState !== undefined) void this.#sendClear(a);
       return;
     }
 
@@ -451,7 +475,7 @@ export class Notifier {
     // so a ready Telegram still reaches this line with push fully withheld —
     // and every device in `roster` is already in `skip` when that is true, so
     // there is no device left for a real sender to tell anything.
-    const pushed = pushWithheld ? Promise.resolve() : this.#sendPush(a, state, skip);
+    const pushed = pushWithheld ? Promise.resolve() : this.#sendPush(a, state, skip, episode);
 
     // Push has been dispatched; without Telegram there is nothing else to do.
     // Everything below this line is Telegram's retry and error bookkeeping,
@@ -532,16 +556,31 @@ export class Notifier {
         name: a.name, state: a.state, agentId: a.agentId,
         skipDeviceKeys: new Set(), clear: true,
       });
+      // Logged on SUCCESS, which the alert path does not do. This is a
+      // measurement, and a send that leaves no trace cannot be told apart from
+      // one that never happened — during the first run of this experiment a
+      // notification did clear, and nothing on the server could say whether
+      // the clear push or the in-page `sweep()` had done it.
+      console.info(`paddock: clear push sent for ${a.name} (${a.agentId}) now ${a.state}`);
     } catch (e) {
       console.info(`paddock: clear push failed for ${a.name}: ${(e as Error).message}`);
     }
   }
 
-  async #sendPush(a: Agent, state: NotifyTrigger, skipDeviceKeys: ReadonlySet<string>): Promise<void> {
+  async #sendPush(
+    a: Agent, state: NotifyTrigger, skipDeviceKeys: ReadonlySet<string>, episode?: number,
+  ): Promise<void> {
     const send = this.o.sendPush;
     if (send === undefined) return;
     try {
       await send({ name: a.name, state, agentId: a.agentId, skipDeviceKeys: new Set(skipDeviceKeys) });
+      // Guarded on the episode still being current, for the reason every late
+      // write here is: a send that resolves after the agent has moved on must
+      // not record a lock screen that the transition already invalidated, or
+      // the next clear would fire for a notification belonging to nothing.
+      if (episode === undefined || this.#episode.get(a.agentId) === episode) {
+        this.#pushedFor.set(a.agentId, state);
+      }
     } catch (e) {
       console.info(`paddock: push failed for ${a.name}: ${(e as Error).message}`);
     }
