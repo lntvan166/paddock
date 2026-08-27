@@ -114,6 +114,9 @@ export function CreateSheet({
   senders = LIVE_CREATE_SENDERS,
   navigate = (hash: string) => { location.hash = hash; },
   variant = "glyph",
+  openWhen,
+  onOpenChange,
+  preset = "shell",
 }: {
   target: CreateTarget;
   /** Every cwd already in the tree, offered as quick picks (§9.3). The
@@ -142,8 +145,33 @@ export function CreateSheet({
    * they already render.
    */
   variant?: "glyph" | "row";
+  /**
+   * Drive the sheet from somewhere else, and render no trigger of its own.
+   *
+   * The dashboard's quick-add dial is the one caller: it IS the trigger, and a
+   * second `+` inside the sheet's own markup would be a control nobody can
+   * reach. `undefined` leaves the sheet self-triggering, which is what every
+   * existing call site already does.
+   */
+  openWhen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Which of the picker's two answers to arrive on.
+   *
+   * The dial asks "Agent or Terminal?" before the sheet opens, and that IS the
+   * picker's first field — `plain shell — no agent` versus a harness kind. So
+   * this pre-answers it rather than asking twice.
+   *
+   * `"agent"` selects the FIRST installed harness once the list has loaded,
+   * and the picker stays editable: paddock does not know which harness you
+   * meant, only that you did not mean a shell. `"shell"` is what the sheet
+   * already defaults to, so it is named for symmetry rather than need.
+   */
+  preset?: "shell" | "agent";
 }) {
-  const [open, setOpen] = useState(false);
+  const [selfOpen, setSelfOpen] = useState(false);
+  const controlled = openWhen !== undefined;
+  const open = controlled ? openWhen : selfOpen;
   // Hold the sheet above the on-screen keyboard while it is open. Tracked only
   // while open — see the hook's note on why a page-lifetime listener would be
   // wrong. Absent `visualViewport`, this does nothing at all.
@@ -158,6 +186,20 @@ export function CreateSheet({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const cwdListId = useId();
+
+  /**
+   * Apply `preset: "agent"` when the harness list lands.
+   *
+   * It cannot be applied at open: `kinds` is fetched, so at that moment there
+   * is nothing to select. Guarded on `kind === SHELL` so this only ever moves
+   * the field OFF its default — once the operator has chosen a harness, a late
+   * read resolving must not overwrite them.
+   */
+  useEffect(() => {
+    if (!open || preset !== "agent") return;
+    if (kinds.length === 0) return;
+    setKind((current) => (current === SHELL ? kinds[0]! : current));
+  }, [open, preset, kinds]);
 
   const isSpace = target.kind === "space";
   const what = isSpace ? "space" : "tab";
@@ -230,7 +272,7 @@ export function CreateSheet({
   }, [open]);
 
   const show = (next: boolean) => {
-    setOpen(next);
+    if (controlled) onOpenChange?.(next); else setSelfOpen(next);
     // Reopens blank, never carrying a half-filled form or a stale error from
     // the last attempt — the same rule `RowActions` applies to an armed close.
     if (!next) {
@@ -303,7 +345,8 @@ export function CreateSheet({
 
   return (
     <Sheet open={open} onOpenChange={show}>
-      <SheetTrigger
+      {/* No trigger when something else opens this — see `openWhen`. */}
+      {!controlled && <SheetTrigger
         data-create={what}
         className={variant === "row" ? "create-row" : "create-btn"}
         // Position carries the scope when this is a glyph in a header; an
@@ -314,7 +357,7 @@ export function CreateSheet({
         {variant === "row"
           ? <><span aria-hidden="true">+</span> New tab</>
           : <span aria-hidden="true">+</span>}
-      </SheetTrigger>
+      </SheetTrigger>}
       {/* The home-indicator inset is in this rule's own padding-bottom, not a
           second class beside it: two rules at equal specificity setting
           padding-bottom is how that inset gets silently dropped. */}

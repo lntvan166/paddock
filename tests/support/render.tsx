@@ -185,3 +185,24 @@ export async function selectOption(node: HTMLSelectElement, value: string): Prom
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
+
+/**
+ * Open a Radix menu or popover the way a finger does.
+ *
+ * Radix triggers on `pointerdown`, not `click` — deliberately, because it
+ * removes the ~300ms tap delay on touch. `click()` alone therefore does
+ * nothing to one, which looks exactly like a broken component in a test.
+ *
+ * happy-dom has no `PointerEvent`, so a `MouseEvent` is dispatched under the
+ * pointer type name: Radix reads `event.button` and `event.ctrlKey` off it,
+ * both of which a MouseEvent carries.
+ */
+export async function pointerOpen(node: Element | null | undefined): Promise<void> {
+  if (!node) throw new Error("pointerOpen(): no element — the selector matched nothing");
+  await act(async () => {
+    node.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    node.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }));
+    (node as HTMLElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}

@@ -21,6 +21,7 @@ import {
 } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { BackIcon } from "@web/components/ui/icons";
+import { QuickAdd } from "@web/components/QuickAdd";
 import { TabBar } from "@web/components/TabBar";
 import { UpdateBar } from "@web/components/UpdateBar";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
@@ -31,7 +32,7 @@ import { closeFor, useNotificationSweep } from "@web/notifications";
 export function App() {
   const {
     agents, hostId, connected, lastMessageAt, updateAvailable, latestKnown, managedBy,
-    treeStaleAt, connect,
+    treeStaleAt, spacesAvailable, connect,
   } = useStore();
   const [now, setNow] = useState(() => Date.now());
   // Expanded by default. Collapsed, idle agents render as chips that carry a
@@ -555,6 +556,30 @@ export function App() {
           stay in thumb reach at any scroll position. Counted with `sectionFor`
           here — the one rule — so the badge cannot contradict the header
           sentence above it or the section headings below. */}
+      {/* Gated on the SAME capability the Spaces `+` is: with no herdr session
+          the create routes 404, so this would be a control that always errors —
+          the defect `routes.ts` records against `/ack`'s Dismiss button. A
+          capability the server states, never a demo flag and never a device
+          check.
+
+          `cwds` is empty here deliberately. The quick picks come from the
+          session tree, and the dashboard does not read one — it renders the
+          agent store. The sheet's folder field still accepts anything typed,
+          and still defaults to herdr's own choice when left blank, which is
+          what an empty list leaves in charge. */}
+      {spacesAvailable && (
+        <QuickAdd
+          cwds={[]}
+          // A deliberate no-op, like `AgentTerminal`'s rename. Every other
+          // caller re-reads the TREE because that is what its screen renders;
+          // this screen renders the agent store, and a new pane reaches it on
+          // its own — herdr emits `pane_agent_detected`, the supervisor turns
+          // that into a delta, and the row appears. There is nothing here to
+          // refetch, and calling for a tree nobody displays would be work for
+          // its own sake.
+          onChanged={() => {}}
+        />
+      )}
       <TabBar current="agents" needsYou={groups["needs-you"].length} />
     </main>
   );

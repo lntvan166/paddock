@@ -609,6 +609,103 @@ body {
   padding: 0 var(--gutter) 0.75rem;
 }
 
+/* ── Quick add: the dashboard's create dial ───────────────────────────────
+   Fixed above the tab bar, at the trailing edge. 2.75rem — the tap-target
+   floor and not a pixel more, because this sits on a screen whose job is
+   reading a list and a larger disc read as the loudest thing on it.
+
+   `position: fixed` rather than absolute: `.screen` is itself fixed, and a
+   control that must clear the tab bar is measured against the viewport, not
+   against a scroller. */
+.quick-add-fab {
+  position: fixed;
+  z-index: 30;
+  right: var(--gutter);
+  /* Above the tab bar, which is 3.25rem plus whatever the home indicator
+     takes. Expressed as that sum rather than a guessed number. */
+  bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px) + 0.75rem);
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  color: var(--accent-fg);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  /* The app's only shadow, and it is here for a reason rather than for style:
+     this is the one control that floats OVER content, so it needs to read as
+     above the list rather than punched into it. */
+  box-shadow: 0 3px 10px rgb(0 0 0 / 45%);
+}
+
+.quick-add-glyph { width: 20px; height: 20px; }
+
+/* The + becomes an ×. Radix stamps `data-state` on the trigger, the same
+   mechanism `sheet.tsx` already animates from — so this does not invent a
+   second way of saying "open". */
+.quick-add-fab .quick-add-glyph {
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.quick-add-fab[data-state="open"] .quick-add-glyph {
+  transform: rotate(135deg);
+}
+
+.quick-add-menu {
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.quick-add-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--t-md);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 45%);
+}
+
+/* NO `outline: none` here, and `tests/ui-styles.test.ts` caught the version
+   that had one. Radix gives a menu item real DOM focus, so the shared
+   `:focus-visible` ring applies to it — stripping the outline would have left
+   a keyboard user with only the highlight below, which is a colour change and
+   not a focus indicator.
+
+   Radix drives that highlight with `data-highlighted`, which covers pointer
+   AND keyboard arrowing — `:hover` alone would leave the keyboard path unlit,
+   and a hover-only affordance is banned here anyway. It is ADDITIVE to the
+   ring, not a substitute for it. */
+.quick-add-item[data-highlighted] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.quick-add-item-glyph { width: 18px; height: 18px; color: var(--fg-dim); }
+.quick-add-item[data-highlighted] .quick-add-item-glyph { color: inherit; }
+
+/* Rises from the trigger rather than arriving as a block. The global
+   prefers-reduced-motion rule clamps this to 0.01ms, so it still ARRIVES for
+   someone who asked for no motion — it just does not travel. */
+@keyframes quick-add-in {
+  from { opacity: 0; transform: translateY(0.5rem) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+.quick-add-menu[data-state="open"] {
+  animation: quick-add-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 /* ── The bottom tab bar ──────────────────────────────────────────────────
    Three destinations, labelled, within thumb reach.
 
