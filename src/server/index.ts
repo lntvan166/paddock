@@ -27,6 +27,7 @@ import { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import { publicHostsFrom } from "@server/origin";
 import { buildIdFrom } from "@server/build-id";
+import { EMBEDDED } from "@server/embedded";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { checkState, recordState, removeOwnState } from "@server/lifecycle/state";
 import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
@@ -411,6 +412,20 @@ let buildCache: { mtimeMs: number; id: string | null } | null = null;
 
 function currentBuildId(): string | null {
   try {
+    // Read from what is SERVED, not from where the source happened to be
+    // built: a compiled binary serves `EMBEDDED["/index.html"]` from memory,
+    // and reading `dist/` instead made this null on every installed paddock —
+    // see `indexHtmlFor`. `mtimeMs` still keys the cache where a real file is
+    // behind it; an embedded document cannot change under a running process,
+    // so its id is computed once and kept.
+    const bundled = EMBEDDED["/index.html"];
+    if (bundled !== undefined) {
+      if (buildCache === null) {
+        buildCache = { mtimeMs: 0, id: buildIdFrom(readFileSync(bundled, "utf8")) };
+      }
+      return buildCache.id;
+    }
+
     const file = `${STATIC_DIR}/index.html`;
     const { mtimeMs } = statSync(file);
     if (buildCache?.mtimeMs !== mtimeMs) {
@@ -418,12 +433,13 @@ function currentBuildId(): string | null {
     }
     return buildCache.id;
   } catch {
-    // No built UI (dev through Vite, or a fresh checkout). Null means "cannot
-    // tell", and the client treats that as "no update to announce" rather
-    // than announcing one on every heartbeat forever.
+    // No built UI at all (dev through Vite, or a fresh checkout). Null means
+    // "cannot tell", and the client treats that as "no update to announce"
+    // rather than announcing one on every heartbeat forever.
     return null;
   }
 }
+
 
 /**
  * Filled in asynchronously, below, and read on every heartbeat/snapshot (via

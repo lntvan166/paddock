@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildIdFrom } from "@server/build-id";
+import { buildIdFrom, indexHtmlFor } from "@server/build-id";
 
 // The whole point: an already-open tab keeps running the JS it loaded, and
 // nothing tells it a new build exists. `index.html` is served `no-cache` so a
@@ -54,4 +54,46 @@ test("a CSS-only change moves the build id", () => {
   const b = buildIdFrom(`<script src="/assets/index-SAME.js"></script>
                          <link href="/assets/index-BBBB.css">`);
   expect(a).not.toBe(b);
+});
+
+// ---- which bytes the id is computed FROM ----------------------------------
+//
+// MEASURED as broken before this existed: `currentBuildId` in `index.ts` read
+// `${STATIC_DIR}/index.html` from disk, while a compiled binary serves
+// `EMBEDDED["/index.html"]` from memory. Two instances of the same build, one
+// with a `dist/` beside it and one without, put this on the wire:
+//
+//     dist present   build="index-95d73f7Q.js+index-DDwPjkee.css"
+//     no dist        build=null
+//
+// A null is ignored by `trackBuild` on purpose (dev mode serves unhashed
+// assets), so `UpdateBar` could never appear on an installed binary — the one
+// deployment the feature exists for, since that is the paddock a phone leaves
+// open for days. The fix is to read whatever is actually SERVED, so the id
+// cannot disagree with the bundle the browser got.
+
+test("the embedded document is preferred, because that is what is served", () => {
+  const read = (p: string) =>
+    p === "/embedded/index.html" ? '<script src="/assets/index-EMBED01.js"></script>' : null;
+
+  expect(indexHtmlFor({ "/index.html": "/embedded/index.html" }, "dist", read))
+    .toContain("index-EMBED01.js");
+});
+
+test("disk is the fallback, for a dev server with nothing embedded", () => {
+  const read = (p: string) =>
+    p === "dist/index.html" ? '<script src="/assets/index-DISK01.js"></script>' : null;
+
+  expect(indexHtmlFor({}, "dist", read)).toContain("index-DISK01.js");
+});
+
+test("neither present is null, not a throw", () => {
+  // A fresh checkout with no build. `null` means "cannot tell", which the
+  // client already treats as "nothing to announce".
+  expect(indexHtmlFor({}, "dist", () => null)).toBeNull();
+});
+
+test("an unreadable embedded document falls back rather than failing", () => {
+  const read = (p: string) => (p === "dist/index.html" ? "<html>disk</html>" : null);
+  expect(indexHtmlFor({ "/index.html": "/gone" }, "dist", read)).toBe("<html>disk</html>");
 });

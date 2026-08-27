@@ -40,3 +40,39 @@ export function buildIdFrom(html: string): string | null {
   const names = [...html.matchAll(ASSET_RE)].map((m) => m[1]!);
   return names.length ? [...new Set(names)].sort().join("+") : null;
 }
+
+/**
+ * The `index.html` actually being SERVED, or null when there is none.
+ *
+ * This exists because the id was computed from the wrong bytes. `index.ts` read
+ * `${STATIC_DIR}/index.html` off the filesystem while a compiled binary serves
+ * `EMBEDDED["/index.html"]` from memory — so on an installed paddock, with no
+ * `dist/` beside the binary, the id was null forever. `trackBuild` ignores a
+ * null deliberately (dev mode serves unhashed assets and would otherwise show a
+ * permanent prompt), which meant `UpdateBar` could never appear on the one
+ * deployment it exists for: the paddock a phone leaves open for days.
+ *
+ * Measured on two instances of one build — `build="index-…js+index-…css"` with
+ * a `dist/` present, `build=null` without.
+ *
+ * EMBEDDED FIRST, because that is what the browser received. Disk is the
+ * fallback for a dev server with nothing embedded, and an embedded entry that
+ * cannot be read falls through to it rather than failing — the id is a
+ * convenience, and no answer is better than refusing to serve.
+ *
+ * `read` is injected so this is testable without a filesystem: the defect was
+ * never in `buildIdFrom`, it was in which bytes reached it, and that decision
+ * was sitting in the one file this project has no way to test.
+ */
+export function indexHtmlFor(
+  embedded: Record<string, string>,
+  staticDir: string,
+  read: (path: string) => string | null,
+): string | null {
+  const bundled = embedded["/index.html"];
+  if (bundled !== undefined) {
+    const html = read(bundled);
+    if (html !== null) return html;
+  }
+  return read(`${staticDir}/index.html`);
+}
