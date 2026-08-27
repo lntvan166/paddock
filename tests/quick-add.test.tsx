@@ -2,6 +2,7 @@ import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
 import { QuickAdd } from "@web/components/QuickAdd";
+import type { CreateSenders } from "@web/components/CreateSheet";
 import { click, pointerOpen, render, settle, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
@@ -18,11 +19,11 @@ afterEach(async () => { await unmount(); });
  * this file and breaks when it improves.
  */
 
-const senders = {
-  createSpace: async () => ({ spaceId: "w9", tabId: "w9:t1", paneId: "w9:p1" }),
-  createTab: async () => ({ tabId: "w9:t2", paneId: "w9:p2" }),
-  startAgent: async () => {},
-  harnessKinds: async () => ["claude", "codex"],
+const senders: CreateSenders = {
+  harnesses: async () => ["claude", "codex"],
+  createSpace: async () => ({ ok: true, spaceId: "w9", tabId: "w9:t1", paneId: "w9:p1" }),
+  createTab: async () => ({ ok: true, tabId: "w9:t2", paneId: "w9:p2" }),
+  startAgent: async () => ({ ok: true, paneId: "w9:p1", name: "api-refactor", kind: "claude" }),
 };
 
 test("the trigger is a single control until it is opened", async () => {
