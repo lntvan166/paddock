@@ -43,15 +43,14 @@ self.addEventListener("push", function (event) {
     : "paddock: an agent needs you";
   var agentId = (payload && payload.agentId) || "";
 
-  // EXPERIMENT. A push whose job is to CLOSE a notification that has stopped
-  // being true — an agent left blocked because the operator solved it
-  // somewhere else and never touched this phone.
+  // A push whose job is to CLOSE a notification that has stopped being true.
   //
-  // This is the one path that deliberately renders nothing, which breaks the
-  // `userVisibleOnly: true` promise the subscription was made under. It is
-  // gated server-side behind PADDOCK_EXPERIMENTAL_CLEAR_PUSH and exists to be
-  // measured: does the entry vanish, does the browser substitute a generic
-  // "updated in the background", and does push still work afterwards.
+  // OFF by default and gated server-side behind PADDOCK_CLEAR_PUSH=1, because
+  // it renders nothing and so breaks the `userVisibleOnly: true` promise the
+  // subscription was made under. It worked, and then push stopped delivering
+  // entirely on that endpoint; a fresh subscription with identical code and
+  // key delivered fine. See architecture.md. The replacement path below does
+  // the same job without the breach.
   //
   // An untagged clear is ignored rather than guessed at: with no tag there is
   // nothing to identify, and closing everything would throw away alerts this
@@ -66,19 +65,40 @@ self.addEventListener("push", function (event) {
     return;
   }
 
-  event.waitUntil(self.registration.showNotification(title, {
-    // One notification per agent. A second alert for the same one REPLACES its
-    // predecessor rather than stacking, which matches the notifier's own
-    // transition-based dedup and is the difference between a glance and a
-    // pocketful.
-    tag: agentId,
+  // Replace by hand, because the tag alone does not.
+  //
+  // `tag` is supposed to make a second notification REPLACE the first. Chrome
+  // honours that. Measured on iOS 2026-08-27: it does not — an agent going
+  // blocked and then working left TWO entries in Notification Center, a stale
+  // one and a true one, which is worse than the single stale entry we started
+  // with. Both pushes carried the same tag; the server log shows it.
+  //
+  // So the old entry is closed explicitly before the new one is shown. This is
+  // what tag replacement was supposed to do, done manually. It still calls
+  // `showNotification`, so unlike the clear experiment it honours
+  // `userVisibleOnly: true` and cannot earn the penalty that cost a live
+  // subscription.
+  event.waitUntil(
+    (agentId === ""
+      ? Promise.resolve()
+      : self.registration.getNotifications({ tag: agentId }).then(function (list) {
+          for (var i = 0; i < list.length; i++) list[i].close();
+        })
+    ).then(function () {
+      return self.registration.showNotification(title, {
+        // One notification per agent — enforced above, not merely requested
+        // here. The tag still matters: it is what the close-first step matches
+        // on, and what a platform that DOES honour replacement would use.
+        tag: agentId,
     // Same tag REPLACES rather than stacks. Left at its default `false`,
     // `renotify` means a replacement lands without alerting again — which is
     // the whole point when an agent has merely stopped being blocked and the
     // operator is not being told anything new enough to buzz for.
-    renotify: false,
-    data: { agentId: agentId },
-  }));
+        renotify: false,
+        data: { agentId: agentId },
+      });
+    })
+  );
 });
 
 self.addEventListener("notificationclick", function (event) {

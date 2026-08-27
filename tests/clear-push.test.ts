@@ -140,28 +140,14 @@ test("a clear reaches every device, including the one showing it", async () => {
 });
 
 /**
- * `sw.js` is plain JavaScript served as-is, so it has no type checking and no
- * import graph a test can reach. These read the source, which is crude but is
- * the only guard available on the half of this experiment that runs on the
- * phone.
+ * `sw.js` behaviour is driven properly in `tests/sw.test.ts`, which loads the
+ * real worker against a faked global. Only the one thing that file cannot see
+ * is asserted here: that the ordinary alert path still renders at all. If it
+ * ever stopped, push would be silently dead and nothing else would say so.
  */
 const sw = readFileSync("public/sw.js", "utf8");
 
-test("the worker closes by tag on a clear, and shows nothing", () => {
-  expect(sw).toContain("payload.clear === true");
-  expect(sw).toContain("getNotifications({ tag: agentId })");
-  const clearBranch = sw.slice(sw.indexOf("payload.clear === true"), sw.indexOf("showNotification"));
-  expect(clearBranch, "the clear branch falls through into showing a notification")
-    .toContain("return;");
-});
 
-test("an untagged clear is ignored rather than guessed at", () => {
-  // With no tag there is nothing to identify. Closing everything would throw
-  // away alerts this push knows nothing about — and sw.js already falls back
-  // to an empty tag when it cannot read a payload.
-  const clearBranch = sw.slice(sw.indexOf("payload.clear === true"), sw.indexOf("showNotification"));
-  expect(clearBranch).toContain('agentId === ""');
-});
 
 test("an ordinary alert still shows a notification", () => {
   // The contract is broken ONLY on the clear path. If a normal alert ever
@@ -221,8 +207,5 @@ test("clearing and replacing are never both sent", async () => {
   expect(sent[sent.length - 1]!.clear, "clearPush should win when explicitly on").toBe(true);
 });
 
-test("the worker asks not to re-alert on a replacement", () => {
-  // Without this the phone buzzes again to tell the operator an agent stopped
-  // needing them, which is the opposite of the point.
-  expect(sw).toContain("renotify: false");
-});
+
+

@@ -3,6 +3,12 @@ import { readFile } from "node:fs/promises";
 
 const source = () => readFile("public/sw.js", "utf8");
 
+interface FakeNotification {
+  tag: string;
+  closed: boolean;
+  close?: () => void;
+}
+
 interface FakeClient {
   url: string;
   focused: boolean;
@@ -11,17 +17,29 @@ interface FakeClient {
 }
 
 /** Run the real sw.js against a faked worker global and return its handlers. */
-async function load(clients: FakeClient[] = []) {
+async function load(clients: FakeClient[] = [], standing: FakeNotification[] = []) {
   const handlers = new Map<string, (e: unknown) => void>();
   const shown: { title: string; opts: Record<string, unknown> }[] = [];
   const opened: string[] = [];
+  // Notifications already on the lock screen. `sw.js` closes the matching tag
+  // before showing, because iOS does not honour tag replacement on its own —
+  // measured 2026-08-27, when an agent going blocked then working left two
+  // entries instead of one.
+  const live = [...standing];
   const self = {
     addEventListener: (t: string, fn: (e: unknown) => void) => { handlers.set(t, fn); },
     registration: {
       showNotification: (title: string, opts: Record<string, unknown>) => {
         shown.push({ title, opts });
+        live.push({ tag: String(opts.tag ?? ""), closed: false });
         return Promise.resolve();
       },
+      getNotifications: (filter?: { tag?: string }) =>
+        Promise.resolve(
+          live
+            .filter((n) => !n.closed && (filter?.tag === undefined || n.tag === filter.tag))
+            .map((n) => ({ ...n, close: () => { n.closed = true; } })),
+        ),
     },
     clients: {
       matchAll: () => Promise.resolve(clients),
@@ -31,7 +49,7 @@ async function load(clients: FakeClient[] = []) {
     skipWaiting: () => Promise.resolve(),
   };
   new Function("self", await source())(self);
-  return { handlers, shown, opened };
+  return { handlers, shown, opened, live };
 }
 
 /** Per-load, NOT module-level: a shared array accumulates across tests, and
@@ -70,6 +88,9 @@ test("the notification is tagged by agent, so a second one replaces the first", 
   await Promise.all(waited);
   expect(shown[0]!.opts.tag).toBe("a1b2c3");
   expect((shown[0]!.opts.data as { agentId: string }).agentId).toBe("a1b2c3");
+  // A replacement must not buzz again. Telling the operator an agent has
+  // STOPPED needing them is not worth a second alert.
+  expect(shown[0]!.opts.renotify, "a replacement would re-alert").toBe(false);
 });
 
 test("a malformed payload still notifies rather than throwing", async () => {
@@ -119,4 +140,79 @@ test("sw.js registers NO fetch handler, deliberately", async () => {
   const { handlers } = await load();
   expect(handlers.has("fetch")).toBe(false);
   expect(await source()).not.toContain("caches");
+});
+
+
+/**
+ * One entry per agent, enforced rather than requested.
+ *
+ * `tag` is SUPPOSED to make a second notification replace the first. Chrome
+ * honours it. Measured on iOS 2026-08-27 it does not: an agent going blocked
+ * and then working left TWO entries in Notification Center — a stale one and a
+ * true one — which is worse than the single stale entry paddock started with.
+ * Both pushes carried the same tag; the server log proved it.
+ *
+ * So `sw.js` closes the matching tag itself before showing. Unlike the clear
+ * experiment it still calls `showNotification`, so `userVisibleOnly: true`
+ * holds and it cannot earn the penalty that cost a live subscription.
+ */
+
+test("a second push for one agent leaves ONE entry, not two", async () => {
+  const { handlers, shown, live } = await load([], [{ tag: "a1b2c3", closed: false }]);
+  const { evt, waited } = events();
+  handlers.get("push")!(evt({
+    data: { json: () => ({ name: "api-refactor", state: "working", agentId: "a1b2c3" }) },
+  }));
+  await Promise.all(waited);
+
+  expect(shown).toHaveLength(1);
+  expect(shown[0]!.title).toContain("working");
+  const open = live.filter((n) => !n.closed);
+  expect(open, "the stale entry was left beside the new one").toHaveLength(1);
+});
+
+test("another agent's notification is left alone", async () => {
+  // The close is filtered by tag. Closing everything would throw away alerts
+  // this push knows nothing about — a blocked agent silently losing its entry
+  // because a different one finished.
+  const { handlers, live } = await load([], [
+    { tag: "other", closed: false },
+    { tag: "a1b2c3", closed: false },
+  ]);
+  const { evt, waited } = events();
+  handlers.get("push")!(evt({
+    data: { json: () => ({ name: "api-refactor", state: "working", agentId: "a1b2c3" }) },
+  }));
+  await Promise.all(waited);
+
+  expect(live.find((n) => n.tag === "other")!.closed, "an unrelated agent's alert was closed")
+    .toBe(false);
+});
+
+test("an unreadable payload still shows, and closes nothing", async () => {
+  // sw.js falls back to an empty tag when it cannot read a payload. That
+  // notification is the only trace of a real event, so it must still render —
+  // and with no tag to match, it must not close anything either.
+  const { handlers, shown, live } = await load([], [{ tag: "a1b2c3", closed: false }]);
+  const { evt, waited } = events();
+  handlers.get("push")!(evt({ data: { json: () => { throw new Error("bad json"); } } }));
+  await Promise.all(waited);
+
+  expect(shown).toHaveLength(1);
+  expect(live.find((n) => n.tag === "a1b2c3")!.closed, "an untagged push closed a tagged entry")
+    .toBe(false);
+});
+
+test("a clear push closes without showing", async () => {
+  // Off by default and behind PADDOCK_CLEAR_PUSH=1, but the branch still has
+  // to do what it says: close the entry and render nothing.
+  const { handlers, shown, live } = await load([], [{ tag: "a1b2c3", closed: false }]);
+  const { evt, waited } = events();
+  handlers.get("push")!(evt({
+    data: { json: () => ({ name: "api-refactor", state: "working", agentId: "a1b2c3", clear: true }) },
+  }));
+  await Promise.all(waited);
+
+  expect(shown, "a clear rendered a notification").toHaveLength(0);
+  expect(live.find((n) => n.tag === "a1b2c3")!.closed).toBe(true);
 });
