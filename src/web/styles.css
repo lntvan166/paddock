@@ -139,6 +139,14 @@
      Not part of a general spacing scale — that is a separate piece of work.
      This is one named decision that many rules share. */
   --gutter: 1rem;
+  /* One header band across the three tab screens.
+
+     3.25rem, not the 2.75rem tap floor: Spaces' header CONTAINS a 44px
+     control, and a band exactly 44px tall would have to lose its vertical
+     padding to fit one. This is that control plus a hair of breathing room,
+     which is the smallest number that holds every header without any of them
+     growing. */
+  --head-h: 3.25rem;
 
   /* The attention edge: the stripe that marks a band as needing a person.
      Named because two rules must agree on it AND because each of them has to
@@ -591,6 +599,31 @@ body {
    room, and eight pixels is not a margin worth promising. It wraps rather than
    hyphenating the wordmark, which is the defect the two-row layout existed to
    avoid. */
+/* The three tab screens' headers, as ONE band.
+
+   Measured at 390×844 before this: Agents 44px, Settings 51px, Spaces 69px.
+   Swiping between tabs moved the content under them by up to 25px, which
+   reads as the page settling rather than as three peers.
+
+   Each had grown its own way. `.host-head` was the only one declaring a
+   height; the other two were content-sized, and Spaces' 44px refresh control
+   pushed its band out by the difference. So the band is stated once, here,
+   and the three rules below own only what actually differs between them.
+
+   `padding-block` is a hair, and has to be: the band's height comes from
+   `min-height` and its contents are centred, so padding buys nothing except a
+   gap if something ever grows. At 0.25rem the sum of a 44px control, its
+   padding and the 1px border came to 53px against a 52px band — so Spaces sat
+   one pixel proud of the other two, which is the same bug in miniature. */
+.host-head,
+.spaces-head,
+.settings-header {
+  min-height: var(--head-h);
+  padding-block: 0.125rem;
+  padding-inline: var(--gutter);
+  border-bottom: 1px solid var(--border);
+}
+
 .host-head {
   display: flex;
   /* `center`, not `baseline`. The summary sits at the far end of the row now
@@ -601,9 +634,7 @@ body {
   align-items: center;
   flex-wrap: wrap;
   gap: 0.25rem 0.625rem;
-  min-height: 2.75rem;
-  padding: 0.5rem var(--gutter);
-  border-bottom: 1px solid var(--border);
+  /* Height, padding and rule live in the shared band above. */
 }
 
 /* Larger and heavier than it was — this is the screen's name, and with the
@@ -2106,8 +2137,6 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem var(--gutter);
-  border-bottom: 1px solid var(--border);
 }
 
 .settings-title {
@@ -2650,8 +2679,6 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.75rem var(--gutter);
-  border-bottom: 1px solid var(--border);
 }
 
 .spaces-head button {
