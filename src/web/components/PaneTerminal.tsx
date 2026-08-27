@@ -1032,7 +1032,18 @@ export function PaneTerminal({
               onChange={(e) => setShellReply(e.target.value)}
               placeholder="Type a command…"
             />
-            <Button type="submit" disabled={shellBusy || !shellReply.trim()}>Send</Button>
+            <Button
+              type="submit"
+              disabled={shellBusy || !shellReply.trim()}
+              // Keeps focus in the input for the length of the tap — see
+              // AgentTerminal's Send for the phone report behind this: a
+              // pointerdown that blurs the input dismisses the keyboard, the
+              // layout reflows, and the button moves out from under the finger
+              // before the click lands.
+              onPointerDown={(e) => { e.preventDefault(); }}
+            >
+              Send
+            </Button>
           </form>
         </>
       )}
