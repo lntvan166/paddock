@@ -21,6 +21,7 @@ import {
 } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { BackIcon } from "@web/components/ui/icons";
+import { AgentActions } from "@web/components/AgentActions";
 import { QuickAdd } from "@web/components/QuickAdd";
 import { TabBar } from "@web/components/TabBar";
 import { UpdateBar } from "@web/components/UpdateBar";
@@ -518,6 +519,13 @@ export function App() {
                       <AgentRow
                         key={a.agentId} agent={a} now={now}
                         onSelect={() => { location.hash = agentHash(a.agentId); }}
+                        // Rename and close, for the agent this row shows.
+                        // `onChanged` is a no-op for the same reason the agent
+                        // view's is: this screen renders the agent STORE, and
+                        // both writes reach it on their own — a rename because
+                        // the route asks the supervisor to re-read, a close
+                        // because herdr announces `pane_closed`.
+                        actions={<AgentActions agent={a} onChanged={() => {}} />}
                       />
                     ))
                   : (

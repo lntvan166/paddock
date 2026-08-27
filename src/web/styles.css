@@ -502,13 +502,32 @@ body {
    share one gutter — they are the same list, and they used to disagree by 8px.
    Vertical stays 0.75rem, which is what `py-2.5` (10px) rounded to; the row is
    the densest thing on the screen and did not need loosening. */
+/* The row is the container; `.row-open` is the part that opens the agent. The
+   split exists so the `⋯` can be a SIBLING of the tap target rather than a
+   child of it — nested, it would fire the row's own handler too. The padding
+   lives out here so the whole row still insets by the gutter, and `.row-open`
+   carries the layout that used to be on `.row`. */
 .row {
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 0.625rem;
   padding: 0.75rem var(--gutter);
 }
+
+.row-open {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  /* Takes the room the `⋯` does not, so the name truncates before the control
+     is pushed off the trailing edge. */
+  flex: 1;
+  min-width: 0;
+}
+
+/* The row's `⋯` reaches its target without the row's own padding doubling up:
+   the gutter is already on `.row`, so this only needs to clear the age beside
+   it. */
+.row > [data-row-actions] { margin-right: calc(-1 * var(--pad-control)); }
 
 /* ── The attention card ───────────────────────────────────────────────────
    A blocked or freshly-finished agent, in `Needs you` and `Ready`.

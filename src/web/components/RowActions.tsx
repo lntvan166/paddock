@@ -121,7 +121,7 @@ type Mode =
    *  consequence is stated here and the confirm button is the second. */
   | { view: "close" };
 
-export function RowActions({ label, renames, close, onChanged, senders = LIVE_SENDERS }: {
+export function RowActions({ label, renames, close, onChanged, onOpenChange, senders = LIVE_SENDERS }: {
   label: string;
   renames: RenameTarget[];
   /**
@@ -141,6 +141,11 @@ export function RowActions({ label, renames, close, onChanged, senders = LIVE_SE
    */
   close?: CloseTarget;
   onChanged: () => void;
+  /** Told when the sheet opens, so a caller can fetch what the menu needs
+   *  ONLY then. `AgentActions` uses it to read the session tree: the dashboard
+   *  holds agents, not structure, so the tab a close would take is not known
+   *  until something asks. */
+  onOpenChange?: (open: boolean) => void;
   senders?: RowSenders;
 }) {
   const [open, setOpen] = useState(false);
@@ -156,6 +161,7 @@ export function RowActions({ label, renames, close, onChanged, senders = LIVE_SE
 
   const show = (next: boolean) => {
     setOpen(next);
+    onOpenChange?.(next);
     // The sheet always reopens on its menu, never mid-edit and never still
     // armed: an armed close surviving a close-and-reopen would make the
     // second of the two taps reachable without the first.

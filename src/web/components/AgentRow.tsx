@@ -13,17 +13,28 @@ export { StatusDot };
  * `ready-unseen`) render `AgentCard` instead, which carries its own border
  * and accent — a row never needs to escalate itself. */
 export function AgentRow({
-  agent, now, onSelect,
+  agent, now, onSelect, actions,
 }: {
   agent: Agent;
   now: number;
   /** Opens the detail sheet for this agent. Optional so the row still
    * renders standalone. */
   onSelect?: () => void;
+  /** The row's `⋯`, rendered as a SIBLING of the tappable region — see the
+   *  note on the wrapper below. Optional so the row still renders standalone
+   *  and so the collapsed-Idle chips, which have no room for one, simply do
+   *  not pass it. */
+  actions?: React.ReactNode;
 }) {
   return (
+    // The row is a container; the TAPPABLE part is the div inside it. That
+    // split is what lets `actions` sit beside the open-the-agent target rather
+    // than inside it: a control nested in a `role="button"` fires that button
+    // too, which is the same trap `TabRow` and `RowActions` both carry notes
+    // about for a `<button>` inside an `<a>`.
+    <div className="row">
     <div
-      className="tap row"
+      className="tap row-open"
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}
@@ -47,6 +58,8 @@ export function AgentRow({
         <div className="row-task truncate">{agent.task}</div>
       </div>
       <span className="ident row-meta shrink-0">{elapsedLabel(now - agent.stateSince, agent.stateSinceExact)}</span>
+    </div>
+    {actions}
     </div>
   );
 }
