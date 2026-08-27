@@ -23,8 +23,7 @@ async function load(clients: FakeClient[] = [], standing: FakeNotification[] = [
   const opened: string[] = [];
   // Notifications already on the lock screen. `sw.js` closes the matching tag
   // before showing, because iOS does not honour tag replacement on its own —
-  // measured 2026-08-27, when an agent going blocked then working left two
-  // entries instead of one.
+  // measured 2026-08-27, when two pushes for one agent left two entries.
   const live = [...standing];
   const self = {
     addEventListener: (t: string, fn: (e: unknown) => void) => { handlers.set(t, fn); },
@@ -147,26 +146,25 @@ test("sw.js registers NO fetch handler, deliberately", async () => {
  * One entry per agent, enforced rather than requested.
  *
  * `tag` is SUPPOSED to make a second notification replace the first. Chrome
- * honours it. Measured on iOS 2026-08-27 it does not: an agent going blocked
- * and then working left TWO entries in Notification Center — a stale one and a
- * true one — which is worse than the single stale entry paddock started with.
- * Both pushes carried the same tag; the server log proved it.
+ * honours it. Measured on a real iPhone 2026-08-27 it does not: two pushes for
+ * one agent left TWO entries, and both carried the same tag — the server log
+ * proved it. So `sw.js` closes the matching tag itself before showing.
  *
- * So `sw.js` closes the matching tag itself before showing. Unlike the clear
- * experiment it still calls `showNotification`, so `userVisibleOnly: true`
- * holds and it cannot earn the penalty that cost a live subscription.
+ * This matters for ordinary alerts, not just an edge case: an agent that goes
+ * blocked and later done would otherwise leave the blocked entry sitting
+ * beside the done one, both claiming to describe the same agent.
  */
 
 test("a second push for one agent leaves ONE entry, not two", async () => {
   const { handlers, shown, live } = await load([], [{ tag: "a1b2c3", closed: false }]);
   const { evt, waited } = events();
   handlers.get("push")!(evt({
-    data: { json: () => ({ name: "api-refactor", state: "working", agentId: "a1b2c3" }) },
+    data: { json: () => ({ name: "api-refactor", state: "done", agentId: "a1b2c3" }) },
   }));
   await Promise.all(waited);
 
   expect(shown).toHaveLength(1);
-  expect(shown[0]!.title).toContain("working");
+  expect(shown[0]!.title).toContain("done");
   const open = live.filter((n) => !n.closed);
   expect(open, "the stale entry was left beside the new one").toHaveLength(1);
 });
@@ -181,7 +179,7 @@ test("another agent's notification is left alone", async () => {
   ]);
   const { evt, waited } = events();
   handlers.get("push")!(evt({
-    data: { json: () => ({ name: "api-refactor", state: "working", agentId: "a1b2c3" }) },
+    data: { json: () => ({ name: "api-refactor", state: "done", agentId: "a1b2c3" }) },
   }));
   await Promise.all(waited);
 
@@ -203,16 +201,3 @@ test("an unreadable payload still shows, and closes nothing", async () => {
     .toBe(false);
 });
 
-test("a clear push closes without showing", async () => {
-  // Off by default and behind PADDOCK_CLEAR_PUSH=1, but the branch still has
-  // to do what it says: close the entry and render nothing.
-  const { handlers, shown, live } = await load([], [{ tag: "a1b2c3", closed: false }]);
-  const { evt, waited } = events();
-  handlers.get("push")!(evt({
-    data: { json: () => ({ name: "api-refactor", state: "working", agentId: "a1b2c3", clear: true }) },
-  }));
-  await Promise.all(waited);
-
-  expect(shown, "a clear rendered a notification").toHaveLength(0);
-  expect(live.find((n) => n.tag === "a1b2c3")!.closed).toBe(true);
-});

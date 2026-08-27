@@ -477,87 +477,54 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
 | `PADDOCK_NO_UPDATE_CHECK` | unset | `1` disables the update check completely. |
-| `PADDOCK_REPLACE_STALE` | off | `1` overwrites a notification that has stopped being true with the new state. Safe — every push on this path renders something — but it leaves an entry behind, which is not what was asked for. |
-| `PADDOCK_CLEAR_PUSH` | **off** | `1` re-enables clearing a notification once it stops being true. It appeared to cost a live subscription — see below. |
 | `PADDOCK_VERSION` | `0.0.0-dev` | Build-time only, injected by `bun build --define`. Not read at runtime. |
 
-### `PADDOCK_CLEAR_PUSH`
+### Why a notification is never cleared remotely
 
-The one code path in paddock that deliberately breaks a contract, and the
-measurement that justifies it.
+Asked for on 2026-08-27: an alert says an agent is blocked, the operator solves
+it at the desk without touching the phone, and the stale alert should disappear
+by itself. `sweep()` in `web/notifications.ts` already closes notifications that
+have stopped being true, but it runs IN THE PAGE — with paddock closed nothing
+of ours is alive on that device, so a push is the only lever.
 
-**The problem.** A push says an agent is blocked. The operator solves it at the
-desk and never touches the phone. `sweep()` in `web/notifications.ts` closes
-notifications that have stopped being true — but it runs IN THE PAGE, so with
-paddock closed nothing of ours is alive on that device and the alert goes on
-saying "blocked" indefinitely. A push is the only thing that can reach a phone
-nobody is holding.
+**Built, measured, and removed.** A push carrying a `clear` flag made the
+service worker close the tag and render nothing. It worked: a blocked alert
+cleared itself off a real iPhone's lock screen, untouched, with the server
+logging the clear it sent.
 
-**What it does.** When an agent leaves a trigger state, the notifier sends a
-push carrying `clear: true`. `public/sw.js` branches on that flag, closes the
-notification with the matching tag, and returns **without calling
-`showNotification`**.
+Then push stopped delivering on that endpoint entirely — no alert for any
+agent, with clears already disabled, while the subscription stayed in the
+store, Apple kept accepting every send, and nothing logged as failed. A FRESH
+subscription with the same server, code, phone and VAPID key delivered
+normally, which is what rules out other explanations and leaves the clear
+pushes responsible.
 
-**What gates it, and why that matters more than it looks.** The clear fires only
-when a push was ACTUALLY SENT for that agent (`#pushedFor`), never merely
-because the previous state was a trigger. Those come apart constantly: a
-trigger arms a timer and waits out its settle window, so an agent that finishes
-and starts again inside ten seconds leaves `done` having shown nothing. The
-first version gated on the previous state and fired clears for notifications
-that had never existed — caught by the operator during a live run, and visible
-in the log as clears with no matching alert. Note that `#lastNotified` looks
-like the right record and is not: it is written only on the Telegram success
-path, so a push-only operator never sets it.
+That is the `userVisibleOnly: true` penalty doing exactly what it exists to do.
+Every subscription is created under that promise
+(`web/components/settings/PushSection.tsx`), a push that renders nothing breaks
+it, and the penalty is cumulative and silent — a penalised endpoint is
+invisible from the server, since the push service goes on accepting sends and
+never reports it gone.
 
-**The contract this breaks.** Every subscription is made with
-`userVisibleOnly: true` (`web/components/settings/PushSection.tsx`), which
-promises each push shows something. This path does not. Browsers police it:
-Chrome substitutes a generic "this site was updated in the background", and iOS
-can drop the subscription after repeated breaches. Because the penalty is
-cumulative, the gate above is a safety mechanism and not merely tidiness —
-every clear spent on a notification nobody saw brings that penalty closer for
-no benefit.
+**Replacement was tried too, and also removed.** A push showing the NEW state
+over the stale entry keeps the contract completely. It works, and it is not
+what anyone wanted: an operator who has already solved the thing does not want
+to be told it is solved, and an entry reading "working" is still an entry.
 
-**What was measured, and what happened next.** On a real iPhone, 2026-08-27: a
-blocked alert cleared itself off the lock screen when the agent was unblocked
-from the laptop, with the phone untouched, and the server logged the clear it
-had sent. Two earlier observations were discarded as confounded — one where the
-notification was tapped, which dismisses any notification, and one where the
-alert was only looked for AFTER answering, so a working clear and a missing
-notification are indistinguishable.
+**What paddock does instead:** push on `blocked` and `done` only, and let a
+stale alert stand until the operator opens the app, where `sweep()` closes it.
+The tidy version is not available on iOS at any price worth paying.
 
-**Then push stopped working entirely, in the same session.** No alert arrived
-for any agent — including a `done` on an unrelated one — with clears already
-disabled, while the subscription stayed present in the store, Apple kept
-accepting every send, and nothing was logged as failed. Accepted and then not
-delivered is what a penalised subscription looks like, and it is precisely the
-cumulative penalty `userVisibleOnly: true` exists to enforce.
+**What survived, and is worth keeping:** `sw.js` closes a notification with the
+matching tag before showing a new one. `tag` is supposed to do that by itself —
+Chrome honours it, iOS does not, measured the same day when two pushes for one
+agent left two entries. Without it an agent that goes blocked and later done
+leaves both entries side by side, each claiming to describe the same agent.
 
-**This is not proven and cannot be from one device.** An iOS PWA that has been
-force-quit may also stop being woken, and this experiment's own test procedure
-kept asking for exactly that, so the two explanations are tangled. But the
-trade is settled either way: a tidy Notification Center is not worth risking
-delivery of the alerts paddock exists to send. Default off.
-
-**Recovery, if a subscription goes quiet.** Unsubscribe and re-subscribe from
-Settings on the device. That mints a new endpoint; a penalty attaches to the
-old one. Confirm a plain alert arrives before turning anything else on.
-
-**What shipped instead: `PADDOCK_REPLACE_STALE`, on by default.** Same trigger
-and same gate, but it SHOWS the new state over the stale entry rather than
-showing nothing — reusing the tag, so iOS replaces rather than stacks, with
-`renotify: false` so it lands without alerting again. Every push on that path
-renders a notification, so the contract is kept and this penalty cannot apply.
-The operator is left with one entry that reads truthfully instead of one that
-lies. Confirmed by measurement that push on a FRESH endpoint works normally
-with the same server, code, phone and VAPID key — only the endpoint differed,
-which is what rules out force-quitting as the cause and leaves the clear pushes
-responsible.
-
-**Lesson recorded, because it was the real mistake.** This was made the default
-on the strength of one success that had already been identified as confounded,
-while the durability caveat sat in this very file unheeded. A measurement that
-cannot be taken in one session should not set a default in that session.
+**Recovery, if push ever goes quiet on a device:** unsubscribe and re-subscribe
+from Settings, which mints a new endpoint. If a stale entry lingers in the
+store with no client behind it, clear `push.json` and re-enable; the VAPID
+keypair lives in the same file and must be preserved.
 
 ### `PADDOCK_NO_UPDATE_CHECK`, and the file beside `settings.json`
 

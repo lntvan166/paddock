@@ -43,41 +43,18 @@ self.addEventListener("push", function (event) {
     : "paddock: an agent needs you";
   var agentId = (payload && payload.agentId) || "";
 
-  // A push whose job is to CLOSE a notification that has stopped being true.
-  //
-  // OFF by default and gated server-side behind PADDOCK_CLEAR_PUSH=1, because
-  // it renders nothing and so breaks the `userVisibleOnly: true` promise the
-  // subscription was made under. It worked, and then push stopped delivering
-  // entirely on that endpoint; a fresh subscription with identical code and
-  // key delivered fine. See architecture.md. The replacement path below does
-  // the same job without the breach.
-  //
-  // An untagged clear is ignored rather than guessed at: with no tag there is
-  // nothing to identify, and closing everything would throw away alerts this
-  // push knows nothing about.
-  if (payload && payload.clear === true) {
-    if (agentId === "") return;
-    event.waitUntil(
-      self.registration.getNotifications({ tag: agentId }).then(function (list) {
-        for (var i = 0; i < list.length; i++) list[i].close();
-      })
-    );
-    return;
-  }
-
   // Replace by hand, because the tag alone does not.
   //
-  // `tag` is supposed to make a second notification REPLACE the first. Chrome
-  // honours that. Measured on iOS 2026-08-27: it does not — an agent going
-  // blocked and then working left TWO entries in Notification Center, a stale
-  // one and a true one, which is worse than the single stale entry we started
-  // with. Both pushes carried the same tag; the server log shows it.
+  // `tag` is supposed to make a second notification REPLACE the first, so one
+  // agent can only ever hold one entry. Chrome honours that. Measured on iOS
+  // 2026-08-27 it does not: an agent that went blocked and then reached a
+  // second trigger left TWO entries, and both pushes carried the same tag.
   //
-  // So the old entry is closed explicitly before the new one is shown. This is
-  // what tag replacement was supposed to do, done manually. It still calls
-  // `showNotification`, so unlike the clear experiment it honours
-  // `userVisibleOnly: true` and cannot earn the penalty that cost a live
-  // subscription.
+  // So the old entry is closed explicitly before the new one is shown — tag
+  // replacement, done by hand. Filtered by tag and never blanket: closing
+  // everything would throw away alerts this push knows nothing about. An
+  // unreadable payload has no tag, so it closes nothing and still renders,
+  // because that notification is the only trace of a real event.
   event.waitUntil(
     (agentId === ""
       ? Promise.resolve()

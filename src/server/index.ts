@@ -572,44 +572,6 @@ const notifier = new Notifier({
    * reason the Telegram branch reads its config there — a setting changed in
    * the dashboard must take effect without a restart.
    */
-  /**
-   * OFF. Turned back off after it appeared to cost a live subscription.
-   *
-   * It worked, briefly: on 2026-08-27 a blocked alert cleared itself off a
-   * real iPhone's lock screen, untouched, with the server logging the clear.
-   * Within the same session push then stopped delivering ENTIRELY — no alert
-   * for any agent, including a `done` on an unrelated one, with clears already
-   * disabled — while the subscription stayed present and every send kept
-   * reporting success. Accepted and then not delivered is what a penalised
-   * subscription looks like, and it is the exact cumulative penalty
-   * `userVisibleOnly: true` exists to enforce.
-   *
-   * Not proven, and it cannot be from one device: an iOS PWA that has been
-   * force-quit may also stop being woken, and this experiment's own test
-   * instructions kept asking for exactly that. Either way the trade is settled
-   * — a tidy Notification Center is not worth risking the delivery of the
-   * alerts paddock exists to send.
-   *
-   * `PADDOCK_CLEAR_PUSH=1` re-enables it for anyone who wants to measure
-   * further, ideally on a subscription they can afford to lose.
-   */
-  clearPush: process.env.PADDOCK_CLEAR_PUSH === "1",
-  /**
-   * On. See `NotifierOpts.replaceStale`.
-   *
-   * OFF by default, on request. It is SAFE where `clearPush` was not — every
-   * push on this path renders something, so `userVisibleOnly: true` holds —
-   * but safe is not the same as wanted. Replacing "blocked" with "working"
-   * leaves an entry behind, and an operator who has already solved the thing
-   * at their desk does not want to be told it is solved. The ask was for the
-   * entry to go, and a replacement is not that.
-   *
-   * Kept rather than deleted because it is the only version of this that
-   * cannot cost a subscription, which makes it the right default for anyone
-   * who would rather a truthful entry than a stale one.
-   * `PADDOCK_REPLACE_STALE=1` turns it on.
-   */
-  replaceStale: process.env.PADDOCK_REPLACE_STALE === "1",
   sendPush: pushSender(),
   viewers: (agentId) => presence.viewers(agentId),
   // A synchronous read of what `push.json` already stores — see

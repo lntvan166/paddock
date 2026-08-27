@@ -40,54 +40,10 @@ export interface NotifierOpts {
    * on this same call but is an ARGUMENT to the sender, not content: the
    * sender strips it before the body is built. See `index-wiring.ts`.
    */
-  /**
-   * EXPERIMENT, default off.
-   *
-   * When on, leaving a trigger state sends a push that asks the service
-   * worker to CLOSE the agent's notification and render nothing. That is the
-   * only way to clear an alert on a phone nobody is touching: with paddock
-   * closed, no code of ours is alive there, so a push is the sole lever.
-   *
-   * Off by default because `userVisibleOnly: true` promises every push shows
-   * something, and browsers penalise repeated breaches — Chrome substitutes a
-   * generic "updated in the background", iOS can drop the subscription
-   * outright. Losing push to tidy a notification would be a bad trade, so
-   * this ships as a measurement, not a feature.
-   */
-  clearPush?: boolean;
 
-  /**
-   * Replace a notification that has stopped being true, rather than leaving it
-   * to lie.
-   *
-   * The same trigger as `clearPush` and the same reason — an alert saying
-   * "blocked" outlives the block whenever the operator solves it elsewhere and
-   * never touches the phone, and `sweep()` cannot help because it runs in the
-   * page. The difference is what reaches the lock screen: this SHOWS a
-   * notification carrying the new state, reusing the tag so it replaces the
-   * stale entry instead of stacking beside it.
-   *
-   * That is why this is on by default and `clearPush` is not. Every push here
-   * renders something, so the `userVisibleOnly: true` contract is kept and the
-   * cumulative penalty that cost a live subscription during the clear-push
-   * experiment cannot apply. Replacing by tag is what tags are for.
-   */
-  replaceStale?: boolean;
 
   sendPush?: (
-    payload: {
-      name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string>;
-      /**
-       * EXPERIMENT. A push whose only job is to close a notification that has
-       * stopped being true — the service worker closes the tag and shows
-       * nothing.
-       *
-       * Deliberately breaks the `userVisibleOnly: true` contract every push
-       * subscription is made under, which is why it is gated and why it is
-       * worth measuring rather than assuming. See `clearPush` below.
-       */
-      clear?: boolean;
-    },
+    payload: { name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string> },
   ) => Promise<void>;
   /**
    * Which DEVICES have this agent's pane open and awake, from
@@ -150,15 +106,6 @@ export class Notifier {
    *  what removes v2's optimistic-write-and-revert dance: one map was doing
    *  both jobs, and every subtlety in the old comments came from that. */
   #lastNotified = new Map<string, AgentState>();
-  /**
-   * Agents for which a PUSH actually went out, and in what state.
-   *
-   * `#lastNotified` cannot answer this: it is written only on the Telegram
-   * success path, so a push-only operator never sets it — which is most of
-   * them. The clear experiment needs "did a notification reach a lock screen",
-   * and this is the only record of that.
-   */
-  #pushedFor = new Map<string, AgentState>();
   /** Last send ATTEMPT (not success) per agent, for the cooldown. */
   #lastSentAt = new Map<string, number>();
   /**
@@ -278,7 +225,6 @@ export class Notifier {
     // earned and its first real notification is silently dropped.
     this.#lastNotified.delete(agentId);
     this.#lastSentAt.delete(agentId);
-    this.#pushedFor.delete(agentId);
     // A send that was already in flight for the removed agent resumes with no
     // episode to match, so it writes nothing — which is what removal means.
     this.#episode.delete(agentId);
@@ -311,45 +257,11 @@ export class Notifier {
     // have the NEXT episode's timer fire, find `#lastNotified` still equal to
     // the state it is about to announce, and drop the send — silently, with
     // no error and nothing on `/api/health`, for the rest of the pane's life.
-    // Read BEFORE the deletes below, because the clear branch needs it: the
-    // only record of whether a push ever actually reached a lock screen for
-    // this agent.
-    const pushedState = this.#pushedFor.get(a.agentId);
-    this.#pushedFor.delete(a.agentId);
     this.#lastNotified.delete(a.agentId);
     // The episode this deferral belonged to is over. Left in place, a later
     // `reconsider` would announce a state the agent has already left.
     this.#deferred.delete(a.agentId);
-    if (!isTrigger(a.state)) {
-      // EXPERIMENT (`clearPush`). The agent has LEFT a state that may still be
-      // showing on a lock screen — blocked → working is the reported case, and
-      // the whole point is that the operator solved it elsewhere and never
-      // touched the phone. `sweep()` cannot help: it runs in the page, and
-      // with paddock closed nothing of ours is alive on that device. A push is
-      // the only thing that can still reach it.
-      //
-      // Gated on something having ACTUALLY been announced, not merely on the
-      // previous state having been a trigger. Those come apart constantly: a
-      // trigger arms a timer and waits out its settle window, so an agent that
-      // finishes and starts again inside ten seconds leaves `done` having
-      // shown nothing. Measured on a live session — four clears went out and
-      // several closed notifications that had never existed.
-      //
-      // That is not merely wasted work. Every clear is a deliberate breach of
-      // the `userVisibleOnly: true` contract, the penalty for breaches is
-      // cumulative, and spending them on notifications nobody ever saw is the
-      // fastest way to lose the subscription for no benefit at all.
-      // Only ever ONE of these, and only when a push actually reached a lock
-      // screen for this agent. `clearPush` closes the entry and shows nothing,
-      // which breaches `userVisibleOnly` and is off by default after it
-      // appeared to cost a subscription; `replaceStale` shows the new state
-      // over the old entry, which breaches nothing.
-      if (pushedState !== undefined) {
-        if (this.o.clearPush === true) void this.#sendClear(a);
-        else if (this.o.replaceStale !== false) void this.#sendReplacement(a);
-      }
-      return;
-    }
+    if (!isTrigger(a.state)) return;
 
     const s = this.o.settings.current();
     if (!s.notify.triggers.includes(a.state)) return;
@@ -501,7 +413,7 @@ export class Notifier {
     // so a ready Telegram still reaches this line with push fully withheld —
     // and every device in `roster` is already in `skip` when that is true, so
     // there is no device left for a real sender to tell anything.
-    const pushed = pushWithheld ? Promise.resolve() : this.#sendPush(a, state, skip, episode);
+    const pushed = pushWithheld ? Promise.resolve() : this.#sendPush(a, state, skip);
 
     // Push has been dispatched; without Telegram there is nothing else to do.
     // Everything below this line is Telegram's retry and error bookkeeping,
@@ -562,76 +474,11 @@ export class Notifier {
    * reaching the delta path would take the dashboard down to deliver a
    * notification, which is exactly backwards.
    */
-  /**
-   * EXPERIMENT. Ask every device to close this agent's notification.
-   *
-   * `skipDeviceKeys` is EMPTY on purpose, unlike an alert's. That set exists to
-   * withhold an alert from a device already showing this agent — which is
-   * precisely the device holding the notification that has to go. Reusing the
-   * alert's suppression here would skip the only phone that needs telling.
-   *
-   * Fails the same way `#sendPush` does: reported, never thrown. A clear that
-   * does not arrive leaves a stale notification, which is the status quo, and
-   * that is never worth taking the dashboard down for.
-   */
-  /**
-   * Overwrite a stale notification with what is true now.
-   *
-   * `skipDeviceKeys` is EMPTY for the same reason the clear's is: that set
-   * withholds an ALERT from a device already showing this agent, which is
-   * exactly the device holding the entry that has gone stale.
-   *
-   * No `clear` flag, so `sw.js` takes its ordinary path and calls
-   * `showNotification`. The tag does the rest — same tag, so iOS replaces the
-   * entry rather than adding one, and without `renotify` it does so without
-   * alerting again.
-   */
-  async #sendReplacement(a: Agent): Promise<void> {
-    const send = this.o.sendPush;
-    if (send === undefined) return;
-    try {
-      await send({
-        name: a.name, state: a.state, agentId: a.agentId, skipDeviceKeys: new Set(),
-      });
-      console.info(`paddock: replaced stale notification for ${a.name} (${a.agentId}) with ${a.state}`);
-    } catch (e) {
-      console.info(`paddock: stale replacement failed for ${a.name}: ${(e as Error).message}`);
-    }
-  }
-
-  async #sendClear(a: Agent): Promise<void> {
-    const send = this.o.sendPush;
-    if (send === undefined) return;
-    try {
-      await send({
-        name: a.name, state: a.state, agentId: a.agentId,
-        skipDeviceKeys: new Set(), clear: true,
-      });
-      // Logged on SUCCESS, which the alert path does not do. This is a
-      // measurement, and a send that leaves no trace cannot be told apart from
-      // one that never happened — during the first run of this experiment a
-      // notification did clear, and nothing on the server could say whether
-      // the clear push or the in-page `sweep()` had done it.
-      console.info(`paddock: clear push sent for ${a.name} (${a.agentId}) now ${a.state}`);
-    } catch (e) {
-      console.info(`paddock: clear push failed for ${a.name}: ${(e as Error).message}`);
-    }
-  }
-
-  async #sendPush(
-    a: Agent, state: NotifyTrigger, skipDeviceKeys: ReadonlySet<string>, episode?: number,
-  ): Promise<void> {
+  async #sendPush(a: Agent, state: NotifyTrigger, skipDeviceKeys: ReadonlySet<string>): Promise<void> {
     const send = this.o.sendPush;
     if (send === undefined) return;
     try {
       await send({ name: a.name, state, agentId: a.agentId, skipDeviceKeys: new Set(skipDeviceKeys) });
-      // Guarded on the episode still being current, for the reason every late
-      // write here is: a send that resolves after the agent has moved on must
-      // not record a lock screen that the transition already invalidated, or
-      // the next clear would fire for a notification belonging to nothing.
-      if (episode === undefined || this.#episode.get(a.agentId) === episode) {
-        this.#pushedFor.set(a.agentId, state);
-      }
     } catch (e) {
       console.info(`paddock: push failed for ${a.name}: ${(e as Error).message}`);
     }
