@@ -23,7 +23,8 @@ import { prunePanes } from "@web/pane-cache";
 import { BackIcon } from "@web/components/ui/icons";
 import { AgentActions } from "@web/components/AgentActions";
 import { QuickAdd } from "@web/components/QuickAdd";
-import { TabBar } from "@web/components/TabBar";
+import { AppShell } from "@web/components/AppShell";
+import { TAB_HASH, type TabKey } from "@web/components/TabBar";
 import { UpdateBar } from "@web/components/UpdateBar";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
 import { dismissedRelease, dismissRelease, shouldShowRelease } from "@web/release-notice";
@@ -188,6 +189,28 @@ export function App() {
   }, [agentIds, openId]);
 
   const groups = groupAgents(agents);
+
+  /**
+   * The needs-you count, derived ONCE and passed to the one tab bar.
+   *
+   * `Spaces` and `Settings` each used to compute this for their own copy of
+   * the bar. Two derivations of one number is how two screens come to
+   * disagree about it — the defect `HostHeader`'s counts comment records.
+   */
+  const needsYou = groups["needs-you"].length;
+
+  /**
+   * Move between tabs.
+   *
+   * Still an ordinary hash assignment, which is what the route hooks listen
+   * for. It exists as a callback rather than as the anchor's own navigation so
+   * that the pager can take it over: `replaceState` fires no `hashchange`, so
+   * the switch to it has to arrive together with the state that replaces
+   * these hooks, not before.
+   */
+  const goTab = (key: TabKey) => {
+    location.hash = TAB_HASH[key];
+  };
   const stale = isStale({ connected, lastMessageAt }, now);
   // Re-derived from the live list every render, never cached: if the selected
   // agent is pruned from a snapshot (or reconnects under a new id), the view
@@ -321,7 +344,9 @@ export function App() {
   // in-flight key resolving AFTER the operator navigated to B, would land on
   // B's screen. Resetting fields in an effect cannot stop that late write;
   // only unmounting the old instance can.
-  if (showSettings) return <Settings />;
+  if (showSettings) {
+    return <AppShell tab="settings" needsYou={needsYou} onSelect={goTab}><Settings /></AppShell>;
+  }
 
   // Before `showSpaces` below: belt and braces, not load-bearing.
   // `useSpacesRoute` matches `"#/spaces"` exactly and `spaceIdFromHash`
@@ -341,7 +366,9 @@ export function App() {
     );
   }
 
-  if (showSpaces) return <Spaces />;
+  if (showSpaces) {
+    return <AppShell tab="spaces" needsYou={needsYou} onSelect={goTab}><Spaces /></AppShell>;
+  }
 
   if (openAgent) {
     // Back returns to wherever THIS pane was opened from (§16.4) — the
@@ -440,6 +467,7 @@ export function App() {
   }
 
   return (
+    <AppShell tab="agents" needsYou={needsYou} onSelect={goTab}>
     // `screen`, not a flowing column: the header carries the counts and the
     // only routes into Spaces and Settings, and scrolling into Idle used to
     // take all three off the viewport. See `.screen, .term` in styles.css.
@@ -587,8 +615,8 @@ export function App() {
           onChanged={() => {}}
         />
       )}
-      <TabBar current="agents" needsYou={groups["needs-you"].length} />
     </main>
+    </AppShell>
   );
 }
 

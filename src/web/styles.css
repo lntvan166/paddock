@@ -769,7 +769,9 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.screen:has(.tab-bar) { padding-bottom: 0; }
+/* `.screen:has(.tab-bar)` lived here. No screen contains a tab bar any
+   more — `.app-shell` holds the one instance as a sibling — so the rule had
+   nothing left to match. */
 
 .tab-item {
   display: flex;
@@ -2380,6 +2382,35 @@ body {
    `width: min(100%, 42rem)` is 42rem = Tailwind's `max-w-2xl`, which the
    screens were already using; stating it here means a fixed element still
    agrees with the column the app has always been. */
+/* The outer column: routed content above, the one tab bar below.
+
+   `.screen` is `position: fixed; inset: 0`, so a tab bar hoisted OUT of it
+   needs something to be hoisted into — this is that thing. It takes over the
+   fixed full-viewport role and the 42rem column, and `.screen` inside it
+   becomes an ordinary flex child.
+
+   The safe-area inset moves to `.tab-bar`, which is now the bottom-most
+   element. Leaving it on `.screen` would put a strip of page colour under the
+   bar on a phone with a home indicator. */
+.app-shell {
+  position: fixed;
+  inset: 0;
+  width: min(100%, 42rem);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell .screen {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  margin-inline: 0;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 0;
+}
+
 .screen,
 .term {
   position: fixed;

@@ -27,7 +27,15 @@ export async function settle(): Promise<void> {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
 
-export async function render(node: React.ReactNode): Promise<HTMLElement> {
+export async function render(node: React.ReactNode, into?: HTMLElement): Promise<HTMLElement> {
+  // `into` re-renders through the EXISTING root rather than making a new one,
+  // which is the only way to ask "did this node survive the update?". A fresh
+  // root would rebuild the tree either way and answer the question wrongly.
+  if (into !== undefined && into === host && root !== null) {
+    await act(async () => { root!.render(node); });
+    await settle();
+    return host;
+  }
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);

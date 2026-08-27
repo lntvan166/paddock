@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { sectionFor } from "@shared/types";
-import { useStore } from "@web/store";
 import type { HealthBody, NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 import {
   readPrefs, themeAttr, writePref,
@@ -15,7 +13,6 @@ import { InfoSection } from "@web/components/settings/InfoSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
 import { BuildStamp } from "@web/components/BuildStamp";
-import { TabBar } from "@web/components/TabBar";
 
 /** No props. `onBack` was removed with the header's back control — Settings is
  *  a tab destination now, and the tab bar is the way out. */
@@ -33,7 +30,6 @@ type SettingsProps = Record<string, never>;
 export function Settings(_props: SettingsProps = {}) {
   // Counted with `sectionFor`, the one rule. From this screen a newly blocked
   // agent used to be invisible entirely.
-  const needsYou = useStore((s) => s.agents.filter((a) => sectionFor(a) === "needs-you").length);
   const [prefs, setPrefs] = useState<Prefs>(() => readPrefs());
 
   const [view, setView] = useState<SettingsView | null>(null);
@@ -477,7 +473,6 @@ export function Settings(_props: SettingsProps = {}) {
           acts on THIS view, the tabs leave it. Apple's rule — a tab bar
           navigates, a toolbar acts on the current screen — is why the two are
           different objects rather than one row of buttons. */}
-      <TabBar current="settings" needsYou={needsYou} />
     </main>
   );
 }
