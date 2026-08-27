@@ -150,7 +150,7 @@ function remember(id: string, digest: string, lines: string[]): void {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-function handle(url: string, body: Record<string, unknown>): Response {
+function handle(url: string, body: Record<string, unknown>, method: string): Response {
   // The demo is the only sanctioned source of screenshots, so every screen the
   // product has must render here — including settings, which needs a whole
   // SettingsView before it will paint at all.
@@ -160,6 +160,18 @@ function handle(url: string, body: Record<string, unknown>): Response {
   // match answered both of those with a settings view — which made the test
   // button render an empty error banner and Mute silently do nothing.
   const path = url.split("?")[0] ?? url;
+
+  /**
+   * Every write, refused in the same words the server-side demo uses.
+   *
+   * `src/server/demo-actions.ts` REFUSES rather than resolving quietly, and
+   * `CLAUDE.md` explains why at length: a write that resolved would make every
+   * control look live and do nothing, silently, with no test able to notice
+   * because a resolved promise is what success looks like. The browser demo
+   * has to hold the same line.
+   */
+  const refuse = () =>
+    json({ ok: false, detail: "this is the demo — paddock has no herdr here, so nothing was sent" }, 409);
 
   if (path.endsWith("/api/settings/telegram/test")) {
     // The real route reports whether the token and chat id actually work.
@@ -181,6 +193,55 @@ function handle(url: string, body: Record<string, unknown>): Response {
     return json(demoSettings());
   }
   if (path.endsWith("/api/health")) return json(demoHealth());
+
+  /**
+   * The space tree, derived from the SAME `agents` array the dashboard reads.
+   *
+   * It had no route at all, so `/api/spaces` fell through to the agent regex
+   * below and answered 404 — the Spaces screen rendered an error on the hosted
+   * demo, which is the one place people look at paddock without running it.
+   * The pager made that worse rather than revealed it: all three tabs are
+   * mounted now, so the error was there whether or not anyone opened Spaces.
+   *
+   * Derived rather than hand-written, so the two screens cannot disagree about
+   * how many agents exist. Each seeded agent sits in its own space, which is
+   * what `workspaceId` already says.
+   */
+  if (path.endsWith("/api/spaces")) {
+    if (method === "POST") return refuse();
+    return json({
+      readAt: Date.now(),
+      spaces: agents.map((a) => ({
+        spaceId: a.workspaceId,
+        label: a.name,
+        tabCount: 1,
+        paneCount: 1,
+        tabs: [{
+          tabId: `${a.workspaceId}:t1`,
+          label: null,
+          panes: [{
+            paneId: a.agentId,
+            harness: a.harness,
+            name: a.name,
+            title: null,
+            // Tilde-ised, like `toSpaceTree` does — the create sheet's folder
+            // field round-trips this form, so a raw path would come back wrong.
+            cwd: "~/work/demo",
+            state: a.state,
+          }],
+        }],
+      })),
+    });
+  }
+
+  /**
+   * Every harness the create sheet offers. Without it the picker renders empty
+   * and the sheet looks broken rather than restricted.
+   */
+  if (path.endsWith("/api/harnesses")) return json({ kinds: ["claude", "codex"] });
+
+  // Space and tab management. All writes, all refused — see `refuse`.
+  if (/\/api\/(spaces|tabs)\/[^/]+\/\w+/.test(path)) return refuse();
 
   const m = /\/api\/agents\/([^/]+)\/(\w+)/.exec(url);
   if (!m) return json({ ok: false, detail: "not found" }, 404);
@@ -319,7 +380,12 @@ export function installDemoBackend(): void {
     // A touch of latency, so the demo feels like a network rather than a
     // local function call — and so loading states are actually visible.
     await new Promise((r) => setTimeout(r, 40));
-    return handle(url, body);
+    // The METHOD matters now: `/api/spaces` is a read on GET and a create on
+    // POST, and the demo must answer one and refuse the other.
+    const method = (init?.method ?? (typeof input === "object" && "method" in input
+      ? (input as Request).method
+      : "GET")).toUpperCase();
+    return handle(url, body, method);
   }) as typeof fetch;
 
   (globalThis as { WebSocket: unknown }).WebSocket = DemoSocket;
