@@ -467,10 +467,10 @@ export function App() {
   }
 
   return (
-    <AppShell tab="agents" needsYou={needsYou} onSelect={goTab}>
     // `screen`, not a flowing column: the header carries the counts and the
     // only routes into Spaces and Settings, and scrolling into Idle used to
     // take all three off the viewport. See `.screen, .term` in styles.css.
+    <AppShell tab="agents" needsYou={needsYou} onSelect={goTab}>
     <main className="screen">
       {/* CHROME. Pinned, in the order a reader needs it: the two messages that
           explain why everything below might be wrong, then the header.
