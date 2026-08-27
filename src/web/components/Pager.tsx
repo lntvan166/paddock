@@ -30,6 +30,12 @@ export function Pager({ index, onIndexChange }: {
   onIndexChange: (i: number) => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
+  /** `index` for the handlers, which outlive the render that created them. */
+  const indexRef = useRef(index);
+  indexRef.current = index;
+  /** The live non-passive touchmove listener, or null when nothing is being
+   *  dragged. See the effect below for why it is not simply always attached. */
+  const moveRef = useRef<((e: Event) => void) | null>(null);
   const drag = useRef<{
     x: number; y: number; axis: Axis | null; lastX: number; lastT: number; velocity: number;
   } | null>(null);
@@ -46,43 +52,64 @@ export function Pager({ index, onIndexChange }: {
     const el = trackRef.current;
     if (el === null) return;
     el.classList.toggle("is-settling", settling);
+    // `is-dragging` exists only to scope `will-change` to actual movement —
+    // see the note on `.pager-track` in styles.css for the scrolling bug that
+    // leaving it on permanently caused.
+    el.classList.toggle("is-dragging", !settling && offsetPx !== 0);
+    const at = -indexRef.current * 100;
     el.style.transform = offsetPx === 0
-      ? `translate3d(${-index * 100}%, 0, 0)`
-      : `translate3d(calc(${-index * 100}% + ${offsetPx}px), 0, 0)`;
+      ? `translate3d(${at}%, 0, 0)`
+      : `translate3d(calc(${at}% + ${offsetPx}px), 0, 0)`;
   };
 
   const onTouchStart = (e: TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length !== 1) { drag.current = null; return; }
+    if (e.touches.length !== 1) { drag.current = null; detachMove(); return; }
     const t = e.touches[0]!;
     drag.current = {
       x: t.clientX, y: t.clientY, axis: null,
       lastX: t.clientX, lastT: Date.now(), velocity: 0,
     };
+    const el = trackRef.current;
+    if (el === null || moveRef.current !== null) return;
+    const handler = (ev: Event) => { onTouchMoveRaw(ev as unknown as globalThis.TouchEvent); };
+    moveRef.current = handler;
+    el.addEventListener("touchmove", handler, { passive: false });
   };
 
   /**
-   * Bound by hand, NOT as an `onTouchMove` prop.
+   * Bound by hand, NOT as an `onTouchMove` prop — and only while a finger is
+   * down.
    *
    * React registers touch handlers PASSIVELY, and `preventDefault()` inside a
-   * passive listener does nothing — the browser logs "Unable to preventDefault
-   * inside passive event listener invocation" and carries on. The pager then
-   * cannot stop the browser's own interpretation of a horizontal drag.
+   * passive listener does nothing: the browser logs "Unable to preventDefault
+   * inside passive event listener invocation" and carries on, leaving the
+   * pager unable to stop the browser's own interpretation of a drag. No unit
+   * test could catch that — happy-dom honours `preventDefault` either way — so
+   * it was found by reading the console after a real drag.
    *
-   * No unit test could have caught this: happy-dom honours `preventDefault()`
-   * whether or not the listener is passive, so the whole touch suite passed
-   * against code that did not work in a browser. It was found by reading the
-   * console after a real drag.
+   * WHY IT IS ATTACHED AND DETACHED RATHER THAN LEFT IN PLACE. A non-passive
+   * `touchmove` listener forces the browser to run JS before it can decide
+   * whether a gesture scrolls, so it cannot take its fast path. Reported from
+   * a phone: opening the app and swiping straight to Settings left that screen
+   * unable to scroll for a while before recovering. At launch the main thread
+   * is mounting three screens, connecting a socket and fetching, so the
+   * handler ran late and every scroll waited on it. Attached only for the life
+   * of a gesture, an idle screen has no such listener and scrolls at full
+   * native speed.
    *
-   * Re-attached when `index` changes, because the handler closes over it for
-   * the rubber-band ends.
+   * The listener also used to be re-registered on EVERY render — no dependency
+   * array — which during startup is many times a second.
    */
-  useEffect(() => {
+  const detachMove = () => {
     const el = trackRef.current;
-    if (el === null) return;
-    const handler = (e: Event) => { onTouchMoveRaw(e as unknown as globalThis.TouchEvent); };
-    el.addEventListener("touchmove", handler, { passive: false });
-    return () => { el.removeEventListener("touchmove", handler); };
-  });
+    if (el !== null && moveRef.current !== null) {
+      el.removeEventListener("touchmove", moveRef.current);
+    }
+    moveRef.current = null;
+  };
+
+  // Unmount is the one case no gesture handler will reach.
+  useEffect(() => detachMove, []);
 
   const onTouchMoveRaw = (e: globalThis.TouchEvent) => {
     const d = drag.current;
@@ -116,25 +143,33 @@ export function Pager({ index, onIndexChange }: {
       d.lastT = now;
     }
     d.lastX = t.clientX;
-    paint(damp(dx, index === 0, index === PAGER_TABS.length - 1), false);
+    paint(damp(dx, indexRef.current === 0, indexRef.current === PAGER_TABS.length - 1), false);
   };
 
   const onTouchEnd = () => {
     const d = drag.current;
     drag.current = null;
+    // Detached FIRST, so an early return below cannot leave the listener in
+    // place and the screen slow to scroll again.
+    detachMove();
     if (d === null || d.axis !== "x") return;
     const next = nextIndex({
       dx: d.lastX - d.x,
       velocity: d.velocity,
       width: trackRef.current?.clientWidth ?? 0,
-      index,
+      index: indexRef.current,
       count: PAGER_TABS.length,
     });
     paint(0, true);
-    if (next !== index) onIndexChange(next);
+    if (next !== indexRef.current) onIndexChange(next);
   };
 
-  const onTouchCancel = () => { drag.current = null; paint(0, true); };
+  const onTouchCancel = () => { drag.current = null; detachMove(); paint(0, true); };
+
+  /** The settle is over, so the track is not moving and must not claim to be. */
+  const onTransitionEnd = () => {
+    trackRef.current?.classList.remove("is-settling", "is-dragging");
+  };
 
   return (
     <div className="pager-viewport">
@@ -145,6 +180,7 @@ export function Pager({ index, onIndexChange }: {
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchCancel}
+        onTransitionEnd={onTransitionEnd}
       >
         {PAGER_TABS.map((tab, i) => (
           <div

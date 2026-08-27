@@ -2493,6 +2493,21 @@ body {
   display: flex;
   height: 100%;
   touch-action: pan-y;
+}
+
+/* `will-change` ONLY while the track is actually moving.
+
+   It used to sit on the base rule, which promotes the track to its own
+   compositor layer permanently. Reported from a phone: after a swipe finished,
+   the screen would not scroll until it was tapped once — a promoted ancestor
+   can leave a descendant's scrolling inert on iOS until something forces a
+   repaint, and the tap was that something.
+
+   Transient is what `will-change` is for; MDN is explicit that leaving it on
+   costs memory and is a misuse. `is-settling` is dropped on `transitionend`,
+   so neither class outlives the movement it describes. */
+.pager-track.is-dragging,
+.pager-track.is-settling {
   will-change: transform;
 }
 

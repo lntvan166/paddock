@@ -71,3 +71,35 @@ test("the track's order and the tab bar's order are the same list", () => {
   const order = [...bar.matchAll(/key:\s*"(agents|spaces|settings)"/g)].map((m) => m[1]);
   expect(order).toEqual([...PAGER_TABS]);
 });
+
+test("the track claims no compositor layer when it is still", async () => {
+  // Reported from a phone: after a swipe finished, the screen would not scroll
+  // until it was tapped once.
+  //
+  // `will-change: transform` used to sit on the base rule, promoting the track
+  // to its own compositor layer permanently. On iOS a promoted ancestor can
+  // leave a descendant's scrolling inert until something forces a repaint, and
+  // the tap was that something. `will-change` is meant to be transient.
+  const css = readFileSync("src/web/styles.css", "utf8");
+  const base = /\.pager-track \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  expect(base, "the resting track still promotes itself to its own layer")
+    .not.toContain("will-change");
+  // It must still be there for the states that actually move, or the animation
+  // gives up the optimisation entirely.
+  expect(css).toMatch(/\.pager-track\.is-dragging[\s\S]{0,120}will-change/);
+});
+
+test("a finished settle drops the classes that describe movement", async () => {
+  // Otherwise `is-settling` outlives the transition and takes will-change with
+  // it, which is the same bug wearing a different class name.
+  const host = await render(<Pager index={0} onIndexChange={() => {}} />);
+  const track = document.querySelector(".pager-track")! as HTMLElement;
+  track.classList.add("is-settling", "is-dragging");
+
+  track.dispatchEvent(new Event("transitionend", { bubbles: true }));
+  await settle();
+
+  expect(track.classList.contains("is-settling"), "is-settling outlived the transition").toBe(false);
+  expect(track.classList.contains("is-dragging"), "is-dragging outlived the transition").toBe(false);
+  expect(host).toBeDefined();
+});

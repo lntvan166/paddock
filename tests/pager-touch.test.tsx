@@ -119,3 +119,61 @@ test("a committed drag reports the new index once", async () => {
   // the distance rule itself is tested as arithmetic, not here.
   expect(calls).toEqual([1]);
 });
+
+test("no touchmove listener exists until a finger is down", async () => {
+  // Reported from a phone: opening the app and swiping straight to Settings
+  // left that screen unable to scroll for a while before recovering.
+  //
+  // A NON-PASSIVE touchmove listener forces the browser to run JS before it
+  // can decide whether a gesture scrolls, so it cannot take its fast path. At
+  // launch the main thread is mounting three screens, connecting a socket and
+  // fetching — so the handler ran late and every scroll waited on it. It was
+  // also re-registered on every render, having no dependency array.
+  //
+  // Attached only for the life of a gesture, an idle screen carries no such
+  // listener at all.
+  const track = { added: 0, removed: 0 };
+  await render(<Pager index={0} onIndexChange={() => {}} />);
+  const el = document.querySelector(".pager-track")! as HTMLElement;
+
+  const add = el.addEventListener.bind(el);
+  const remove = el.removeEventListener.bind(el);
+  el.addEventListener = ((t: string, ...rest: unknown[]) => {
+    if (t === "touchmove") track.added += 1;
+    return (add as (...a: unknown[]) => void)(t, ...rest);
+  }) as typeof el.addEventListener;
+  el.removeEventListener = ((t: string, ...rest: unknown[]) => {
+    if (t === "touchmove") track.removed += 1;
+    return (remove as (...a: unknown[]) => void)(t, ...rest);
+  }) as typeof el.removeEventListener;
+
+  // Idle: a re-render must not attach anything.
+  await settle();
+  expect(track.added, "an idle pager registered a touchmove listener").toBe(0);
+
+  fire(el, "touchstart", 300, 400);
+  expect(track.added, "no listener was attached for the gesture").toBe(1);
+
+  fire(el, "touchend", 300, 400);
+  expect(track.removed, "the listener outlived the gesture").toBe(1);
+});
+
+test("a cancelled gesture also releases the listener", async () => {
+  // touchcancel is what iOS sends when the system takes over. Leaving the
+  // listener attached there would reproduce the slow-scroll bug and leave no
+  // gesture behind to explain it.
+  await render(<Pager index={1} onIndexChange={() => {}} />);
+  const el = document.querySelector(".pager-track")! as HTMLElement;
+  let removed = 0;
+  const remove = el.removeEventListener.bind(el);
+  el.removeEventListener = ((t: string, ...rest: unknown[]) => {
+    if (t === "touchmove") removed += 1;
+    return (remove as (...a: unknown[]) => void)(t, ...rest);
+  }) as typeof el.removeEventListener;
+
+  fire(el, "touchstart", 300, 400);
+  fire(el, "touchmove", 200, 401);
+  fire(el, "touchcancel", 200, 401);
+  await settle();
+  expect(removed, "a cancelled gesture left its listener behind").toBe(1);
+});
