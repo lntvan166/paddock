@@ -24,13 +24,16 @@ export function buildPushSender(
   send: (target: PushTarget, keys: VapidKeys, payload: string) => Promise<PushOutcome>,
 ): ((p: {
   name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string>;
+  /** EXPERIMENT: a push that closes a notification instead of showing one. */
+  clear?: boolean;
 }) => Promise<void>) | null {
   const keys = store.keys();
   if (keys === null) return null;
   return async (payload) => {
     // Destructured OFF, not merely unused: `content` is what gets encrypted,
-    // and a push payload is `{name, state, agentId}` and nothing else because
-    // it renders on a lock screen.
+    // and a push payload is `{name, state, agentId}` — plus, for the clear
+    // experiment, a `clear` flag the service worker branches on. Nothing else,
+    // because it renders on a lock screen.
     const { skipDeviceKeys, ...content } = payload;
     const body = JSON.stringify(content);
     // Sequential, not Promise.all: `remove` rewrites the store's list, and a

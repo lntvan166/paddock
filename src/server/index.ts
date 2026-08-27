@@ -572,6 +572,14 @@ const notifier = new Notifier({
    * reason the Telegram branch reads its config there — a setting changed in
    * the dashboard must take effect without a restart.
    */
+  /**
+   * EXPERIMENT, off unless asked for. See `NotifierOpts.clearPush`.
+   *
+   * An env var rather than a setting: this is a measurement of whether iOS
+   * tolerates a push that renders nothing, not a preference anyone should
+   * find in Settings and leave on by accident.
+   */
+  clearPush: process.env.PADDOCK_EXPERIMENTAL_CLEAR_PUSH === "1",
   sendPush: pushSender(),
   viewers: (agentId) => presence.viewers(agentId),
   // A synchronous read of what `push.json` already stores — see

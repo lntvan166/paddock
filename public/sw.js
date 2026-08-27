@@ -42,6 +42,30 @@ self.addEventListener("push", function (event) {
     ? payload.name + " is " + payload.state
     : "paddock: an agent needs you";
   var agentId = (payload && payload.agentId) || "";
+
+  // EXPERIMENT. A push whose job is to CLOSE a notification that has stopped
+  // being true — an agent left blocked because the operator solved it
+  // somewhere else and never touched this phone.
+  //
+  // This is the one path that deliberately renders nothing, which breaks the
+  // `userVisibleOnly: true` promise the subscription was made under. It is
+  // gated server-side behind PADDOCK_EXPERIMENTAL_CLEAR_PUSH and exists to be
+  // measured: does the entry vanish, does the browser substitute a generic
+  // "updated in the background", and does push still work afterwards.
+  //
+  // An untagged clear is ignored rather than guessed at: with no tag there is
+  // nothing to identify, and closing everything would throw away alerts this
+  // push knows nothing about.
+  if (payload && payload.clear === true) {
+    if (agentId === "") return;
+    event.waitUntil(
+      self.registration.getNotifications({ tag: agentId }).then(function (list) {
+        for (var i = 0; i < list.length; i++) list[i].close();
+      })
+    );
+    return;
+  }
+
   event.waitUntil(self.registration.showNotification(title, {
     // One notification per agent. A second alert for the same one REPLACES its
     // predecessor rather than stacking, which matches the notifier's own

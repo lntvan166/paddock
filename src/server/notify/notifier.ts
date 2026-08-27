@@ -40,8 +40,36 @@ export interface NotifierOpts {
    * on this same call but is an ARGUMENT to the sender, not content: the
    * sender strips it before the body is built. See `index-wiring.ts`.
    */
+  /**
+   * EXPERIMENT, default off.
+   *
+   * When on, leaving a trigger state sends a push that asks the service
+   * worker to CLOSE the agent's notification and render nothing. That is the
+   * only way to clear an alert on a phone nobody is touching: with paddock
+   * closed, no code of ours is alive there, so a push is the sole lever.
+   *
+   * Off by default because `userVisibleOnly: true` promises every push shows
+   * something, and browsers penalise repeated breaches — Chrome substitutes a
+   * generic "updated in the background", iOS can drop the subscription
+   * outright. Losing push to tidy a notification would be a bad trade, so
+   * this ships as a measurement, not a feature.
+   */
+  clearPush?: boolean;
+
   sendPush?: (
-    payload: { name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string> },
+    payload: {
+      name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string>;
+      /**
+       * EXPERIMENT. A push whose only job is to close a notification that has
+       * stopped being true — the service worker closes the tag and shows
+       * nothing.
+       *
+       * Deliberately breaks the `userVisibleOnly: true` contract every push
+       * subscription is made under, which is why it is gated and why it is
+       * worth measuring rather than assuming. See `clearPush` below.
+       */
+      clear?: boolean;
+    },
   ) => Promise<void>;
   /**
    * Which DEVICES have this agent's pane open and awake, from
@@ -259,7 +287,19 @@ export class Notifier {
     // The episode this deferral belonged to is over. Left in place, a later
     // `reconsider` would announce a state the agent has already left.
     this.#deferred.delete(a.agentId);
-    if (!isTrigger(a.state)) return;
+    if (!isTrigger(a.state)) {
+      // EXPERIMENT (`clearPush`). The agent has LEFT a state that may still be
+      // showing on a lock screen — blocked → working is the reported case, and
+      // the whole point is that the operator solved it elsewhere and never
+      // touched the phone. `sweep()` cannot help: it runs in the page, and
+      // with paddock closed nothing of ours is alive on that device. A push is
+      // the only thing that can still reach it.
+      //
+      // Gated on `prev` having been a trigger, so a working → idle move sends
+      // nothing: there was never a notification for it to close.
+      if (this.o.clearPush === true && isTrigger(prev)) void this.#sendClear(a);
+      return;
+    }
 
     const s = this.o.settings.current();
     if (!s.notify.triggers.includes(a.state)) return;
@@ -472,6 +512,31 @@ export class Notifier {
    * reaching the delta path would take the dashboard down to deliver a
    * notification, which is exactly backwards.
    */
+  /**
+   * EXPERIMENT. Ask every device to close this agent's notification.
+   *
+   * `skipDeviceKeys` is EMPTY on purpose, unlike an alert's. That set exists to
+   * withhold an alert from a device already showing this agent — which is
+   * precisely the device holding the notification that has to go. Reusing the
+   * alert's suppression here would skip the only phone that needs telling.
+   *
+   * Fails the same way `#sendPush` does: reported, never thrown. A clear that
+   * does not arrive leaves a stale notification, which is the status quo, and
+   * that is never worth taking the dashboard down for.
+   */
+  async #sendClear(a: Agent): Promise<void> {
+    const send = this.o.sendPush;
+    if (send === undefined) return;
+    try {
+      await send({
+        name: a.name, state: a.state, agentId: a.agentId,
+        skipDeviceKeys: new Set(), clear: true,
+      });
+    } catch (e) {
+      console.info(`paddock: clear push failed for ${a.name}: ${(e as Error).message}`);
+    }
+  }
+
   async #sendPush(a: Agent, state: NotifyTrigger, skipDeviceKeys: ReadonlySet<string>): Promise<void> {
     const send = this.o.sendPush;
     if (send === undefined) return;

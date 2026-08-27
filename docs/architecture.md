@@ -477,7 +477,41 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
 | `PADDOCK_NO_UPDATE_CHECK` | unset | `1` disables the update check completely. |
+| `PADDOCK_EXPERIMENTAL_CLEAR_PUSH` | unset | `1` turns on the clear-push MEASUREMENT — see below. Off by default, and meant to stay off. |
 | `PADDOCK_VERSION` | `0.0.0-dev` | Build-time only, injected by `bun build --define`. Not read at runtime. |
+
+### `PADDOCK_EXPERIMENTAL_CLEAR_PUSH`
+
+A measurement, not a feature, and the only code path in paddock that
+deliberately breaks a contract.
+
+**The problem it probes.** A push says an agent is blocked. The operator solves
+it at the desk and never touches the phone. `sweep()` in `web/notifications.ts`
+closes notifications that have stopped being true — but it runs IN THE PAGE, so
+with paddock closed nothing of ours is alive on that device and the alert goes
+on saying "blocked" indefinitely. A push is the only thing that can still reach
+a phone nobody is holding.
+
+**What it does.** With it set to `1`, an agent LEAVING a trigger state sends a
+push carrying `clear: true` (gated on the previous state having been a trigger,
+so `working → idle` sends nothing). `public/sw.js` branches on that flag,
+closes the notification with the matching tag, and returns **without calling
+`showNotification`**.
+
+**Why it is off by default.** Every subscription is made with
+`userVisibleOnly: true` (`web/components/settings/PushSection.tsx`), which
+promises that each push shows something. This path breaks that promise on
+purpose. Browsers police it: Chrome substitutes a generic "this site was
+updated in the background", and iOS can drop the subscription after repeated
+breaches — which would end push altogether, the one thing paddock exists to
+deliver. Trading that for a tidy Notification Center is a bad deal.
+
+**What the measurement is.** On a real device, with a real subscription: does
+the entry vanish silently, does a generic notification appear instead, and does
+push still work after a dozen of them? The answer decides whether this becomes
+a feature, becomes a quiet REPLACEMENT instead (same tag, `renotify: false`, an
+entry that reads truthfully rather than none at all), or is deleted. Until it
+is answered, leave this unset.
 
 ### `PADDOCK_NO_UPDATE_CHECK`, and the file beside `settings.json`
 
