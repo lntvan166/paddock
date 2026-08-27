@@ -573,13 +573,16 @@ const notifier = new Notifier({
    * the dashboard must take effect without a restart.
    */
   /**
-   * EXPERIMENT, off unless asked for. See `NotifierOpts.clearPush`.
+   * On, with an off switch. See `NotifierOpts.clearPush`.
    *
-   * An env var rather than a setting: this is a measurement of whether iOS
-   * tolerates a push that renders nothing, not a preference anyone should
-   * find in Settings and leave on by accident.
+   * Measured on a real iPhone, 2026-08-27: a blocked alert cleared itself off
+   * the lock screen when the agent was unblocked from the laptop, with the
+   * phone untouched, and the server logged the clear it had sent. What is NOT
+   * measured is durability — whether iOS goes on tolerating pushes that render
+   * nothing over weeks. `PADDOCK_CLEAR_PUSH=0` is the way out if push ever
+   * goes quiet.
    */
-  clearPush: process.env.PADDOCK_EXPERIMENTAL_CLEAR_PUSH === "1",
+  clearPush: process.env.PADDOCK_CLEAR_PUSH !== "0",
   sendPush: pushSender(),
   viewers: (agentId) => presence.viewers(agentId),
   // A synchronous read of what `push.json` already stores — see

@@ -477,41 +477,58 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
 | `PADDOCK_NO_UPDATE_CHECK` | unset | `1` disables the update check completely. |
-| `PADDOCK_EXPERIMENTAL_CLEAR_PUSH` | unset | `1` turns on the clear-push MEASUREMENT — see below. Off by default, and meant to stay off. |
+| `PADDOCK_CLEAR_PUSH` | on | `0` stops paddock closing a notification once it stops being true — see below. |
 | `PADDOCK_VERSION` | `0.0.0-dev` | Build-time only, injected by `bun build --define`. Not read at runtime. |
 
-### `PADDOCK_EXPERIMENTAL_CLEAR_PUSH`
+### `PADDOCK_CLEAR_PUSH`
 
-A measurement, not a feature, and the only code path in paddock that
-deliberately breaks a contract.
+The one code path in paddock that deliberately breaks a contract, and the
+measurement that justifies it.
 
-**The problem it probes.** A push says an agent is blocked. The operator solves
-it at the desk and never touches the phone. `sweep()` in `web/notifications.ts`
-closes notifications that have stopped being true — but it runs IN THE PAGE, so
-with paddock closed nothing of ours is alive on that device and the alert goes
-on saying "blocked" indefinitely. A push is the only thing that can still reach
-a phone nobody is holding.
+**The problem.** A push says an agent is blocked. The operator solves it at the
+desk and never touches the phone. `sweep()` in `web/notifications.ts` closes
+notifications that have stopped being true — but it runs IN THE PAGE, so with
+paddock closed nothing of ours is alive on that device and the alert goes on
+saying "blocked" indefinitely. A push is the only thing that can reach a phone
+nobody is holding.
 
-**What it does.** With it set to `1`, an agent LEAVING a trigger state sends a
-push carrying `clear: true` (gated on the previous state having been a trigger,
-so `working → idle` sends nothing). `public/sw.js` branches on that flag,
-closes the notification with the matching tag, and returns **without calling
+**What it does.** When an agent leaves a trigger state, the notifier sends a
+push carrying `clear: true`. `public/sw.js` branches on that flag, closes the
+notification with the matching tag, and returns **without calling
 `showNotification`**.
 
-**Why it is off by default.** Every subscription is made with
-`userVisibleOnly: true` (`web/components/settings/PushSection.tsx`), which
-promises that each push shows something. This path breaks that promise on
-purpose. Browsers police it: Chrome substitutes a generic "this site was
-updated in the background", and iOS can drop the subscription after repeated
-breaches — which would end push altogether, the one thing paddock exists to
-deliver. Trading that for a tidy Notification Center is a bad deal.
+**What gates it, and why that matters more than it looks.** The clear fires only
+when a push was ACTUALLY SENT for that agent (`#pushedFor`), never merely
+because the previous state was a trigger. Those come apart constantly: a
+trigger arms a timer and waits out its settle window, so an agent that finishes
+and starts again inside ten seconds leaves `done` having shown nothing. The
+first version gated on the previous state and fired clears for notifications
+that had never existed — caught by the operator during a live run, and visible
+in the log as clears with no matching alert. Note that `#lastNotified` looks
+like the right record and is not: it is written only on the Telegram success
+path, so a push-only operator never sets it.
 
-**What the measurement is.** On a real device, with a real subscription: does
-the entry vanish silently, does a generic notification appear instead, and does
-push still work after a dozen of them? The answer decides whether this becomes
-a feature, becomes a quiet REPLACEMENT instead (same tag, `renotify: false`, an
-entry that reads truthfully rather than none at all), or is deleted. Until it
-is answered, leave this unset.
+**The contract this breaks.** Every subscription is made with
+`userVisibleOnly: true` (`web/components/settings/PushSection.tsx`), which
+promises each push shows something. This path does not. Browsers police it:
+Chrome substitutes a generic "this site was updated in the background", and iOS
+can drop the subscription after repeated breaches. Because the penalty is
+cumulative, the gate above is a safety mechanism and not merely tidiness —
+every clear spent on a notification nobody saw brings that penalty closer for
+no benefit.
+
+**What was measured, and what was not.** On a real iPhone, 2026-08-27: a blocked
+alert cleared itself off the lock screen when the agent was unblocked from the
+laptop, with the phone untouched, and the server logged the clear it had sent.
+Two earlier observations were discarded as confounded — one where the
+notification was tapped, which dismisses any notification, and one where the
+alert was only looked for AFTER answering, so a working clear and a missing
+notification are indistinguishable.
+
+Durability is NOT measured and cannot be in one session: whether iOS goes on
+tolerating render-nothing pushes over weeks is a question only time answers. If
+push ever goes silent, set `PADDOCK_CLEAR_PUSH=0`, restart, and re-subscribe
+from Settings.
 
 ### `PADDOCK_NO_UPDATE_CHECK`, and the file beside `settings.json`
 

@@ -12,10 +12,12 @@ import type { Agent } from "@shared/types";
  * paddock closed nothing of ours is alive on that device. A push is the only
  * lever left.
  *
- * This is gated and default-off because it breaks the `userVisibleOnly: true`
- * contract every subscription is made under. These tests pin the gate, the
- * trigger condition, and the one difference from an alert that is easy to get
- * wrong and impossible to notice.
+ * On by default since it was measured working on a real iPhone, with
+ * `PADDOCK_CLEAR_PUSH=0` as the way out. It still breaks the
+ * `userVisibleOnly: true` contract every subscription is made under, and the
+ * penalty for that is cumulative — so these tests pin the gate that stops a
+ * clear being spent on a notification nobody ever saw, which is the safety
+ * mechanism rather than mere tidiness.
  */
 
 type Sent = {
@@ -92,9 +94,9 @@ test("a trigger that never got announced is never cleared", async () => {
   ).toEqual([]);
 });
 
-test("with the experiment off, nothing is sent", async () => {
-  // The default. A push that renders nothing is a contract breach, so it must
-  // take a deliberate act to enable — never a code path that drifts on.
+test("with the switch off, nothing is sent", async () => {
+  // `PADDOCK_CLEAR_PUSH=0`. The escape hatch has to actually work: if push
+  // ever goes quiet on a device, this is the only way back.
   const { sent, n } = harness(false);
   see(n, "working");
   see(n, "blocked");
