@@ -21,7 +21,9 @@ import type { SpaceTree } from "@shared/types";
  * `load` is injected so the tests can drive this without a network, and so a
  * failure is a value this component renders rather than a thrown promise.
  */
-export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate }: {
+export function Spaces({ active = true, load = fetchSpaceTree, senders, createSenders, navigate }: {
+  /** Whether this is the tab in front. Acted on in the poll-gating task. */
+  active?: boolean;
   load?: () => Promise<SpaceTree>;
   /** The row `⋯`'s writes — rename and close, space-scoped.
    *
@@ -37,6 +39,8 @@ export function Spaces({ load = fetchSpaceTree, senders, createSenders, navigate
    *  test can observe the navigation instead of mutating the hash. */
   navigate?: (hash: string) => void;
 }) {
+  void active;
+
   const { spacesAvailable } = useStore();
   // The needs-you count moved to `App`, which now owns the single `TabBar`.
   // Deriving it here as well was two screens computing one number — the exact

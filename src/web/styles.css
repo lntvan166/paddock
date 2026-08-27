@@ -2401,6 +2401,48 @@ body {
   flex-direction: column;
 }
 
+/* The transitioning region. The tab bar is OUTSIDE it, which is what stops
+   the bar being animated or rebuilt. */
+.pager-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* `touch-action: pan-y` hands vertical scrolling to the browser and keeps
+   horizontal for the pager, so a list still scrolls at full native speed
+   while a sideways drag is ours to interpret. */
+.pager-track {
+  display: flex;
+  height: 100%;
+  touch-action: pan-y;
+  will-change: transform;
+}
+
+/* Settles over 280ms on release; absent while a finger is down, so the track
+   tracks 1:1 instead of chasing it. The global prefers-reduced-motion block
+   clamps this like every other transition. */
+.pager-track.is-settling {
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pager-page {
+  flex: 0 0 100%;
+  min-width: 0;
+  position: relative;
+}
+
+/* Each page is a full-height column in its own right. */
+.pager-page > .screen {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  margin-inline: 0;
+  padding-bottom: 0;
+}
+
 .app-shell .screen {
   position: relative;
   inset: auto;

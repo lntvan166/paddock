@@ -6,9 +6,7 @@ import type { NavKey, SpaceTree, TreePane } from "@shared/types";
 import { PaneTerminal, SHELL_MIN_REFRESH_MS } from "@web/components/PaneTerminal";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { paneLabel } from "@web/components/pane-label";
-import { Settings } from "@web/components/Settings";
 import { Space } from "@web/components/Space";
-import { Spaces } from "@web/components/Spaces";
 import {
   agentIdFromHash, spaceIdFromHash,
   useAgentRoute, useSettingsRoute, useSpaceRoute, useSpacesRoute,
@@ -16,7 +14,7 @@ import {
 import { prunePanes } from "@web/pane-cache";
 import { BackIcon } from "@web/components/ui/icons";
 import { AppShell } from "@web/components/AppShell";
-import { Dashboard } from "@web/components/Dashboard";
+import { PAGER_TABS, Pager } from "@web/components/Pager";
 import { TAB_HASH, type TabKey } from "@web/components/TabBar";
 import { readPrefs, themeAttr } from "@web/prefs";
 import { closeFor, useNotificationSweep } from "@web/notifications";
@@ -174,16 +172,40 @@ export function App() {
   const needsYou = agents.filter((a) => sectionFor(a) === "needs-you").length;
 
   /**
-   * Move between tabs.
+   * Which tab is in front.
    *
-   * Still an ordinary hash assignment, which is what the route hooks listen
-   * for. It exists as a callback rather than as the anchor's own navigation so
-   * that the pager can take it over: `replaceState` fires no `hashchange`, so
-   * the switch to it has to arrive together with the state that replaces
-   * these hooks, not before.
+   * STATE, not the hash. `replaceState` fires no `hashchange`, so the route
+   * hooks cannot be the source of truth once tab changes stop pushing — this
+   * is what replaces them for the three peers. The hooks still run and still
+   * matter: they answer a cold load and any navigation paddock does not
+   * originate, such as a notification tap assigning `location.hash`.
+   */
+  const [tab, setTab] = useState<TabKey>(
+    () => (showSettings ? "settings" : showSpaces ? "spaces" : "agents"));
+
+  // External navigation still wins. A notification tap or a pasted link fires
+  // a real `hashchange`, and the pager has to follow it.
+  useEffect(() => {
+    setTab(showSettings ? "settings" : showSpaces ? "spaces" : "agents");
+  }, [showSettings, showSpaces]);
+
+  /**
+   * Move between tabs WITHOUT pushing a history entry.
+   *
+   * Tabs are peers, not a stack — that is what a tab bar means. Pushing made
+   * the browser's back gesture walk backwards through visited tabs, which is a
+   * second horizontal gesture meaning something different from a sideways
+   * swipe between peers.
+   *
+   * It also protects the measurement this design rests on. The device test
+   * that showed iOS never taking the edge swipe ran against a page with NO
+   * history entries; keeping `pushState` would hand that gesture a
+   * destination and invalidate the result. Back now means exactly one thing:
+   * up out of an agent or a space.
    */
   const goTab = (key: TabKey) => {
-    location.hash = TAB_HASH[key];
+    history.replaceState(null, "", TAB_HASH[key]);
+    setTab(key);
   };
   // Re-derived from the live list every render, never cached: if the selected
   // agent is pruned from a snapshot (or reconnects under a new id), the view
@@ -317,9 +339,8 @@ export function App() {
   // in-flight key resolving AFTER the operator navigated to B, would land on
   // B's screen. Resetting fields in an effect cannot stop that late write;
   // only unmounting the old instance can.
-  if (showSettings) {
-    return <AppShell tab="settings" needsYou={needsYou} onSelect={goTab}><Settings /></AppShell>;
-  }
+  // Settings and Spaces are no longer separate returns: all three peers are
+  // one pager below, and picking between them is an index, not a route.
 
   // Before `showSpaces` below: belt and braces, not load-bearing.
   // `useSpacesRoute` matches `"#/spaces"` exactly and `spaceIdFromHash`
@@ -339,9 +360,6 @@ export function App() {
     );
   }
 
-  if (showSpaces) {
-    return <AppShell tab="spaces" needsYou={needsYou} onSelect={goTab}><Spaces /></AppShell>;
-  }
 
   if (openAgent) {
     // Back returns to wherever THIS pane was opened from (§16.4) — the
@@ -443,8 +461,11 @@ export function App() {
     // `screen`, not a flowing column: the header carries the counts and the
     // only routes into Spaces and Settings, and scrolling into Idle used to
     // take all three off the viewport. See `.screen, .term` in styles.css.
-    <AppShell tab="agents" needsYou={needsYou} onSelect={goTab}>
-      <Dashboard />
+    <AppShell tab={tab} needsYou={needsYou} onSelect={goTab}>
+      <Pager
+        index={Math.max(0, PAGER_TABS.indexOf(tab))}
+        onIndexChange={(i) => { goTab(PAGER_TABS[i] ?? "agents"); }}
+      />
     </AppShell>
   );
 }
