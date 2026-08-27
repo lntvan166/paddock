@@ -26,10 +26,27 @@ beforeEach(() => {
  * gets cancelled, and what reaches the callback.
  */
 
+/**
+ * Dispatch one touch event at the track.
+ *
+ * `touchmove` deliberately does NOT bubble, while `touchstart`/`touchend` do.
+ *
+ * `defaultPrevented` is a property of the EVENT, not of a listener, so any
+ * handler anywhere up the tree can set it — and asserting on it while the
+ * event bubbles to `document` makes the test a detector of every other
+ * listener in the process. It failed in CI for exactly that reason while
+ * passing on every local run, because CI schedules test files differently and
+ * something else was alive at the wrong moment.
+ *
+ * The pager's own touchmove listener sits ON the track, so a non-bubbling
+ * event still reaches it and nothing else can. React's synthetic handlers are
+ * delegated at the root and need the bubble, which is why start and end keep
+ * it — the pager has no `onTouchMove` prop for them to reach.
+ */
 function fire(el: Element, type: string, x: number, y: number): Event {
   const t = { identifier: 1, target: el, clientX: x, clientY: y } as unknown as Touch;
   const ev = new TouchEvent(type, {
-    bubbles: true,
+    bubbles: type !== "touchmove",
     cancelable: true,
     touches: type === "touchend" || type === "touchcancel" ? [] : [t],
     changedTouches: [t],
