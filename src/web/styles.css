@@ -2061,6 +2061,12 @@ body {
   flex: none;
   display: flex;
   gap: 0.5rem;
+  /* The field GROWS and the two 44px controls do not, so the row has to say
+     where they sit. Without this they stayed at the TOP: measured at four
+     lines, both buttons' bottoms were 72px above the field's own bottom edge.
+     Telegram, which is where the multi-line composer came from, keeps them on
+     the bottom edge and grows the box upward. */
+  align-items: flex-end;
   background: var(--surface);
   padding: 0 var(--gutter) 0.5rem;
 }
