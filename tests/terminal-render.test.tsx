@@ -560,8 +560,10 @@ test("tapping Send does not blur the reply box first", async () => {
   await settle();
 
   const input = host.querySelector("#term-reply-input") as HTMLInputElement;
-  const send = [...host.querySelectorAll("button")]
-    .find((b) => b.textContent?.trim() === "Send") as HTMLButtonElement;
+  // Found by ACCESSIBLE NAME, not by text: Send is a glyph now, and this
+  // selector is the better one anyway — it fails if the button ever loses the
+  // name that replaced its visible label.
+  const send = host.querySelector('button[aria-label="Send"]') as HTMLButtonElement;
   expect(input, "no reply box").not.toBeNull();
   expect(send, "no Send button").not.toBeNull();
 

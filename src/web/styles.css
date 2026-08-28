@@ -1909,6 +1909,18 @@ body {
   border-radius: var(--r-sm);
 }
 
+/* Send, now a glyph. Square like the attach control on the other side, so the
+   field sits between two equal shoulders rather than between a button and a
+   word whose width changes with translation. */
+.term-reply .term-send {
+  flex: none;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+}
+
+.term-send-glyph { width: 18px; height: 18px; }
+
 /* Left of the field, where every messaging app puts it.
    SECONDARY, explicitly. `.term-reply button` above fills every button in the
    row with `--accent` — deliberately, because Send is the committing action —

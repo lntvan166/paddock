@@ -11,7 +11,7 @@ import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
 import { RowActions } from "@web/components/RowActions";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
-import { ImageIcon } from "@web/components/ui/icons";
+import { ImageIcon, SendIcon } from "@web/components/ui/icons";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
   emptyJournal, journalFor, updateJournal, type JournalState,
@@ -964,6 +964,8 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                 reply to an agent is neither. */}
             <Button
               type="submit"
+              className="term-send"
+              aria-label="Send"
               disabled={busy || uploading || (!reply.trim() && attached.length === 0)}
               // Keeps focus in the input for the length of the tap.
               //
@@ -980,7 +982,14 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               // stops the focus change that moves the target out from under it.
               onPointerDown={(e) => { e.preventDefault(); }}
             >
-              Send
+              {/* The glyph ALONE here, unlike `Keys` and `Quick` beside it.
+                  WCAG 2.5.3 is about a visible label matching the accessible
+                  name; with no visible text there is nothing to mismatch, and
+                  `aria-label` supplies the name. Send earns the exception the
+                  toggles do not: it is the one control on this row whose
+                  meaning is universal, and the width it gives back goes to the
+                  field, which is what an operator is actually looking at. */}
+              <SendIcon className="term-send-glyph" />
             </Button>
           </form>
         </>

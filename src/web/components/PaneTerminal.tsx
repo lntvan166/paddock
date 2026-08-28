@@ -694,6 +694,35 @@ export function PaneTerminal({
   }, [output]);
 
   /**
+   * Re-pin to the tail when the pane RESIZES, not only when output arrives.
+   *
+   * The composer grows as a reply is typed, and the shell shrinks when the
+   * keyboard opens — both take height from this pane. Measured before this
+   * existed: growing the reply field to four lines shrank the pane by 72px and
+   * left the transcript 28px ABOVE the tail, so the newest output slid out of
+   * view while the operator was writing about it.
+   *
+   * Telegram is the reference and gets this right: the message list stays
+   * pinned to the bottom and only the box grows. Reported as "we make it go up,
+   * Telegram makes it stick on bottom".
+   *
+   * Gated on `stick.current`, which is the SAME "am I following the tail"
+   * decision the output effect already uses — so an operator who has scrolled
+   * up to read history is never yanked back down by their own typing.
+   */
+  useEffect(() => {
+    const el = paneRef.current;
+    // happy-dom performs no layout and has no ResizeObserver, so this is inert
+    // in tests; it is verified in a browser instead.
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  /**
    * The pane's scroll position, reduced to the two facts anything here needs:
    * are we following the tail, and are we at the top.
    *
