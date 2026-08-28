@@ -1,7 +1,7 @@
 /**
- * Fifteen hand-written glyphs: one per settings card, the three in the
+ * Sixteen hand-written glyphs: one per settings card, the three in the
  * bottom `TabBar` — Agents, Spaces and Settings — and the terminal's own
- * three, `KeyboardIcon`, `BackspaceIcon` and `ImageIcon`.
+ * four, `KeyboardIcon`, `BackspaceIcon`, `ImageIcon` and `FlashIcon`.
  *
  * Spaces and Settings used to be the two controls in `HostHeader`'s top-right
  * corner; they now label tabs instead, and `AgentsIcon` joined them.
@@ -50,6 +50,12 @@ export function BellIcon({ className }: IconProps) {
 
 export function SendIcon({ className }: IconProps) {
   return <Svg className={className}><path d="M21 3L10 14M21 3l-7 18-4-7-7-4z" /></Svg>;
+}
+
+/** Quick actions. A bolt: the shape every interface uses for "the fast way",
+ *  and distinct at 16px from the keyboard beside it. */
+export function FlashIcon({ className }: IconProps) {
+  return <Svg className={className}><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z" /></Svg>;
 }
 
 /** The attach control, left of the reply field. A frame with a sun and a hill:

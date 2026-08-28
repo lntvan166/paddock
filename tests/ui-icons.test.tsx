@@ -19,6 +19,8 @@ const NAMES = [
   "BackIcon", "AgentsIcon", "SpacesIcon", "SettingsIcon", "KeyboardIcon", "BackspaceIcon",
   // `ImageIcon` joined with the reply field's attach control.
   "ImageIcon",
+  // `FlashIcon` with the Quick actions beside the Keys toggle.
+  "FlashIcon",
 ] as const;
 
 test("every icon the module exports is in the list the tests below walk", async () => {

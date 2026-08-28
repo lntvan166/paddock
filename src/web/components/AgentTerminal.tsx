@@ -6,6 +6,7 @@ import {
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
 import { CommandList } from "@web/components/CommandList";
+import { QUICK_REPLIES, QuickActions, QuickToggle } from "@web/components/QuickActions";
 import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
 import { RowActions } from "@web/components/RowActions";
@@ -214,6 +215,13 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
    */
   const [attached, setAttached] = useState<Attachment[]>([]);
   const attachRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Whether the quick-reply panel is open. Closed at rest: the transcript is
+   * what this screen is for, and these are for the moment an operator already
+   * knows what they want to say.
+   */
+  const [quickOpen, setQuickOpen] = useState(false);
 
   const [commands, setCommands] = useState<AgentCommand[]>([]);
   useEffect(() => {
@@ -482,7 +490,20 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
     for (const a of held.current) if (a.thumb) URL.revokeObjectURL(a.thumb);
   }, []);
 
-  const submitReply = async (text: string) => {
+  /**
+   * Send one reply.
+   *
+   * `source` decides only what is CLEARED afterwards. A reply typed in the
+   * field empties it, because that text has now been said. A quick action has
+   * its own text and must leave whatever the operator was part-way through
+   * writing — discarding a draft to make room for "Yes" is the worse surprise,
+   * and it is silent.
+   *
+   * Attachments are consumed either way: they are part of the pending message
+   * whichever text carries them, and leaving them behind would send the same
+   * image again with the next reply.
+   */
+  const submitReply = async (text: string, source: "field" | "quick" = "field") => {
     setBusy(true);
     // `sendText`, NOT `answerWithText`. The latter answers a prompt and is
     // refused with a 409 the moment the agent stops being blocked — which is
@@ -495,7 +516,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       .join(" ");
     const res = await sendText(agent.agentId, composed);
     if (res.ok) {
-      setReply("");
+      if (source === "field") setReply("");
       for (const a of attached) if (a.thumb) URL.revokeObjectURL(a.thumb);
       setAttached([]);
       pane.current?.apply(res.lines);
@@ -763,7 +784,10 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
         //
         // `setKeypad` is the only thing that differs between the two callers,
         // which is exactly the shape the pad itself already had.
-        <KeypadToggle pad={keypad} onChange={setKeypad} />
+        <>
+          <KeypadToggle pad={keypad} onChange={setKeypad} />
+          <QuickToggle open={quickOpen} onToggle={() => setQuickOpen((v) => !v)} />
+        </>
       }
       afterControls={
         <>
@@ -776,6 +800,22 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               differs: this one calls the agent's own `press`, wired to
               `agent.send_keys`. */}
           <Keypad pad={keypad} busy={busy} onPress={(k) => void press(k)} context="agent" />
+
+          {quickOpen && (
+            <QuickActions
+              replies={QUICK_REPLIES}
+              busy={busy || uploading}
+              // Sends ITS OWN text and leaves the field alone: a draft the
+              // operator is part-way through is theirs, and discarding it to
+              // make room for "Yes" would be the worse surprise. Closing after
+              // is both a receipt and a guard — an open panel under a thumb
+              // invites the second tap that sends a reply twice.
+              onSend={(text) => {
+                setQuickOpen(false);
+                void submitReply(text, "quick");
+              }}
+            />
+          )}
 
           {attached.length > 0 && (
             <div className="term-atts">

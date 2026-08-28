@@ -1656,13 +1656,16 @@ body {
    control 34px tall, under the 44px this bar's own rule asks for. Laying the
    button out explicitly is immune to whatever `display` the reset gives an
    svg. */
-.term-keys-toggle {
+/* Both panel toggles in this band share one rule rather than two copies of the
+   same values: they open different panels but are the same KIND of control, and
+   a second copy is how one of them quietly stops matching the other. */
+.term-keys-toggle, .term-quick-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   min-height: 2.75rem;
 }
-.term-keys-toggle-glyph { width: 15px; height: 15px; flex: none; }
+.term-keys-toggle-glyph, .term-quick-toggle-glyph { width: 15px; height: 15px; flex: none; }
 
 /* The armed Ctrl field. Accent-bordered because it is the one thing on screen
    waiting for input, and it sits ABOVE the pad so the native keyboard rising
@@ -1767,6 +1770,27 @@ body {
    this is the last band before the screen edge, and on a phone with no home
    indicator `env(safe-area-inset-bottom)` is 0, which would sit the field flat
    against the glass. That half is thumb clearance, not rhythm. */
+/* Quick replies, above the reply row.
+   A row that scrolls sideways rather than a grid: three entries today, and a
+   wrapping grid would change the panel's HEIGHT as the list grows, which is
+   the transcript's height. Sideways keeps that cost fixed. */
+.term-quick {
+  flex: none;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.35rem var(--gutter) 0.4rem;
+  overflow-x: auto;
+}
+
+/* Full touch height, not dense. These SEND — a mis-tap reaches the agent — so
+   they are sized like the keys rather than like a chip. */
+.term-quick-action {
+  flex: none;
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  font-size: var(--t-md);
+}
+
 /* Attached images, above the reply row.
    A chip per image: the name the operator recognises, and a visible ✕. The
    PATH is never here — it is composed at send — so the row's width is bounded
@@ -2127,7 +2151,8 @@ body {
 
 /* A mode indicator, not an icon — the label says which mode is ACTIVE. */
 .term-wrap-toggle,
-.term-keys-toggle {
+.term-keys-toggle,
+.term-quick-toggle {
   font-size: var(--t-md);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -2140,6 +2165,10 @@ body {
    attribute, because this control stopped being a boolean when it gained a
    third state and `[aria-pressed="false"]` no longer matches anything here. */
 .term-keys-toggle[data-state="hidden"] { color: var(--fg-dim); }
+
+/* The same "my panel is closed" dimming, keyed on `aria-expanded` because this
+   toggle is a boolean where the pad's is a three-state cycle. */
+.term-quick-toggle[aria-expanded="false"] { color: var(--fg-dim); }
 
 /* Reveals reconstructed scrollback. Sits above the pane rather than inside it
    so that revealing more cannot be mistaken for output the agent produced. */
