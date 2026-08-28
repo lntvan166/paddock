@@ -2334,6 +2334,19 @@ body {
 
 /* Reveals reconstructed scrollback. Sits above the pane rather than inside it
    so that revealing more cannot be mistaken for output the agent produced. */
+/* The transcript and its two floating controls.
+   Takes the height the pane used to take, and establishes the containing block
+   the controls position against — without it `absolute` resolves against the
+   fixed shell, where the offsets would have to guess the header's height and
+   the composer's, and the composer GROWS. */
+.term-pane-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Stop, in the controls band beside Keys and Quick.
    `--danger` because this ends work an operator may have waited hours for — the
    one colour in this palette spent on "an agent stopped and needs you" is the
@@ -2360,41 +2373,47 @@ body {
 .term-stop:disabled { opacity: 0.5; }
 .term-stop-glyph { font-size: var(--t-xs); }
 
-/* "Latest", offered only while the pane is NOT following the tail — its
-   presence is the indicator, which is why there is no always-on badge. Styled
-   as `.term-earlier`'s counterpart at the other end of the transcript: the same
-   band, the same height, the same accent, so the two read as one pair rather
-   than two inventions. */
+/* The two transcript controls, as PILLS OVER the pane rather than bands in the
+   column.
+
+   They were bands, and appearing cost the pane 44px each: measured, scrolling up
+   showed both at once, the transcript lost 88px and its top moved down 44 while
+   the operator was reading it. Reported as "output has moved up" — and "show
+   earlier has bad UI", which was the same thing seen from the other end: a
+   full-width accent bar reads as chrome the transcript has to make room for.
+
+   Floating costs the transcript nothing, and small centred pills read as
+   controls belonging to the pane rather than furniture around it. One rule for
+   both, so the pair cannot drift. */
+.term-earlier,
 .term-to-bottom {
-  flex: none;
-  width: 100%;
-  min-height: 2.75rem;
-  border: 0;
-  border-top: 1px solid var(--border);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  min-height: 2.25rem;
+  padding: 0 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
   background: var(--surface);
   color: var(--accent);
   font: inherit;
-  font-size: var(--t-md);
+  font-size: var(--t-xs);
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
-  /* Below the pane in source order, so it sits between the transcript and the
-     controls rather than pushing the header down. */
-  order: 1;
+  /* Legible over agent output of any colour, which is the one thing a floating
+     control has to survive. */
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
 }
 
-.term-earlier {
-  flex: none;
-  width: 100%;
-  min-height: 2.75rem;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--accent);
-  font: inherit;
-  font-size: var(--t-md);
-  font-weight: 600;
-  cursor: pointer;
-}
+.term-earlier { top: 0.4rem; }
+.term-to-bottom { bottom: 0.4rem; }
+
+
+/* The full-width band this used to be is gone — see the pill rule above. It
+   sat here, AFTER that rule, so leaving it would have silently won the cascade
+   and nothing would have looked different. */
 
 /* History is reconstructed from snapshots, so it can have holes where the
    screen scrolled faster than it was sampled. Saying so is the honest

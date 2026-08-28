@@ -19,15 +19,26 @@ import { expect, test } from "bun:test";
 const css = readFileSync("src/web/styles.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
 function ruleFor(selector: string): string {
+  // EVERY rule that targets this selector, concatenated — not the first exact
+  // match. A declaration can live in a grouped rule (`.a, .b { … }`) while a
+  // later rule adds one property of its own, and matching exactly finds only
+  // the second: that is how an assertion for `position` read a rule containing
+  // nothing but `top` and failed on a stylesheet that was correct.
+  //
+  // Matched as a whole ITEM of the comma list, never as a substring, so
+  // `.term-reply` does not pick up `.term-reply .term-attach`.
+  //
   // Selectors cannot contain braces, so no leading delimiter is needed — and
   // anchoring on one would consume the previous rule's closing brace and make
   // adjacent rules invisible.
   const re = /([^{}]+)\{([^}]*)\}/g;
+  let out = "";
   let m: RegExpExecArray | null;
   while ((m = re.exec(css)) !== null) {
-    if (m[1]!.trim() === selector) return m[2]!;
+    const targets = m[1]!.split(",").map((t) => t.trim());
+    if (targets.includes(selector)) out += `${m[2]!}\n`;
   }
-  return "";
+  return out;
 }
 
 test("the composer keeps its controls on the bottom edge as the field grows", () => {
@@ -50,4 +61,22 @@ test("the composer's bottom clearance collapses into the safe area", () => {
     "env(safe-area-inset-bottom",
   );
   expect(rule, "and subtracts rather than adds").toMatch(/max\(/);
+});
+
+test("neither transcript control sits in the layout, so neither shifts it", () => {
+  // MEASURED before this rule: scrolling up made both `term-earlier` and
+  // `term-to-bottom` appear as in-flow 44px bands, the pane lost 88px and its
+  // top moved down 44 — the transcript jumped while the operator was reading
+  // it. Reported as "output has moved up", and it is the same class of problem
+  // as the composer pushing the tail out of view.
+  //
+  // They overlay the pane instead. Asserted as CSS text because happy-dom
+  // performs no layout, which is exactly how this shipped.
+  for (const selector of [".term-earlier", ".term-to-bottom"]) {
+    const rule = ruleFor(selector);
+    expect(rule, `${selector} floats over the pane`).toContain("position: absolute");
+  }
+  // And the thing they are positioned against has to establish the containing
+  // block, or `absolute` resolves against the fixed shell and lands anywhere.
+  expect(ruleFor(".term-pane-wrap")).toContain("position: relative");
 });

@@ -981,6 +981,16 @@ export function PaneTerminal({
           more. That is the same shape as every message app's back-scroll, and
           it beats the alternative of holding you at the top while content
           appears under you. */}
+      {/* ONE relatively-positioned box around the transcript and its two
+          controls.
+
+          They used to be siblings in the shell's column, which meant appearing
+          cost the pane 44px each: measured, scrolling up made both show at once
+          and the transcript lost 88px and shifted down 44 while the operator was
+          reading it. Reported as "output has moved up" — the same complaint as
+          the composer pushing the tail away, and the same fix: stop taking
+          height from the thing being read. */}
+      <div className="term-pane-wrap">
       {!error && atTop && earlierNode}
 
       {!following && !error && (
@@ -1057,6 +1067,7 @@ export function PaneTerminal({
             )}
         </div>
       )}
+      </div>
 
       {/* What became of a spawn asked for from the create sheet, on the pane
           it was asked for (§9.2). Mounted HERE, once, rather than in either
