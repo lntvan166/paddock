@@ -435,3 +435,39 @@ test("no rule paints TEXT with a token that names a SURFACE", async () => {
 
   expect(offenders, "these paint text in a background colour").toEqual([]);
 });
+
+test("every field you can type into clears the iOS zoom floor", async () => {
+  // iOS Safari zooms the viewport when a focused input is under 16px and leaves
+  // you zoomed afterwards. The stylesheet says so twice, in two comments — and
+  // the rule was still broken a third time, by `.dialog-text`, because both
+  // existing guards look at the SELECTOR: one forbids a doubled `font-size`, the
+  // other allows `16px` as an exception to the scale. Neither asks "is this
+  // thing an input?".
+  //
+  // So this asks the MARKUP. Every `<input>`/`<textarea>` in the components is
+  // found by its class, and that class must resolve to a rule declaring 16px.
+  const sheet = await Bun.file("src/web/styles.css").text();
+
+  const classes = new Set<string>();
+  for await (const file of new Bun.Glob("src/web/**/*.tsx").scan(".")) {
+    const src = await Bun.file(file).text();
+    for (const m of src.matchAll(/<(?:input|textarea)\b[^>]*?className="([a-z-]+)"/gs)) {
+      classes.add(m[1]!);
+    }
+  }
+
+  // A visually-hidden file input: it is clicked through its label and never
+  // focused for typing, so the zoom rule cannot apply to it.
+  classes.delete("sr-only");
+  expect(classes.size, "found the fields at all").toBeGreaterThan(0);
+
+  const offenders = [...classes].filter((cls) => {
+    const rule = rules(sheet).find(
+      (r) => r.sel.split(",").some((one) => one.trim().endsWith(`.${cls}`))
+        && /font-size:\s*16px/.test(r.body),
+    );
+    return rule === undefined;
+  });
+
+  expect(offenders, "these zoom the phone on focus").toEqual([]);
+});

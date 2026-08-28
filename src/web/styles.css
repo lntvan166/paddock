@@ -1697,7 +1697,11 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
-  font-size: var(--t-md);
+  /* 16px for the same reason every other typable field has it: iOS zooms a
+     focused input under 16px and leaves you zoomed. Found by the markup-based
+     guard in tests/tokens.test.ts, not by a report — this one predates the
+     question dialog and was zooming the shell's Ctrl field all along. */
+  font-size: 16px;
 }
 .term-ctrl-warn {
   flex: none;
@@ -2719,7 +2723,13 @@ body {
   background: var(--bg);
   color: var(--fg);
   font: inherit;
-  font-size: var(--t-md);
+  /* 16px, like every other field you can type into — NOT a scale step. iOS
+     Safari zooms the viewport when a focused input is under 16px and leaves you
+     zoomed afterwards. This shipped at --t-md and did exactly that, reported as
+     "got auto zoom when I type to 4"; the rule was already written twice in
+     this stylesheet, which is why there is now a test that finds fields by the
+     markup rather than by the selector's name. */
+  font-size: 16px;
 }
 
 .dialog-text::placeholder { color: var(--fg-dim); }
