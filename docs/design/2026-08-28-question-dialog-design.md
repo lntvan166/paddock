@@ -59,13 +59,26 @@ anything.
 | Key | Effect |
 |---|---|
 | digit `N` | Picks option N **and advances immediately** to the review tab. |
-| letters, cursor on the free-text row | **Ignored.** The row is not live here. |
+| letters, cursor on the free-text row | Types into it, exactly as in multi-select. |
+| `enter`, on a FILLED free-text row | Submits the typed answer (`… → rust`, from the transcript). |
 | `enter`, on an EMPTY free-text row | **Declines the entire dialog** and closes it. The transcript records `User declined to answer questions`. |
 
-The last row is the reason this design refuses to render a button for the
-free-text option in single-select mode. A control that silently abandons every
-answer the operator already gave is the "mislabelled Approve button" this
-project bans, in its worst form.
+**A correction, recorded rather than quietly fixed.** The row above once read
+"letters are IGNORED here", and the design refused to offer a text field in this
+mode because of it. That measurement was wrong: the test sent the cursor moves
+and the characters in ONE `send-keys` batch, so the characters arrived before the
+cursor did and were swallowed — the same repaint race that later needed
+`reachRow` to settle before verifying. Re-measured one key at a time,
+`4. Type something.` becomes `4. rust` and Enter submits it.
+
+The cost of that error was not a missing feature but a LYING one: the UI carried
+a note telling the operator to answer "with the arrow keys and the agent's own
+screen", which does not work either, because Enter on the empty row declines
+everything. Reported from a phone as "How to type to 4?".
+
+What survives is narrower and still load-bearing: **Enter on an EMPTY text row
+declines the whole dialog**, so nothing paddock does may send Enter, and the
+field's send stays disabled until there is something to send.
 
 ### The tab bar — `←  ☐ Colours  ☒ Fruit  ✔ Submit  →`
 

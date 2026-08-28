@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Agent } from "@shared/types";
+import { typeIntoDialog } from "@web/api";
 import { createApp } from "@server/routes";
 import { AgentStore } from "@server/state/store";
 import { Hub } from "@server/ws/hub";
@@ -110,4 +111,32 @@ test("a screen with no dialog on it answers 409, and types nothing", async () =>
   expect(res.status).toBe(409);
   expect((await res.json()).detail).toContain("dialog");
   expect(sent).toEqual([]);
+});
+
+test("a non-JSON answer becomes a sentence, not an engine message", async () => {
+  // `res.json()` on a body that is not JSON throws an ENGINE message, and the
+  // engines disagree: Safari says "SyntaxError: The string did not match the
+  // expected pattern." where Chromium says "Unexpected end of JSON input".
+  // That Safari string reached a phone as the whole of an error banner.
+  //
+  // A non-JSON body here means something structural — most likely a route that
+  // is not there, which is what a cached bundle against a newer server looks
+  // like — so the status is the useful part.
+  const notJson = async () => new Response("404 Not Found", { status: 404 });
+
+  const r = await typeIntoDialog("w1:p1", "hi", notJson as never);
+
+  expect(r.ok).toBe(false);
+  expect(r.detail).toContain("404");
+  expect(r.detail, "no engine jargon").not.toContain("SyntaxError");
+  expect(r.detail).toContain("reloading");
+});
+
+test("an empty body says so rather than throwing", async () => {
+  const empty = async () => new Response("", { status: 502 });
+
+  const r = await typeIntoDialog("w1:p1", "hi", empty as never);
+
+  expect(r.ok).toBe(false);
+  expect(r.detail).toContain("empty body");
 });

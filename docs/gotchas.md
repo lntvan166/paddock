@@ -255,13 +255,22 @@ one, recorded here so they are not reintroduced.
   ASCII-only.
 
 - **In a question dialog the same key means different things on different rows.**
-  A digit TOGGLES a checkbox in multi-select but PICKS AND ADVANCES in
-  single-select. `space` inserts a space on the free-text row and toggles on
-  every other row. Typing into the free-text row ticks its checkbox as a side
-  effect. And `enter` on an EMPTY free-text row in single-select declines the
-  entire dialog — the transcript records `User declined to answer questions`.
+  A digit TOGGLES a checkbox in multi-select and PICKS AND ADVANCES in
+  single-select — but on the FREE-TEXT row a digit is neither: it is typed as
+  text. Measured on a phone, tapping an option with the cursor left on that row
+  turned `4. [✔] 2` into `4. [✔] 21` and never moved the option. `space` inserts
+  there and toggles everywhere else. Typing there ticks the checkbox as a side
+  effect. And `enter` on an EMPTY free-text row declines the entire dialog.
   Never send a key to one of these screens without knowing which row the cursor
   is on; `src/server/herdr/ask-dialog.ts` exists to answer that.
+
+- **Probe a TUI one key at a time, never in a batch.** `send-keys a b c d` sends
+  four keys with no pause, and a TUI repaints asynchronously — so keys that
+  depend on where an earlier key left the cursor are measured against the wrong
+  frame. This produced a WRONG measured "fact" that reached a design doc, a
+  decision and shipped code: "a single-select free-text row ignores characters".
+  It does not; the characters had simply overtaken the cursor. Send one key,
+  read, then send the next.
 
 - **Nothing in a question dialog unblocks the agent until "Submit answers".**
   So `/answer`, which calls `waitUntilUnblocked` after sending, is the wrong

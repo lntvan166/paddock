@@ -117,10 +117,11 @@ test("no dialog, or no free-text row in it, is refused before any key is sent", 
   expect(noRow.typed).toEqual([]);
 });
 
-test("a single-select dialog is refused outright", async () => {
-  // Measured: in single-select the row is not live — characters are ignored —
-  // and Enter on it while empty DECLINES the entire dialog. So there is nothing
-  // to type into, and a real hazard in pretending otherwise.
+test("a single-select dialog takes typed text too", async () => {
+  // An earlier version refused this, on a measurement that was wrong: the moves
+  // and the characters went out in one batch, so the characters arrived before
+  // the cursor. Re-measured one key at a time against a live agent, the row
+  // takes the text and Enter submits it.
   const single = io([[
     "←  ☒ Fruit  ✔ Submit  →",
     "",
@@ -129,14 +130,23 @@ test("a single-select dialog is refused outright", async () => {
     "❯ 1. Mango",
     "     Sweet, tropical, and unmistakable.",
     "  2. Type something.",
+  ].join("\n"), [
+    "←  ☒ Fruit  ✔ Submit  →",
+    "",
+    "Which is your single favourite fruit?",
+    "",
+    "  1. Mango",
+    "     Sweet, tropical, and unmistakable.",
+    "❯ 2. Type something.",
   ].join("\n")]);
 
-  const out = await typeIntoFreeText("w1:p1", ["h"], single);
+  const out = await typeIntoFreeText("w1:p1", ["k", "i", "w", "i"], single);
 
-  expect(out.ok).toBe(false);
-  expect(out.detail).toContain("single");
-  expect(single.keys).toEqual([]);
-  expect(single.typed).toEqual([]);
+  expect(out.ok).toBe(true);
+  expect(single.typed).toEqual([["k", "i", "w", "i"]]);
+  // Never Enter: on an EMPTY row that declines the whole dialog, and committing
+  // is the operator's call either way.
+  expect(single.keys.includes("enter"), "typing never commits").toBe(false);
 });
 
 /**

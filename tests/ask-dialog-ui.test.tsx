@@ -87,6 +87,7 @@ test("the free-text row is never a tappable option, in either mode", async () =>
   for (const dialog of [multi, single]) {
     const host = await render(view({ dialog }));
     expect(host.querySelector('[data-dialog-option="3"]'), dialog.mode).toBeNull();
+    expect(host.querySelector(".dialog-text"), `${dialog.mode}: a field, not a button`).not.toBeNull();
     await unmount();
   }
 });
@@ -119,13 +120,15 @@ test("the field shows what is already in the row rather than looking empty", asy
   expect(field.placeholder).toBe("oolong");
 });
 
-test("in single-select there is no field either, and it says why", async () => {
-  // Measured: characters are ignored on that row in this mode, so a field would
-  // be a control that does nothing.
+test("single-select gets the field too, and is told Enter sends it", async () => {
+  // An earlier version withheld it here, on a measurement that was wrong. What
+  // is still true is narrower: typing fills the row but does not commit, and
+  // Enter on an EMPTY row declines the whole dialog — so the note explains the
+  // one step the operator still has to take.
   const host = await render(view({ dialog: single }));
 
-  expect(host.querySelector(".dialog-text")).toBeNull();
-  expect(host.textContent).toContain("arrow keys");
+  expect(host.querySelector(".dialog-text")).not.toBeNull();
+  expect(host.textContent).toContain("press Enter");
 });
 
 test("the question strip shows where you are and moves one step at a time", async () => {

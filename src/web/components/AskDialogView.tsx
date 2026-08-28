@@ -21,12 +21,17 @@ import { Button } from "@web/components/shadcn/button";
  * transcript); in multi-select it ticks a row with no text in it, which answers
  * nothing.
  *
- * In MULTI-select that row gets a text field instead, which is a different
- * capability: the server moves the cursor onto the row, verifies from a re-read
- * that it arrived, and only then sends the characters. In SINGLE-select there is
- * no field either, because the row ignores characters entirely in that mode —
- * so the arrows and the agent's own screen remain, which is the honest floor
- * this project keeps for every prompt it cannot fully drive.
+ * That row gets a text FIELD instead, in both modes: the server moves the cursor
+ * onto it, verifies from a re-read that it arrived, and only then sends the
+ * characters. An earlier version withheld the field in single-select on a
+ * measurement that turned out to be wrong — see `dialog-type.ts` — and shipped
+ * a note telling the operator to do it a way that did not work either, which is
+ * the worse half of that mistake.
+ *
+ * Typing never commits. In multi-select it ticks the row; in single-select the
+ * operator presses Enter, and the note says so — because Enter on an EMPTY row
+ * declines the whole dialog, so the send stays disabled until there is
+ * something to send.
  *
  * The tab labels are display, not navigation. Tapping one by name would mean
  * sending a computed run of arrow presses — the riskiest machinery in this
@@ -137,7 +142,7 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
         ))}
       </div>
 
-      {freeText !== undefined && dialog.mode === "multi" && (
+      {freeText !== undefined && (
         <div className="dialog-text-row">
           <input
             className="dialog-text"
@@ -160,9 +165,7 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
 
       {freeText !== undefined && dialog.mode === "single" && (
         <p className="dialog-note">
-          To write your own answer, use the arrow keys below and the agent's own
-          screen above — this question takes one choice, and answering it with
-          empty text cancels the whole question.
+          Adding your own answer here fills the row — press Enter to send it.
         </p>
       )}
 

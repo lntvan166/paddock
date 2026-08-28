@@ -945,11 +945,16 @@ session does not silently re-litigate them.
 
     **Three refusals are load-bearing, not caution:**
 
-    - **No free-text control in single-select, in the route or the UI.** Measured:
-      that row ignores characters in that mode, and Enter on it while empty
-      DECLINES THE WHOLE DIALOG — the transcript records `User declined to answer
-      questions`. A control that can throw away every answer already given is the
-      mislabelled Approve button this project bans, in its worst form.
+    - **Nothing paddock sends is ever Enter on an EMPTY free-text row.** That
+      declines the whole dialog — the transcript records `User declined to answer
+      questions` — so the field's send stays disabled until there is something to
+      send. An earlier version of this decision went further and withheld the
+      field from single-select entirely, on a measurement that was wrong: the
+      probe sent the cursor moves and the characters in one batch, so the
+      characters arrived first and were swallowed. Re-measured one key at a time,
+      that row takes text in both modes. The lesson is not "measure more" but
+      "measure the way the code will actually do it" — the batch hid the very
+      race the implementation later had to solve.
     - **The cursor is verified from a re-read before any character is typed.**
       Counting keystrokes against a screen an agent is free to repaint is how an
       off-by-one becomes a silently selected answer.

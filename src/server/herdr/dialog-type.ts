@@ -170,10 +170,18 @@ export async function moveDialogTab(
  *  - `space` inserts a space on that row but TOGGLES on every other one, so the
  *    same payload sent one row off does something entirely different.
  *
- * Single-select is refused rather than attempted. In that mode the row ignores
- * characters entirely, and Enter on it while empty declines the whole dialog —
- * so "try it and see" is not a neutral experiment: it can throw away every
- * answer the operator has already given.
+ * BOTH MODES, and an earlier version of this refused single-select on a
+ * measurement that was simply wrong. That test sent the cursor moves and the
+ * characters in ONE batch, so the characters arrived before the cursor did and
+ * were swallowed — the very repaint race `reachRow` now settles for. Re-measured
+ * one step at a time: `4. Type something.` becomes `4. rust`, and Enter then
+ * submits it (`… → rust`, verbatim from the transcript). A refusal built on a
+ * bad measurement is worse than no feature, because it also carried a note
+ * telling the operator to do it a way that does not work either.
+ *
+ * What remains true is narrower: Enter on an EMPTY text row declines the whole
+ * dialog. So nothing here ever sends Enter, and the UI keeps its send disabled
+ * until there is something to send.
  */
 export async function typeIntoFreeText(
   target: string,
@@ -182,9 +190,6 @@ export async function typeIntoFreeText(
 ): Promise<TypeOutcome> {
   const before = parseAskDialog(await io.readPromptScreen(target));
   if (before === null) return { ok: false, detail: "no question dialog on screen" };
-  if (before.mode === "single") {
-    return { ok: false, detail: "this question takes a single choice, not typed text" };
-  }
 
   const row = before.options.find((o) => o.freeText);
   if (row === undefined) return { ok: false, detail: "this question has no text row" };
