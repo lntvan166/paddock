@@ -4,7 +4,7 @@ import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
 import type { AskDialog } from "@shared/types";
 import { AskDialogView } from "@web/components/AskDialogView";
-import { click, render, textsOf, unmount } from "./support/render";
+import { click, render, textsOf, typeInto, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
@@ -41,6 +41,7 @@ type Props = Parameters<typeof AskDialogView>[0];
 const view = (over: Partial<Props> = {}) => (
   <AskDialogView
     dialog={multi} busy={false} onToggle={noop} onArrow={noop} onAdvance={noop}
+    onType={noop}
     {...over}
   />
 );
@@ -90,9 +91,45 @@ test("the free-text row is never a tappable option, in either mode", async () =>
   for (const dialog of [multi, single]) {
     const host = await render(view({ dialog }));
     expect(host.querySelector('[data-dialog-option="3"]'), dialog.mode).toBeNull();
-    expect(host.textContent, dialog.mode).toContain("arrow keys");
     await unmount();
   }
+});
+
+test("in multi-select the free-text row is a field, and sending types the text", async () => {
+  const typed: string[] = [];
+  const host = await render(view({ onType: (t: string) => typed.push(t) }));
+
+  await typeInto(host.querySelector(".dialog-text") as HTMLInputElement, "oolong");
+  await click(host.querySelector(".dialog-text-send"));
+
+  expect(typed).toEqual(["oolong"]);
+});
+
+test("the field shows what is already in the row rather than looking empty", async () => {
+  // After a send the row's LABEL is the text — that is how the screen carries
+  // it — so an empty-looking field over text the agent is holding would be a
+  // control disagreeing with the screen behind it.
+  const host = await render(view({
+    dialog: {
+      ...multi,
+      options: [
+        ...multi.options.slice(0, 2),
+        { key: "3", label: "oolong", checked: true, freeText: true },
+      ],
+    },
+  }));
+
+  const field = host.querySelector(".dialog-text") as HTMLInputElement;
+  expect(field.placeholder).toBe("oolong");
+});
+
+test("in single-select there is no field either, and it says why", async () => {
+  // Measured: characters are ignored on that row in this mode, so a field would
+  // be a control that does nothing.
+  const host = await render(view({ dialog: single }));
+
+  expect(host.querySelector(".dialog-text")).toBeNull();
+  expect(host.textContent).toContain("arrow keys");
 });
 
 test("the question strip shows where you are and moves one step at a time", async () => {

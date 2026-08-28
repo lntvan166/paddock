@@ -55,6 +55,7 @@ function harness(
       readPane,
       async readPromptScreen() { return ""; },
       async sendOptionKey() {},
+      async sendChars() {},
       async sendNavKey() {},
       async sendReply() {},
       async sendPaneText() {},

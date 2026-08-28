@@ -123,6 +123,7 @@ export function demoActions(): HerdrActions {
 
     // Every write below refuses. None of them resolves.
     async sendOptionKey(_target: string, _key: string) { refuse(); },
+    async sendChars(_target: string, _chars: string[]) { refuse(); },
     async sendNavKey(_target: string, _key: NavKey) { refuse(); },
     async sendReply(_target: string, _text: string) { refuse(); },
     async sendPaneText(_paneId: string, _text: string) { refuse(); },

@@ -313,6 +313,26 @@ export interface HerdrActions {
    * there is no mapping table here to drift out of date.
    */
   sendNavKey(target: string, key: NavKey): Promise<void>;
+  /**
+   * Type literal characters into whatever holds the agent's keyboard.
+   *
+   * The capability paddock never had, and its absence is exactly why answering
+   * a question dialog's free-text row was impossible: `agent.prompt` SUBMITS a
+   * reply — its own generated doc comment says so — and a submitted reply while
+   * a menu holds the keyboard lands nowhere the operator can see.
+   *
+   * ONE KEY PER CHARACTER, because herdr refuses a word: measured,
+   * `send_keys ["chào"]` answers `invalid_key: unsupported key chào`. Single
+   * non-ASCII characters ARE accepted (`à`, `ế`, `日` each typed correctly), so
+   * this is deliberately not an ASCII-only path — the operator writes
+   * Vietnamese, and a route that dropped it would be a field that silently ate
+   * half of what was typed.
+   *
+   * Deliberately NOT part of `NAV_KEYS`. That allowlist is closed and stays
+   * closed; a character has different validation and folding the two together
+   * would turn a closed set into an open one.
+   */
+  sendChars(target: string, chars: string[]): Promise<void>;
   sendReply(target: string, text: string): Promise<void>;
   /**
    * Type into a pane with no agent — the mirror of `sendReply`'s
@@ -529,6 +549,15 @@ export function createActions(socketPath: string): HerdrActions {
       // no control-key spelling to translate.
       await request<HerdrOk>(socketPath, "agent.send_keys", {
         target, keys: [key],
+      } satisfies HerdrAgentSendKeysParams);
+    },
+
+    async sendChars(target, chars) {
+      // One call, many keys: measured, `send_keys` accepts an array and applies
+      // them in order. Sending one request per character would multiply the
+      // round trips by the length of the answer.
+      await request<HerdrOk>(socketPath, "agent.send_keys", {
+        target, keys: chars,
       } satisfies HerdrAgentSendKeysParams);
     },
 

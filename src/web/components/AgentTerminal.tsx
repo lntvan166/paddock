@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
 import {
-  answerWithKey, sendDialogKey, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  answerWithKey, sendDialogKey, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
   sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
@@ -775,6 +775,19 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               }}
               onArrow={(key) => void press(key)}
               onAdvance={() => void press("enter")}
+              onType={(text) => {
+                setBusy(true);
+                void typeIntoDialog(agent.agentId, text)
+                  .then((r) => {
+                    if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
+                    if (r.lines) pane.current?.apply(r.lines);
+                    if (r.dialog !== undefined) {
+                      setPrompt((p) => (p ? { ...p, dialog: r.dialog ?? null } : p));
+                    }
+                    setFeedback(null);
+                  })
+                  .finally(() => setBusy(false));
+              }}
             />
           )}
 

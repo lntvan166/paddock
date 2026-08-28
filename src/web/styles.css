@@ -2662,6 +2662,44 @@ body {
 
 .dialog-option:disabled { opacity: 0.5; }
 
+/* The free-text row, as a field rather than a button. Laid out with `gap`
+   rather than margins, like `.term-reply` beside it. */
+.dialog-text-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.dialog-text {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.5rem var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--t-md);
+}
+
+.dialog-text::placeholder { color: var(--muted); }
+
+.dialog-text-send {
+  min-height: 2.75rem;
+  padding: 0 var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--t-md);
+  cursor: pointer;
+}
+
+.dialog-text:disabled,
+.dialog-text-send:disabled { opacity: 0.5; }
+
 .dialog-note {
   margin: 0;
   color: var(--muted);

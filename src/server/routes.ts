@@ -3,6 +3,7 @@ import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { expandHome } from "@server/herdr/tree";
+import { typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
@@ -75,6 +76,15 @@ export const IMMUTABLE_ASSET_RE = /^\/assets\/.*-[A-Za-z0-9_-]{8,}\.(js|css|woff
  * the free text `{text}` already permits.
  */
 const OPTION_KEY_RE = /^[1-9][0-9]?$/;
+
+/**
+ * Characters one `/type` call may send.
+ *
+ * A free-text ANSWER, not a message: the reply box already exists for prose and
+ * goes through `agent.prompt`. Sized so a sentence fits and a pasted file does
+ * not, because every character here becomes one entry in a `send_keys` array.
+ */
+const MAX_TYPE_CHARS = 200;
 
 /**
  * Pause between writing a nav key and re-reading the pane, so the read sees
@@ -1223,6 +1233,60 @@ export function createApp(deps: AppDeps) {
         // ANSWERED question reappear as this menu's selection on the first
         // arrow tap — correct on load, wrong the moment the operator moved.
         return c.json({ ok: true, ...out, selected: parsePrompt(out.lines.join("\n")).selected });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+      }
+    });
+
+    /**
+     * Type literal characters into a question dialog's free-text row.
+     *
+     * Distinct from `/text`, which SUBMITS a reply through `agent.prompt`. That
+     * is the route the reply box uses and it is right for prose, but it is
+     * exactly what fails while a menu holds the agent's keyboard: measured, the
+     * submitted reply lands nowhere the operator can see, which is the reported
+     * defect this route exists to fix.
+     *
+     * The cursor is MOVED AND VERIFIED before a character is sent — see
+     * `dialog-type.ts` for why that is not optional. Characters land only in the
+     * row the cursor is on, typing into that row also ticks its checkbox, and
+     * `space` inserts there while toggling everywhere else. One row off is not a
+     * cosmetic error.
+     *
+     * Validated here rather than trusted to the UI, like every other
+     * client-supplied string that reaches a herdr parameter. Control characters
+     * are refused because they are KEYS, not text: a newline is Enter, and
+     * Enter on a dialog row means something the operator did not ask for.
+     * Non-ASCII is NOT refused — measured to work, and it is what the operator
+     * types.
+     */
+    app.post("/api/agents/:id/type", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+
+      const text = (await jsonBody(c)).text;
+      const chars = typeof text === "string" ? [...text] : [];
+      const printable = chars.every((ch) => {
+        const code = ch.codePointAt(0) ?? 0;
+        return code >= 0x20 && code !== 0x7f;
+      });
+      if (
+        typeof text !== "string" || text.trim() === "" ||
+        chars.length > MAX_TYPE_CHARS || !printable
+      ) {
+        return c.json({
+          ok: false,
+          detail: "text must be printable characters within the length limit",
+        }, 400);
+      }
+
+      try {
+        const outcome = await typeIntoFreeText(agent.agentId, chars, actions);
+        if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readOutput(agent.agentId, agent.state);
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, dialog: parsed.dialog });
       } catch (err) {
         return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
       }

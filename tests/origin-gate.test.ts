@@ -43,6 +43,7 @@ function harness(state: Agent["state"] = "blocked") {
     async readPane() { calls.push("readPane"); return { lines: ["out"], source: "recent_unwrapped" as const }; },
     async readPromptScreen() { calls.push("readPromptScreen"); return ""; },
     async sendOptionKey(_t: string, k: string) { calls.push(`key:${k}`); },
+    async sendChars() {},
     async sendNavKey(_t: string, k: string) { calls.push(`nav:${k}`); },
     async sendReply(_t: string, text: string) { calls.push(`reply:${text}`); },
     async sendPaneText(_p: string, text: string) { calls.push(`paneText:${text}`); },

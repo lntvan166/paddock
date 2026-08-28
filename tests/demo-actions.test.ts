@@ -19,6 +19,7 @@ import { demoActions, demoTree } from "@server/demo-actions";
 const WRITES: [string, (a: ReturnType<typeof demoActions>) => Promise<unknown>][] = [
   ["sendOptionKey", (a) => a.sendOptionKey("d1:p1", "1")],
   ["sendNavKey", (a) => a.sendNavKey("d1:p1", "up")],
+  ["sendChars", (a) => a.sendChars("d1:p1", ["h", "i"])],
   ["sendReply", (a) => a.sendReply("d1:p1", "yes")],
   ["sendPaneText", (a) => a.sendPaneText("d7:p1", "ls")],
   ["sendPaneKey", (a) => a.sendPaneKey("d7:p1", "up")],

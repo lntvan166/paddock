@@ -46,6 +46,7 @@ function harness(
         async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
         async readPromptScreen() { return ""; },
         async sendOptionKey() {},
+        async sendChars() {},
         async sendNavKey() {},
         async sendReply() {},
         async sendPaneText(paneId: string, text: string) {

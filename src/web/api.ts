@@ -303,6 +303,26 @@ export async function sendKey(id: string, key: NavKey, f: Fetch = fetch): Promis
 }
 
 /**
+ * Type into a question dialog's free-text row.
+ *
+ * Distinct from `sendText`, which submits a reply through `agent.prompt` — the
+ * call that fails while a menu holds the agent's keyboard, because the reply
+ * lands nowhere the operator can see. This types and commits nothing; the server
+ * moves the cursor onto the row and verifies it from a re-read before a single
+ * character is sent.
+ */
+export async function typeIntoDialog(
+  id: string, text: string, f: Fetch = fetch,
+): Promise<KeyResult & { dialog?: ParsedPrompt["dialog"] }> {
+  try {
+    const res = await request(url(id, "type"), { text }, f);
+    return (await res.json()) as KeyResult & { dialog?: ParsedPrompt["dialog"] };
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
+/**
  * Send a question dialog's option digit, and get the screen back.
  *
  * Distinct from `answerWithKey`, which posts to `/answer` and waits for the
