@@ -80,3 +80,22 @@ test("neither transcript control sits in the layout, so neither shifts it", () =
   // block, or `absolute` resolves against the fixed shell and lands anywhere.
   expect(ruleFor(".term-pane-wrap")).toContain("position: relative");
 });
+
+test("neither transcript control sits on top of a line the operator is reading", () => {
+  // MEASURED on a phone screenshot: the Latest pill, centred, sat in the middle
+  // of the last visible line — `Bash · Stop the demo i[↓ Latest]firm 8787 still
+  // up`. A control floating over a scroller covers something by construction,
+  // so each end gets the best fix available to it.
+  //
+  // The top has a real one: `scrollTop` is already 0 when that pill shows, so
+  // there is nowhere to scroll to escape it, and the pane reserves the space
+  // instead. Asserted with the `on` state in the selector, because a rule that
+  // padded unconditionally would leave dead space on every pane.
+  expect(ruleFor('.term-pane[data-pill-top="on"]')).toContain("padding-top");
+
+  // The bottom cannot: that control only exists while there is more content
+  // below it. What it can stop doing is sitting mid-sentence.
+  const latest = ruleFor(".term-to-bottom");
+  expect(latest, "out of the centre").toContain("left: auto");
+  expect(latest, "and into the corner").toContain("right:");
+});

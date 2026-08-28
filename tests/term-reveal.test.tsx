@@ -56,6 +56,10 @@ test("revealed history stays put while new output settles above the live screen"
   const pane = host.querySelector(".term-pane") as HTMLElement;
   const firstRevealed = (pane.textContent ?? "").trimStart().split("\n")[0];
   expect(firstRevealed, "a page of history is on screen").toBe("old 200");
+  // And that first line is not underneath the pill that revealed it — the pane
+  // reserves the space while it is there. See tests/composer-row.test.ts for
+  // the rule this attribute selects.
+  expect(pane.dataset.pillTop, "room made for the floating pill").toBe("on");
 
   // Answer the agent. Its reply carries a screen scrolled by five, so five
   // lines settle into history — the exact event that used to shift the view.

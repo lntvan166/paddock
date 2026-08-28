@@ -980,6 +980,12 @@ export function PaneTerminal({
     </button>
   ));
 
+  /**
+   * Whether the "show earlier" pill is on screen — hoisted out of the JSX
+   * because the PANE needs it too, to keep its first line out from under it.
+   */
+  const showEarlier = !error && atTop && earlierNode !== null && earlierNode !== false;
+
   return (
     <section className="term" aria-label={`${title} terminal`}>
       <header className="term-header">
@@ -1030,7 +1036,7 @@ export function PaneTerminal({
           the composer pushing the tail away, and the same fix: stop taking
           height from the thing being read. */}
       <div className="term-pane-wrap">
-      {!error && atTop && earlierNode}
+      {showEarlier && earlierNode}
 
       {!following && !error && (
         <button
@@ -1056,6 +1062,11 @@ export function PaneTerminal({
           ref={paneRef}
           className="term-pane"
           data-wrap={wrap ? "on" : "off"}
+          // Reserves room at the top for the floating pill, so the first
+          // revealed line is not underneath it. Only while it is shown: a
+          // permanent gap would be dead space on every pane that never
+          // reveals anything.
+          data-pill-top={showEarlier ? "on" : "off"}
           onScroll={readScroll}
           // `--term-font-px` is read by styles.css's `.term-pane` rule. Set
           // as a custom property rather than a `fontSize` style so

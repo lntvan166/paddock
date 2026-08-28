@@ -166,7 +166,19 @@ test("journal times are the host's local clock, not UTC", () => {
       { role: "user", at: "2026-08-20T13:04:00Z", text: "hello", tools: [] },
     ])[0]).toBe("you · 22:04");
   } finally {
-    process.env.TZ = saved;
+    // The env var is restored. THE ZONE IS NOT, and cannot be: measured, Bun
+    // applies the FIRST assignment to `process.env.TZ` and caches it, so
+    // neither `delete` nor setting it back to UTC has any effect afterwards —
+    // `13:04Z` keeps rendering as 22:04 for the rest of the process, and Bun
+    // runs the whole suite in ONE process.
+    //
+    // So this test poisons the zone for every test that runs after it, in this
+    // file and in every later file. Nothing anywhere may assert a local time it
+    // did not pin itself; assert the SHAPE of a stamp instead. Deleting rather
+    // than assigning is still right — `process.env.TZ = undefined` stores the
+    // string "undefined" — it just fixes the variable, not the clock.
+    if (saved === undefined) delete process.env.TZ;
+    else process.env.TZ = saved;
   }
 });
 
@@ -259,4 +271,71 @@ test("a NAMED block the harness truncated still takes the remainder", () => {
   // record is machine output. The shape rule may not.
   expect(stripInjected("typed prose <result>TRUNCATED_BODY and on and on"))
     .toBe("typed prose ");
+});
+
+test("a run of turns from the same speaker in the same minute gets ONE header", () => {
+  // Reported from a phone with a screenshot: sixteen entries filled the screen
+  // and `agent · 21:19` was seven of them. The header carries who and when, so
+  // repeating it when neither has changed spends half a phone screen saying
+  // nothing. A blank line per entry spent the other half.
+  //
+  // `at: null` deliberately — see the timezone test above, which permanently
+  // moves this process's clock. A stampless entry renders a bare speaker, so
+  // this can assert exact lines whatever ran first.
+  const lines = toLines([
+    { role: "assistant", at: null, text: "", tools: ["Bash · start the demo"] },
+    { role: "assistant", at: null, text: "", tools: ["ToolSearch"] },
+    { role: "assistant", at: null, text: "", tools: ["Bash · check the push"] },
+  ]);
+
+  expect(lines).toEqual([
+    "agent",
+    "▸ Bash · start the demo",
+    "▸ ToolSearch",
+    "▸ Bash · check the push",
+    // The trailing blank stays: journal lines blend straight into the live
+    // screen with no divider (decision 3), and this is the only thing between
+    // the last of them and the agent's current output.
+    "",
+  ]);
+});
+
+test("the header comes back when the minute or the speaker changes", () => {
+  // FOUR entries and three headers: the run of two at 13:05 has to collapse
+  // for the count to come out, so this fails on a formatter that prints one
+  // header per entry as well as on one that never prints a second.
+  const lines = toLines([
+    { role: "assistant", at: "2026-08-20T13:05:00Z", text: "", tools: ["Read"] },
+    { role: "assistant", at: "2026-08-20T13:05:00Z", text: "", tools: ["Grep"] },
+    { role: "assistant", at: "2026-08-20T13:06:00Z", text: "", tools: ["Read"] },
+    { role: "user", at: "2026-08-20T13:06:00Z", text: "go ahead", tools: [] },
+  ]);
+
+  // By SHAPE, not by value: the zone this process renders in depends on which
+  // file ran first, and every real UTC offset preserves the difference between
+  // two minutes even where it shifts them.
+  const headers = lines.filter((l) => /^(?:agent|you) · \d\d:\d\d$/.test(l));
+  expect(headers.length, "one per change, not one per entry").toBe(3);
+  expect(headers[0], "the minute moved").not.toBe(headers[1]);
+  expect(headers[2]?.startsWith("you · "), "the speaker changed").toBe(true);
+  expect(lines.filter((l) => l === "").length, "a blank between groups, and one at the end").toBe(3);
+});
+
+test("prose inside a run keeps its own blank line; a tool list stays tight", () => {
+  // Density is for the `▸` lines, which are scanned. Prose is READ, and a
+  // paragraph butting straight onto a tool line reads as part of it.
+  const lines = toLines([
+    { role: "assistant", at: null, text: "", tools: ["TaskStop"] },
+    { role: "assistant", at: null, text: "Let me commit first:", tools: [] },
+    { role: "assistant", at: null, text: "", tools: ["Bash · commit"] },
+  ]);
+
+  expect(lines).toEqual([
+    "agent",
+    "▸ TaskStop",
+    "",
+    "Let me commit first:",
+    "▸ Bash · commit",
+    "",
+  ]);
 });

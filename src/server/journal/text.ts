@@ -301,18 +301,53 @@ function hhmm(at: string | null): string {
  *
  * Server-side, because the client must gain no per-harness knowledge — the same
  * reason `parsePrompt` lives on this side of the socket.
+ *
+ * GROUPED BY SPEAKER AND MINUTE, which is the whole of what this function
+ * learned from a screenshot of a phone. Every turn used to print its own
+ * `agent · 21:19` header and its own trailing blank line, so sixteen turns
+ * filled the screen and `agent · 21:19` was seven of them — two thirds of a
+ * 390px-wide transcript spent restating a speaker and a minute that had not
+ * changed. A header now appears only when one of them DOES change, which is
+ * exactly when it carries information.
+ *
+ * The blank lines are spent where they are read rather than scanned. A run of
+ * `▸` tool lines is a list and stays tight; PROSE gets a blank line above it,
+ * because a paragraph butting onto a tool line reads as part of that line. A
+ * turn's own tools and prose stay adjacent — they are one turn.
+ *
+ * The single trailing blank is load-bearing and survives all of this: journal
+ * lines blend straight into the live screen with no divider (design decision
+ * 3), so it is the only thing separating the last of them from the agent's
+ * current output.
  */
 export function toLines(entries: readonly JournalEntry[]): string[] {
   const out: string[] = [];
+  /** The header currently in force, so an unchanged one is not repeated. */
+  let group: string | null = null;
+
   for (const e of entries) {
     const body = clamp(stripMenu(stripAnsi(e.text)).trim(), MAX_TEXT_CHARS);
     if (body === "" && e.tools.length === 0) continue;
     const who = e.role === "user" ? "you" : "agent";
     const time = hhmm(e.at);
-    out.push(time === "" ? who : `${who} · ${time}`);
+    const header = time === "" ? who : `${who} · ${time}`;
+
+    if (header !== group) {
+      // Between groups, never before the first one — a transcript that opens
+      // on a blank line has lost a line of a phone screen to nothing.
+      if (out.length > 0) out.push("");
+      out.push(header);
+      group = header;
+    } else if (body !== "") {
+      out.push("");
+    }
+
     if (e.tools.length > 0) out.push(`▸ ${e.tools.join(" · ")}`);
     if (body !== "") out.push(...body.split("\n"));
-    out.push("");
   }
+
+  // Once, at the end, rather than per turn. Empty in, empty out: a bare blank
+  // line is not a transcript, and `read.ts` counts these lines.
+  if (out.length > 0) out.push("");
   return out;
 }

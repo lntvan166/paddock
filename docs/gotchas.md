@@ -254,6 +254,18 @@ one, recorded here so they are not reintroduced.
   `Cannot find module '@server/routes'`. Confirmed by running the compiled
   final Docker stage's contents outside Docker with `tsconfig.json` removed.
 
+- **A test that sets `process.env.TZ` changes the clock for the whole suite,
+  permanently.** Measured: Bun applies the FIRST assignment and caches the
+  zone, after which neither `delete process.env.TZ` nor setting it back to
+  `UTC` has any effect — and Bun runs every test file in ONE process. So
+  `tests/journal-text.test.ts`, which pins Asia/Tokyo to prove journal stamps
+  are local rather than UTC, leaves +09:00 in force for every file that runs
+  after it, `finally` block or not. Found when a new test in that same file
+  rendered `13:05Z` as `22:05`. No test may assert a local time it did not pin
+  itself; assert the SHAPE of a stamp (`/^agent · \d\d:\d\d$/`), or use an
+  entry with no timestamp. Assigning `undefined` to an env var is separately
+  wrong — it stores the string `"undefined"`.
+
 ## Client
 
 - **`localStorage` throws rather than returning `null`** in Safari private

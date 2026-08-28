@@ -238,9 +238,24 @@ test("every cursor is a real record boundary, even with multi-byte text", async 
 
   expect(cursors.length).toBeGreaterThan(1);
   expect(cursors.filter((c) => !starts.has(c))).toEqual([]);
+
   // And the multi-byte content still comes back whole and in order.
-  expect((await pageAll(reader, 40)).pages.flat())
-    .toEqual(toLines(claudeAdapter.parse(readFileSync(file, "utf8"))));
+  //
+  // Compared on CONTENT lines, which is what this test's property is about —
+  // same entries, same order, no gaps, no duplicates. `toLines` groups turns
+  // under one `who · HH:MM` header and renders one PAGE at a time, so a page
+  // whose first turn continues the previous page's group re-states that header:
+  // the reassembled pages carry a header per seam that a single whole-file
+  // render does not. Every record in this fixture is the same speaker at the
+  // same minute — one group, ten pages — so it is the one test here where that
+  // shows. The two exact-equality tests above keep their stronger assertion
+  // because their fixtures alternate speaker, and alternating renders the same
+  // either way.
+  const contentOf = (lines: string[]) =>
+    lines.filter((l) => l !== "" && !/^(?:you|agent)(?: · \d\d:\d\d)?$/.test(l));
+
+  expect(contentOf((await pageAll(reader, 40)).pages.flat()))
+    .toEqual(contentOf(toLines(claudeAdapter.parse(readFileSync(file, "utf8")))));
 });
 
 test("a record larger than the window is reported out loud, and paged past", async () => {

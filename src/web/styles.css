@@ -2408,7 +2408,27 @@ body {
 }
 
 .term-earlier { top: 0.4rem; }
-.term-to-bottom { bottom: 0.4rem; }
+
+/* Room for the pill above the first line, only while the pill is there.
+   A control floating over a scroller covers whatever is under it, and at the
+   top of the transcript that is the oldest revealed line — the one the
+   operator just asked for. Scroll padding is the whole fix here, because
+   `scrollTop` is already 0 and there is nowhere to scroll to escape it. */
+.term-pane[data-pill-top="on"] { padding-top: 2.9rem; }
+
+/* Anchored to the RIGHT edge, not centred. Measured on a phone screenshot: the
+   centred pill sat in the middle of the last visible line — `Bash · Stop the
+   demo i[↓ Latest]firm 8787 still up`. The bottom has no equivalent of the
+   scroll padding above, because this control only exists while there is more
+   content below, so something is always under it; what it can stop doing is
+   sitting in the middle of a sentence. Every messenger app puts this control in
+   the same corner for the same reason. */
+.term-to-bottom {
+  bottom: 0.4rem;
+  left: auto;
+  right: var(--gutter);
+  transform: none;
+}
 
 
 /* The full-width band this used to be is gone — see the pill rule above. It
