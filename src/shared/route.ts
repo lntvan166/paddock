@@ -89,3 +89,25 @@ export function spaceIdFromHash(hash: string): string | null {
     return null;
   }
 }
+
+/**
+ * The file viewer's address.
+ *
+ * Its own route rather than a sheet over the terminal, for the reason the pane
+ * hash gives above: a phone backgrounds tabs, and a reload must not lose what
+ * the operator was looking at. That is also why `GET /api/files/:id/meta`
+ * exists — coming back from a reload, the id is all there is.
+ *
+ * Anchored to EXACTLY 32 hex characters, which is what the server issues.
+ * Nothing else parses, so a hash that merely looks file-shaped —
+ * `#/file/../../etc/passwd` — is not a file id and never reaches a route.
+ */
+const FILE_HASH_RE = /^#\/file\/([0-9a-f]{32})$/;
+
+export function fileHash(id: string): string {
+  return `#/file/${id}`;
+}
+
+export function fileIdFromHash(hash: string): string | null {
+  return FILE_HASH_RE.exec(hash)?.[1] ?? null;
+}

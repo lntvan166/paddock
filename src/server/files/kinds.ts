@@ -1,3 +1,5 @@
+import type { RenderMode } from "@shared/types";
+
 /**
  * What a file is, for the purpose of showing it on a phone.
  *
@@ -14,8 +16,6 @@
  * which keeps the one case where guessing wrong would put credentials on screen
  * out of the text path.
  */
-
-export type RenderMode = "iframe" | "image" | "text" | "download";
 
 export interface FileKind {
   contentType: string;

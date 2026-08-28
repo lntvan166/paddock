@@ -1,8 +1,9 @@
 import type {
   ActionResult, AgentCommand, CloseSpaceResult, CloseTabResult, CreateSpaceResult, CreateTabResult,
   HarnessesResult, HistoryResult, KeyResult, NavKey, OutputResult,
-  PaneOutput, ParsedPrompt, SpaceTree, StartAgentResult,
+  PaneOutput, ParsedPrompt, RenderMode, SpaceTree, StartAgentResult,
 } from "@shared/types";
+
 
 /**
  * Just the call signature these helpers use — not `typeof fetch`.
@@ -135,6 +136,46 @@ export async function fetchPaneOutput(id: string, f: Fetch = fetch): Promise<Pan
  *
  * A POST with an empty body, like `fetchPaneOutput` above and for its reason.
  */
+/**
+ * Exchange a path for an id, so the viewer has a plain GET to point an iframe
+ * and a download link at.
+ *
+ * The path travels in a POST body because a path in a URL lands in an edge
+ * access log — the same rule every other action here follows, for the same
+ * reason. What comes back is the id, the file's own name for a title, and how
+ * it should be rendered, so opening costs one round trip rather than two.
+ */
+export async function openFile(
+  path: string,
+  f: Fetch = fetch,
+): Promise<{ id: string; name: string; render: RenderMode }> {
+  return readJson<{ id: string; name: string; render: RenderMode }>("/api/files", { path }, f);
+}
+
+/**
+ * What a file is, for a viewer that has only an id — after a reload, that is
+ * all it has.
+ */
+export async function fetchFileMeta(
+  id: string,
+  f: Fetch = fetch,
+): Promise<{ name: string; render: RenderMode }> {
+  // `Fetch` takes an explicit init — the stub in tests is typed that way, so a
+  // one-argument call would compile against `fetch` and not against the seam.
+  const res = await f(fileMetaUrl(id), { method: "GET" });
+  if (!res.ok) {
+    const detail = await detailFrom(res);
+    throw new RequestFailed(res.status, detail ?? "unknown file");
+  }
+  return (await res.json()) as { name: string; render: RenderMode };
+}
+
+/** The bytes, the bytes as an attachment, and the metadata. Id only: a path
+ *  here is what the id exists to avoid. */
+export const fileUrl = (id: string) => `/api/files/${id}`;
+export const fileDownloadUrl = (id: string) => `/api/files/${id}/download`;
+export const fileMetaUrl = (id: string) => `/api/files/${id}/meta`;
+
 /**
  * Attach one image, and get back the path an agent can open.
  *

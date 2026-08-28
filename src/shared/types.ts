@@ -787,3 +787,12 @@ export interface AgentCommand {
    */
   source: "command" | "skill" | "plugin";
 }
+
+/**
+ * How the file viewer should render a file.
+ *
+ * Here rather than beside the server's `kindFor`, because it crosses the wire:
+ * `POST /api/files` answers with it and the viewer switches on it. Rule 3 —
+ * one payload contract, imported by both sides, never redeclared on one.
+ */
+export type RenderMode = "iframe" | "image" | "text" | "download";
