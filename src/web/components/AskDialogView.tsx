@@ -69,6 +69,13 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
   // the typed text replaces the label on screen, and duplicating that test in
   // the UI is how the two would drift.
   const already = freeText?.typed ?? "";
+  // Whether Enter would commit the TEXT ROW, which is the only time it chooses
+  // your own answer. Enter acts on the cursor's row, and the cursor moves
+  // whenever anything else in this panel is tapped — so this is a fact about
+  // the screen right now, not a general instruction.
+  const enterTakesText = freeText !== undefined
+    && dialog.cursor?.kind === "option"
+    && dialog.cursor.key === freeText.key;
   // The Submit tab is a tab, not a question: one question plus Submit is a
   // strip with nothing to move between.
   const realQuestions = dialog.questions.filter((q) => !q.isSubmit).length;
@@ -165,7 +172,9 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
 
       {freeText !== undefined && dialog.mode === "single" && (
         <p className="dialog-note">
-          Adding your own answer here fills the row — press Enter to send it.
+          {enterTakesText
+            ? "Press Enter to choose your own answer."
+            : "Your own answer is written but not chosen — ↓ to it, then Enter."}
         </p>
       )}
 

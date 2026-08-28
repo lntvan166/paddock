@@ -1282,7 +1282,13 @@ export function createApp(deps: AppDeps) {
         const outcome = await moveDialogTab(agent.agentId, dir, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
         const out = await actions.readOutput(agent.agentId, agent.state);
-        return c.json({ ok: true, ...out, dialog: outcome.dialog ?? null });
+        // `selected` as well as `dialog`, from the SAME read. Returning one
+        // without the other left the "Enter selects" line showing the previous
+        // question's answer while the panel showed the new question — reported
+        // from a phone, and worse than cosmetic: that line is what says which
+        // row Enter will act on, and Enter acts on the cursor.
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
       } catch (err) {
         return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
       }

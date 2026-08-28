@@ -773,9 +773,14 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                     // just tapped has to come from what the agent now shows,
                     // not from a local mirror that could disagree with it.
                     if (r.lines) pane.current?.apply(r.lines);
-                    if (r.dialog !== undefined) {
-                      setPrompt((p) => (p ? { ...p, dialog: r.dialog ?? null } : p));
-                    }
+                    // BOTH, always together: they describe the same screen, and
+                    // patching one alone is how the "Enter selects" line came to
+                    // show a previous question's answer.
+                    setPrompt((p) => (p === null ? p : {
+                      ...p,
+                      dialog: r.dialog ?? p.dialog,
+                      selected: r.selected !== undefined ? r.selected : p.selected,
+                    }));
                     setFeedback(null);
                   })
                   .finally(() => setBusy(false));
@@ -790,9 +795,14 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                   .then((r) => {
                     if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
                     if (r.lines) pane.current?.apply(r.lines);
-                    if (r.dialog !== undefined) {
-                      setPrompt((p) => (p ? { ...p, dialog: r.dialog ?? null } : p));
-                    }
+                    // BOTH, always together: they describe the same screen, and
+                    // patching one alone is how the "Enter selects" line came to
+                    // show a previous question's answer.
+                    setPrompt((p) => (p === null ? p : {
+                      ...p,
+                      dialog: r.dialog ?? p.dialog,
+                      selected: r.selected !== undefined ? r.selected : p.selected,
+                    }));
                     setFeedback(null);
                   })
                   .finally(() => setBusy(false));
@@ -803,9 +813,14 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                   .then((r) => {
                     if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
                     if (r.lines) pane.current?.apply(r.lines);
-                    if (r.dialog !== undefined) {
-                      setPrompt((p) => (p ? { ...p, dialog: r.dialog ?? null } : p));
-                    }
+                    // BOTH, always together: they describe the same screen, and
+                    // patching one alone is how the "Enter selects" line came to
+                    // show a previous question's answer.
+                    setPrompt((p) => (p === null ? p : {
+                      ...p,
+                      dialog: r.dialog ?? p.dialog,
+                      selected: r.selected !== undefined ? r.selected : p.selected,
+                    }));
                     setFeedback(null);
                   })
                   .finally(() => setBusy(false));
@@ -862,7 +877,12 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               same option: the two would say the same thing, and this one costs a
               bordered band plus a rule on a phone where the transcript is already
               fighting for height. */}
-          {prompt?.selected && !prompt.options?.some(isSelected) && (
+          {/* Hidden while a dialog is on screen: the panel above already shows
+              the question, the options and their state, and this line was
+              duplicating it — including, once, a previous question's answer.
+              It stays for every prompt the dialog parser refuses, where it is
+              the only thing that says what Enter will commit. */}
+          {!prompt?.dialog && prompt?.selected && !prompt.options?.some(isSelected) && (
             <p className="term-selected" role="status">
               <span className="term-selected-label">⏎ Enter selects</span>
               {prompt.selected}

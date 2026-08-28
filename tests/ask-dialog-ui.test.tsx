@@ -127,6 +127,22 @@ test("an empty row offers to Add, not to Replace", async () => {
   expect(host.querySelector(".dialog-text-send")?.textContent).toBe("Add");
 });
 
+test("the note says whether Enter would take the typed answer RIGHT NOW", async () => {
+  // Enter acts on the cursor's row, and every other control in this panel moves
+  // the cursor. So "press Enter to send it" is only true while the cursor is on
+  // the text row — reported from a phone as typing an answer and the agent
+  // still showing option 3 chosen.
+  const onText = { ...single, cursor: { kind: "option" as const, key: "3" } };
+  const elsewhere = { ...single, cursor: { kind: "option" as const, key: "1" } };
+
+  const a = await render(view({ dialog: onText }));
+  expect(a.querySelector(".dialog-note")?.textContent).toContain("Press Enter to choose");
+  await unmount();
+
+  const b = await render(view({ dialog: elsewhere }));
+  expect(b.querySelector(".dialog-note")?.textContent).toContain("not chosen");
+});
+
 test("single-select gets the field too, and is told Enter sends it", async () => {
   // An earlier version withheld it here, on a measurement that was wrong. What
   // is still true is narrower: typing fills the row but does not commit, and
@@ -135,7 +151,7 @@ test("single-select gets the field too, and is told Enter sends it", async () =>
   const host = await render(view({ dialog: single }));
 
   expect(host.querySelector(".dialog-text")).not.toBeNull();
-  expect(host.textContent).toContain("press Enter");
+  expect(host.textContent).toMatch(/Enter/);
 });
 
 test("the question strip shows where you are and moves one step at a time", async () => {

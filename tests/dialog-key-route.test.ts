@@ -158,7 +158,10 @@ function advanceHarness(reads: string[]) {
       async readPromptScreen() { return reads[Math.min(i++, reads.length - 1)]!; },
       async sendNavKey(_t: string, k: string) { keys.push(k); },
       async sendChars() {},
-      async readOutput() { return { lines: dialogScreen("advance").split("\n"), source: "visible" }; },
+      // The SAME screen the reads queue ended on: `lines` and `dialog` in one
+      // response describe one terminal, so a fake that let them disagree would
+      // be testing a situation that cannot happen.
+      async readOutput() { return { lines: reads[reads.length - 1]!.split("\n"), source: "visible" }; },
     } as never,
   });
   return { app, keys };
