@@ -26,6 +26,25 @@ function controlByte(key: NavKey): string | undefined {
 
 
 /**
+ * One character, as a key herdr will accept.
+ *
+ * Only the SPACE needs this, and it needs it absolutely: measured against a
+ * live agent, `send_keys [" "]` is refused with
+ * `invalid_key: unsupported key  ` while `send_keys ["space"]` is accepted.
+ * Every other printable character tested goes through as itself — punctuation,
+ * accented Vietnamese, CJK.
+ *
+ * Found in a browser rather than here, and the shape of the miss is worth
+ * keeping: an ASCII word typed fine, so every command-line check passed, and
+ * "chào bạn" came back a 502 because ONE character in the middle of it was
+ * rejected and took the whole call down. A phone answer is a phrase, so this
+ * was every realistic use of the field.
+ */
+export function keyForChar(ch: string): string {
+  return ch === " " ? "space" : ch;
+}
+
+/**
  * A path herdr can actually chdir into: absolute, and with paddock's own
  * tilde already undone.
  *
@@ -565,7 +584,7 @@ export function createActions(socketPath: string): HerdrActions {
       // them in order. Sending one request per character would multiply the
       // round trips by the length of the answer.
       await request<HerdrOk>(socketPath, "agent.send_keys", {
-        target, keys: chars,
+        target, keys: chars.map(keyForChar),
       } satisfies HerdrAgentSendKeysParams);
     },
 

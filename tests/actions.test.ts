@@ -11,6 +11,7 @@ import {
   readSourceFor,
   resolveReadLines,
   resolveWaitTimeoutMs,
+  keyForChar,
 } from "@server/herdr/actions";
 import { HERDR_TIMEOUT_MS } from "@server/herdr/socket";
 
@@ -281,4 +282,17 @@ test("waitUntilUnblocked's transport ceiling exceeds the herdr-side budget, even
   } finally {
     globalThis.setTimeout = realSetTimeout;
   }
+});
+
+test("a literal space is sent as the key NAME, because herdr refuses the character", () => {
+  // Measured against a live agent: `send_keys [" "]` answers
+  // `invalid_key: unsupported key  `, while `send_keys ["space"]` is accepted.
+  // Every other printable character tested — punctuation, Vietnamese, CJK —
+  // goes through as itself; the space is the only one with a name.
+  //
+  // Found in a browser, not here: an ASCII word typed fine and "chào bạn"
+  // returned a 502, because the space in the middle of it was rejected by
+  // herdr and the whole call threw. A phone answer is a phrase, so this was
+  // every realistic use of the field.
+  expect([..."chào bạn"].map(keyForChar)).toEqual(["c", "h", "à", "o", "space", "b", "ạ", "n"]);
 });

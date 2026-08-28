@@ -2554,7 +2554,14 @@ body {
   border-top: 1px solid var(--border);
   border-left: var(--edge) solid var(--danger);
   background: var(--surface);
-  max-height: 50vh;
+  /* MEASURED on a 390x844 phone: at 50vh this panel took 357px against the
+     transcript's 239, so the agent's own words — the thing you read to decide —
+     got a third of the screen and the controls got half. Reported as "too small
+     screen for me to read agent content for decide the options".
+     40vh puts the transcript back above 350px and lets the options scroll,
+     which is the right thing to scroll: you read the question once and then
+     work down the list. */
+  max-height: 40vh;
   overflow-y: auto;
 }
 
@@ -2575,7 +2582,7 @@ body {
   list-style: none;
   overflow-x: auto;
   font-size: var(--t-xs);
-  color: var(--muted);
+  color: var(--fg-dim);
 }
 
 .dialog-tab { white-space: nowrap; }
@@ -2639,7 +2646,7 @@ body {
 }
 
 .dialog-option-key {
-  color: var(--muted);
+  color: var(--fg-dim);
   font-size: var(--t-xs);
 }
 
@@ -2650,8 +2657,13 @@ body {
    reason the general parser refuses this screen in the first place. */
 .dialog-option-detail {
   grid-column: 2;
-  color: var(--muted);
-  font-size: var(--t-xs);
+  color: var(--fg-dim);
+  /* PROSE, not metadata. The scale's own note reserves --t-xs for "eyebrows,
+     ages, counts, badges", and this is the sentence the operator reads to
+     decide which option to pick — reported from a phone as unreadable. It cost
+     height, which the panel's cap below pays for. */
+  font-size: var(--t-md);
+  line-height: 1.4;
 }
 
 .dialog-option[aria-pressed="true"] {
@@ -2683,7 +2695,7 @@ body {
   font-size: var(--t-md);
 }
 
-.dialog-text::placeholder { color: var(--muted); }
+.dialog-text::placeholder { color: var(--fg-dim); }
 
 .dialog-text-send {
   min-height: 2.75rem;
@@ -2702,7 +2714,7 @@ body {
 
 .dialog-note {
   margin: 0;
-  color: var(--muted);
+  color: var(--fg-dim);
   font-size: var(--t-xs);
 }
 
