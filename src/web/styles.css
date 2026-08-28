@@ -1827,6 +1827,23 @@ body {
   color: var(--fg-dim);
 }
 
+/* A path in the transcript.
+   Underlined rather than coloured: this pane carries the AGENT's own colours,
+   and spending one of them on links would collide with whatever the agent is
+   already using it for. `font: inherit` and `color: inherit` keep the button
+   inside the monospace grid — a link that changed the column width would shift
+   every character after it on the line. */
+.term-path {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 /* One file, filling the screen below its own header.
    `.screen` already supplies the fixed column and the safe-area inset, so this
    adds only what the body needs: a region that takes the remaining height and

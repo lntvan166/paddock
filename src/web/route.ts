@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { agentIdFromHash, spaceIdFromHash } from "@shared/route";
+import { agentIdFromHash, fileIdFromHash, spaceIdFromHash } from "@shared/route";
 
-export { agentHash, agentIdFromHash, spaceHash, spaceIdFromHash } from "@shared/route";
+export { agentHash, agentIdFromHash, fileHash, fileIdFromHash, spaceHash, spaceIdFromHash } from "@shared/route";
 
 export function useAgentRoute(): string | null {
   const [id, setId] = useState(() => agentIdFromHash(location.hash));
@@ -36,6 +36,26 @@ export function useSpacesRoute(): boolean {
     return () => removeEventListener("hashchange", onChange);
   }, []);
   return on;
+}
+
+/**
+ * The file this hash addresses, or null.
+ *
+ * Returns the id for the reason `useSpaceRoute` gives: the screen needs to know
+ * WHICH file, and a boolean plus a second read of `location.hash` would be two
+ * sources for one fact.
+ */
+export function useFileRoute(): string | null {
+  const [id, setId] = useState(() => fileIdFromHash(location.hash));
+  useEffect(() => {
+    const onChange = () => setId(fileIdFromHash(location.hash));
+    addEventListener("hashchange", onChange);
+    // Re-read on mount, for the reason `useAgentRoute` gives: the hash can
+    // change between the initial `useState` and the listener attaching.
+    onChange();
+    return () => removeEventListener("hashchange", onChange);
+  }, []);
+  return id;
 }
 
 /**

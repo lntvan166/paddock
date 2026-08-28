@@ -149,7 +149,19 @@ export async function openFile(
   path: string,
   f: Fetch = fetch,
 ): Promise<{ id: string; name: string; render: RenderMode }> {
-  return readJson<{ id: string; name: string; render: RenderMode }>("/api/files", { path }, f);
+  const body = await readJson<{
+    ok?: boolean; detail?: string; id?: string; name?: string; render?: RenderMode;
+  }>("/api/files", { path }, f);
+
+  // Checked in the BODY as well as the status, like `uploadImage` and for the
+  // same reason: `readJson` rejects on a non-2xx, and a 200 whose body says
+  // `ok: false` would otherwise resolve with `id: undefined` — navigating the
+  // operator to `#/file/undefined`, a broken screen produced by trusting a
+  // reply that had already said no.
+  if (body.ok === false || typeof body.id !== "string" || typeof body.name !== "string") {
+    throw new RequestFailed(200, body.detail ?? "could not open that file");
+  }
+  return { id: body.id, name: body.name, render: body.render ?? "download" };
 }
 
 /**

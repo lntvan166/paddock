@@ -6,6 +6,7 @@ import {
 } from "react";
 import type { ActionResult, NavKey, OutputResult, PaneOutput } from "@shared/types";
 import { parseAnsi, type AnsiSpan } from "@web/ansi";
+import { splitPaths, type PathSpan } from "@web/paths";
 import { groupLines } from "@web/lines";
 import { useKeyboardInset } from "@web/keyboard-inset";
 import { mergeSnapshot } from "@web/history";
@@ -40,6 +41,41 @@ import { LaunchNotice } from "@web/components/LaunchNotice";
  * style object at all — a full pane is on the order of a thousand spans and
  * most of them carry nothing.
  */
+/**
+ * One line's spans, with any path in them tappable.
+ *
+ * Shared by the wrapped and the exact renderer below. They were two copies of
+ * the same `spans.map`, and a link added to one and not the other is exactly
+ * the drift this project keeps warning about — a path that opens in one wrap
+ * mode and is inert in the other.
+ */
+function LineSpans({ spans, onOpenPath }: {
+  spans: readonly AnsiSpan[];
+  onOpenPath?: (path: string) => void;
+}) {
+  return (
+    <>
+      {splitPaths(spans).map((sp: PathSpan, j) =>
+        sp.path === undefined || onOpenPath === undefined ? (
+          <span key={j} style={styleFor(sp)}>{sp.text}</span>
+        ) : (
+          <button
+            key={j}
+            type="button"
+            className="term-path"
+            style={styleFor(sp)}
+            // A tap, not a long-press: this project's rules exclude a gesture
+            // only someone who already knows would find.
+            onClick={() => onOpenPath(sp.path!)}
+          >
+            {sp.text}
+          </button>
+        ),
+      )}
+    </>
+  );
+}
+
 function styleFor(s: AnsiSpan): CSSProperties | undefined {
   if (!s.fg && !s.bg && !s.bold && !s.dim && !s.italic && !s.underline) return undefined;
   return {
@@ -265,6 +301,14 @@ export interface PaneTerminalHandle {
 }
 
 export interface PaneTerminalProps {
+  /**
+   * Open a path the operator tapped in the transcript.
+   *
+   * Optional, and the transcript renders paths as inert text without it — a
+   * pane whose caller cannot open files must not offer a control that does
+   * nothing.
+   */
+  onOpenPath?: (path: string) => void;
   /** herdr's `pane_id`. The same string as an agent id, because they are the
    *  same thing at two moments. */
   paneId: string;
@@ -343,6 +387,7 @@ export function PaneTerminal({
   revealed: revealedOverride, earlier,
   paused = false, minIntervalMs = 0,
   sendText: onSendText, sendKey: onSendKey,
+  onOpenPath,
   ref,
 }: PaneTerminalProps) {
   /**
@@ -961,9 +1006,7 @@ export function PaneTerminal({
                 <div key={b.from} className={`term-${b.kind}`}>
                   {lineSpans.slice(b.from, b.to + 1).map((spans, i) => (
                     <Fragment key={i}>
-                      {spans.map((sp, j) => (
-                        <span key={j} style={styleFor(sp)}>{sp.text}</span>
-                      ))}
+                      <LineSpans spans={spans} onOpenPath={onOpenPath} />
                       {"\n"}
                     </Fragment>
                   ))}
@@ -973,9 +1016,7 @@ export function PaneTerminal({
               <pre className="term-exact">
                 {lineSpans.map((spans, i) => (
                   <Fragment key={i}>
-                    {spans.map((sp, j) => (
-                      <span key={j} style={styleFor(sp)}>{sp.text}</span>
-                    ))}
+                    <LineSpans spans={spans} onOpenPath={onOpenPath} />
                     {"\n"}
                   </Fragment>
                 ))}

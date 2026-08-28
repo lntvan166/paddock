@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import type { RenderMode } from "@shared/types";
-import { fileDownloadUrl, fileUrl } from "@web/api";
+import { fetchFileMeta, fileDownloadUrl, fileUrl } from "@web/api";
 import { BackIcon } from "@web/components/ui/icons";
 
 /**
@@ -64,4 +65,70 @@ export function FileViewer({ id, name, render, onBack }: {
       </div>
     </section>
   );
+}
+
+/**
+ * The file route's stateful half: turn an id into a name and a render mode.
+ *
+ * Split from `FileViewer` the way `AgentDetail` is split from its view — the
+ * markup stays testable without effects to settle, and the fetching lives in one
+ * place.
+ *
+ * The metadata is fetched rather than passed in, because `#/file/:id` SURVIVES A
+ * RELOAD. That is the reason it is a route at all, and after a refresh the id is
+ * the only thing left: whatever the terminal knew when the path was tapped is
+ * gone. `GET /api/files/:id/meta` exists for exactly this moment.
+ *
+ * Keyed on the id by the caller, so moving between two files remounts rather
+ * than showing the previous file's name against the new one's bytes.
+ */
+export function FileScreen({ id, onBack }: { id: string; onBack: () => void }) {
+  const [meta, setMeta] = useState<{ name: string; render: RenderMode } | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setMeta(null);
+    setFailed(null);
+    void fetchFileMeta(id)
+      .then((m) => { if (live) setMeta(m); })
+      .catch((err: unknown) => {
+        // The server's own sentence, verbatim: it knows whether this is a stale
+        // id or a file that has since moved, and those are fixed differently.
+        if (live) setFailed(err instanceof Error ? err.message : "Could not open that file.");
+      });
+    return () => { live = false; };
+  }, [id]);
+
+  if (failed !== null) {
+    return (
+      <section className="screen file-view" aria-label="File">
+        <header className="term-header">
+          <button type="button" className="term-back" onClick={onBack} aria-label="Back">
+            <BackIcon className="term-back-glyph" />
+          </button>
+          <strong className="file-title">File</strong>
+        </header>
+        <div className="file-body">
+          <p className="file-note">{failed}</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (meta === null) {
+    return (
+      <section className="screen file-view" aria-label="File">
+        <header className="term-header">
+          <button type="button" className="term-back" onClick={onBack} aria-label="Back">
+            <BackIcon className="term-back-glyph" />
+          </button>
+          <strong className="file-title">Opening…</strong>
+        </header>
+        <div className="file-body" />
+      </section>
+    );
+  }
+
+  return <FileViewer id={id} name={meta.name} render={meta.render} onBack={onBack} />;
 }

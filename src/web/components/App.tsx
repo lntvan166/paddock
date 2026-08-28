@@ -6,10 +6,11 @@ import type { NavKey, SpaceTree, TreePane } from "@shared/types";
 import { PaneTerminal, SHELL_MIN_REFRESH_MS } from "@web/components/PaneTerminal";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { paneLabel } from "@web/components/pane-label";
+import { FileScreen } from "@web/components/FileViewer";
 import { Space } from "@web/components/Space";
 import {
-  agentIdFromHash, spaceIdFromHash,
-  useAgentRoute, useSettingsRoute, useSpaceRoute, useSpacesRoute,
+  agentIdFromHash, fileIdFromHash, spaceIdFromHash,
+  useAgentRoute, useFileRoute, useSettingsRoute, useSpaceRoute, useSpacesRoute,
 } from "@web/route";
 import { prunePanes } from "@web/pane-cache";
 import { BackIcon } from "@web/components/ui/icons";
@@ -47,6 +48,27 @@ export function App() {
    * the registration removes the dependency instead of relying on it.
    */
   const paneOriginRef = useRef<{ paneId: string; origin: string } | null>(null);
+
+  /**
+   * The file route, and the hash to return to when it closes.
+   *
+   * The origin is recorded on the way IN rather than derived on the way out: by
+   * the time Back is pressed the previous hash is gone, and defaulting to the
+   * dashboard would strand an operator who opened the file from a pane — which
+   * is every real case. Same reasoning as `paneOriginRef` above.
+   */
+  const openFileId = useFileRoute();
+  const fileOriginRef = useRef<string | null>(null);
+  useEffect(() => {
+    const onChange = () => {
+      // Only while NOT on the file route: this remembers where we were BEFORE
+      // the file, never the file itself.
+      if (fileIdFromHash(location.hash) === null) fileOriginRef.current = location.hash;
+    };
+    addEventListener("hashchange", onChange);
+    onChange();
+    return () => removeEventListener("hashchange", onChange);
+  }, []);
   useEffect(() => {
     const onHashChange = (e: HashChangeEvent) => {
       const paneId = agentIdFromHash(hashOf(e.newURL));
@@ -345,6 +367,19 @@ export function App() {
   // Before `showSpaces` below: belt and braces, not load-bearing.
   // `useSpacesRoute` matches `"#/spaces"` exactly and `spaceIdFromHash`
   // requires the trailing slash, so the two routes can never both be true.
+  // BEFORE the pane and space branches: a file is the most specific route, and
+  // it is reached FROM one of them. Its Back returns to whatever hash was open
+  // when the file was tapped, which is the pane in every real case.
+  if (openFileId !== null) {
+    return (
+      <FileScreen
+        key={openFileId}
+        id={openFileId}
+        onBack={() => { location.hash = fileOriginRef.current ?? ""; }}
+      />
+    );
+  }
+
   if (openSpaceId !== null) {
     return (
       <Space

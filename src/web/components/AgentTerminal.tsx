@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
 import {
-  answerWithKey, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, sendKey, sendText,
-  uploadImage,
+  answerWithKey, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
+import { fileHash } from "@shared/route";
 import { CommandList } from "@web/components/CommandList";
 import { QuickActions, QuickToggle } from "@web/components/QuickActions";
 import { StatusDot } from "@web/components/AgentRow";
@@ -478,6 +479,23 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
     if (el.scrollHeight > 0) el.style.height = `${Math.min(el.scrollHeight, REPLY_MAX_PX)}px`;
   }, [reply]);
 
+  /**
+   * Open a path tapped in the transcript.
+   *
+   * The path is exchanged for an id and the browser navigates to the file's own
+   * route, which is what survives a reload. A refusal shows the SERVER's
+   * sentence: it knows whether the file is missing, a directory, unreadable or
+   * too large, and those are fixed differently.
+   */
+  const openPath = async (path: string) => {
+    try {
+      const opened = await openFile(path);
+      location.hash = fileHash(opened.id);
+    } catch (err) {
+      setFeedback({ ok: false, detail: err instanceof Error ? err.message : "Could not open that file." });
+    }
+  };
+
   /** Any upload still in flight. Send waits for it; see `attached`. */
   const uploading = attached.some((a) => a.path === null);
 
@@ -650,6 +668,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
   return (
     <PaneTerminal
       ref={pane}
+      onOpenPath={(path) => void openPath(path)}
       paneId={agent.agentId}
       title={agent.name}
       onBack={onBack}
