@@ -256,3 +256,15 @@ test("an unindented word is not mistaken for the advance row", () => {
 
   expect(parseAskDialog(prose)!.advance).toBeNull();
 });
+
+test("the free-text row reports what has been typed into it", () => {
+  // The typed text replaces the label, so only this tells the two apart — and
+  // both the field's placeholder and the erase-before-write need to know.
+  const fresh = parseAskDialog(TWO_MULTI)!.options[2]!;
+  expect(fresh.freeText).toBe(true);
+  expect(fresh.typed, "untouched: still the prompt's own words").toBeUndefined();
+
+  const used = parseAskDialog(TYPED)!.options[3]!;
+  expect(used.freeText).toBe(true);
+  expect(used.typed).toBe("okra");
+});

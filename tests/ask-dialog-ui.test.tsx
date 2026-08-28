@@ -102,22 +102,29 @@ test("in multi-select the free-text row is a field, and sending types the text",
   expect(typed).toEqual(["oolong"]);
 });
 
-test("the field shows what is already in the row rather than looking empty", async () => {
-  // After a send the row's LABEL is the text — that is how the screen carries
-  // it — so an empty-looking field over text the agent is holding would be a
-  // control disagreeing with the screen behind it.
+test("the field shows what is in the row, and offers to REPLACE it", async () => {
+  // Sending types characters, and characters land after what is already there —
+  // so before this, correcting a typo concatenated the two and there was no way
+  // back. The button says which it is about to do.
   const host = await render(view({
     dialog: {
       ...multi,
       options: [
         ...multi.options.slice(0, 2),
-        { key: "3", label: "oolong", checked: true, freeText: true },
+        { key: "3", label: "oolong", checked: true, freeText: true, typed: "oolong" },
       ],
     },
   }));
 
   const field = host.querySelector(".dialog-text") as HTMLInputElement;
   expect(field.placeholder).toBe("oolong");
+  expect(host.querySelector(".dialog-text-send")?.textContent).toBe("Replace");
+});
+
+test("an empty row offers to Add, not to Replace", async () => {
+  const host = await render(view());
+
+  expect(host.querySelector(".dialog-text-send")?.textContent).toBe("Add");
 });
 
 test("single-select gets the field too, and is told Enter sends it", async () => {

@@ -65,12 +65,10 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
   // The one genuinely local piece of state in this component: what the operator
   // has typed and not yet sent. Everything else is read off the screen.
   const [draft, setDraft] = useState("");
-  // What is already in the row, so the field can show it rather than looking
-  // empty over text the agent is holding. After a send the row's label IS the
-  // text, which is why this is a label test rather than a stored value.
-  const already = freeText !== undefined && !/^Type something\.?$/.test(freeText.label)
-    ? freeText.label
-    : "";
+  // What is already in the row, from the PARSER rather than re-matched here:
+  // the typed text replaces the label on screen, and duplicating that test in
+  // the UI is how the two would drift.
+  const already = freeText?.typed ?? "";
   // The Submit tab is a tab, not a question: one question plus Submit is a
   // strip with nothing to move between.
   const realQuestions = dialog.questions.filter((q) => !q.isSubmit).length;
@@ -149,6 +147,8 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
             type="text"
             value={draft}
             placeholder={already === "" ? "Type your own answer" : already}
+            /* Sending REPLACES what is in the row, so the placeholder is the
+               current answer and typing over it corrects rather than appends. */
             aria-label="Your own answer"
             disabled={busy}
             onChange={(e) => setDraft(e.currentTarget.value)}
@@ -158,7 +158,7 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
             disabled={busy || draft.trim() === ""}
             onClick={() => { onType(draft); setDraft(""); }}
           >
-            Add
+            {already === "" ? "Add" : "Replace"}
           </Button>
         </div>
       )}

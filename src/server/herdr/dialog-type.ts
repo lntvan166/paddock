@@ -223,10 +223,22 @@ export async function typeIntoFreeText(
   const row = before.options.find((o) => o.freeText);
   if (row === undefined) return { ok: false, detail: "this question has no text row" };
 
-  if (await reachRow(target, before, row.key, io) === null) {
+  const after = await reachRow(target, before, row.key, io);
+  if (after === null) {
     return { ok: false, detail: "could not reach the text row — nothing was typed" };
   }
 
-  await io.sendChars(target, chars);
+  // ERASE FIRST. Typing is characters, and characters land after whatever is
+  // already in the row — so correcting a typo produced a concatenation, and
+  // there was no way back. Reported from a phone: "first i type Trái dừa, then
+  // i type Trái cây and add again, i think it will replace but it append".
+  //
+  // The count comes from the row as the VERIFYING read saw it, not from the
+  // first read, so it cannot be stale. `backspace` is a key name and rides in
+  // the same `send_keys` list as the characters, so this stays one round trip.
+  const existing = after.options.find((o) => o.freeText)?.typed ?? "";
+  const erase = Array.from({ length: [...existing].length }, () => "backspace");
+
+  await io.sendChars(target, [...erase, ...chars]);
   return { ok: true };
 }

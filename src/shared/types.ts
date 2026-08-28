@@ -266,6 +266,16 @@ export interface DialogOption {
    * because the label then IS the text.
    */
   freeText: boolean;
+  /**
+   * What the operator has typed into the free-text row so far, or undefined
+   * while it still reads "Type something".
+   *
+   * On screen the typed text REPLACES the label, so the two are the same field
+   * and only this flag tells them apart. Modelled here rather than pattern-
+   * matched at each use: the UI needs it to show what is already there, and the
+   * type route needs its length to erase it before writing.
+   */
+  typed?: string;
   /** The description line beneath the option, when it has one. */
   detail?: string;
 }

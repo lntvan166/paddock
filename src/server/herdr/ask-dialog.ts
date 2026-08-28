@@ -195,7 +195,12 @@ export function parseAskDialog(raw: string): AskDialog | null {
   const last = options[options.length - 1]!;
   const onlyOneWithoutDetail =
     last.detail === undefined && options.slice(0, -1).every((o) => o.detail !== undefined);
-  if (FREE_TEXT_LABEL_RE.test(last.label) || onlyOneWithoutDetail) last.freeText = true;
+  if (FREE_TEXT_LABEL_RE.test(last.label) || onlyOneWithoutDetail) {
+    last.freeText = true;
+    // The typed text REPLACES the label on screen, so an untouched row is the
+    // one still carrying the prompt's own words.
+    if (!FREE_TEXT_LABEL_RE.test(last.label)) last.typed = last.label;
+  }
 
   return { questions, question, mode, options, advance, cursor };
 }

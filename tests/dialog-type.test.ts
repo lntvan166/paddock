@@ -336,3 +336,51 @@ test("with the cursor already on an option, a tab move sends only the arrow", as
 
   expect(keys).toEqual(["left"]);
 });
+
+test("typing REPLACES what is in the row, rather than appending to it", async () => {
+  // Reported from a phone: "first i type Trái dừa, then i type Trái cây and add
+  // again, i think it will replace but it append. So if I type wrong i cant
+  // fix". Typing is characters, and characters land after what is already
+  // there — so a correction became a concatenation and there was no way back.
+  const sent: string[][] = [];
+  const withText = (typed: string) => [
+    "←  ☐ Teas  ✔ Submit  →",
+    "",
+    "Which teas do you drink?",
+    "",
+    "  1. [ ] Green tea",
+    "  Light and grassy.",
+    `❯ 2. [✔] ${typed}`,
+    "     Next",
+  ].join("\n");
+  const x = {
+    async readPromptScreen() { return withText("dừa"); },
+    async sendNavKey() {},
+    async sendChars(_t: string, c: string[]) { sent.push(c); },
+    async sendOptionKey() {},
+    async settle() {},
+  };
+
+  const out = await typeIntoFreeText("w1:p1", ["c", "â", "y"], x);
+
+  expect(out.ok).toBe(true);
+  // Three characters in the row, so three backspaces, then the new text — one
+  // call, because `send_keys` takes a list and a name like `backspace` rides in
+  // it beside the characters.
+  expect(sent).toEqual([["backspace", "backspace", "backspace", "c", "â", "y"]]);
+});
+
+test("an untouched row is written without erasing anything first", async () => {
+  const sent: string[][] = [];
+  const x = {
+    async readPromptScreen() { return screen("3"); },
+    async sendNavKey() {},
+    async sendChars(_t: string, c: string[]) { sent.push(c); },
+    async sendOptionKey() {},
+    async settle() {},
+  };
+
+  await typeIntoFreeText("w1:p1", ["h", "i"], x);
+
+  expect(sent).toEqual([["h", "i"]]);
+});
