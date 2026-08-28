@@ -13,6 +13,7 @@ afterEach(async () => {
   globalThis.fetch = realFetch;
   localStorage.removeItem("paddock.term.keypad");
   localStorage.removeItem("paddock.term.keypad.auto");
+  localStorage.removeItem("paddock.quick.replies");
 });
 
 const screenOf = (lines: string[]) => ({ lines, source: "visible", digest: digestOf(lines) });
@@ -112,4 +113,23 @@ test("Quick closes again on a second tap", async () => {
 
   await click(toggle);
   expect(host.querySelector(".term-quick")).toBeNull();
+});
+
+test("the operator's own list is what the panel offers", async () => {
+  localStorage.setItem("paddock.quick.replies", JSON.stringify(["Ship it", "Hold on"]));
+  const { host } = await mount();
+
+  await click(host.querySelector(".term-quick-toggle"));
+
+  expect(textsOf(host, ".term-quick-action")).toEqual(["Ship it", "Hold on"]);
+});
+
+test("with the list emptied, the control is not offered at all", async () => {
+  // An operator who removed every reply gets no toggle, rather than a toggle
+  // that opens an empty panel. Absence and emptiness are different answers,
+  // and this is where the pref's distinction between them pays out.
+  localStorage.setItem("paddock.quick.replies", JSON.stringify([]));
+  const { host } = await mount();
+
+  expect(host.querySelector(".term-quick-toggle")).toBeNull();
 });

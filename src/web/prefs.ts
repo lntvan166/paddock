@@ -230,3 +230,82 @@ export function writePref<K extends keyof Prefs>(k: K, v: Prefs[K]): void {
 export function themeAttr(pref: ThemePref): Exclude<ThemePref, "system"> | null {
   return pref === "system" ? null : pref;
 }
+
+/**
+ * The quick replies the terminal's `Quick` panel offers.
+ *
+ * NOT part of `Prefs` and not written through `writePref`, deliberately. That
+ * function's contract is a SCALAR — it stores `String(v)` — so a list would be
+ * saved comma-joined and read back split in the wrong places the first time an
+ * operator writes "Yes, please". A list needs JSON, and giving it its own pair
+ * of functions keeps `writePref`'s type-keyed rule (the one that already caught
+ * a boolean being stored as "true") intact rather than growing a special case.
+ *
+ * PER DEVICE, like the theme and the key pad, and unlike the notification
+ * settings. These are a convenience about how one phone is used, and putting
+ * them in `settings.json` would widen a server contract that is deliberately
+ * narrow — see `docs/decisions.md` on what that file is for.
+ */
+const QUICK_KEY = "paddock.quick.replies";
+
+/** What the panel offers before an operator has said otherwise. */
+export const DEFAULT_QUICK_REPLIES = ["Yes", "Go ahead", "Approve"] as const;
+
+/**
+ * A cap, because the panel is one sideways-scrolling row and a list long
+ * enough to need hunting through is no longer quick.
+ */
+export const MAX_QUICK_REPLIES = 12;
+
+/** A quick reply is short by definition; anything longer belongs in the field. */
+export const MAX_QUICK_REPLY_LEN = 60;
+
+/**
+ * A stored value turned into a usable list, or `null` when it is not a list at
+ * all.
+ *
+ * `null` and `[]` are DIFFERENT answers and the caller depends on it: nothing
+ * stored means the defaults, while an operator who deleted every reply must not
+ * have them handed back on the next load.
+ *
+ * Every rule here is also enforced at entry by the settings UI, so in practice
+ * this only fires on hand-edited storage or a list written by an older build.
+ * It still runs on the way out: a `.map(String)` over hand-edited JSON is how
+ * "null" or "[object Object]" ends up on a button.
+ */
+export function normaliseQuickReplies(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const text = entry.trim();
+    if (text === "" || text.length > MAX_QUICK_REPLY_LEN) continue;
+    // Two identical rows are two identical buttons: a mis-tap hazard with no
+    // upside. First occurrence wins, so the operator's own order survives.
+    if (out.includes(text)) continue;
+    out.push(text);
+    if (out.length === MAX_QUICK_REPLIES) break;
+  }
+  return out;
+}
+
+export function readQuickReplies(): string[] {
+  const stored = raw(QUICK_KEY);
+  if (stored === null) return [...DEFAULT_QUICK_REPLIES];
+  try {
+    return normaliseQuickReplies(JSON.parse(stored)) ?? [...DEFAULT_QUICK_REPLIES];
+  } catch {
+    // Unparseable storage is indistinguishable from never having stored one,
+    // and falling back beats taking the settings view down over it.
+    return [...DEFAULT_QUICK_REPLIES];
+  }
+}
+
+export function writeQuickReplies(list: readonly string[]): void {
+  try {
+    localStorage.setItem(QUICK_KEY, JSON.stringify(normaliseQuickReplies([...list]) ?? []));
+  } catch {
+    // Safari private mode: the list simply does not persist, which beats an
+    // uncaught throw from the settings view.
+  }
+}

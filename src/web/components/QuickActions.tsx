@@ -21,16 +21,6 @@ import { FlashIcon } from "@web/components/ui/icons";
  * rather than dense, and sending closes it again.
  */
 
-/**
- * The defaults.
- *
- * Deliberately all affirmative, because that is what was asked for — and worth
- * naming as a limit rather than leaving implicit: this makes approving one tap
- * while declining still costs typing. A refusal belongs here too if the
- * asymmetry ever bites.
- */
-export const QUICK_REPLIES = ["Yes", "Go ahead", "Approve"] as const;
-
 export function QuickToggle({ open, onToggle }: {
   open: boolean;
   onToggle: () => void;

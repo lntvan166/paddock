@@ -5,6 +5,7 @@ import {
   type Prefs, type ThemePref,
 } from "@web/prefs";
 import { DeviceSection } from "@web/components/settings/DeviceSection";
+import { QuickRepliesSection } from "@web/components/settings/QuickRepliesSection";
 import { TunnelSection } from "@web/components/settings/TunnelSection";
 import { TelegramSection } from "@web/components/settings/TelegramSection";
 import { NotifySection } from "@web/components/settings/NotifySection";
@@ -358,6 +359,11 @@ export function Settings(_props: SettingsProps = {}) {
           Stored in this browser only. Each device you open paddock on keeps its own copy.
         </p>
         <DeviceSection prefs={prefs} setPref={setPref} />
+
+        {/* Beside the device cards, and after Terminal, because it is the same
+            KIND of setting: per-device, saved on change, about how this phone
+            is used rather than what the server does. */}
+        <QuickRepliesSection />
       </section>
 
       <section className="band" aria-labelledby="band-server">

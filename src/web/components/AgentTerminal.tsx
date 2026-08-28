@@ -6,7 +6,7 @@ import {
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
 import { CommandList } from "@web/components/CommandList";
-import { QUICK_REPLIES, QuickActions, QuickToggle } from "@web/components/QuickActions";
+import { QuickActions, QuickToggle } from "@web/components/QuickActions";
 import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
 import { RowActions } from "@web/components/RowActions";
@@ -16,7 +16,7 @@ import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
   emptyJournal, journalFor, updateJournal, type JournalState,
 } from "@web/pane-cache";
-import { readPrefs, type KeypadPref } from "@web/prefs";
+import { readPrefs, readQuickReplies, type KeypadPref } from "@web/prefs";
 
 /**
  * How tall the reply field may grow before it scrolls instead.
@@ -222,6 +222,12 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
    * knows what they want to say.
    */
   const [quickOpen, setQuickOpen] = useState(false);
+  /**
+   * Read ONCE per mount, not on every render: this is the operator's own list
+   * from `localStorage`, and re-reading it while they type would be a storage
+   * hit per keystroke for a value that changes only in Settings.
+   */
+  const [quickReplies] = useState(readQuickReplies);
 
   const [commands, setCommands] = useState<AgentCommand[]>([]);
   useEffect(() => {
@@ -786,7 +792,11 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
         // which is exactly the shape the pad itself already had.
         <>
           <KeypadToggle pad={keypad} onChange={setKeypad} />
-          <QuickToggle open={quickOpen} onToggle={() => setQuickOpen((v) => !v)} />
+          {/* No replies, no control. An operator who cleared the list gets no
+              toggle rather than one that opens an empty panel. */}
+          {quickReplies.length > 0 && (
+            <QuickToggle open={quickOpen} onToggle={() => setQuickOpen((v) => !v)} />
+          )}
         </>
       }
       afterControls={
@@ -803,7 +813,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
 
           {quickOpen && (
             <QuickActions
-              replies={QUICK_REPLIES}
+              replies={quickReplies}
               busy={busy || uploading}
               // Sends ITS OWN text and leaves the field alone: a draft the
               // operator is part-way through is theirs, and discarding it to
