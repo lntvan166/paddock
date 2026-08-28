@@ -445,6 +445,15 @@ export function PaneTerminal({
    * is no scrollbar then, no scroll event ever fires, and top and bottom are the
    * same place — a short pane with earlier history to fetch must still offer it.
    */
+  /**
+   * Whether the pane is following the tail.
+   *
+   * Rendered as the ABSENCE of a control: no button means you are following.
+   * A button that is always present would say nothing, and a badge counting
+   * unseen lines would be a second thing to read on a screen whose job is
+   * reading one thing.
+   */
+  const [following, setFollowing] = useState(true);
   const [atTop, setAtTop] = useState(true);
 
   /**
@@ -780,7 +789,14 @@ export function PaneTerminal({
   const readScroll = () => {
     const el = paneRef.current;
     if (!el) return;
-    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
+    const following = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
+    stick.current = following;
+    // The same fact as the ref, in state, because it is RENDERED now. Kept as
+    // both rather than one: the ref is read inside effects and a scroll
+    // handler, where a stale render value would re-pin a pane the operator has
+    // just scrolled away from, and React bails out of an identical setState so
+    // this costs a re-render only when the answer actually changes.
+    setFollowing(following);
     setAtTop(el.scrollTop <= TOP_THRESHOLD_PX);
   };
 
@@ -966,6 +982,23 @@ export function PaneTerminal({
           it beats the alternative of holding you at the top while content
           appears under you. */}
       {!error && atTop && earlierNode}
+
+      {!following && !error && (
+        <button
+          type="button"
+          className="term-to-bottom"
+          onClick={() => {
+            const el = paneRef.current;
+            if (el) el.scrollTop = el.scrollHeight;
+            // Read back rather than assumed: assigning scrollTop fires a scroll
+            // event, but a pane shorter than its content never scrolls at all,
+            // and then nothing would clear this control.
+            readScroll();
+          }}
+        >
+          ↓ Latest
+        </button>
+      )}
 
       {error ? (
         <p className="term-error warn" role="alert">Could not load output: {error}</p>

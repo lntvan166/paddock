@@ -123,13 +123,25 @@ for (const sel of [".agent-card", ".term-options"]) {
   });
 }
 
-test("the terminal's output pane is full-bleed, and that is deliberate", () => {
+test("the output pane is full-bleed in EXACT mode, and that is deliberate", () => {
   // The pane is measured in COLUMNS VISIBLE — its own font-size comment records
   // that the floor was corrected once because ~46 columns clipped an 80-column
-  // TUI mid-word. Horizontal padding there costs columns for no gain: the text
-  // inside is the agent's, already aligned by construction, and it scrolls
-  // sideways rather than wrapping. So this is the one band that opts out.
+  // TUI mid-word. Horizontal padding costs columns, and in exact mode columns
+  // are the point: the text is the agent's, aligned by construction, and it
+  // scrolls sideways rather than wrapping.
   const body = ruleBody(".term-pane");
   expect(body).not.toContain("var(--gutter)");
   expect(body).toMatch(/padding\s*:\s*[^;]*\s0\b/);
 });
+
+test("but WRAPPED output gets the gutter like every other band", () => {
+  // The refinement, reported twice from a phone: prose running flush to the
+  // glass looks like a mistake. Wrapping has already given up column fidelity —
+  // that is what wrapping IS — so the two columns of padding cost nothing here,
+  // while exact mode keeps every one of them. One decision became two, each
+  // correct for its own case.
+  const wrapped = ruleBody('.term-pane[data-wrap="on"]');
+  expect(wrapped, "the wrapped pane opts back IN to the shared gutter")
+    .toContain("var(--gutter)");
+});
+

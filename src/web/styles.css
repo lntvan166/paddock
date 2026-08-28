@@ -2238,7 +2238,20 @@ body {
    viewport, and anything that must keep its columns gets its own strip below.
    Without `overflow-x: hidden` here a single over-wide strip would drag the
    whole transcript with it, which is the behaviour this mode exists to end. */
+/* WRAPPED output also opts back IN to the shared gutter.
+   Reported twice from a phone: prose running flush to the glass reads as a
+   mistake, on the screen an operator spends the most time on. The full-bleed
+   exemption above is still right for EXACT mode, where columns are the whole
+   point — but wrapping has already given up column fidelity, which is what
+   wrapping IS, so the two columns of padding cost nothing here and buy nothing
+   there. One decision became two, each correct for its own case, and
+   `tests/gutter.test.ts` asserts both halves.
+
+   Declared HERE rather than in a rule of its own: this selector already
+   existed, and a second copy is how one of them learns something the other
+   does not. */
 .term-pane[data-wrap="on"] {
+  padding-inline: var(--gutter);
   white-space: normal;
   overflow-x: hidden;
 }
@@ -2321,6 +2334,54 @@ body {
 
 /* Reveals reconstructed scrollback. Sits above the pane rather than inside it
    so that revealing more cannot be mistaken for output the agent produced. */
+/* Stop, in the controls band beside Keys and Quick.
+   `--danger` because this ends work an operator may have waited hours for — the
+   one colour in this palette spent on "an agent stopped and needs you" is the
+   right one for the control that stops it. Sized and spaced like its two
+   neighbours by the shared rule above; only the colour differs, which is what
+   says it is not another panel toggle. */
+.term-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.75rem;
+  padding: 0 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--t-md);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.term-stop:disabled { opacity: 0.5; }
+.term-stop-glyph { font-size: var(--t-xs); }
+
+/* "Latest", offered only while the pane is NOT following the tail — its
+   presence is the indicator, which is why there is no always-on badge. Styled
+   as `.term-earlier`'s counterpart at the other end of the transcript: the same
+   band, the same height, the same accent, so the two read as one pair rather
+   than two inventions. */
+.term-to-bottom {
+  flex: none;
+  width: 100%;
+  min-height: 2.75rem;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--t-md);
+  font-weight: 600;
+  cursor: pointer;
+  /* Below the pane in source order, so it sits between the transcript and the
+     controls rather than pushing the header down. */
+  order: 1;
+}
+
 .term-earlier {
   flex: none;
   width: 100%;

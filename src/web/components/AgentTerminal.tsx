@@ -816,6 +816,35 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
           {quickReplies.length > 0 && (
             <QuickToggle open={quickOpen} onToggle={() => setQuickOpen((v) => !v)} />
           )}
+
+          {/* STOP, and only while the agent is WORKING.
+
+              `^C` already existed — but inside the key pad's `full` layout, and
+              the pad defaults to `hidden`, so interrupting was three taps and
+              required knowing the toggle cycles through three states. The pad's
+              own comment calls interrupting "the one control act reached for in
+              a hurry", which is a poor fit for the least reachable control on
+              the screen.
+
+              Not always present, deliberately: an interrupt on an idle agent
+              has nothing to interrupt and is an accident waiting to happen. The
+              state already says which case this is.
+
+              Immediate, with no confirm, for the same reason it is here at all —
+              a confirmation step defeats "in a hurry", and the pad's existing
+              `^C` is immediate too. The danger colour is what carries the
+              weight instead. */}
+          {agent.state === "working" && (
+            <button
+              type="button"
+              className="term-stop"
+              disabled={busy}
+              onClick={() => void press("ctrl-c")}
+            >
+              <span aria-hidden="true" className="term-stop-glyph">■</span>
+              Stop
+            </button>
+          )}
         </>
       }
       afterControls={
