@@ -36,6 +36,17 @@ export async function render(node: React.ReactNode, into?: HTMLElement): Promise
     await settle();
     return host;
   }
+  // A fresh root ABANDONS the previous tree unless it is unmounted first, and
+  // Bun runs every test file in ONE process — so the abandoned tree survives
+  // into the next FILE, keeps its effects running, and its polling timers keep
+  // calling `setState` outside any `act()`. React then warns, naming a
+  // component the currently-printing file has never rendered.
+  //
+  // Measured: `create-sheet.test.tsx` emitted ZERO act() warnings run alone and
+  // was credited with 28 of the suite's 35 in a full run. A file that forgets
+  // its own `unmount()` in `afterEach` costs every file after it, which is not
+  // a bill the author of the next file can read.
+  await unmount();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);

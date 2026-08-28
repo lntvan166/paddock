@@ -325,38 +325,37 @@ surprise.
   embedded copy. See `build-id.ts`'s `indexHtmlFor`. This entry described the
   hazard; that one is the hazard having already happened somewhere else.
 
-- **Three component tests emit React `act()` warnings that a green
-  `make test` doesn't surface.** `tests/settings-view.test.tsx`,
-  `tests/prefs-applied.test.tsx`, and `tests/settings-save-bar.test.tsx` (new
-  on this branch, for the sticky save bar) each render `<Settings>` and print
-  `Warning: An update to Settings inside a test was not wrapped in act(...)`.
-  Measured against a full `make test` run: 9, 3, and 20 occurrences
-  respectively. Not a regression in the two pre-existing files: at the commit
-  this branch forked from, those same two files together already produced 16
-  (13 from `settings-view`, 3 from `prefs-applied`) — this branch's own edits
-  to `settings-view.test.tsx` in fact lowered that to 9.
-  `settings-save-bar.test.tsx` is new, and inherits the same pattern rather
-  than avoiding it.
+- ~~**Three component tests emit React `act()` warnings that a green
+  `make test` doesn't surface.**~~ *Resolved, and the diagnosis recorded here
+  was wrong.*
 
-  `tests/support/dom.ts` already sets `IS_REACT_ACT_ENVIRONMENT`, so a missing
-  global is not the cause. `tests/support/render.tsx`'s `render()` wraps only
-  the synchronous `root.render(node)` call in `act()`, and `settle()` flushes
-  exactly one queued microtask per call, inside `act()`. A stubbed `fetch`
-  response takes more microtask turns than that to fully resolve — the mock's
-  own async function, then `Response.json()`'s parse — so a click followed by
-  a fixed one or two `settle()` calls does not always drain the chain before
-  the test's last `act()` closes; the trailing `setState` fires after, against
-  whatever is still mounted. `settings-save-bar.test.tsx` drives the most
-  clicks per test (save, mute, unmute, the test-message button) and produces
-  the most warnings; `prefs-applied.test.tsx` barely touches `<Settings>` and
-  produces the fewest.
+  This entry blamed `settle()` flushing "exactly one queued microtask" against a
+  stubbed `fetch` chain that needs more turns. Two things about that: `settle()`
+  awaits a MACROTASK, which drains any microtask chain, so the mechanism
+  described could not produce the warnings; and the prescribed fix — a
+  loop-until-settled in `tests/support/render.tsx` — would have addressed
+  nothing.
 
-  Not chased down here: the warnings do not fail the suite, and fixing test
-  harness timing is out of scope for a docs task. Closing it means replacing
-  the fixed-count `settle()` with one that loops flushing microtasks until the
-  mocked `fetch` calls are provably settled, rather than guessing a number of
-  calls — a change to `tests/support/render.tsx` that every file using
-  `stubFetch` would inherit, not a per-file fix.
+  The actual cause was found by running the worst-offending file ALONE, where it
+  emitted zero. Bun runs every test file in one process, and `render()` kept its
+  root in a module-level binding: a fresh call REPLACED it without unmounting
+  the previous tree. The abandoned tree stayed mounted into the next FILE, its
+  effects kept running, and its polling timers kept calling `setState` outside
+  any `act()` — so React warned, naming a component the currently-printing file
+  had never rendered. That is also why the counts in this entry were attributed
+  to the wrong files, including two that render no React at all.
+
+  `render()` now unmounts before creating a fresh root, so a file that forgets
+  its own `unmount()` cannot bill the files after it.
+  `tests/support-render.test.tsx` covers the harness itself: an abandoned tree
+  stops ticking, and only one host is left in the document.
+
+  Measured across the full suite: **35 warnings before, 2 after.** The last two
+  are a different, smaller cross-file effect — attributed to `Probe` in
+  `tests/keyboard-inset.test.tsx`, which also emits zero in isolation and does
+  unmount correctly. Left open deliberately rather than folded into this fix,
+  because it has not been diagnosed and guessing is what produced the paragraph
+  above.
 
 ## Known v3 gaps
 
