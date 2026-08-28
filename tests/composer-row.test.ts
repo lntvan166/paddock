@@ -33,3 +33,21 @@ function ruleFor(selector: string): string {
 test("the composer keeps its controls on the bottom edge as the field grows", () => {
   expect(ruleFor(".term-reply")).toContain("align-items: flex-end");
 });
+
+test("the composer's bottom clearance collapses into the safe area", () => {
+  // `.term` already pays `env(safe-area-inset-bottom)` for the whole shell, and
+  // the row added a flat 0.5rem on top — so a phone with a home indicator paid
+  // BOTH: ~34px of inset plus 8px, leaving a band under the composer that reads
+  // as a mistake. Reported from a phone as "the space below text box send is
+  // large".
+  //
+  // The 0.5rem is not wrong, it is conditional: its own comment says it exists
+  // for a phone with NO home indicator, where the inset is 0 and the field
+  // would otherwise sit flat against the glass. So it has to subtract what the
+  // shell already provides rather than stack on it.
+  const rule = ruleFor(".term-reply");
+  expect(rule, "the row knows about the inset it sits inside").toContain(
+    "env(safe-area-inset-bottom",
+  );
+  expect(rule, "and subtracts rather than adds").toMatch(/max\(/);
+});

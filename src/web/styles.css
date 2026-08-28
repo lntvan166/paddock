@@ -1766,10 +1766,18 @@ body {
 .term-key:disabled { opacity: 0.5; }
 
 /* The input is already 2.75rem, so no padding is needed above it — same rule
-   as `.term-header` and `.term-controls`. What is kept is the 0.5rem BELOW:
+   as `.term-header` and `.term-controls`. What is kept is the clearance BELOW:
    this is the last band before the screen edge, and on a phone with no home
    indicator `env(safe-area-inset-bottom)` is 0, which would sit the field flat
-   against the glass. That half is thumb clearance, not rhythm. */
+   against the glass. That half is thumb clearance, not rhythm.
+
+   It SUBTRACTS what the shell already provides rather than stacking on it.
+   `.screen, .term` pays the inset for the whole column, so a flat 0.5rem here
+   meant a home-indicator phone paid both — ~34px of inset plus 8px — and the
+   band under the composer read as a mistake rather than as the reserved strip
+   it is. Reported from a phone as "the space below text box send is large".
+   Where there is no inset the full 0.5rem still applies, which is the case the
+   padding was added for. */
 /* The Quick replies editor, in Settings.
    A list of rows plus one add field. Deliberately plain: this is a card among
    cards, and the terminal's own panel is where the styling matters. */
@@ -2068,7 +2076,7 @@ body {
      the bottom edge and grows the box upward. */
   align-items: flex-end;
   background: var(--surface);
-  padding: 0 var(--gutter) 0.5rem;
+  padding: 0 var(--gutter) max(0px, calc(0.5rem - env(safe-area-inset-bottom, 0px)));
 }
 
 .term-reply input, .term-reply .term-reply-field {
