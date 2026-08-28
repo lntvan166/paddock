@@ -228,17 +228,31 @@ export async function typeIntoFreeText(
     return { ok: false, detail: "could not reach the text row — nothing was typed" };
   }
 
-  // ERASE FIRST. Typing is characters, and characters land after whatever is
-  // already in the row — so correcting a typo produced a concatenation, and
-  // there was no way back. Reported from a phone: "first i type Trái dừa, then
-  // i type Trái cây and add again, i think it will replace but it append".
+  // ERASE FIRST, AND FIND THE END BEFORE ERASING.
   //
-  // The count comes from the row as the VERIFYING read saw it, not from the
-  // first read, so it cannot be stale. `backspace` is a key name and rides in
-  // the same `send_keys` list as the characters, so this stays one round trip.
+  // Typing is characters, and characters land at the CARET — so correcting a
+  // typo produced a concatenation. The first attempt at this sent backspaces
+  // and still appended, because backspace deletes behind the caret and the
+  // caret is not where you would assume: measured, it sits wherever the last
+  // insertion ended, and it is at position 0 when the cursor has just arrived
+  // on the row. So `Trái nho khô` typed over `Trái cây` gave
+  // `Trái nho khôTrái cây` — the erase deleted nothing and the text went in
+  // front.
+  //
+  // Nothing reports the caret, so it is DRIVEN to a known position instead:
+  // `right` as many times as the row is long puts it at the end from anywhere,
+  // and measured, `right` past the end is inert — twenty of them left both the
+  // text and the current tab untouched. Then the backspaces have something
+  // behind them.
+  //
+  // The length comes from the VERIFYING read, never the first one. All of it is
+  // one `send_keys` list, because `right` and `backspace` are key names and ride
+  // beside the characters — so this stays a single round trip.
   const existing = after.options.find((o) => o.freeText)?.typed ?? "";
-  const erase = Array.from({ length: [...existing].length }, () => "backspace");
+  const n = [...existing].length;
+  const toEnd = Array.from({ length: n }, () => "right");
+  const erase = Array.from({ length: n }, () => "backspace");
 
-  await io.sendChars(target, [...erase, ...chars]);
+  await io.sendChars(target, [...toEnd, ...erase, ...chars]);
   return { ok: true };
 }

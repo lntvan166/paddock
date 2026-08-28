@@ -364,10 +364,19 @@ test("typing REPLACES what is in the row, rather than appending to it", async ()
   const out = await typeIntoFreeText("w1:p1", ["c", "â", "y"], x);
 
   expect(out.ok).toBe(true);
-  // Three characters in the row, so three backspaces, then the new text — one
-  // call, because `send_keys` takes a list and a name like `backspace` rides in
-  // it beside the characters.
-  expect(sent).toEqual([["backspace", "backspace", "backspace", "c", "â", "y"]]);
+  // Three characters in the row, so: three `right` to pin the caret at the end
+  // from wherever it was, three `backspace` to clear, then the new text. One
+  // call, because key NAMES ride in the same `send_keys` list as characters.
+  //
+  // The `right` half is not belt-and-braces. Backspace deletes BEHIND the
+  // caret, and the caret sits wherever the last insertion ended — 0 when the
+  // cursor has just arrived. Without pinning, the erase deleted nothing and the
+  // new text went in front of the old.
+  expect(sent).toEqual([[
+    "right", "right", "right",
+    "backspace", "backspace", "backspace",
+    "c", "â", "y",
+  ]]);
 });
 
 test("an untouched row is written without erasing anything first", async () => {

@@ -264,6 +264,16 @@ one, recorded here so they are not reintroduced.
   Never send a key to one of these screens without knowing which row the cursor
   is on; `src/server/herdr/ask-dialog.ts` exists to answer that.
 
+- **Nothing reports a TUI text row's CARET, and it is not where you assume.**
+  Measured: it sits wherever the last insertion ended, and at position 0 when
+  the cursor has just arrived on the row — not at the end of the text. So
+  `backspace`, which deletes BEHIND the caret, erased nothing and the new text
+  went in FRONT of the old: typing `Trái nho khô` over `Trái cây` produced
+  `Trái nho khôTrái cây`. Drive the caret to a known position first — `right`
+  as many times as the row is long reaches the end from anywhere, and `right`
+  past the end is inert (twenty of them changed neither the text nor the current
+  tab).
+
 - **Probe a TUI one key at a time, never in a batch.** `send-keys a b c d` sends
   four keys with no pause, and a TUI repaints asynchronously — so keys that
   depend on where an earlier key left the cursor are measured against the wrong
