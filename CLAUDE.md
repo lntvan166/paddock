@@ -114,6 +114,23 @@ Full detail in `docs/architecture.md`. The rules that must not be broken:
   with their real labels; if parsing fails, fall back to raw output plus a free-text
   reply. A mislabelled Approve button is worse than no button.
 
+- **Verify a control from a USED screen, not a fresh one.** The question dialog
+  shipped eleven bugs after being called done, and every one lived in the second
+  state: text already typed, the cursor moved by the previous tap, the second
+  question rather than the first. Each had been "verified" — against an empty
+  row, a cursor at the start, a dialog nobody had touched. A control that works
+  on a fresh screen and not on a used one works in the demo and not in the job.
+  Do the thing before it, THEN try it.
+
+- **Probe a TUI one key at a time.** `send-keys a b c` measures the later keys
+  against the frame before the earlier ones landed, because a TUI repaints
+  asynchronously. Two entries in a design doc's measured-behaviour table were
+  wrong this way and both reached shipped code — including one that withheld a
+  working feature and told the operator to use a path that cannot work.
+  `tests/dialog-live.test.ts` turns those measurements into assertions; run it
+  against a throwaway probe agent (see its header) when herdr or a harness
+  updates, rather than trusting the table.
+
 ## UI rules
 
 - **No device detection. No `isMobile`. No user-agent parsing.** Width media queries
