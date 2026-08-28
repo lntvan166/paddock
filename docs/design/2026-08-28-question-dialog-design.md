@@ -1,6 +1,7 @@
 # Answering a multi-question dialog from the phone
 
-**Status:** APPROVED, not built. 2026-08-28.
+**Status:** BUILT, 2026-08-28. Plan:
+`docs/superpowers/plans/2026-08-28-question-dialog.md`.
 **Date:** 2026-08-28.
 
 ## The problem

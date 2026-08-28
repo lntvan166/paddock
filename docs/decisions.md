@@ -917,3 +917,53 @@ session does not silently re-litigate them.
     operator's disk, and README screenshots are taken in that mode.
 
     See `docs/design/2026-08-28-file-viewer-design.md`.
+
+29. **paddock parses ONE harness's question dialog, and refuses every shape it
+    does not fully recognise.**
+
+    Reported from a phone against a real `AskUserQuestion` dialog: no option
+    buttons, and choosing "Type something" then typing did nothing. Both halves
+    were true and both were in the code. `prompt-parse.ts` refuses that screen
+    correctly — every option is followed by a description line, a non-option line
+    ends an option run, so each run is one option long and fails the "fewer than
+    two" guard. And paddock had no way to type at an agent at all.
+
+    So a second parser, `ask-dialog.ts`, beside the first rather than inside it.
+    The general parser keeps its job and stays the fallback for permission
+    prompts, other harnesses, and every shape the new one refuses. `null` from
+    the new parser means "render what you rendered yesterday", which is why
+    adding it could not regress anything.
+
+    **What made this worth the specificity:** the same key means different things
+    on different rows, all measured on a live agent one key at a time. A digit
+    TOGGLES in multi-select and PICKS-AND-ADVANCES in single-select. `space`
+    inserts a space on the free-text row and toggles on every other row. Typing
+    into the free-text row ticks its checkbox as a side effect. None of that is
+    guessable, and every one of them is a wrong answer to a real question if
+    guessed wrong. `docs/design/2026-08-28-question-dialog-design.md` tabulates
+    the lot.
+
+    **Three refusals are load-bearing, not caution:**
+
+    - **No free-text control in single-select, in the route or the UI.** Measured:
+      that row ignores characters in that mode, and Enter on it while empty
+      DECLINES THE WHOLE DIALOG — the transcript records `User declined to answer
+      questions`. A control that can throw away every answer already given is the
+      mislabelled Approve button this project bans, in its worst form.
+    - **The cursor is verified from a re-read before any character is typed.**
+      Counting keystrokes against a screen an agent is free to repaint is how an
+      off-by-one becomes a silently selected answer.
+    - **`NAV_KEYS` stays closed.** Characters got their own route with their own
+      validation — printable, length-capped, and deliberately NOT ASCII-only,
+      because non-ASCII is measured to work and Vietnamese is what the operator
+      types. Folding a character into a key allowlist would turn a closed set
+      into an open one.
+
+    **Two things deliberately not built.** Tapping a question tab BY NAME, which
+    would mean sending a computed run of arrow presses — the riskiest machinery
+    here, for a move the two end buttons already make in one tap each; the strip
+    displays where you are, which was the thing the raw screen never told you at
+    a glance. And a digit is never sent through `/answer`: that route waits for
+    the agent to leave `blocked`, and no dialog interaction unblocks anything
+    until "Submit answers", so every checkbox tap would have hung for the full
+    wait and then reported failure for a toggle that worked.

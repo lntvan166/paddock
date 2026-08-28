@@ -240,6 +240,35 @@ one, recorded here so they are not reintroduced.
   history comes from the harness's own log instead — see
   `src/server/journal/`.
 
+- **The `detection` read source strips every escape, unconditionally.**
+  Measured: a detection read of a live question dialog contains ZERO escape
+  sequences even when colour is asked for, while the same screen from `visible`
+  has 37 escape-bearing lines. Anything that needs colour — a question dialog's
+  current tab is marked ONLY by an ANSI background — must read `visible`. No
+  `strip_ansi` flag can recover it, so the SOURCE is the thing to change.
+
+- **`agent.send_keys` takes ONE character per key.** `send_keys ["chào"]` is
+  refused with `invalid_key: unsupported key chào`. Text therefore travels as an
+  array of single characters, split by CODE POINT (`Array.from`) — a byte or
+  UTF-16 split corrupts anything non-Latin. Single non-ASCII characters ARE
+  accepted (`à`, `ế`, `日` each measured), so a character route must not be
+  ASCII-only.
+
+- **In a question dialog the same key means different things on different rows.**
+  A digit TOGGLES a checkbox in multi-select but PICKS AND ADVANCES in
+  single-select. `space` inserts a space on the free-text row and toggles on
+  every other row. Typing into the free-text row ticks its checkbox as a side
+  effect. And `enter` on an EMPTY free-text row in single-select declines the
+  entire dialog — the transcript records `User declined to answer questions`.
+  Never send a key to one of these screens without knowing which row the cursor
+  is on; `src/server/herdr/ask-dialog.ts` exists to answer that.
+
+- **Nothing in a question dialog unblocks the agent until "Submit answers".**
+  So `/answer`, which calls `waitUntilUnblocked` after sending, is the wrong
+  route for a dialog digit: every tap would wait out the full 15s budget and
+  then report failure for a toggle that had already worked. `/dialog-key` sends,
+  settles and re-reads instead.
+
 ## Build and tooling
 
 - **Bun's runtime module resolver does not try `.d.ts` on extensionless
