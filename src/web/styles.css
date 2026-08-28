@@ -1827,6 +1827,63 @@ body {
   color: var(--fg-dim);
 }
 
+/* One file, filling the screen below its own header.
+   `.screen` already supplies the fixed column and the safe-area inset, so this
+   adds only what the body needs: a region that takes the remaining height and
+   scrolls its own content rather than the shell. */
+.file-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: auto;
+  background: var(--bg);
+}
+
+/* No border: the file supplies its own ground, and a frame around it reads as
+   chrome the operator has to look past. */
+.file-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: var(--bg);
+}
+
+/* Centred and never wider than the screen — a screenshot from a desktop is
+   routinely twice the width of the phone reading it. */
+.file-image {
+  max-width: 100%;
+  margin: auto;
+  object-fit: contain;
+}
+
+.file-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-download {
+  flex: none;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--pad-control);
+  color: var(--accent);
+  font-size: var(--t-md);
+  font-weight: 600;
+}
+
+.file-note {
+  margin: auto;
+  padding: var(--gutter);
+  max-width: 24rem;
+  text-align: center;
+  color: var(--fg-dim);
+  font-size: var(--t-md);
+}
+
 /* Quick replies, above the reply row.
    A row that scrolls sideways rather than a grid: three entries today, and a
    wrapping grid would change the panel's HEIGHT as the list grows, which is
