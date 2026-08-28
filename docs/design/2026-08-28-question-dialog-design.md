@@ -70,10 +70,15 @@ project bans, in its worst form.
 
 - `left` / `right` move between questions, and onto Submit.
 - `☐` is unanswered, `☒` answered, `✔ Submit` is the final tab.
-- **The current tab is marked only by an ANSI background colour**
-  (`48;2;177;185;249`, paddock's own accent lavender, with black text). There is
-  no plain-text marker. `/prompt` reads with `strip_ansi: true`, so on today's
-  read path the current tab is not merely hard to find — it is absent.
+- **The current tab is marked only by an ANSI background colour** — the current
+  segment is wrapped in an SGR that sets a background (measured:
+  `48;2;177;185;249`, paddock's own accent lavender, with black text), and no
+  other segment carries one. There is no plain-text marker of any kind.
+- **The `detection` source strips escapes unconditionally.** Measured: a
+  detection read of a live dialog contains ZERO escape sequences even with
+  `--ansi`, while the same screen read from `visible` has 37 lines carrying them.
+  So the current tab is unavailable on the read `/prompt` uses today, and no
+  `strip_ansi` flag can recover it — the SOURCE has to change, not the flag.
 - Submit is a review screen plus `1. Submit answers` / `2. Cancel`. Only `enter`
   committed it; the bare digit `1` did nothing there, unlike every other
   single-select screen measured. The review screen's two options DO parse under
@@ -157,35 +162,60 @@ export interface AskDialog {
 export function parseAskDialog(raw: string): AskDialog | null;
 ```
 
-**Identifying the free-text row is positional, and that is a compromise worth
-stating.** It is the last numbered option, sitting directly above the
-`Next`/`Submit` row. It cannot be identified by its label, because the label is
-`Type something` only until the operator types — after that it reads `teal blue`,
-which is indistinguishable from any other option. The positional rule was true
-in every dialog measured, single and multi, one question and two. If it is ever
-wrong the parser mislabels one row, so the module refuses the whole dialog unless
-the `Next`/`Submit` row is present to anchor it.
+**Identifying the free-text row takes two signals, because neither alone
+survives.** The obvious rule — the label reads `Type something` — holds only
+until the operator types, after which the label IS the text (`teal blue`) and is
+indistinguishable from a real option. The other obvious rule — it is the last
+numbered option — cannot stand alone either, because being wrong means rendering
+a text field over a real option.
 
-**Refusal is the default.** No tab bar line, no question, fewer than two
-numbered options, no `Next`/`Submit` anchor, mixed checkbox presence within one
-question → `null`, and the UI falls back to what it does today. `null` is an
-outcome, not an error, exactly as in `prompt-parse.ts`.
+So: the candidate is the last option in the run, and it is accepted as free-text
+only when EITHER its label still matches `Type something` (optionally with a full
+stop — measured, single-select spells it with one and multi-select without) OR it
+carries **no description line** while every other option does. Every real option
+in an `AskUserQuestion` has a description, because the tool requires one; the
+free-text row never has one. That was true in all three dialogs measured.
+
+An earlier draft anchored this on the `Next`/`Submit` row instead. That is wrong,
+and checking the captures is what caught it: **a single-select question has no
+advance row at all**, because picking an option advances on its own. Anchoring
+there would have failed to identify the free-text row in exactly the mode where
+misidentifying it is most expensive — a digit sent to that row in single-select
+declines the whole dialog.
+
+**Refusal is the default.** No tab bar line, no question, fewer than two numbered
+options, mixed checkbox presence within one question, or a run whose numbering is
+not contiguous from 1 → `null`, and the UI falls back to what it does today.
+`null` is an outcome, not an error, exactly as in `prompt-parse.ts`.
 
 **`6. Chat about this`** sits below a horizontal rule, outside the option run,
 and is deliberately NOT modelled as an option. It is an escape into free prose,
 which paddock already has a control for — the reply box.
 
-### 2. The read has to keep colour
+### 2. The read changes source, not flag
 
-`/api/agents/:id/prompt` reads with `strip_ansi: true`. The current tab is only
-distinguishable by its background colour, so the dialog parse needs a
-colour-preserving read.
+`/api/agents/:id/prompt` calls `readDetection`, which reads
+`source: "detection", strip_ansi: true`. Both halves of that are wrong for this
+feature, and only one of them is fixable with a flag: measured, the `detection`
+source carries no escapes at all, so the current tab cannot be recovered from it
+under any setting.
 
-`prompt-parse.ts` already strips ANSI internally and is already called on both
-kinds of read — its own comment records that a coloured menu once parsed as no
-menu at all. So the route can switch to the coloured read and hand the same text
-to both parsers: the existing one is unaffected, and the new one gets the one
-fact it cannot otherwise have.
+So `/prompt` reads `source: "visible", strip_ansi: false` — one read, handed to
+BOTH parsers. This is safe rather than novel: `parsePrompt` strips ANSI
+internally, and its own comment records that `/key` already re-reads the live
+screen with colour kept and feeds it the result. The visible+colour read is
+therefore an existing, exercised path for the old parser, and it is the only path
+that carries what the new one needs.
+
+The stale comment on `readDetection` — "deliberately keeps stripping, because its
+consumer is the prompt PARSER, and escapes there would break the option matching"
+— predates `parsePrompt` doing its own stripping and must be corrected rather
+than left to mislead the next reader.
+
+**Detecting the current tab is by the PRESENCE of a background, not by its
+value.** Matching `48;2;177;185;249` exactly would break the moment the harness
+is themed; matching "this segment sets a background and the others do not" is the
+actual invariant on screen.
 
 ### 3. Sending: three paths, every keystroke measured
 
