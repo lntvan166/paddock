@@ -15,6 +15,7 @@ import { connectWithWait, resolveWaitMs } from "@server/herdr/await-start";
 import { readAgentCommands } from "@server/commands/read";
 import { claudeHomes } from "@server/journal/files";
 import { saveImage } from "@server/uploads/store";
+import { createFileStore } from "@server/files/store";
 import { createActions, type HerdrActions } from "@server/herdr/actions";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { toSpaceTree } from "@server/herdr/tree";
@@ -918,6 +919,10 @@ const appDeps = {
   saveImage: DEMO
     ? undefined
     : (bytes: Uint8Array) => saveImage(defaultConfigDir(), bytes, Date.now()),
+  // Omitted in DEMO for the reason the two above are, and more sharply: a demo
+  // must never serve a real file off the operator's disk, and README
+  // screenshots are taken in this mode.
+  files: DEMO ? undefined : createFileStore(),
   sessionFor: (id: string) => (DEMO ? demoSessionFor(id) : (supervisor?.sessionFor(id) ?? null)),
   health: () => ({
     ok: true,

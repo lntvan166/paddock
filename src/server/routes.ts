@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { expandHome } from "@server/herdr/tree";
@@ -23,6 +24,9 @@ import { allowWrite, hostOf, refusalReason } from "@server/origin";
 import { warn } from "@server/term";
 import type { JournalReader } from "@server/journal/read";
 import { MAX_IMAGE_BYTES, type SavedImage } from "@server/uploads/store";
+import { kindFor, MAX_FILE_BYTES } from "@server/files/kinds";
+import { errorCode } from "@server/startup-errors";
+import type { FileStore } from "@server/files/store";
 import {
   isNavKey,
   type AgentCommand,
@@ -238,6 +242,23 @@ function clearJournalMiss(agentId: string): void {
  * indexed safely. Every field read off the result is `unknown` and validated
  * before use; nothing here is cast into a shape the body may not have.
  */
+/**
+ * The path behind an id, or null.
+ *
+ * A missing route parameter and an unknown id are the same answer here — both
+ * mean "there is no file to serve" — but they are not the same TYPE, and the
+ * router hands back `string | undefined`. Folded once rather than guarded at
+ * each of the three call sites.
+ */
+function fileFor(files: FileStore, id: string | undefined): string | null {
+  return id === undefined ? null : files.resolve(id);
+}
+
+/** The last path segment — a file's own name, for a title and a download. */
+function basenameOf(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
 async function jsonBody(c: Context): Promise<Record<string, unknown>> {
   const body: unknown = await c.req.json().catch(() => null);
   return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
@@ -563,6 +584,14 @@ export interface AppDeps {
    * would be exactly the mislabelled control this project bans.
    */
   saveImage?: (bytes: Uint8Array) => Promise<SavedImage | { refused: string }>;
+  /**
+   * The path↔id map behind the file routes. Omitted in `--demo`, which makes
+   * every one of them 404: a demo must never serve a real file off the
+   * operator's disk, and README screenshots are taken in that mode.
+   */
+  files?: FileStore;
+  /** The size ceiling, overridable so a test need not write 25 MB to disk. */
+  maxFileBytes?: number;
   /** The server-side session id for an agent. Never crosses the socket. */
   sessionFor?: (agentId: string) => HerdrAgentSession | null;
   /**
@@ -908,6 +937,122 @@ export function createApp(deps: AppDeps) {
     if ("refused" in saved) return c.json({ ok: false, detail: saved.refused }, 400);
     return c.json({ ok: true, path: saved.path, name: saved.name });
   });
+
+  /**
+   * Exchange a path for an id.
+   *
+   * A POST because `CLAUDE.md` forbids payloads in GET URLs — they land in edge
+   * access logs, and a file path is exactly that. What comes back is meaningless
+   * in a log, and an `<iframe src>` and a download link both need a plain GET.
+   *
+   * THE SCOPE IS UNRESTRICTED, deliberately: any path this process can read. A
+   * denylist here would be theatre — `POST /api/panes/:id/text` can already
+   * `cat` any file into a pane and print it in the transcript, so this route
+   * grants convenience rather than capability. See `docs/decisions.md` and
+   * `docs/design/2026-08-28-file-viewer-design.md`.
+   *
+   * Every refusal gets its OWN sentence. "Could not open" for all of them would
+   * send the operator to check the wrong thing — the same reasoning
+   * `startup-errors.ts` applies to a refused boot.
+   */
+  app.post("/api/files", async (c) => {
+    if (!deps.files) return c.json({ ok: false, detail: "file viewing is not configured" }, 404);
+
+    const body = await jsonBody(c);
+    const path = typeof body.path === "string" ? body.path.trim() : "";
+    if (path === "") return c.json({ ok: false, detail: "a path is required" }, 400);
+
+    // `statSync` rather than `Bun.file().exists()`, MEASURED: `exists()` returns
+    // false for a directory, so an exists-first route reports a directory as
+    // missing and sends the operator looking for a file that is right there.
+    let stats: Stats;
+    try {
+      stats = statSync(path);
+    } catch (err) {
+      const code = errorCode(err);
+      if (code === "ENOENT") return c.json({ ok: false, detail: `no file at ${path}` }, 404);
+      // Permissions, a broken symlink, a path component that is not a
+      // directory: named rather than folded into "not found", because they send
+      // the operator somewhere different.
+      return c.json({ ok: false, detail: `cannot read ${path}${code ? ` (${code})` : ""}` }, 400);
+    }
+
+    if (stats.isDirectory()) {
+      return c.json({ ok: false, detail: `${path} is a directory, not a file` }, 400);
+    }
+
+    const ceiling = deps.maxFileBytes ?? MAX_FILE_BYTES;
+    if (stats.size > ceiling) {
+      const mb = (stats.size / (1024 * 1024)).toFixed(1);
+      const capMb = Math.floor(ceiling / (1024 * 1024));
+      return c.json({ ok: false, detail: `that file is ${mb} MB — the limit is ${capMb} MB` }, 413);
+    }
+
+    return c.json({
+      ok: true,
+      id: deps.files.issue(path),
+      name: basenameOf(path),
+      render: kindFor(path).render,
+    });
+  });
+
+  /**
+   * What a file is, for a viewer that has only an id.
+   *
+   * `#/file/:id` survives a reload — that is why it is a route rather than a
+   * sheet — and the name and render mode were only ever in memory from the
+   * moment the file was opened. Without this the viewer comes back from a
+   * refresh holding an id and nothing to render it as.
+   */
+  app.get("/api/files/:id/meta", (c) => {
+    if (!deps.files) return c.json({ ok: false, detail: "file viewing is not configured" }, 404);
+    const path = fileFor(deps.files, c.req.param("id"));
+    if (path === null) return c.json({ ok: false, detail: "unknown file" }, 404);
+    return c.json({ ok: true, name: basenameOf(path), render: kindFor(path).render });
+  });
+
+  /**
+   * Serve the bytes.
+   *
+   * `Content-Security-Policy: sandbox` is the load-bearing header, and it is NOT
+   * the same as `<iframe sandbox>`. The attribute protects the page doing the
+   * embedding; the header protects against this URL being opened DIRECTLY, which
+   * anyone can do because the id sits in the viewer's address bar. Without it an
+   * HTML file served here is same-origin with paddock and can call paddock's own
+   * API with the browser's credentials — driving the operator's agents from a
+   * page an agent generated after reading a poisoned README. That is worse than
+   * reading any single file, so the header is on BOTH routes, including the
+   * download one a reader would assume is exempt.
+   */
+  const serveFile = async (c: Context, asAttachment: boolean) => {
+    if (!deps.files) return c.json({ ok: false, detail: "file viewing is not configured" }, 404);
+    const path = fileFor(deps.files, c.req.param("id"));
+    if (path === null) return c.json({ ok: false, detail: "unknown file" }, 404);
+
+    const file = Bun.file(path);
+    if (!(await file.exists())) {
+      // Between the POST and the GET the file can be moved or deleted. Said
+      // differently from "unknown file": one is a stale id, the other a stale
+      // disk, and they are fixed differently.
+      return c.json({ ok: false, detail: "that file is no longer there" }, 404);
+    }
+
+    const name = basenameOf(path);
+    const headers: Record<string, string> = {
+      "content-type": kindFor(path).contentType,
+      "content-security-policy": "sandbox",
+      "x-content-type-options": "nosniff",
+    };
+    if (asAttachment) {
+      // Quotes and backslashes stripped rather than escaped: a filename is not
+      // a place to be clever with header parsing.
+      headers["content-disposition"] = `attachment; filename="${name.replace(/["\\]/g, "")}"`;
+    }
+    return new Response(file, { headers });
+  };
+
+  app.get("/api/files/:id", (c) => serveFile(c, false));
+  app.get("/api/files/:id/download", (c) => serveFile(c, true));
 
   const pairing = deps.pairing;
   if (pairing) {
