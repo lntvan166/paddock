@@ -122,6 +122,20 @@ function dialogScreen(cursorOn: string) {
   ].join("\n");
 }
 
+/** The dialog's OTHER question, to prove the move actually landed. */
+function otherQuestion() {
+  return [
+    "←  ☒ Tea  ☐ Coffee  ✔ Submit  →",
+    "",
+    "How strong do you like your tea?",
+    "",
+    "❯ 1. Light",
+    "     Short steep.",
+    "  2. Strong",
+    "     Long steep.",
+  ].join("\n");
+}
+
 function advanceHarness(reads: string[]) {
   const keys: string[] = [];
   const store = new AgentStore("dev-box");
@@ -146,29 +160,35 @@ function advanceHarness(reads: string[]) {
   return { app, keys };
 }
 
-const advance = (app: ReturnType<typeof advanceHarness>["app"]) =>
-  app.request("/api/agents/w1:p1/dialog-advance", { method: "POST" });
+const moveTab = (app: ReturnType<typeof advanceHarness>["app"], dir: string) =>
+  app.request("/api/agents/w1:p1/dialog-tab", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ dir }),
+  });
 
-test("advancing reaches the Next row before pressing Enter", async () => {
-  // Found in a browser against a live agent: this used to be a plain `/key`
-  // with `enter`, which acts on whatever row the cursor is on — it unticked an
-  // option and advanced nothing.
-  const { app, keys } = advanceHarness([dialogScreen("1"), dialogScreen("advance")]);
+test("a tab move waits for the screen before answering", async () => {
+  // The repaint lands on the second look. Answering after the first would hand
+  // the UI the previous question — the "sometimes not work" the arrows were
+  // reported with.
+  const { app, keys } = advanceHarness([
+    dialogScreen("1"), dialogScreen("1"), otherQuestion(),
+  ]);
 
-  const body = await (await advance(app)).json();
+  const body = await (await moveTab(app, "right")).json();
 
   expect(body.ok).toBe(true);
-  expect(keys).toEqual(["down", "down", "enter"]);
-  expect(body.dialog, "the screen it produced comes back with it").not.toBeNull();
+  expect(keys).toEqual(["right"]);
+  expect(body.dialog.question).toBe("How strong do you like your tea?");
 });
 
-test("if the cursor cannot be placed, Enter is never sent", async () => {
-  const { app, keys } = advanceHarness([dialogScreen("1"), dialogScreen("1")]);
+test("only left or right", async () => {
+  const { app, keys } = advanceHarness([dialogScreen("1")]);
 
-  const res = await advance(app);
-
-  expect(res.status).toBe(409);
-  expect(keys.includes("enter"), "no blind Enter").toBe(false);
+  for (const dir of ["up", "", "enter", 3]) {
+    expect((await moveTab(app, dir as string)).status, String(dir)).toBe(400);
+  }
+  expect(keys).toEqual([]);
 });
 
 test("a nav key answers with the re-parsed dialog", async () => {

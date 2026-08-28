@@ -2548,6 +2548,7 @@ body {
   flex: none;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   gap: 0.5rem;
   padding: 0.75rem var(--gutter);
   padding-left: calc(var(--gutter) - var(--edge));
@@ -2558,34 +2559,53 @@ body {
      transcript's 239, so the agent's own words — the thing you read to decide —
      got a third of the screen and the controls got half. Reported as "too small
      screen for me to read agent content for decide the options".
-     40vh puts the transcript back above 350px and lets the options scroll,
-     which is the right thing to scroll: you read the question once and then
-     work down the list. */
-  max-height: 40vh;
-  overflow-y: auto;
+     Dropping the descriptions took some of it back, but there is a FLOOR: three
+     tappable rows at the 2.75rem touch minimum are 148px on their own, and a
+     header row, a text row and padding are the rest. So the cap is what
+     actually protects the transcript — at 32vh the agent's own words keep about
+     330px of an 844px phone and the option list scrolls inside the panel, which
+     is the right thing to scroll. Going below this means dropping the labels,
+     and a bare digit stops saying what it does the moment the screen behind it
+     scrolls. */
+  max-height: 32vh;
+  overflow: hidden;
 }
 
 /* Which question you are on, and one step either way. The labels are not
    buttons — see AskDialogView for why tapping one by name is deferred. */
-.dialog-tabs {
+/* The question, with a step either side of it. */
+.dialog-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
+
+.dialog-head .dialog-question { flex: 1; min-width: 0; }
 
 .dialog-tab-list {
   flex: 1;
   display: flex;
-  gap: 0.5rem;
+  gap: 0.45rem;
   margin: 0;
   padding: 0;
   list-style: none;
   overflow-x: auto;
   font-size: var(--t-xs);
   color: var(--fg-dim);
+  /* Scrolls rather than wraps: a wrapped strip changes the panel's height as
+     you move through questions, which moves the transcript under a thumb. */
+  scrollbar-width: none;
 }
 
 .dialog-tab { white-space: nowrap; }
+
+/* A separator between tabs, drawn rather than typed so it cannot be mistaken
+   for part of a label. */
+.dialog-tab + .dialog-tab::before {
+  content: "·";
+  margin-right: 0.45rem;
+  color: var(--border);
+}
 
 /* The current question. `aria-current` carries the meaning for assistive tech
    and drives the styling from the same fact, so the two cannot disagree. */
@@ -2611,16 +2631,26 @@ body {
 .dialog-prev-q:disabled,
 .dialog-next-q:disabled { opacity: 0.5; }
 
+/* The panel's title. Set as a title rather than as a second bold line under the
+   strip: with the descriptions gone this is the only prose here, and it was
+   competing with the tab labels at the same weight. */
 .dialog-question {
   margin: 0;
-  font-size: var(--t-md);
+  font-size: var(--t-lg);
   font-weight: 600;
+  line-height: 1.3;
   color: var(--fg);
+  text-wrap: balance;
 }
 
 .dialog-options {
   display: grid;
   gap: 0.5rem;
+  /* The options scroll, not the panel: the question you are answering and the
+     field you answer it in have to stay put, or a long list pushes them out of
+     reach exactly when you need them. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Same button as `.term-option`, down to the radius and the wrap treatment: a
@@ -2631,10 +2661,9 @@ body {
   padding: 0.5rem var(--pad-control);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  display: grid;
-  grid-template-columns: 1.25rem 1fr;
-  gap: 0.2rem 0.6rem;
-  align-items: baseline;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
@@ -2646,25 +2675,16 @@ body {
 }
 
 .dialog-option-key {
+  flex: none;
+  width: 1rem;
   color: var(--fg-dim);
   font-size: var(--t-xs);
+  /* Fixed width so every label starts on the same column — a ragged left edge
+     is what makes three similar options hard to tell apart at a glance. */
+  text-align: center;
 }
 
-.dialog-option-label { grid-column: 2; }
-
-/* The agent's own description of the option. Smaller and quieter than the
-   label: it is what you read when the label alone is not enough, and it is the
-   reason the general parser refuses this screen in the first place. */
-.dialog-option-detail {
-  grid-column: 2;
-  color: var(--fg-dim);
-  /* PROSE, not metadata. The scale's own note reserves --t-xs for "eyebrows,
-     ages, counts, badges", and this is the sentence the operator reads to
-     decide which option to pick — reported from a phone as unreadable. It cost
-     height, which the panel's cap below pays for. */
-  font-size: var(--t-md);
-  line-height: 1.4;
-}
+.dialog-option-label { min-width: 0; }
 
 .dialog-option[aria-pressed="true"] {
   border-color: var(--accent);
@@ -2717,22 +2737,6 @@ body {
   color: var(--fg-dim);
   font-size: var(--t-xs);
 }
-
-/* Next, or Submit — whichever the agent's own screen says. */
-.dialog-advance {
-  min-height: 2.75rem;
-  padding: 0.5rem var(--pad-control);
-  border: 1px solid var(--accent);
-  border-radius: var(--r-sm);
-  background: var(--accent-wash);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--t-md);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.dialog-advance:disabled { opacity: 0.5; }
 
 /* What Enter would commit. Warn-coloured because the thing it prevents is
    committing a persistent grant by arrowing one step too far. */

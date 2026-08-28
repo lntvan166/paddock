@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
 import {
-  advanceDialog, answerWithKey, sendDialogKey, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  answerWithKey, moveDialogTab, sendDialogKey, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
   sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
@@ -780,10 +780,13 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                   })
                   .finally(() => setBusy(false));
               }}
-              onArrow={(key) => void press(key)}
-              onAdvance={() => {
+              onArrow={(dir) => {
                 setBusy(true);
-                void advanceDialog(agent.agentId)
+                // NOT `press(dir)`: a plain nav key pauses once and reports
+                // whatever the screen says then, which returned the previous
+                // question whenever the repaint was slower than the guess. This
+                // waits until the question changes.
+                void moveDialogTab(agent.agentId, dir)
                   .then((r) => {
                     if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
                     if (r.lines) pane.current?.apply(r.lines);

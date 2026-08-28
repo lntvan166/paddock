@@ -3,7 +3,7 @@ import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { expandHome } from "@server/herdr/tree";
-import { advanceDialog, typeIntoFreeText } from "@server/herdr/dialog-type";
+import { moveDialogTab, typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
@@ -1256,25 +1256,33 @@ export function createApp(deps: AppDeps) {
     });
 
     /**
-     * Advance a question dialog — Enter, but on its `Next`/`Submit` row.
+     * Move a question dialog to its next or previous question.
      *
-     * NOT a plain `/key` with `enter`, and that distinction cost a live-agent
-     * test to find: Enter acts on the row the CURSOR is on. With the cursor on
-     * option 1, the Next button unticked "Black tea" and advanced nothing. A
-     * control that silently changes an answer is worse than one that does
-     * nothing, so the cursor is moved onto the advance row and VERIFIED from a
-     * re-read before Enter is sent — see `dialog-type.ts`.
+     * Its own route rather than a plain `/key`, for one reason: it WAITS until
+     * the screen agrees. `/key` sends and pauses once, which is a guess about
+     * repaint speed — when the guess was wrong the re-read returned the
+     * previous question and the UI rendered it, so the tap looked ignored.
+     * Reported as "left right sometimes not work", and intermittent is the
+     * worst way for a control to fail.
+     *
+     * There is no `Next` button any more: the arrows reach every tab including
+     * Submit, so a second control that did the same thing was one more surface
+     * for the same class of bug.
      */
-    app.post("/api/agents/:id/dialog-advance", async (c) => {
+    app.post("/api/agents/:id/dialog-tab", async (c) => {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
 
+      const dir = (await jsonBody(c)).dir;
+      if (dir !== "left" && dir !== "right") {
+        return c.json({ ok: false, detail: `dir must be "left" or "right"` }, 400);
+      }
+
       try {
-        const outcome = await advanceDialog(agent.agentId, { ...actions, settle });
+        const outcome = await moveDialogTab(agent.agentId, dir, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
-        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
         const out = await actions.readOutput(agent.agentId, agent.state);
-        return c.json({ ok: true, ...out, dialog: parsePrompt(out.lines.join("\n")).dialog });
+        return c.json({ ok: true, ...out, dialog: outcome.dialog ?? null });
       } catch (err) {
         return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
       }

@@ -303,18 +303,18 @@ export async function sendKey(id: string, key: NavKey, f: Fetch = fetch): Promis
 }
 
 /**
- * Advance a question dialog to its next question, or to Submit.
+ * Move a question dialog one question left or right.
  *
- * Distinct from `sendKey(id, "enter")`, which is what this used to be and was a
- * bug: Enter acts on the row the cursor is on, so with the cursor on an option
- * it toggled that option instead of advancing. The server moves the cursor onto
- * the `Next`/`Submit` row and verifies it before pressing anything.
+ * Distinct from `sendKey(id, "left")`, which sends and pauses once. This waits
+ * until the question on screen actually changes, because a fixed pause is a
+ * guess about repaint speed and a wrong guess renders the previous question —
+ * the "sometimes not work" the arrows were reported with.
  */
-export async function advanceDialog(
-  id: string, f: Fetch = fetch,
+export async function moveDialogTab(
+  id: string, dir: "left" | "right", f: Fetch = fetch,
 ): Promise<KeyResult> {
   try {
-    const res = await request(url(id, "dialog-advance"), {}, f);
+    const res = await request(url(id, "dialog-tab"), { dir }, f);
     return (await res.json()) as KeyResult;
   } catch (err) {
     return { ok: false, detail: String(err), lines: [], source: "" };

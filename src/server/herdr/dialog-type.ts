@@ -3,6 +3,9 @@ import type { AskDialog } from "@shared/types";
 
 export interface TypeOutcome { ok: boolean; detail?: string }
 
+/** A tab move also answers with the dialog it landed on, so the UI can render it. */
+export interface TabOutcome extends TypeOutcome { dialog?: AskDialog }
+
 /**
  * What either action needs from the agent: read the screen, move the cursor,
  * and act. `enter` is a move-adjacent key here rather than a separate verb
@@ -10,7 +13,7 @@ export interface TypeOutcome { ok: boolean; detail?: string }
  */
 export interface DialogIo {
   readPromptScreen(target: string): Promise<string>;
-  sendNavKey(target: string, key: "up" | "down" | "enter"): Promise<void>;
+  sendNavKey(target: string, key: "up" | "down" | "enter" | "left" | "right"): Promise<void>;
   sendChars(target: string, chars: string[]): Promise<void>;
   /**
    * Wait for the TUI to repaint after a write, before the read that checks it.
@@ -70,30 +73,47 @@ async function reachRow(
 }
 
 /**
- * Advance the dialog: Enter, but on the `Next`/`Submit` row rather than
- * wherever the cursor happens to be.
+ * How many times to look for the repaint before giving up.
  *
- * FOUND IN A BROWSER against a live agent, which is the only place it could
- * have been found: the Next button sent Enter blindly, the cursor was on option
- * 1, and the tap UNTICKED "Black tea" and advanced nothing. Enter acts on the
- * cursor's row — the same fact that makes typing need a verified cursor — and a
- * control that silently changes an answer is worse than one that does nothing.
+ * Bounded rather than open-ended: moving right from the last tab legitimately
+ * changes nothing, and that must return promptly rather than spin. Four looks
+ * at the route's settle interval is a few hundred milliseconds — long enough
+ * for a repaint, short enough that "nothing happened" still feels like a tap.
  */
-export async function advanceDialog(target: string, io: DialogIo): Promise<TypeOutcome> {
-  const dialog = parseAskDialog(await io.readPromptScreen(target));
-  if (dialog === null) return { ok: false, detail: "no question dialog on screen" };
-  if (dialog.advance === null) {
-    // Single-select has no advance row: picking an option advances on its own.
-    return { ok: false, detail: "this question has nothing to advance to" };
+const LOOKS = 4;
+
+/**
+ * Move to the next or previous question, and WAIT until the screen agrees.
+ *
+ * A nav key followed by one fixed pause is a guess about how fast a TUI
+ * repaints, and when the guess was wrong the re-read returned the previous
+ * question, the UI rendered it, and the tap looked ignored. Reported as "left
+ * right sometimes not work" — intermittently, which is the worst way for a
+ * control to fail, because the operator cannot tell a slow tap from a dead one.
+ *
+ * So the question line is the witness: read it, send the key, then look again
+ * until it changes or the budget runs out. An unchanged question after the
+ * budget is reported as success with the screen as it stands, because that is
+ * what "you are already on the last tab" looks like and it is not an error.
+ */
+export async function moveDialogTab(
+  target: string, dir: "left" | "right", io: DialogIo,
+): Promise<TabOutcome> {
+  const before = parseAskDialog(await io.readPromptScreen(target));
+  if (before === null) return { ok: false, detail: "no question dialog on screen" };
+
+  await io.sendNavKey(target, dir);
+
+  let latest = before;
+  for (let i = 0; i < LOOKS; i++) {
+    await io.settle?.();
+    const now = parseAskDialog(await io.readPromptScreen(target));
+    if (now === null) continue;
+    latest = now;
+    if (now.question !== before.question) break;
   }
 
-  const reached = await reachRow(target, dialog, "advance", io);
-  if (reached === null) {
-    return { ok: false, detail: `could not reach ${dialog.advance} — nothing was pressed` };
-  }
-
-  await io.sendNavKey(target, "enter");
-  return { ok: true };
+  return { ok: true, dialog: latest };
 }
 
 /**

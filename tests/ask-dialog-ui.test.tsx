@@ -40,8 +40,7 @@ const noop = () => {};
 type Props = Parameters<typeof AskDialogView>[0];
 const view = (over: Partial<Props> = {}) => (
   <AskDialogView
-    dialog={multi} busy={false} onToggle={noop} onArrow={noop} onAdvance={noop}
-    onType={noop}
+    dialog={multi} busy={false} onToggle={noop} onArrow={noop} onType={noop}
     {...over}
   />
 );
@@ -56,9 +55,6 @@ test("each option carries the agent's own label and its real state", async () =>
   const pressed = [...host.querySelectorAll(".dialog-option")]
     .map((b) => b.getAttribute("aria-pressed"));
   expect(pressed, "state is read off the screen, not tracked locally").toEqual(["true", "false"]);
-  expect(textsOf(host, ".dialog-option-detail")).toEqual([
-    "Light and grassy.", "Strong and malty.",
-  ]);
 });
 
 test("tapping an option sends that option's own digit", async () => {
@@ -159,19 +155,26 @@ test("with one question there is no strip to render", async () => {
   expect(host.querySelector(".dialog-tabs")).toBeNull();
 });
 
-test("the advance button says what the screen says, or is absent", async () => {
-  let advanced = 0;
-  const host = await render(view({ onAdvance: () => { advanced++; } }));
+test("there is no Next button — the arrows reach every tab, Submit included", async () => {
+  // Two controls doing one job was one more surface for the bug that one
+  // actually shipped with: Enter acts on the cursor's row, so it unticked an
+  // option instead of advancing.
+  const host = await render(view());
 
-  const button = host.querySelector(".dialog-advance") as HTMLButtonElement;
-  expect(button.textContent).toContain("Next");
-  await click(button);
-  expect(advanced).toBe(1);
+  expect(host.querySelector(".dialog-advance")).toBeNull();
+  expect(host.querySelector(".dialog-next-q"), "the arrow does that job").not.toBeNull();
+});
 
-  // Single-select has no advance row on screen, so there is no button for one.
-  await unmount();
-  const solo = await render(view({ dialog: single }));
-  expect(solo.querySelector(".dialog-advance")).toBeNull();
+test("an option shows its label, and NOT the agent's description of it", async () => {
+  // The descriptions duplicated the agent's own screen three inches above, and
+  // measured, they were most of the panel's height: with them the transcript
+  // got 239px of an 844px phone. The label stays, because a bare digit only
+  // says what it does while the screen behind it stays still — and it scrolls.
+  const host = await render(view());
+
+  expect(textsOf(host, ".dialog-option-label")).toEqual(["Green tea", "Black tea"]);
+  expect(host.querySelector(".dialog-option-detail")).toBeNull();
+  expect(host.textContent).not.toContain("Light and grassy");
 });
 
 test("every control goes dead while one is in flight", async () => {

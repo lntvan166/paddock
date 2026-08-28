@@ -33,13 +33,26 @@ import { Button } from "@web/components/shadcn/button";
  * feature, for a move the two end buttons already make in one tap each. Knowing
  * WHERE YOU ARE was the thing the raw screen never told you at a glance, and
  * that half is safe.
+ *
+ * NO DESCRIPTIONS, AND NO NEXT BUTTON, both from using it on a phone.
+ *
+ * The descriptions were duplicating the agent's own screen three inches above,
+ * and measured, they were most of the panel's height: with them the transcript
+ * got 239px of an 844px phone and the controls got 357. The label is kept
+ * because a bare digit only says what it does while the screen behind it stays
+ * still — and the screen scrolls. The sentence under it is the part you can read
+ * above; the word on the button is the part you cannot.
+ *
+ * The Next button is gone because `▶` already reaches every tab including
+ * Submit. Two controls doing one job was one more surface for the bug that
+ * control actually shipped with: Enter acts on the cursor's row, so it unticked
+ * an option instead of advancing.
  */
-export function AskDialogView({ dialog, busy, onToggle, onArrow, onAdvance, onType }: {
+export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
   dialog: AskDialog;
   busy: boolean;
   onToggle: (key: string) => void;
   onArrow: (key: "left" | "right") => void;
-  onAdvance: () => void;
   onType: (text: string) => void;
 }) {
   const answerable = dialog.options.filter((o) => !o.freeText);
@@ -59,8 +72,27 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onAdvance, onTy
 
   return (
     <section className="dialog" aria-label="Question">
+      {/* ONE header row, not two. The strip used to be its own 44px band above
+          the question — measured, the panel took 305px of an 844px phone
+          against the transcript's 291, and half of that band was empty space
+          either side of three short words. The arrows flank the question
+          instead, and where you are becomes a one-line eyebrow above it. */}
       {realQuestions > 1 && (
-        <div className="dialog-tabs" role="group" aria-label="Questions">
+        <ol className="dialog-tab-list" aria-label="Questions">
+          {dialog.questions.map((q) => (
+            <li
+              key={q.label}
+              className="dialog-tab"
+              aria-current={q.current ? "step" : undefined}
+            >
+              {q.label}{q.answered && " ☒"}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <div className="dialog-head">
+        {realQuestions > 1 && (
           <Button
             type="button" variant="outline" className="dialog-prev-q"
             disabled={busy} aria-label="Previous question"
@@ -68,17 +100,9 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onAdvance, onTy
           >
             ◀
           </Button>
-          <ol className="dialog-tab-list">
-            {dialog.questions.map((q) => (
-              <li
-                key={q.label}
-                className="dialog-tab"
-                aria-current={q.current ? "step" : undefined}
-              >
-                {q.label}{q.answered && " ☒"}
-              </li>
-            ))}
-          </ol>
+        )}
+        <p className="dialog-question">{dialog.question}</p>
+        {realQuestions > 1 && (
           <Button
             type="button" variant="outline" className="dialog-next-q"
             disabled={busy} aria-label="Next question"
@@ -86,10 +110,8 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onAdvance, onTy
           >
             ▶
           </Button>
-        </div>
-      )}
-
-      <p className="dialog-question">{dialog.question}</p>
+        )}
+      </div>
 
       {/* `data-mode` because the two modes MEAN different things on a tap: multi
           toggles and stays, single picks and advances. The styling says so, and
@@ -111,9 +133,6 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onAdvance, onTy
                 length instead of five similar sentences. */}
             <span aria-hidden="true" className="dialog-option-key">{o.key}</span>
             <span className="dialog-option-label">{o.label}</span>
-            {o.detail !== undefined && (
-              <span className="dialog-option-detail">{o.detail}</span>
-            )}
           </Button>
         ))}
       </div>
@@ -147,14 +166,6 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onAdvance, onTy
         </p>
       )}
 
-      {dialog.advance !== null && (
-        <Button
-          type="button" variant="outline" className="dialog-advance"
-          disabled={busy} onClick={onAdvance}
-        >
-          {dialog.advance}
-        </Button>
-      )}
     </section>
   );
 }
