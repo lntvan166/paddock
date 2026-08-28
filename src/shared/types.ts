@@ -210,8 +210,89 @@ export interface ParsedPrompt {
    * prompt shapes the option parser deliberately refuses to read.
    */
   selected: string | null;
+  /**
+   * The structured dialog, when the screen is one paddock fully recognises.
+   *
+   * Null is the ordinary case and means "render the existing controls": a
+   * permission prompt, another harness, or a dialog shape the parser refuses.
+   * It is an OUTCOME, exactly as `options: null` is.
+   */
+  dialog: AskDialog | null;
   /** The snapshot as read. Always present, so the UI can always show something. */
   raw: string;
+}
+
+/**
+ * One tab in a question dialog's tab bar: a question, or the Submit tab.
+ *
+ * `isSubmit` rather than a separate field on `AskDialog`, because the bar is one
+ * strip on screen and Submit is a position in it — the operator arrows onto it
+ * exactly as they arrow onto a question.
+ */
+export interface DialogQuestion {
+  /** The tab's label, verbatim. */
+  label: string;
+  /** `☒` in the bar — this question already has an answer. */
+  answered: boolean;
+  /**
+   * Whether this tab is the one on screen.
+   *
+   * Comes from an ANSI background colour, the only place the screen records it.
+   * False for every tab when the read carried no colour, which is honest: the
+   * alternative is marking the first tab and being wrong whenever the operator
+   * has moved.
+   */
+  current: boolean;
+  /** The `✔ Submit` tab, a review screen rather than a question. */
+  isSubmit: boolean;
+}
+
+/** One numbered row of a question dialog's option list. */
+export interface DialogOption {
+  /** The digit to send. The agent's own, never derived. */
+  key: string;
+  /** The label as rendered, with any checkbox or tick marker removed. */
+  label: string;
+  /** Multi-select only: `[✔]` vs `[ ]`. Undefined means "not a checkbox list". */
+  checked?: boolean;
+  /** Single-select only: the trailing `✔` marking the current pick. */
+  picked?: boolean;
+  /**
+   * The free-text row — the one that takes typed characters.
+   *
+   * Identified by two signals because neither survives alone: the label still
+   * reads "Type something", OR it is the last option and the only one with no
+   * description. A label-only rule breaks the moment the operator types,
+   * because the label then IS the text.
+   */
+  freeText: boolean;
+  /** The description line beneath the option, when it has one. */
+  detail?: string;
+}
+
+/**
+ * Claude Code's `AskUserQuestion` dialog, as read off the screen.
+ *
+ * Every field is derived from the CURRENT screen on every read — nothing here is
+ * cached. When the dialog closes the next parse returns null and the controls
+ * disappear with it, so a stale button cannot survive.
+ *
+ * See `docs/design/2026-08-28-question-dialog-design.md` for what each key does
+ * to this thing, measured on a live agent. The same key means different things
+ * on different rows, which is the whole reason this shape is worth parsing.
+ */
+export interface AskDialog {
+  /** The tab bar, in order, including the Submit tab. */
+  questions: DialogQuestion[];
+  /** The question line above the options. */
+  question: string;
+  /** Whether options are checkboxes (`multi`) or a single pick (`single`). */
+  mode: "multi" | "single";
+  options: DialogOption[];
+  /** The unnumbered row below the options. Null in single-select, which has none. */
+  advance: "Next" | "Submit" | null;
+  /** Where the agent's `❯` sits. Null when no marker was found. */
+  cursor: { kind: "option"; key: string } | { kind: "advance" } | null;
 }
 
 export interface ActionResult {

@@ -256,3 +256,39 @@ test("a cursor on a free-text row below a menu is still reported", () => {
   expect(p.options?.map((o) => o.label)).toEqual(["Yes", "No"]);
   expect(p.selected).toBe("Type something");
 });
+
+test("a parsed screen carries the question dialog, so no re-read can go stale", () => {
+  // WHY THIS LIVES HERE rather than at the route. `/prompt` is fetched once per
+  // state change and never polled, so a dialog parsed only there is stale the
+  // instant a key lands — a checkbox disagreeing with the agent is the lying
+  // control this project refuses. `/key` re-reads the screen and calls this
+  // function for `selected` already; composing the dialog here is what makes
+  // every re-read path carry a fresh one without having to remember to.
+  const screen = [
+    "←  ☐ Tea  ✔ Submit  →",
+    "",
+    "Which teas do you drink?",
+    "",
+    "❯ 1. [ ] Green tea",
+    "  Light and grassy, lower caffeine.",
+    "  2. [ ] Type something",
+    "     Submit",
+  ].join("\n");
+
+  const p = parsePrompt(screen);
+
+  // The old parser still refuses this shape, and must keep refusing: each
+  // option is followed by a description line, which ends its option run. That
+  // refusal is what put a phone in front of a dialog with no buttons.
+  expect(p.options, "the general parser is unchanged").toBeNull();
+  expect(p.dialog).not.toBeNull();
+  expect(p.dialog!.mode).toBe("multi");
+  expect(p.dialog!.options[1]!.freeText).toBe(true);
+});
+
+test("an ordinary prompt reports no dialog at all", () => {
+  const p = parsePrompt("Do you want to proceed?\n❯ 1. Yes\n  2. No\n");
+
+  expect(p.options, "this one the general parser reads fine").not.toBeNull();
+  expect(p.dialog, "and there is no dialog to report").toBeNull();
+});
