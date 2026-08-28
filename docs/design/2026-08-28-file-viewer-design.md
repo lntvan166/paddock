@@ -30,9 +30,9 @@ tunnel to the phone. What it has never had is any way to hand over a file.
 **Any path, unrestricted.** No allowlist of types, no denylist of locations, no
 containment root.
 
-That is the operator's explicit decision, taken after the alternatives and the
-consequence were put to them, and it is recorded here rather than left implicit
-because a future reader will otherwise assume it was an oversight.
+The operator's explicit decision, taken after the alternatives were put to them,
+and recorded here rather than left implicit — a future reader would otherwise
+assume it was an oversight and "fix" it.
 
 **What was put to them.** paddock's listener has no authentication of its own —
 `docs/decisions.md` decision 3 — so reachability IS authority. An unrestricted
@@ -44,9 +44,24 @@ type allowlist plus a credential denylist, a type allowlist alone, and a
 session-scoped time bound — and each was declined in favour of the unrestricted
 route.
 
-**What was accepted.** The operator owns the machine, the tunnel and the files,
-and judged the convenience worth it for a personal dashboard. That is a decision
-an owner is entitled to make about their own tool.
+**Why that is defensible, and it is not "the owner accepted a risk".** paddock
+can ALREADY read any file the process can read, and has been able to since v2.
+`POST /api/panes/:id/text` types into a shell pane (`pane.send_text`) and
+`/api/panes/:id/key` presses Enter — so anything that can reach paddock can run
+`cat <any path>` and read the result in the transcript. Where there is no shell
+pane, `agent.prompt` can ask an agent to do the same.
+
+So a file route grants NO new capability. It is a convenience over a capability
+the product already ships, and one it must ship: typing into an agent is the
+whole point of paddock, and `docs/decisions.md` decision 3 already states that
+anything reaching this port "can read every agent's screen and type into them".
+A denylist here would have been theatre — it would refuse `settings.json` at one
+route while the pane beside it printed the same bytes on request.
+
+One honest difference: BINARY files. Getting a PDF out through a terminal pane
+needs base64 gymnastics, so this route makes binary retrieval materially easier
+rather than merely more convenient. That is the only genuine widening, and it is
+small next to the text case being already open.
 
 **The axis this does NOT settle**, and which matters more than the file set:
 *who can reach the route*. A NAMED tunnel puts Cloudflare Access in front, so an
