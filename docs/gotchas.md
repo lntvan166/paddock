@@ -304,6 +304,28 @@ one, recorded here so they are not reintroduced.
   since spec §6 provides no general-purpose key-send endpoint and a control
   sequence is a larger capability than the free text already allowed.
 
+- **Never anchor a revealed window to the END of a growing array.**
+  "Show earlier" held a COUNT of revealed scrollback lines and rendered
+  `settled.slice(settled.length - count)`. `settled` grows every time a line
+  scrolls off the live screen, so each newly settled line pushed one line off
+  the TOP of what was on screen: the scroll position was preserved perfectly
+  and pointed at different text than it had a second earlier. Reported from a
+  phone as "it jumps, I lose my place" — worst while an agent works, which is
+  the only time anyone reads back through its output. `PaneTerminal` holds the
+  START index instead, so newly settled lines arrive between the revealed block
+  and the live screen and displace nothing. A count anchored to a moving end is
+  not a position.
+
+- **Do not carry terminal style across the history/live boundary.**
+  `parseAnsi` carries SGR state across lines deliberately — a TUI opens a
+  colour on one row and closes it three rows later. But revealed history is an
+  ARBITRARY SLICE, so whatever style its last line left open bled into the live
+  screen: measured, an unclosed `SGR 31` rendered an untouched live line
+  `#cd3131` that unrevealed rendered unstyled. The live screen changed colour
+  according to how much history had been revealed. Parse the two blocks
+  separately; the live screen must render the same whether or not anything is
+  revealed.
+
 ## Deployment and Access
 
 - **Access gates `/sw.js` as well, and that is survivable — an application

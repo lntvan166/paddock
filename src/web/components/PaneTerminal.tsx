@@ -425,7 +425,29 @@ export function PaneTerminal({
   // component to show it), so there is no live pref change to react to while
   // a pane stays open.
   const [fontPx] = useState(() => readPrefs().fontPx);
-  const [shownHistory, setShownHistory] = useState(0);
+  /**
+   * Where the revealed scrollback STARTS: an index into `history.settled`, or
+   * null for "nothing revealed".
+   *
+   * An index rather than a count, and that is the whole point. A count is
+   * anchored to the END of `settled`, which grows every time a line scrolls off
+   * the live screen — so each newly settled line pushed one line off the TOP of
+   * what was on screen, and the operator's scroll position, faithfully held,
+   * pointed at different text than it had a moment before. Reading earlier
+   * output while an agent worked meant the text slid away one line at a time.
+   * Reported from a phone as "it jumps, I lose my place".
+   *
+   * Anchored at the start, newly settled lines arrive where they belong —
+   * BETWEEN the revealed block and the live screen — and displace nothing.
+   *
+   * The one thing that can still move this boundary is `HISTORY_CAP`: past
+   * 4000 lines `settled` is trimmed at the front, and an index into it shifts
+   * by however much was dropped. Left alone deliberately. At the cap the oldest
+   * lines are genuinely gone, so something has to move, and pinning to the line
+   * TEXT instead would pick the wrong one the moment history repeats itself —
+   * which, in a transcript full of prompts and spinners, is often.
+   */
+  const [revealFrom, setRevealFrom] = useState<number | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
   // Whether the operator is following the tail. Read BEFORE the DOM updates
   // and applied after, so replacing the screen does not yank someone who has
@@ -805,13 +827,13 @@ export function PaneTerminal({
   // before until "show earlier" is tapped, which is what keeps a 2000-line
   // history from becoming 36,000 DOM nodes nobody asked for.
   const history = historyFor(paneId) ?? { settled: [], gaps: 0 };
-  const reconstructed = shownHistory > 0
-    ? history.settled.slice(Math.max(0, history.settled.length - shownHistory))
-    : [];
-  // Counted off the RECONSTRUCTED slice even when an override is on screen:
-  // "how much reconstruction is still held back" is what the button reports,
-  // and it stays the right number the moment a journal pane falls back.
-  const remaining = history.settled.length - reconstructed.length;
+  const reconstructed = revealFrom === null
+    ? []
+    : history.settled.slice(Math.min(revealFrom, history.settled.length));
+  // "How much reconstruction is still held back" is what the button reports,
+  // which is the boundary itself — and it stays the right number when an
+  // override is on screen, the moment a journal pane falls back.
+  const remaining = Math.min(revealFrom ?? history.settled.length, history.settled.length);
   const revealed = revealedOverride ?? reconstructed;
 
   const pinScroll = () => {
@@ -824,7 +846,7 @@ export function PaneTerminal({
 
   const revealMore = () => {
     const restore = pinScroll();
-    setShownHistory((n) => n + HISTORY_PAGE);
+    setRevealFrom((from) => Math.max(0, (from ?? history.settled.length) - HISTORY_PAGE));
     restore();
   };
 
@@ -923,11 +945,28 @@ export function PaneTerminal({
     setShellBusy(false);
   };
 
-  // parseAnsi carries style ACROSS lines, so it must see history and the live
-  // screen as one sequence — parsing them separately would drop any colour a
-  // scrolled-off line had opened. Slicing the RESULT is safe; slicing the
-  // input would not be.
-  const lineSpans = parseAnsi([...revealed, ...output]);
+  /**
+   * History and the live screen are parsed as two sequences, not one.
+   *
+   * `parseAnsi` carries style ACROSS lines on purpose: a TUI that opens a
+   * colour on one row and closes it three rows later is normal, and parsing
+   * each line from a clean slate drops the colour on every row but the first.
+   * That is right WITHIN a screen. Across this boundary it was wrong, because
+   * the revealed block is an arbitrary slice of history — so whatever style its
+   * last line happened to leave open bled into the live output, and the live
+   * screen changed colour according to how much history had been revealed.
+   *
+   * Measured: an unclosed `SGR 31` in the revealed slice rendered an untouched
+   * live line as #cd3131, which unrevealed rendered unstyled. Reported as
+   * "it looks broken, wrong colours".
+   *
+   * So the live screen is parsed from a clean slate — the same way it is
+   * parsed when nothing is revealed, which is how it looks the rest of the
+   * time. The cost is a colour genuinely opened by a line that has since
+   * scrolled off, which is already lost today and is worth less than a screen
+   * whose colours depend on a button.
+   */
+  const lineSpans = [...parseAnsi(revealed), ...parseAnsi(output)];
   const blocks = groupLines(lineSpans.map((spans) => spans.map((sp) => sp.text).join("")));
 
   // `undefined` means the slot declined to decide; `null` means it decided
