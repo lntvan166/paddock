@@ -399,3 +399,75 @@ test("a space row lays its control out at the trailing edge, not underneath", as
   // And it stays a full touch target — the whole reason it is worth reaching.
   expect(dots?.body).toContain("min-height: 2.75rem");
 });
+
+test("no rule paints TEXT with a token that names a SURFACE", async () => {
+  // This shipped once already and is recorded in CLAUDE.md: `shadcn init` wrote
+  // its own `--border` and `--accent` over paddock's, the interaction colour
+  // went near-white, the Send button became invisible, and all 1159 tests
+  // passed — because nothing asserted a computed colour.
+  //
+  // It then shipped AGAIN, in the question dialog: five rules used
+  // `color: var(--muted)`. `--muted` is a shadcn BRIDGE ALIAS for
+  // `var(--surface)` — a background — so every description, badge and
+  // placeholder in that dialog was painted in the page's own background colour.
+  // Reported from a phone as "description cant be read". The text token is
+  // `--fg-dim`, aliased for shadcn as `--muted-foreground`.
+  //
+  // Asserted on the SOURCE rather than on a computed colour, so it holds
+  // without a layout engine: `tests/themes.test.ts` checks contrast for the
+  // pairs it knows about, and a brand-new class is exactly what it does not
+  // know about yet.
+  const css = await Bun.file("src/web/styles.css").text();
+  const SURFACES = ["--muted", "--surface", "--bg", "--card", "--popover", "--accent-wash"];
+
+  // Per RULE, not per line, because a rule that INVERTS is legitimate:
+  // `.term-key-latch[aria-pressed="true"]` sets `background: var(--fg)` and
+  // then `color: var(--bg)`, which is a filled cap rather than invisible text.
+  // The defect is a surface colour on text over an UNCHANGED ground.
+  const offenders: string[] = [];
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const [selector, body] = [m[1]!.trim(), m[2]!];
+    const colour = /(?:^|;|\s)color\s*:\s*var\((--[a-z-]+)\)/.exec(body);
+    if (colour === null || !SURFACES.includes(colour[1]!)) continue;
+    if (/background(?:-color)?\s*:/.test(body)) continue;
+    offenders.push(`${selector.split("\n").pop()!.trim()} → ${colour[1]}`);
+  }
+
+  expect(offenders, "these paint text in a background colour").toEqual([]);
+});
+
+test("every field you can type into clears the iOS zoom floor", async () => {
+  // iOS Safari zooms the viewport when a focused input is under 16px and leaves
+  // you zoomed afterwards. The stylesheet says so twice, in two comments — and
+  // the rule was still broken a third time, by `.dialog-text`, because both
+  // existing guards look at the SELECTOR: one forbids a doubled `font-size`, the
+  // other allows `16px` as an exception to the scale. Neither asks "is this
+  // thing an input?".
+  //
+  // So this asks the MARKUP. Every `<input>`/`<textarea>` in the components is
+  // found by its class, and that class must resolve to a rule declaring 16px.
+  const sheet = await Bun.file("src/web/styles.css").text();
+
+  const classes = new Set<string>();
+  for await (const file of new Bun.Glob("src/web/**/*.tsx").scan(".")) {
+    const src = await Bun.file(file).text();
+    for (const m of src.matchAll(/<(?:input|textarea)\b[^>]*?className="([a-z-]+)"/gs)) {
+      classes.add(m[1]!);
+    }
+  }
+
+  // A visually-hidden file input: it is clicked through its label and never
+  // focused for typing, so the zoom rule cannot apply to it.
+  classes.delete("sr-only");
+  expect(classes.size, "found the fields at all").toBeGreaterThan(0);
+
+  const offenders = [...classes].filter((cls) => {
+    const rule = rules(sheet).find(
+      (r) => r.sel.split(",").some((one) => one.trim().endsWith(`.${cls}`))
+        && /font-size:\s*16px/.test(r.body),
+    );
+    return rule === undefined;
+  });
+
+  expect(offenders, "these zoom the phone on focus").toEqual([]);
+});

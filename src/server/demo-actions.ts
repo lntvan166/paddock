@@ -117,12 +117,13 @@ export function demoActions(): HerdrActions {
     async readPane(paneId) {
       return { lines: transcriptFor(paneId), source: "visible" as const };
     },
-    async readDetection(target) {
+    async readPromptScreen(target) {
       return target === BLOCKED_ID ? BLOCKED_DETECTION : "";
     },
 
     // Every write below refuses. None of them resolves.
     async sendOptionKey(_target: string, _key: string) { refuse(); },
+    async sendChars(_target: string, _chars: string[]) { refuse(); },
     async sendNavKey(_target: string, _key: NavKey) { refuse(); },
     async sendReply(_target: string, _text: string) { refuse(); },
     async sendPaneText(_paneId: string, _text: string) { refuse(); },

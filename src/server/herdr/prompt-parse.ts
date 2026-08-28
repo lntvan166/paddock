@@ -1,3 +1,4 @@
+import { parseAskDialog } from "@server/herdr/ask-dialog";
 import type { ParsedPrompt, PromptOption } from "@shared/types";
 
 /** `❯ 1. Yes` / `   2. No` — the cursor marker is optional. */
@@ -190,6 +191,21 @@ export function parsePrompt(raw: string): ParsedPrompt {
     question: lastRunQuestion,
     options: usable ? lastRun : null,
     selected: usable ? fromRun : selected,
+    // Composed HERE rather than at each route, and that is a deliberate choice
+    // against the obvious one.
+    //
+    // The design had the /prompt route hand the screen to both parsers. But
+    // `/prompt` is fetched ONCE per state change, never polled — so a dialog
+    // parsed only there goes stale the instant a key lands, and a checkbox that
+    // disagrees with the agent is precisely the lying control this project
+    // refuses. `/key` already re-reads the screen and re-parses it for
+    // `selected`, for the same reason and in the same breath. Putting the
+    // dialog inside this function means every path that re-reads a screen gets
+    // a fresh one and no path can forget to.
+    //
+    // `raw`, not the stripped lines: `parseAskDialog` needs the escapes. The
+    // current tab of a dialog is marked ONLY by a background colour.
+    dialog: parseAskDialog(raw),
     raw,
   };
 }

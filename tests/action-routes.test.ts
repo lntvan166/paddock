@@ -31,8 +31,9 @@ function harness(a: Agent = agent(), screen?: string[]) {
       return { lines: screen ?? ["out"], source: "visible" as const };
     },
     async readPane() { calls.push("readPane"); return { lines: screen ?? ["out"], source: "recent_unwrapped" as const }; },
-    async readDetection() { calls.push("readDetection"); return "Proceed?\n ❯ 1. Yes\n   2. No\n"; },
+    async readPromptScreen() { calls.push("readPromptScreen"); return "Proceed?\n ❯ 1. Yes\n   2. No\n"; },
     async sendOptionKey(_t: string, k: string) { calls.push(`key:${k}`); },
+    async sendChars() {},
     async sendNavKey(_t: string, k: string) { calls.push(`nav:${k}`); },
     async sendReply(_t: string, text: string) { calls.push(`reply:${text}`); },
     async sendPaneText(_p: string, text: string) { calls.push(`paneText:${text}`); },
@@ -263,8 +264,9 @@ test("a failed action reports ok:false rather than throwing", async () => {
     actions: {
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
-      async readDetection() { return ""; },
+      async readPromptScreen() { return ""; },
       async sendOptionKey() { throw new Error("herdr said no"); },
+      async sendChars() {},
       async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
       async renameAgent() {}, async renameTab() {}, async renameSpace() {},
@@ -381,8 +383,9 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
     actions: {
       async readOutput() { return { lines: ["kept"], source: "visible" as const }; },
       async readPane() { return { lines: ["kept"], source: "recent_unwrapped" as const }; },
-      async readDetection() { return ""; },
+      async readPromptScreen() { return ""; },
       async sendOptionKey() {},
+      async sendChars() {},
       async sendNavKey() { throw new Error("herdr said no"); },
       async sendReply() {}, async waitUntilUnblocked() {},
       async renameAgent() {}, async renameTab() {}, async renameSpace() {},

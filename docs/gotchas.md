@@ -240,6 +240,54 @@ one, recorded here so they are not reintroduced.
   history comes from the harness's own log instead — see
   `src/server/journal/`.
 
+- **The `detection` read source strips every escape, unconditionally.**
+  Measured: a detection read of a live question dialog contains ZERO escape
+  sequences even when colour is asked for, while the same screen from `visible`
+  has 37 escape-bearing lines. Anything that needs colour — a question dialog's
+  current tab is marked ONLY by an ANSI background — must read `visible`. No
+  `strip_ansi` flag can recover it, so the SOURCE is the thing to change.
+
+- **`agent.send_keys` takes ONE character per key.** `send_keys ["chào"]` is
+  refused with `invalid_key: unsupported key chào`. Text therefore travels as an
+  array of single characters, split by CODE POINT (`Array.from`) — a byte or
+  UTF-16 split corrupts anything non-Latin. Single non-ASCII characters ARE
+  accepted (`à`, `ế`, `日` each measured), so a character route must not be
+  ASCII-only.
+
+- **In a question dialog the same key means different things on different rows.**
+  A digit TOGGLES a checkbox in multi-select and PICKS AND ADVANCES in
+  single-select — but on the FREE-TEXT row a digit is neither: it is typed as
+  text. Measured on a phone, tapping an option with the cursor left on that row
+  turned `4. [✔] 2` into `4. [✔] 21` and never moved the option. `space` inserts
+  there and toggles everywhere else. Typing there ticks the checkbox as a side
+  effect. And `enter` on an EMPTY free-text row declines the entire dialog.
+  Never send a key to one of these screens without knowing which row the cursor
+  is on; `src/server/herdr/ask-dialog.ts` exists to answer that.
+
+- **Nothing reports a TUI text row's CARET, and it is not where you assume.**
+  Measured: it sits wherever the last insertion ended, and at position 0 when
+  the cursor has just arrived on the row — not at the end of the text. So
+  `backspace`, which deletes BEHIND the caret, erased nothing and the new text
+  went in FRONT of the old: typing `Trái nho khô` over `Trái cây` produced
+  `Trái nho khôTrái cây`. Drive the caret to a known position first — `right`
+  as many times as the row is long reaches the end from anywhere, and `right`
+  past the end is inert (twenty of them changed neither the text nor the current
+  tab).
+
+- **Probe a TUI one key at a time, never in a batch.** `send-keys a b c d` sends
+  four keys with no pause, and a TUI repaints asynchronously — so keys that
+  depend on where an earlier key left the cursor are measured against the wrong
+  frame. This produced a WRONG measured "fact" that reached a design doc, a
+  decision and shipped code: "a single-select free-text row ignores characters".
+  It does not; the characters had simply overtaken the cursor. Send one key,
+  read, then send the next.
+
+- **Nothing in a question dialog unblocks the agent until "Submit answers".**
+  So `/answer`, which calls `waitUntilUnblocked` after sending, is the wrong
+  route for a dialog digit: every tap would wait out the full 15s budget and
+  then report failure for a toggle that had already worked. `/dialog-key` sends,
+  settles and re-reads instead.
+
 ## Build and tooling
 
 - **Bun's runtime module resolver does not try `.d.ts` on extensionless

@@ -636,7 +636,7 @@ test.skipIf(!HAVE_HERDR)("the write calls' request params have not drifted", asy
 
 test.skipIf(!HAVE_HERDR)("agent.read still REQUIRES source, which every paddock call site sends", async () => {
   // Not a shape check but a contract one: `source` is required upstream, and
-  // both `readOutput` and `readDetection` pass it. If herdr ever made it
+  // both `readOutput` and `readPromptScreen` pass it. If herdr ever made it
   // optional, or paddock ever dropped it, one of those two facts moves.
   const schema = await liveSchema();
   expect(schema.schemas.request.$defs.AgentReadParams.required).toContain("source");

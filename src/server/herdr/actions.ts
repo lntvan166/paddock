@@ -26,6 +26,25 @@ function controlByte(key: NavKey): string | undefined {
 
 
 /**
+ * One character, as a key herdr will accept.
+ *
+ * Only the SPACE needs this, and it needs it absolutely: measured against a
+ * live agent, `send_keys [" "]` is refused with
+ * `invalid_key: unsupported key  ` while `send_keys ["space"]` is accepted.
+ * Every other printable character tested goes through as itself — punctuation,
+ * accented Vietnamese, CJK.
+ *
+ * Found in a browser rather than here, and the shape of the miss is worth
+ * keeping: an ASCII word typed fine, so every command-line check passed, and
+ * "chào bạn" came back a 502 because ONE character in the middle of it was
+ * rejected and took the whole call down. A phone answer is a phrase, so this
+ * was every realistic use of the field.
+ */
+export function keyForChar(ch: string): string {
+  return ch === " " ? "space" : ch;
+}
+
+/**
  * A path herdr can actually chdir into: absolute, and with paddock's own
  * tilde already undone.
  *
@@ -285,7 +304,25 @@ export interface HerdrActions {
    * ~2ms instead of the ~35ms/line it costs an agent's alternate screen.
    */
   readPane(paneId: string): Promise<{ lines: string[]; source: ReadSource }>;
-  readDetection(target: string): Promise<string>;
+  /**
+   * The screen the prompt parsers read.
+   *
+   * `visible` with COLOUR KEPT, and both halves are load-bearing. Measured: the
+   * `detection` source strips every escape UNCONDITIONALLY — a detection read
+   * of a live dialog contains zero of them even when colour is asked for, while
+   * the same screen from `visible` has 37 escape-bearing lines — and the current
+   * tab of a question dialog is marked ONLY by a background colour. So the
+   * SOURCE had to change, not the flag; no `strip_ansi` setting could have
+   * recovered it.
+   *
+   * Safe for `parsePrompt`, which strips ANSI itself and is already handed a
+   * coloured live screen by the `/key` route.
+   *
+   * Named for its job rather than its source, which is why it is no longer
+   * `readDetection`: a name that promised a source it no longer reads would be
+   * the next reader's wrong turn.
+   */
+  readPromptScreen(target: string): Promise<string>;
   sendOptionKey(target: string, key: string): Promise<void>;
   /**
    * Send one navigation key. Separate from `sendOptionKey` because the two
@@ -295,6 +332,26 @@ export interface HerdrActions {
    * there is no mapping table here to drift out of date.
    */
   sendNavKey(target: string, key: NavKey): Promise<void>;
+  /**
+   * Type literal characters into whatever holds the agent's keyboard.
+   *
+   * The capability paddock never had, and its absence is exactly why answering
+   * a question dialog's free-text row was impossible: `agent.prompt` SUBMITS a
+   * reply — its own generated doc comment says so — and a submitted reply while
+   * a menu holds the keyboard lands nowhere the operator can see.
+   *
+   * ONE KEY PER CHARACTER, because herdr refuses a word: measured,
+   * `send_keys ["chào"]` answers `invalid_key: unsupported key chào`. Single
+   * non-ASCII characters ARE accepted (`à`, `ế`, `日` each typed correctly), so
+   * this is deliberately not an ASCII-only path — the operator writes
+   * Vietnamese, and a route that dropped it would be a field that silently ate
+   * half of what was typed.
+   *
+   * Deliberately NOT part of `NAV_KEYS`. That allowlist is closed and stays
+   * closed; a character has different validation and folding the two together
+   * would turn a closed set into an open one.
+   */
+  sendChars(target: string, chars: string[]): Promise<void>;
   sendReply(target: string, text: string): Promise<void>;
   /**
    * Type into a pane with no agent — the mirror of `sendReply`'s
@@ -441,9 +498,11 @@ export function createActions(socketPath: string): HerdrActions {
       // wall before the UI ever saw it. Verified against herdr 0.8.0, which
       // answers this call with truecolor (`38;2;r;g;b`) plus bold and italic.
       //
-      // `readDetection` below deliberately keeps stripping, because its
-      // consumer is the prompt PARSER, and escapes there would break the
-      // option matching rather than inform it.
+      // `readPromptScreen` below keeps colour too, and for a reason of its own:
+      // `parsePrompt` strips ANSI internally, while `parseAskDialog` needs the
+      // escapes — a question dialog's current tab is marked only by a
+      // background colour. (This note used to say the opposite, from before
+      // `parsePrompt` did its own stripping.)
       // A history read gets its own, much larger ceiling — see historyTimeoutMs.
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
         target, source, lines: bounded, format: "ansi", strip_ansi: false,
@@ -496,9 +555,17 @@ export function createActions(socketPath: string): HerdrActions {
       };
     },
 
-    async readDetection(target) {
+    async readPromptScreen(target) {
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
-        target, source: "detection", lines: 60, format: "text", strip_ansi: true,
+        // `format: "ansi"`, not `"text"` with `strip_ansi: false` — measured, and
+        // the distinction is the whole feature: the FORMAT decides whether
+        // escapes come through, and a text-format read arrives with zero of them
+        // however the flag is set. `readOutput` above has always used the ansi
+        // format for the same reason. Getting this wrong cost a live test: the
+        // dialog parsed fine but every tab reported "not current", because the
+        // one thing only colour carries had been stripped before the parser saw
+        // it.
+        target, source: "visible", lines: 60, format: "ansi", strip_ansi: false,
       } satisfies HerdrAgentReadParams);
       return res.read.text;
     },
@@ -509,6 +576,15 @@ export function createActions(socketPath: string): HerdrActions {
       // no control-key spelling to translate.
       await request<HerdrOk>(socketPath, "agent.send_keys", {
         target, keys: [key],
+      } satisfies HerdrAgentSendKeysParams);
+    },
+
+    async sendChars(target, chars) {
+      // One call, many keys: measured, `send_keys` accepts an array and applies
+      // them in order. Sending one request per character would multiply the
+      // round trips by the length of the answer.
+      await request<HerdrOk>(socketPath, "agent.send_keys", {
+        target, keys: chars.map(keyForChar),
       } satisfies HerdrAgentSendKeysParams);
     },
 

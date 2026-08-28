@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
 import {
-  answerWithKey, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  answerWithKey, moveDialogTab, sendDialogKey, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
   sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
 import { fileHash } from "@shared/route";
+import { AskDialogView } from "@web/components/AskDialogView";
 import { CommandList } from "@web/components/CommandList";
 import { QuickActions, QuickToggle } from "@web/components/QuickActions";
 import { StatusDot } from "@web/components/AgentRow";
@@ -387,6 +388,13 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       if (res.selected !== undefined) {
         setPrompt((p) => (p ? { ...p, selected: res.selected ?? null } : p));
       }
+      // And the DIALOG, which is what an arrow key changes. Without this the
+      // left/right arrows moved the agent to the next question while the UI
+      // kept rendering the previous one — reported as "cannot jump to next
+      // tab", with the key working the whole time.
+      if (res.dialog !== undefined) {
+        setPrompt((p) => (p ? { ...p, dialog: res.dialog ?? null } : p));
+      }
     } else {
       setFeedback({ ok: false, detail: res.detail ?? "Key failed." });
     }
@@ -748,7 +756,84 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               by one the way arrowing to it can. When the parser refuses (it does,
               on prompts whose options are separated by description lines) there
               are simply no buttons, and the keypad below is the floor. */}
-          {prompt?.options && prompt.options.length > 0 && (
+          {/* A recognised dialog replaces the option block entirely — it is the
+              same job done with the state the screen actually carries. When the
+              new parser refuses (`dialog === null`), which is every permission
+              prompt and every other harness, nothing below changes at all. */}
+          {prompt?.dialog && (
+            <AskDialogView
+              dialog={prompt.dialog}
+              busy={busy}
+              onToggle={(key) => {
+                setBusy(true);
+                void sendDialogKey(agent.agentId, key)
+                  .then((r) => {
+                    if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
+                    // The screen and the dialog together: the mark the operator
+                    // just tapped has to come from what the agent now shows,
+                    // not from a local mirror that could disagree with it.
+                    if (r.lines) pane.current?.apply(r.lines);
+                    // BOTH, always together: they describe the same screen, and
+                    // patching one alone is how the "Enter selects" line came to
+                    // show a previous question's answer.
+                    setPrompt((p) => (p === null ? p : {
+                      ...p,
+                      dialog: r.dialog ?? p.dialog,
+                      selected: r.selected !== undefined ? r.selected : p.selected,
+                    }));
+                    setFeedback(null);
+                  })
+                  .finally(() => setBusy(false));
+              }}
+              onArrow={(dir) => {
+                setBusy(true);
+                // NOT `press(dir)`: a plain nav key pauses once and reports
+                // whatever the screen says then, which returned the previous
+                // question whenever the repaint was slower than the guess. This
+                // waits until the question changes.
+                void moveDialogTab(agent.agentId, dir)
+                  .then((r) => {
+                    if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
+                    if (r.lines) pane.current?.apply(r.lines);
+                    // BOTH, always together: they describe the same screen, and
+                    // patching one alone is how the "Enter selects" line came to
+                    // show a previous question's answer.
+                    setPrompt((p) => (p === null ? p : {
+                      ...p,
+                      dialog: r.dialog ?? p.dialog,
+                      selected: r.selected !== undefined ? r.selected : p.selected,
+                    }));
+                    setFeedback(null);
+                  })
+                  .finally(() => setBusy(false));
+              }}
+              onType={(text) => {
+                setBusy(true);
+                void typeIntoDialog(agent.agentId, text)
+                  .then((r) => {
+                    if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
+                    if (r.lines) pane.current?.apply(r.lines);
+                    // BOTH, always together: they describe the same screen, and
+                    // patching one alone is how the "Enter selects" line came to
+                    // show a previous question's answer.
+                    setPrompt((p) => (p === null ? p : {
+                      ...p,
+                      dialog: r.dialog ?? p.dialog,
+                      selected: r.selected !== undefined ? r.selected : p.selected,
+                    }));
+                    setFeedback(null);
+                  })
+                  .finally(() => setBusy(false));
+              }}
+            />
+          )}
+
+          {/* ABSENT is treated exactly as null, not as a third case. A body
+              without the field — an older server, or any response that omits it
+              — must fall back to these buttons rather than render neither: a
+              screen with no controls at all is the silent disabling this
+              project refuses elsewhere. */}
+          {!prompt?.dialog && prompt?.options && prompt.options.length > 0 && (
             <div className="term-options" role="group" aria-label="Answer">
               {prompt.question && <p className="term-question">{prompt.question}</p>}
               {prompt.options.map((o) => (
@@ -792,7 +877,12 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               same option: the two would say the same thing, and this one costs a
               bordered band plus a rule on a phone where the transcript is already
               fighting for height. */}
-          {prompt?.selected && !prompt.options?.some(isSelected) && (
+          {/* Hidden while a dialog is on screen: the panel above already shows
+              the question, the options and their state, and this line was
+              duplicating it — including, once, a previous question's answer.
+              It stays for every prompt the dialog parser refuses, where it is
+              the only thing that says what Enter will commit. */}
+          {!prompt?.dialog && prompt?.selected && !prompt.options?.some(isSelected) && (
             <p className="term-selected" role="status">
               <span className="term-selected-label">⏎ Enter selects</span>
               {prompt.selected}

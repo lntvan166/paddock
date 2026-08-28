@@ -1697,7 +1697,11 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--mono);
-  font-size: var(--t-md);
+  /* 16px for the same reason every other typable field has it: iOS zooms a
+     focused input under 16px and leaves you zoomed. Found by the markup-based
+     guard in tests/tokens.test.ts, not by a report — this one predates the
+     question dialog and was zooming the shell's Ctrl field all along. */
+  font-size: 16px;
 }
 .term-ctrl-warn {
   flex: none;
@@ -2539,6 +2543,217 @@ body {
 }
 
 .term-option:disabled { opacity: 0.5; }
+
+/* A recognised question dialog. Borrows `.term-options`' vocabulary rather than
+   inventing a second one: same danger edge, same surface, same scroll ceiling,
+   because it occupies the same slot on screen and answers the same kind of
+   question. */
+.dialog {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0.5rem;
+  padding: 0.75rem var(--gutter);
+  padding-left: calc(var(--gutter) - var(--edge));
+  border-top: 1px solid var(--border);
+  border-left: var(--edge) solid var(--danger);
+  background: var(--surface);
+  /* MEASURED on a 390x844 phone: at 50vh this panel took 357px against the
+     transcript's 239, so the agent's own words — the thing you read to decide —
+     got a third of the screen and the controls got half. Reported as "too small
+     screen for me to read agent content for decide the options".
+     Dropping the descriptions took some of it back, but there is a FLOOR: three
+     tappable rows at the 2.75rem touch minimum are 148px on their own, and a
+     header row, a text row and padding are the rest. So the cap is what
+     actually protects the transcript — at 32vh the agent's own words keep about
+     330px of an 844px phone and the option list scrolls inside the panel, which
+     is the right thing to scroll. Going below this means dropping the labels,
+     and a bare digit stops saying what it does the moment the screen behind it
+     scrolls. */
+  max-height: 32vh;
+  overflow: hidden;
+}
+
+/* Which question you are on, and one step either way. The labels are not
+   buttons — see AskDialogView for why tapping one by name is deferred. */
+/* The question, with a step either side of it. */
+.dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dialog-head .dialog-question { flex: 1; min-width: 0; }
+
+.dialog-tab-list {
+  flex: 1;
+  display: flex;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+  /* Scrolls rather than wraps: a wrapped strip changes the panel's height as
+     you move through questions, which moves the transcript under a thumb. */
+  scrollbar-width: none;
+}
+
+.dialog-tab { white-space: nowrap; }
+
+/* A separator between tabs, drawn rather than typed so it cannot be mistaken
+   for part of a label. */
+.dialog-tab + .dialog-tab::before {
+  content: "·";
+  margin-right: 0.45rem;
+  color: var(--border);
+}
+
+/* The current question. `aria-current` carries the meaning for assistive tech
+   and drives the styling from the same fact, so the two cannot disagree. */
+.dialog-tab[aria-current="step"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dialog-prev-q,
+.dialog-next-q {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--t-md);
+  cursor: pointer;
+}
+
+.dialog-prev-q:disabled,
+.dialog-next-q:disabled { opacity: 0.5; }
+
+/* The panel's title. Set as a title rather than as a second bold line under the
+   strip: with the descriptions gone this is the only prose here, and it was
+   competing with the tab labels at the same weight. */
+.dialog-question {
+  margin: 0;
+  font-size: var(--t-lg);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--fg);
+  text-wrap: balance;
+}
+
+.dialog-options {
+  display: grid;
+  gap: 0.5rem;
+  /* The options scroll, not the panel: the question you are answering and the
+     field you answer it in have to stay put, or a long list pushes them out of
+     reach exactly when you need them. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Same button as `.term-option`, down to the radius and the wrap treatment: a
+   dialog's options and a prompt's options are the same thing to a thumb, and
+   two radii a thumb's width apart read as two designs. */
+.dialog-option {
+  min-height: 2.75rem;
+  padding: 0.5rem var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  /* LEFT-ALIGNED, EXPLICITLY. shadcn's Button centres its content, so without
+     this the digit and its label floated in the middle of a full-width button —
+     measured, the digit sat 133px from the left edge — and the badge column
+     that makes a list of similar options scannable disappeared. `.term-option`
+     carries the same line and the same warning; this is the second time the
+     default has caught this project out. */
+  justify-content: flex-start;
+  gap: 0.6rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--t-md);
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.dialog-option-key {
+  flex: none;
+  width: 1rem;
+  color: var(--fg-dim);
+  font-size: var(--t-xs);
+  /* Fixed width so every label starts on the same column — a ragged left edge
+     is what makes three similar options hard to tell apart at a glance. */
+  text-align: center;
+}
+
+.dialog-option-label { min-width: 0; }
+
+.dialog-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  font-weight: 600;
+}
+
+.dialog-option:disabled { opacity: 0.5; }
+
+/* The free-text row, as a field rather than a button. Laid out with `gap`
+   rather than margins, like `.term-reply` beside it. */
+.dialog-text-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.dialog-text {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.5rem var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  /* 16px, like every other field you can type into — NOT a scale step. iOS
+     Safari zooms the viewport when a focused input is under 16px and leaves you
+     zoomed afterwards. This shipped at --t-md and did exactly that, reported as
+     "got auto zoom when I type to 4"; the rule was already written twice in
+     this stylesheet, which is why there is now a test that finds fields by the
+     markup rather than by the selector's name. */
+  font-size: 16px;
+}
+
+.dialog-text::placeholder { color: var(--fg-dim); }
+
+.dialog-text-send {
+  min-height: 2.75rem;
+  padding: 0 var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--t-md);
+  cursor: pointer;
+}
+
+.dialog-text:disabled,
+.dialog-text-send:disabled { opacity: 0.5; }
+
+.dialog-note {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: var(--t-xs);
+}
 
 /* What Enter would commit. Warn-coloured because the thing it prevents is
    committing a persistent grant by arrowing one step too far. */

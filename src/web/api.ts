@@ -77,6 +77,34 @@ async function detailFrom(res: Response): Promise<string | null> {
 }
 
 /**
+ * A JSON body, or a readable sentence about why there was not one.
+ *
+ * `res.json()` on a body that is not JSON throws an ENGINE message, and the
+ * engines disagree: Safari says "SyntaxError: The string did not match the
+ * expected pattern." where Chromium says "Unexpected end of JSON input". That
+ * Safari string reached a phone as the whole of an error banner — jargon, from
+ * a browser I do not test in, saying nothing about what actually went wrong.
+ *
+ * A non-JSON body from these routes means something structural — a route that
+ * is not there (an old bundle against a new server, or the reverse), a proxy
+ * page, an empty response — so the STATUS is the useful part, and it is what
+ * this reports.
+ */
+async function bodyOrDetail<T>(res: Response): Promise<T | { ok: false; detail: string }> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return {
+      ok: false,
+      detail: text.trim() === ""
+        ? `the server answered ${res.status} with an empty body`
+        : `the server answered ${res.status}, not JSON — try reloading the page`,
+    };
+  }
+}
+
+/**
  * Reads must resolve with a value whose type is honest for the non-2xx case:
  * a non-2xx response (e.g. `{ ok: false, detail: "unknown agent" }` on a 404)
  * is valid JSON but has no `lines`/`options` — resolving with it would hand
@@ -297,6 +325,66 @@ export async function sendKey(id: string, key: NavKey, f: Fetch = fetch): Promis
   try {
     const res = await request(url(id, "key"), { key }, f);
     return (await res.json()) as KeyResult;
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
+/**
+ * Move a question dialog one question left or right.
+ *
+ * Distinct from `sendKey(id, "left")`, which sends and pauses once. This waits
+ * until the question on screen actually changes, because a fixed pause is a
+ * guess about repaint speed and a wrong guess renders the previous question —
+ * the "sometimes not work" the arrows were reported with.
+ */
+export async function moveDialogTab(
+  id: string, dir: "left" | "right", f: Fetch = fetch,
+): Promise<KeyResult> {
+  try {
+    const res = await request(url(id, "dialog-tab"), { dir }, f);
+    return await bodyOrDetail<KeyResult>(res) as KeyResult;
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
+/**
+ * Type into a question dialog's free-text row.
+ *
+ * Distinct from `sendText`, which submits a reply through `agent.prompt` — the
+ * call that fails while a menu holds the agent's keyboard, because the reply
+ * lands nowhere the operator can see. This types and commits nothing; the server
+ * moves the cursor onto the row and verifies it from a re-read before a single
+ * character is sent.
+ */
+export async function typeIntoDialog(
+  id: string, text: string, f: Fetch = fetch,
+): Promise<KeyResult> {
+  try {
+    const res = await request(url(id, "type"), { text }, f);
+    return await bodyOrDetail<KeyResult>(res) as KeyResult;
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
+/**
+ * Send a question dialog's option digit, and get the screen back.
+ *
+ * Distinct from `answerWithKey`, which posts to `/answer` and waits for the
+ * agent to stop being blocked. A dialog digit never unblocks anything —
+ * measured: a multi-select digit toggles a checkbox and a single-select digit
+ * only advances to the review tab — so that wait would hang every tap for its
+ * full budget and then report failure for a toggle that worked.
+ *
+ * Answers with `dialog` as well as `lines`, so the checkbox on screen is
+ * re-derived from what the agent now shows rather than from a local guess.
+ */
+export async function sendDialogKey(id: string, key: string, f: Fetch = fetch): Promise<KeyResult> {
+  try {
+    const res = await request(url(id, "dialog-key"), { key }, f);
+    return await bodyOrDetail<KeyResult>(res) as KeyResult;
   } catch (err) {
     return { ok: false, detail: String(err), lines: [], source: "" };
   }

@@ -11,6 +11,7 @@ import {
   readSourceFor,
   resolveReadLines,
   resolveWaitTimeoutMs,
+  keyForChar,
 } from "@server/herdr/actions";
 import { HERDR_TIMEOUT_MS } from "@server/herdr/socket";
 
@@ -191,10 +192,22 @@ test("readOutput returns no lines for an empty pane, not a sentinel blank line",
   expect(out.lines).toEqual([]);
 });
 
-test("readDetection always uses the detection source", async () => {
-  const { path, seen } = await fakeHerdr(() => paneRead("snapshot", "detection"));
-  expect(await createActions(path).readDetection("w1:p1")).toBe("snapshot");
-  expect(seen[0].params.source).toBe("detection");
+test("the prompt read takes the visible screen, with colour kept", async () => {
+  // Measured: the `detection` source strips every escape — zero of them in a
+  // detection read of a live dialog, against 37 escape-bearing lines from
+  // `visible` — and a question dialog's current tab is marked ONLY by a
+  // background colour. So no flag on a detection read could carry it; the
+  // source is the thing that had to change. See docs/gotchas.md.
+  const { path, seen } = await fakeHerdr(() => paneRead("snapshot", "visible"));
+
+  expect(await createActions(path).readPromptScreen("w1:p1")).toBe("snapshot");
+  expect(seen[0].params.source).toBe("visible");
+  // The FORMAT is what carries the escapes; `strip_ansi: false` on a text-format
+  // read yields none of them. Measured — and asserted because getting it wrong
+  // fails silently: the dialog still parses, it just never knows which question
+  // is current.
+  expect(seen[0].params.format, "the escapes are the payload here").toBe("ansi");
+  expect(seen[0].params.strip_ansi).toBe(false);
 });
 
 test("sendOptionKey sends the digit as a key", async () => {
@@ -269,4 +282,17 @@ test("waitUntilUnblocked's transport ceiling exceeds the herdr-side budget, even
   } finally {
     globalThis.setTimeout = realSetTimeout;
   }
+});
+
+test("a literal space is sent as the key NAME, because herdr refuses the character", () => {
+  // Measured against a live agent: `send_keys [" "]` answers
+  // `invalid_key: unsupported key  `, while `send_keys ["space"]` is accepted.
+  // Every other printable character tested — punctuation, Vietnamese, CJK —
+  // goes through as itself; the space is the only one with a name.
+  //
+  // Found in a browser, not here: an ASCII word typed fine and "chào bạn"
+  // returned a 502, because the space in the middle of it was rejected by
+  // herdr and the whole call threw. A phone answer is a phrase, so this was
+  // every realistic use of the field.
+  expect([..."chào bạn"].map(keyForChar)).toEqual(["c", "h", "à", "o", "space", "b", "ạ", "n"]);
 });

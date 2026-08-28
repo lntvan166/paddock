@@ -11,7 +11,7 @@ import type { Agent } from "@shared/types";
 /**
  * The check that would have caught the read bug on the day it was written.
  *
- * `tests/actions.test.ts` exercises `readOutput`/`readDetection` against a
+ * `tests/actions.test.ts` exercises `readOutput`/`readPromptScreen` against a
  * fake, and a fake is only ever as honest as whoever wrote it: for the whole
  * of v2 it answered `agent.read` with `{ text }` — a shape herdr has never
  * sent — so every one of those tests passed while the real output pane was
@@ -98,11 +98,11 @@ test.skipIf(agents === null)(
 );
 
 test.skipIf(agents === null)(
-  "readDetection returns a real snapshot the prompt parser can be run over",
+  "readPromptScreen returns a real snapshot the prompt parser can be run over",
   async () => {
     const actions = createActions(SOCKET);
     for (const agent of agents!) {
-      const text = await actions.readDetection(agent.agentId);
+      const text = await actions.readPromptScreen(agent.agentId);
       expect(text.length).toBeGreaterThan(0);
       expect(text.trim().length).toBeGreaterThan(0);
       // `detection` is not state-gated, so it must work for every agent.
@@ -113,7 +113,7 @@ test.skipIf(agents === null)(
       const parsed = parsePrompt(text);
       expect(parsed).toBeDefined();
       console.log(
-        `  live readDetection state=${agent.state} bytes=${text.length} ` +
+        `  live readPromptScreen state=${agent.state} bytes=${text.length} ` +
         `lines=${text.split("\n").length} options=${parsed.options?.length ?? "null"}`,
       );
     }

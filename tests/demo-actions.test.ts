@@ -19,6 +19,7 @@ import { demoActions, demoTree } from "@server/demo-actions";
 const WRITES: [string, (a: ReturnType<typeof demoActions>) => Promise<unknown>][] = [
   ["sendOptionKey", (a) => a.sendOptionKey("d1:p1", "1")],
   ["sendNavKey", (a) => a.sendNavKey("d1:p1", "up")],
+  ["sendChars", (a) => a.sendChars("d1:p1", ["h", "i"])],
   ["sendReply", (a) => a.sendReply("d1:p1", "yes")],
   ["sendPaneText", (a) => a.sendPaneText("d7:p1", "ls")],
   ["sendPaneKey", (a) => a.sendPaneKey("d7:p1", "up")],
@@ -54,7 +55,7 @@ test("every write on the interface is covered by the list above", () => {
   // Guards the guard. A method added to `HerdrActions` and implemented in the
   // shim, but not listed here, would go untested — and the defect this file
   // exists to catch is exactly one write quietly resolving.
-  const READS = new Set(["readOutput", "readPane", "readDetection", "harnessKinds"]);
+  const READS = new Set(["readOutput", "readPane", "readPromptScreen", "harnessKinds"]);
   const implemented = Object.keys(demoActions()).filter((k) => !READS.has(k));
   expect(implemented.sort()).toEqual(WRITES.map(([n]) => n).sort());
 });
@@ -71,13 +72,13 @@ test("the blocked agent's detection is the real parser's input, not a parsed ans
   // The demo must exercise the live prompt parser. Handing the UI a
   // pre-parsed option list would let a screenshot show buttons the real code
   // might not produce from the same bytes.
-  const raw = await demoActions().readDetection("d1:p1");
+  const raw = await demoActions().readPromptScreen("d1:p1");
   expect(raw).toContain("1. Yes");
   expect(raw).toContain("3. No");
 });
 
 test("an agent that is not blocked has no prompt to detect", async () => {
-  expect(await demoActions().readDetection("d3:p1")).toBe("");
+  expect(await demoActions().readPromptScreen("d3:p1")).toBe("");
 });
 
 test("the tree carries a pane with no agent, so both kinds are shown", () => {

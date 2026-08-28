@@ -3,6 +3,7 @@ import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { expandHome } from "@server/herdr/tree";
+import { moveDialogTab, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
@@ -75,6 +76,26 @@ export const IMMUTABLE_ASSET_RE = /^\/assets\/.*-[A-Za-z0-9_-]{8,}\.(js|css|woff
  * the free text `{text}` already permits.
  */
 const OPTION_KEY_RE = /^[1-9][0-9]?$/;
+
+/**
+ * Characters one `/type` call may send.
+ *
+ * A free-text ANSWER, not a message: the reply box already exists for prose and
+ * goes through `agent.prompt`. Sized so a sentence fits and a pasted file does
+ * not, because every character here becomes one entry in a `send_keys` array.
+ */
+const MAX_TYPE_CHARS = 200;
+
+/**
+ * Wait for a TUI to repaint after a write.
+ *
+ * The same pause the `/key` route takes before reading, for the same measured
+ * reason: reading immediately races the repaint and returns the previous frame.
+ * Named and shared so the dialog actions cannot quietly go without it — a
+ * missing settle there does not error, it just verifies the cursor against a
+ * stale screen and refuses.
+ */
+const settle = () => new Promise<void>((r) => setTimeout(r, KEY_SETTLE_MS));
 
 /**
  * Pause between writing a nav key and re-reading the pane, so the read sees
@@ -1175,7 +1196,7 @@ export function createApp(deps: AppDeps) {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
       try {
-        return c.json(parsePrompt(await actions.readDetection(agent.agentId)));
+        return c.json(parsePrompt(await actions.readPromptScreen(agent.agentId)));
       } catch (err) {
         return c.json({ ok: false, detail: detailOf(err) }, 502);
       }
@@ -1222,7 +1243,156 @@ export function createApp(deps: AppDeps) {
         // bare marker scan here is what let a marker left on an ALREADY
         // ANSWERED question reappear as this menu's selection on the first
         // arrow tap — correct on load, wrong the moment the operator moved.
-        return c.json({ ok: true, ...out, selected: parsePrompt(out.lines.join("\n")).selected });
+        // The dialog rides along for the same reason `selected` does, and the
+        // omission was a shipped bug: an arrow moved the agent to the next
+        // question and the UI kept rendering the previous one, because nothing
+        // in this response told it otherwise. Reported as "cannot jump to next
+        // tab" — the key worked, the screen never changed.
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+      }
+    });
+
+    /**
+     * Move a question dialog to its next or previous question.
+     *
+     * Its own route rather than a plain `/key`, for one reason: it WAITS until
+     * the screen agrees. `/key` sends and pauses once, which is a guess about
+     * repaint speed — when the guess was wrong the re-read returned the
+     * previous question and the UI rendered it, so the tap looked ignored.
+     * Reported as "left right sometimes not work", and intermittent is the
+     * worst way for a control to fail.
+     *
+     * There is no `Next` button any more: the arrows reach every tab including
+     * Submit, so a second control that did the same thing was one more surface
+     * for the same class of bug.
+     */
+    app.post("/api/agents/:id/dialog-tab", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+
+      const dir = (await jsonBody(c)).dir;
+      if (dir !== "left" && dir !== "right") {
+        return c.json({ ok: false, detail: `dir must be "left" or "right"` }, 400);
+      }
+
+      try {
+        const outcome = await moveDialogTab(agent.agentId, dir, { ...actions, settle });
+        if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
+        const out = await actions.readOutput(agent.agentId, agent.state);
+        // `selected` as well as `dialog`, from the SAME read. Returning one
+        // without the other left the "Enter selects" line showing the previous
+        // question's answer while the panel showed the new question — reported
+        // from a phone, and worse than cosmetic: that line is what says which
+        // row Enter will act on, and Enter acts on the cursor.
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+      }
+    });
+
+    /**
+     * Type literal characters into a question dialog's free-text row.
+     *
+     * Distinct from `/text`, which SUBMITS a reply through `agent.prompt`. That
+     * is the route the reply box uses and it is right for prose, but it is
+     * exactly what fails while a menu holds the agent's keyboard: measured, the
+     * submitted reply lands nowhere the operator can see, which is the reported
+     * defect this route exists to fix.
+     *
+     * The cursor is MOVED AND VERIFIED before a character is sent — see
+     * `dialog-type.ts` for why that is not optional. Characters land only in the
+     * row the cursor is on, typing into that row also ticks its checkbox, and
+     * `space` inserts there while toggling everywhere else. One row off is not a
+     * cosmetic error.
+     *
+     * Validated here rather than trusted to the UI, like every other
+     * client-supplied string that reaches a herdr parameter. Control characters
+     * are refused because they are KEYS, not text: a newline is Enter, and
+     * Enter on a dialog row means something the operator did not ask for.
+     * Non-ASCII is NOT refused — measured to work, and it is what the operator
+     * types.
+     */
+    app.post("/api/agents/:id/type", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+
+      const text = (await jsonBody(c)).text;
+      const chars = typeof text === "string" ? [...text] : [];
+      const printable = chars.every((ch) => {
+        const code = ch.codePointAt(0) ?? 0;
+        return code >= 0x20 && code !== 0x7f;
+      });
+      if (
+        typeof text !== "string" || text.trim() === "" ||
+        chars.length > MAX_TYPE_CHARS || !printable
+      ) {
+        return c.json({
+          ok: false,
+          detail: "text must be printable characters within the length limit",
+        }, 400);
+      }
+
+      try {
+        const outcome = await typeIntoFreeText(agent.agentId, chars, { ...actions, settle });
+        if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readOutput(agent.agentId, agent.state);
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, dialog: parsed.dialog });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+      }
+    });
+
+    /**
+     * Send one option digit to a question dialog, and answer with the screen.
+     *
+     * NOT `/answer`, and the difference is measured rather than stylistic.
+     * `/answer` commits a reply and then calls `waitUntilUnblocked`, because an
+     * answered prompt is expected to move on. A dialog digit never unblocks
+     * anything: a multi-select digit TOGGLES a checkbox, and even a
+     * single-select digit only advances to the review tab — the agent stays
+     * `blocked` until "Submit answers". Routed through `/answer`, every
+     * checkbox tap would wait out the full 15s budget and then report a failure
+     * for a toggle that had already worked.
+     *
+     * So this settles and re-reads, the way `/key` does, and returns the parsed
+     * screen with it. That is what keeps the checkbox on the phone honest:
+     * `/prompt` is fetched once per state change and never polled, so a mark
+     * derived only from that fetch would lag the agent until the state changed.
+     *
+     * Gated on `blocked` for the same reason `/answer` is: no dialog exists in
+     * any other state, and a digit typed into whatever replaced it is a
+     * keystroke the operator did not ask for.
+     */
+    app.post("/api/agents/:id/dialog-key", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+      if (agent.state !== "blocked") {
+        return c.json({ ok: false, detail: `agent is ${agent.state}, no dialog to answer` }, 409);
+      }
+
+      const key = (await jsonBody(c)).key;
+      if (typeof key !== "string" || !OPTION_KEY_RE.test(key)) {
+        return c.json({ ok: false, detail: `key must be an option digit, e.g. "2"` }, 400);
+      }
+
+      try {
+        // NOT a bare `sendOptionKey`: a digit is a toggle only while the cursor
+        // is off the free-text row. Parked on it, the digit is TEXT — measured
+        // on a phone, a tap appended its digit to the operator's typed answer
+        // and the option never moved.
+        const outcome = await toggleDialogOption(agent.agentId, key, { ...actions, settle });
+        if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
+        // A TUI repaints asynchronously after the write — see `/key`'s note.
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readOutput(agent.agentId, agent.state);
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
       } catch (err) {
         return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
       }
