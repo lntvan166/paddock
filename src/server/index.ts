@@ -923,6 +923,9 @@ const appDeps = {
   // must never serve a real file off the operator's disk, and README
   // screenshots are taken in this mode.
   files: DEMO ? undefined : createFileStore(),
+  // For expanding a `~` path the transcript linkified. Absent in DEMO, where
+  // the file routes do not exist at all.
+  homeDir: DEMO ? undefined : homedir(),
   sessionFor: (id: string) => (DEMO ? demoSessionFor(id) : (supervisor?.sessionFor(id) ?? null)),
   health: () => ({
     ok: true,

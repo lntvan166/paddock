@@ -143,3 +143,24 @@ test("with no store configured there is no route at all", async () => {
   expect((await res.json()).detail).toContain("not configured");
   expect((await app.request(`/api/files/${"0".repeat(32)}`)).status).toBe(404);
 });
+
+test("the forms the transcript linkifies are the forms this opens", async () => {
+  // Found by using the feature: a `~/…` path answered "no file at ~/…", because
+  // expanding a tilde is a shell's job. `web/paths.ts` linkifies all three of
+  // these, so all three have to open.
+  const app = createApp({
+    store: new AgentStore("dev-box"), hub: new Hub(), health: () => ({}) as never,
+    files: createFileStore(), homeDir: DIR,
+  });
+
+  const tilde = await (await open(app, "~/design.html")).json();
+  expect(tilde.name).toBe("design.html");
+
+  const url = await (await open(app, `file://${page}`)).json();
+  expect(url.name).toBe("design.html");
+
+  // And the one that cannot work says why, rather than reporting it missing.
+  const relative = await open(app, "design.html");
+  expect(relative.status).toBe(400);
+  expect((await relative.json()).detail).toContain("not an absolute path");
+});

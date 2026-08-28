@@ -25,6 +25,7 @@ import { warn } from "@server/term";
 import type { JournalReader } from "@server/journal/read";
 import { MAX_IMAGE_BYTES, type SavedImage } from "@server/uploads/store";
 import { kindFor, MAX_FILE_BYTES } from "@server/files/kinds";
+import { resolveOpenable } from "@server/files/path";
 import { errorCode } from "@server/startup-errors";
 import type { FileStore } from "@server/files/store";
 import {
@@ -592,6 +593,12 @@ export interface AppDeps {
   files?: FileStore;
   /** The size ceiling, overridable so a test need not write 25 MB to disk. */
   maxFileBytes?: number;
+  /**
+   * The operator's home, for expanding a `~` path the transcript linkified.
+   * Injected rather than read from the environment so a test is not bound to
+   * the machine running it.
+   */
+  homeDir?: string;
   /** The server-side session id for an agent. Never crosses the socket. */
   sessionFor?: (agentId: string) => HerdrAgentSession | null;
   /**
@@ -959,8 +966,18 @@ export function createApp(deps: AppDeps) {
     if (!deps.files) return c.json({ ok: false, detail: "file viewing is not configured" }, 404);
 
     const body = await jsonBody(c);
-    const path = typeof body.path === "string" ? body.path.trim() : "";
-    if (path === "") return c.json({ ok: false, detail: "a path is required" }, 400);
+    const asked = typeof body.path === "string" ? body.path : "";
+    // Normalised BEFORE the stat: the transcript linkifies `~/…` and
+    // `file://…`, and neither is something the filesystem can open. Without
+    // this the feature offers taps that always answer "no file".
+    const path = resolveOpenable(asked, deps.homeDir);
+    if (path === null) {
+      return asked.trim() === ""
+        ? c.json({ ok: false, detail: "a path is required" }, 400)
+        // Said specifically: a relative path is not a typo, it is a path whose
+        // meaning depends on a working directory paddock cannot see.
+        : c.json({ ok: false, detail: `${asked.trim()} is not an absolute path` }, 400);
+    }
 
     // `statSync` rather than `Bun.file().exists()`, MEASURED: `exists()` returns
     // false for a directory, so an exists-first route reports a directory as
