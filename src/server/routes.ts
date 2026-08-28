@@ -3,7 +3,7 @@ import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { expandHome } from "@server/herdr/tree";
-import { moveDialogTab, typeIntoFreeText } from "@server/herdr/dialog-type";
+import { moveDialogTab, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
@@ -1376,7 +1376,12 @@ export function createApp(deps: AppDeps) {
       }
 
       try {
-        await actions.sendOptionKey(agent.agentId, key);
+        // NOT a bare `sendOptionKey`: a digit is a toggle only while the cursor
+        // is off the free-text row. Parked on it, the digit is TEXT — measured
+        // on a phone, a tap appended its digit to the operator's typed answer
+        // and the option never moved.
+        const outcome = await toggleDialogOption(agent.agentId, key, { ...actions, settle });
+        if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
         // A TUI repaints asynchronously after the write — see `/key`'s note.
         await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
         const out = await actions.readOutput(agent.agentId, agent.state);

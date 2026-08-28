@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { moveDialogTab, typeIntoFreeText } from "@server/herdr/dialog-type";
+import { moveDialogTab, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
 
 /** `cursorOn` names the row the `❯` sits on: an option key, or "advance". */
 function screen(cursorOn: string) {
@@ -53,6 +53,7 @@ function io(reads: string[]) {
     async readPromptScreen() { return reads[Math.min(i++, reads.length - 1)]!; },
     async sendNavKey(_t: string, k: string) { keys.push(k); },
     async sendChars(_t: string, c: string[]) { typed.push(c); },
+    async sendOptionKey(_t: string, k: string) { keys.push(`digit:${k}`); },
   };
 }
 
@@ -158,6 +159,7 @@ test("it waits until the question actually changes", async () => {
     async readPromptScreen() { order.push("read"); return reads[Math.min(i++, reads.length - 1)]!; },
     async sendNavKey(_t: string, k: string) { order.push(`key:${k}`); },
     async sendChars() {},
+    async sendOptionKey() {},
     async settle() { order.push("settle"); },
   };
 
@@ -178,6 +180,7 @@ test("it gives up after a bounded number of looks, rather than hanging", async (
     async readPromptScreen() { looks++; return tabScreen("Teas"); },
     async sendNavKey() {},
     async sendChars() {},
+    async sendOptionKey() {},
     async settle() {},
   };
 
@@ -193,6 +196,7 @@ test("with no dialog on screen there is nothing to move between", async () => {
     async readPromptScreen() { return "Do you want to proceed?\n❯ 1. Yes\n  2. No"; },
     async sendNavKey() { throw new Error("must not send a key"); },
     async sendChars() {},
+    async sendOptionKey() {},
     async settle() {},
   };
 
@@ -200,4 +204,85 @@ test("with no dialog on screen there is nothing to move between", async () => {
 
   expect(out.ok).toBe(false);
   expect(out.detail).toContain("dialog");
+});
+
+/**
+ * Toggling an option, which is a digit — and a digit is only a toggle when the
+ * cursor is not sitting on the free-text row.
+ *
+ * Found on a phone: with the cursor left on that row after typing, tapping an
+ * option APPENDED its digit to the typed answer. `4. [✔] 2` became `4. [✔] 21`
+ * and option 1 never moved. A control that silently edits a different answer is
+ * the worst failure this feature has had.
+ */
+
+/** The multi-select question with the cursor wherever `on` says. */
+function optScreen(on: string) {
+  const mark = (row: string) => (row === on ? "❯" : " ");
+  return [
+    "←  ☐ Teas  ☐ Strength  ✔ Submit  →",
+    "",
+    "Which types of tea do you enjoy?",
+    "",
+    `${mark("1")} 1. [ ] Black tea`,
+    "  Fully oxidized and malty.",
+    `${mark("2")} 2. [ ] Green tea`,
+    "  Grassy and light.",
+    `${mark("3")} 3. [ ] typed answer`,
+    `${mark("advance")}    Next`,
+  ].join("\n");
+}
+
+test("with the cursor on an option, the digit goes straight out", async () => {
+  // The fast path, and the common one: a digit toggles exactly its own option
+  // and moves nothing.
+  const keys: string[] = [];
+  const x = {
+    async readPromptScreen() { return optScreen("1"); },
+    async sendNavKey(_t: string, k: string) { keys.push(k); },
+    async sendChars() {},
+    async sendOptionKey(_t: string, k: string) { keys.push(`digit:${k}`); },
+    async settle() {},
+  };
+
+  const out = await toggleDialogOption("w1:p1", "2", x);
+
+  expect(out.ok).toBe(true);
+  expect(keys, "no navigation needed").toEqual(["digit:2"]);
+});
+
+test("with the cursor on the TEXT row, it is moved off before the digit", async () => {
+  // Otherwise the digit is text, not a toggle.
+  const keys: string[] = [];
+  let i = 0;
+  const reads = [optScreen("3"), optScreen("2")];
+  const x = {
+    async readPromptScreen() { return reads[Math.min(i++, 1)]!; },
+    async sendNavKey(_t: string, k: string) { keys.push(k); },
+    async sendChars() {},
+    async sendOptionKey(_t: string, k: string) { keys.push(`digit:${k}`); },
+    async settle() {},
+  };
+
+  const out = await toggleDialogOption("w1:p1", "2", x);
+
+  expect(out.ok).toBe(true);
+  expect(keys, "up one row to option 2, then the digit").toEqual(["up", "digit:2"]);
+});
+
+test("if the cursor cannot be moved off the text row, no digit is sent", async () => {
+  // Sending it anyway would edit the operator's typed answer.
+  const keys: string[] = [];
+  const x = {
+    async readPromptScreen() { return optScreen("3"); },
+    async sendNavKey(_t: string, k: string) { keys.push(k); },
+    async sendChars() {},
+    async sendOptionKey(_t: string, k: string) { keys.push(`digit:${k}`); },
+    async settle() {},
+  };
+
+  const out = await toggleDialogOption("w1:p1", "2", x);
+
+  expect(out.ok).toBe(false);
+  expect(keys.some((k) => k.startsWith("digit")), "never a blind digit").toBe(false);
 });

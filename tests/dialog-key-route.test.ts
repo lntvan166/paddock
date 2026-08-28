@@ -40,6 +40,10 @@ function harness(state: Agent["state"] = "blocked") {
   const app = createApp({
     store, hub: new Hub(), health: () => ({}) as never,
     actions: {
+      // The route reads before it sends now: a digit is only a toggle while the
+      // cursor is off the free-text row, and here it is on option 1.
+      async readPromptScreen() { return DIALOG; },
+      async sendNavKey() {},
       async sendOptionKey(_t: string, k: string) { sent.push(k); },
       async readOutput() { return { lines: DIALOG.split("\n"), source: "visible" }; },
       async waitUntilUnblocked() { waited = true; },

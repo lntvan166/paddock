@@ -2663,6 +2663,13 @@ body {
   border-radius: var(--r-sm);
   display: flex;
   align-items: center;
+  /* LEFT-ALIGNED, EXPLICITLY. shadcn's Button centres its content, so without
+     this the digit and its label floated in the middle of a full-width button —
+     measured, the digit sat 133px from the left edge — and the badge column
+     that makes a list of similar options scannable disappeared. `.term-option`
+     carries the same line and the same warning; this is the second time the
+     default has caught this project out. */
+  justify-content: flex-start;
   gap: 0.6rem;
   background: var(--bg);
   color: var(--fg);

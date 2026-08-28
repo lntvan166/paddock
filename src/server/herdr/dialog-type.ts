@@ -15,6 +15,7 @@ export interface DialogIo {
   readPromptScreen(target: string): Promise<string>;
   sendNavKey(target: string, key: "up" | "down" | "enter" | "left" | "right"): Promise<void>;
   sendChars(target: string, chars: string[]): Promise<void>;
+  sendOptionKey(target: string, key: string): Promise<void>;
   /**
    * Wait for the TUI to repaint after a write, before the read that checks it.
    *
@@ -70,6 +71,40 @@ async function reachRow(
   const after = parseAskDialog(await io.readPromptScreen(target));
   if (after === null || cursorKey(after) !== rowKey) return null;
   return after;
+}
+
+/**
+ * Toggle or pick one option, by sending its own digit — safely.
+ *
+ * A digit is a toggle ONLY when the cursor is not on the free-text row. With
+ * the cursor there it is TEXT: measured on a phone, `4. [✔] 2` became
+ * `4. [✔] 21` and option 1 never moved. So a tap silently edited the operator's
+ * typed answer instead of answering the question, which is the worst thing a
+ * control in this project can do.
+ *
+ * The fast path is unchanged and is the common one — cursor on an option, digit
+ * straight out, nothing moved. Only when the cursor is parked on the text row
+ * does this move it first, and then it verifies before sending, because a digit
+ * sent on a guess is exactly the failure being fixed.
+ */
+export async function toggleDialogOption(
+  target: string, key: string, io: DialogIo,
+): Promise<TypeOutcome> {
+  const dialog = parseAskDialog(await io.readPromptScreen(target));
+  if (dialog === null) return { ok: false, detail: "no question dialog on screen" };
+
+  const cursor = cursorKey(dialog);
+  const onTextRow = dialog.options.some((o) => o.freeText && o.key === cursor);
+
+  if (onTextRow && await reachRow(target, dialog, key, io) === null) {
+    return {
+      ok: false,
+      detail: "could not move off the text row — nothing was sent",
+    };
+  }
+
+  await io.sendOptionKey(target, key);
+  return { ok: true };
 }
 
 /**
