@@ -74,6 +74,36 @@ async function reachRow(
 }
 
 /**
+ * Get the cursor OFF the free-text row, if it is on it.
+ *
+ * THE RULE THIS FEATURE KEEPS RELEARNING: the free-text row is an input, so
+ * every key that means something to an input means something different there.
+ * Measured on a live agent, one at a time:
+ *
+ *  - a DIGIT is typed as text, not a toggle (`4. [✔] 2` became `4. [✔] 21`)
+ *  - `space` inserts a space instead of toggling
+ *  - LEFT/RIGHT move the text caret instead of changing question — reported as
+ *    "current probe cannot go left right by arrow", with the cursor left there
+ *    by the previous thing the operator did
+ *  - `enter` on it, empty, declines the whole dialog
+ *
+ * So anything that is not itself meant for the text row steps off first. The
+ * destination is the FIRST option, which is deterministic and cannot be the
+ * text row itself; `reachRow` then verifies before the real key is sent.
+ *
+ * Returns false when it could not be done, and the caller must send nothing.
+ */
+async function leaveTextRow(target: string, dialog: AskDialog, io: DialogIo): Promise<boolean> {
+  const cursor = cursorKey(dialog);
+  const onText = dialog.options.some((o) => o.freeText && o.key === cursor);
+  if (!onText) return true;
+
+  const landing = dialog.options.find((o) => !o.freeText);
+  if (landing === undefined) return false;
+  return await reachRow(target, dialog, landing.key, io) !== null;
+}
+
+/**
  * Toggle or pick one option, by sending its own digit — safely.
  *
  * A digit is a toggle ONLY when the cursor is not on the free-text row. With
@@ -93,14 +123,8 @@ export async function toggleDialogOption(
   const dialog = parseAskDialog(await io.readPromptScreen(target));
   if (dialog === null) return { ok: false, detail: "no question dialog on screen" };
 
-  const cursor = cursorKey(dialog);
-  const onTextRow = dialog.options.some((o) => o.freeText && o.key === cursor);
-
-  if (onTextRow && await reachRow(target, dialog, key, io) === null) {
-    return {
-      ok: false,
-      detail: "could not move off the text row — nothing was sent",
-    };
+  if (!await leaveTextRow(target, dialog, io)) {
+    return { ok: false, detail: "could not step off the text row — nothing was sent" };
   }
 
   await io.sendOptionKey(target, key);
@@ -136,6 +160,11 @@ export async function moveDialogTab(
 ): Promise<TabOutcome> {
   const before = parseAskDialog(await io.readPromptScreen(target));
   if (before === null) return { ok: false, detail: "no question dialog on screen" };
+
+  // The arrow reaches the tabs only from a row that is not an input.
+  if (!await leaveTextRow(target, before, io)) {
+    return { ok: false, detail: "could not step off the text row — nothing was sent" };
+  }
 
   await io.sendNavKey(target, dir);
 

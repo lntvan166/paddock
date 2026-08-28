@@ -265,7 +265,7 @@ test("with the cursor on the TEXT row, it is moved off before the digit", async 
   // Otherwise the digit is text, not a toggle.
   const keys: string[] = [];
   let i = 0;
-  const reads = [optScreen("3"), optScreen("2")];
+  const reads = [optScreen("3"), optScreen("1")];
   const x = {
     async readPromptScreen() { return reads[Math.min(i++, 1)]!; },
     async sendNavKey(_t: string, k: string) { keys.push(k); },
@@ -277,7 +277,10 @@ test("with the cursor on the TEXT row, it is moved off before the digit", async 
   const out = await toggleDialogOption("w1:p1", "2", x);
 
   expect(out.ok).toBe(true);
-  expect(keys, "up one row to option 2, then the digit").toEqual(["up", "digit:2"]);
+  // Off to the FIRST option, which is deterministic and cannot itself be the
+  // text row — then the digit, which toggles its own option from anywhere that
+  // is not an input.
+  expect(keys).toEqual(["up", "up", "digit:2"]);
 });
 
 test("if the cursor cannot be moved off the text row, no digit is sent", async () => {
@@ -295,4 +298,41 @@ test("if the cursor cannot be moved off the text row, no digit is sent", async (
 
   expect(out.ok).toBe(false);
   expect(keys.some((k) => k.startsWith("digit")), "never a blind digit").toBe(false);
+});
+
+test("a tab move steps off the text row first, or the arrow never reaches the tabs", async () => {
+  // THE THIRD key whose meaning changes on that row, after the digit and the
+  // space. Measured on a live agent: with the cursor on `❯ 4. rất mạnh`, `right`
+  // did nothing at all — the row is an input, so the arrow moved the text caret.
+  // One `up` first, and the very next `right` reached Submit.
+  const keys: string[] = [];
+  let i = 0;
+  const reads = [optScreen("3"), optScreen("1"), optScreen("1")];
+  const x = {
+    async readPromptScreen() { return reads[Math.min(i++, reads.length - 1)]!; },
+    async sendNavKey(_t: string, k: string) { keys.push(k); },
+    async sendChars() {},
+    async sendOptionKey() {},
+    async settle() {},
+  };
+
+  await moveDialogTab("w1:p1", "right", x);
+
+  expect(keys[0], "off the text row before anything else").toBe("up");
+  expect(keys.includes("right"), "and then the arrow").toBe(true);
+});
+
+test("with the cursor already on an option, a tab move sends only the arrow", async () => {
+  const keys: string[] = [];
+  const x = {
+    async readPromptScreen() { return optScreen("1"); },
+    async sendNavKey(_t: string, k: string) { keys.push(k); },
+    async sendChars() {},
+    async sendOptionKey() {},
+    async settle() {},
+  };
+
+  await moveDialogTab("w1:p1", "left", x);
+
+  expect(keys).toEqual(["left"]);
 });
