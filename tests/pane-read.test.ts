@@ -53,7 +53,7 @@ function harness(
     actions: {
       async readOutput() { return { lines: [], source: "visible" as const }; },
       readPane,
-      async readDetection() { return ""; },
+      async readPromptScreen() { return ""; },
       async sendOptionKey() {},
       async sendNavKey() {},
       async sendReply() {},

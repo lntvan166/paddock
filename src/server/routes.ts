@@ -1175,7 +1175,7 @@ export function createApp(deps: AppDeps) {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
       try {
-        return c.json(parsePrompt(await actions.readDetection(agent.agentId)));
+        return c.json(parsePrompt(await actions.readPromptScreen(agent.agentId)));
       } catch (err) {
         return c.json({ ok: false, detail: detailOf(err) }, 502);
       }

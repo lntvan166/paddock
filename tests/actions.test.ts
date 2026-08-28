@@ -191,10 +191,17 @@ test("readOutput returns no lines for an empty pane, not a sentinel blank line",
   expect(out.lines).toEqual([]);
 });
 
-test("readDetection always uses the detection source", async () => {
-  const { path, seen } = await fakeHerdr(() => paneRead("snapshot", "detection"));
-  expect(await createActions(path).readDetection("w1:p1")).toBe("snapshot");
-  expect(seen[0].params.source).toBe("detection");
+test("the prompt read takes the visible screen, with colour kept", async () => {
+  // Measured: the `detection` source strips every escape — zero of them in a
+  // detection read of a live dialog, against 37 escape-bearing lines from
+  // `visible` — and a question dialog's current tab is marked ONLY by a
+  // background colour. So no flag on a detection read could carry it; the
+  // source is the thing that had to change. See docs/gotchas.md.
+  const { path, seen } = await fakeHerdr(() => paneRead("snapshot", "visible"));
+
+  expect(await createActions(path).readPromptScreen("w1:p1")).toBe("snapshot");
+  expect(seen[0].params.source).toBe("visible");
+  expect(seen[0].params.strip_ansi, "the escapes are the payload here").toBe(false);
 });
 
 test("sendOptionKey sends the digit as a key", async () => {

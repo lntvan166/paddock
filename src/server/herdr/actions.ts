@@ -285,7 +285,25 @@ export interface HerdrActions {
    * ~2ms instead of the ~35ms/line it costs an agent's alternate screen.
    */
   readPane(paneId: string): Promise<{ lines: string[]; source: ReadSource }>;
-  readDetection(target: string): Promise<string>;
+  /**
+   * The screen the prompt parsers read.
+   *
+   * `visible` with COLOUR KEPT, and both halves are load-bearing. Measured: the
+   * `detection` source strips every escape UNCONDITIONALLY — a detection read
+   * of a live dialog contains zero of them even when colour is asked for, while
+   * the same screen from `visible` has 37 escape-bearing lines — and the current
+   * tab of a question dialog is marked ONLY by a background colour. So the
+   * SOURCE had to change, not the flag; no `strip_ansi` setting could have
+   * recovered it.
+   *
+   * Safe for `parsePrompt`, which strips ANSI itself and is already handed a
+   * coloured live screen by the `/key` route.
+   *
+   * Named for its job rather than its source, which is why it is no longer
+   * `readDetection`: a name that promised a source it no longer reads would be
+   * the next reader's wrong turn.
+   */
+  readPromptScreen(target: string): Promise<string>;
   sendOptionKey(target: string, key: string): Promise<void>;
   /**
    * Send one navigation key. Separate from `sendOptionKey` because the two
@@ -441,9 +459,11 @@ export function createActions(socketPath: string): HerdrActions {
       // wall before the UI ever saw it. Verified against herdr 0.8.0, which
       // answers this call with truecolor (`38;2;r;g;b`) plus bold and italic.
       //
-      // `readDetection` below deliberately keeps stripping, because its
-      // consumer is the prompt PARSER, and escapes there would break the
-      // option matching rather than inform it.
+      // `readPromptScreen` below keeps colour too, and for a reason of its own:
+      // `parsePrompt` strips ANSI internally, while `parseAskDialog` needs the
+      // escapes — a question dialog's current tab is marked only by a
+      // background colour. (This note used to say the opposite, from before
+      // `parsePrompt` did its own stripping.)
       // A history read gets its own, much larger ceiling — see historyTimeoutMs.
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
         target, source, lines: bounded, format: "ansi", strip_ansi: false,
@@ -496,9 +516,9 @@ export function createActions(socketPath: string): HerdrActions {
       };
     },
 
-    async readDetection(target) {
+    async readPromptScreen(target) {
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
-        target, source: "detection", lines: 60, format: "text", strip_ansi: true,
+        target, source: "visible", lines: 60, format: "text", strip_ansi: false,
       } satisfies HerdrAgentReadParams);
       return res.read.text;
     },

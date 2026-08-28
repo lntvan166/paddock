@@ -117,7 +117,7 @@ export function demoActions(): HerdrActions {
     async readPane(paneId) {
       return { lines: transcriptFor(paneId), source: "visible" as const };
     },
-    async readDetection(target) {
+    async readPromptScreen(target) {
       return target === BLOCKED_ID ? BLOCKED_DETECTION : "";
     },
 

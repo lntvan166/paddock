@@ -132,7 +132,7 @@ function harness() {
     actions: {
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
-      async readDetection() { return ""; },
+      async readPromptScreen() { return ""; },
       async sendOptionKey() {},
       async sendNavKey() {},
       async sendReply() {},
