@@ -869,3 +869,51 @@ session does not silently re-litigate them.
     `inset` sets `bottom` and a lift declared earlier loses to it — the same
     cascade mistake that had just left the reply field's own text against its
     top edge.
+
+28. **A file route with no allowlist, no denylist and no containment root —
+    because paddock could already read any file, and a filter would be
+    theatre.** The viewer serves any path this process can read. That looks
+    reckless written down, and the reasoning is the opposite.
+
+    paddock has been able to read any readable file since v2.
+    `POST /api/panes/:id/text` types into a shell pane (`pane.send_text`) and
+    `/api/panes/:id/key` presses Enter, so anything that can reach paddock can
+    run `cat <any path>` and read the result in the transcript; where there is
+    no shell pane, `agent.prompt` can ask an agent to do it. Decision 3 already
+    states the consequence plainly — anything reaching this port "can read every
+    agent's screen and type into them" — and typing into an agent is not an
+    incidental feature, it is what paddock is for.
+
+    So the file route grants NO new capability. A denylist over
+    `~/.config/paddock/settings.json` would refuse the Telegram token at one
+    route while the pane beside it printed the same bytes on request. That is
+    not caution; it is a control that appears to protect something and does not,
+    which this project bans elsewhere under the same name — see the note on a
+    mislabelled Approve button.
+
+    **One genuine widening, recorded rather than glossed:** BINARY files.
+    Getting a PDF out through a terminal pane needs base64 gymnastics, so this
+    makes binary retrieval materially easier rather than merely more
+    convenient. Small next to the text case already being open, and it is the
+    only thing here that is actually new.
+
+    **The axis this does NOT settle, and which matters more:** who can reach the
+    route. A NAMED tunnel puts Cloudflare Access in front, so identity is
+    checked before a request reaches paddock. A QUICK tunnel is a public URL
+    whose only gate is a rotating ten-minute pairing code, and `README.md`
+    already calls that "a try-it path, not a deployment". Nothing in this
+    decision changes that distinction; it sharpens what rides on it.
+
+    **What the route does defend, because it is not a policy question:**
+    `Content-Security-Policy: sandbox` on every served response, including the
+    download. Without it an HTML file served from paddock's own origin is
+    same-origin with paddock — able to read `localStorage` and call paddock's
+    API with the browser's credentials, i.e. to drive the operator's agents from
+    a page an agent generated after reading a poisoned README. That is worse
+    than reading any single file, and unlike the scope it is not a trade the
+    operator was offered: it is simply required.
+
+    Omitted entirely in `--demo`. A demo must never serve a real file off the
+    operator's disk, and README screenshots are taken in that mode.
+
+    See `docs/design/2026-08-28-file-viewer-design.md`.

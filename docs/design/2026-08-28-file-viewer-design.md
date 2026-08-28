@@ -1,6 +1,7 @@
 # Opening a file from the phone
 
-**Status:** approved in conversation, not yet built.
+**Status:** BUILT, 2026-08-28. Plan:
+`docs/superpowers/plans/2026-08-28-file-viewer.md`.
 **Date:** 2026-08-28.
 
 ## The problem

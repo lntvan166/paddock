@@ -37,6 +37,10 @@ walk back and look.
 - **reply properly** — a field that grows to what you wrote, slash-command
   autocomplete read from the project's own `.claude`, and a screenshot attached
   by pasting it
+- **open what an agent made** — tap a path in the output to view an HTML page,
+  a PDF or an image on the phone, or download it. Any path paddock can read,
+  which is the same reach the terminal already has — see
+  [decisions](docs/decisions.md) 28
 - **notify** — a Telegram message when an agent needs you, sent only once the
   state has held, with mute and a per-agent cooldown. [settings →](docs/settings.md)
 - **reach it in one command** — `paddock tunnel` publishes a temporary URL
