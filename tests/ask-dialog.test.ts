@@ -214,3 +214,45 @@ test("the LAST tab bar on screen wins", () => {
 
   expect(parseAskDialog(stale)!.question).toBe("Which teas do you drink?");
 });
+
+test("the advance row is still found when the CURSOR is on it", () => {
+  // A one-character bug, found in a browser and not by any of the tests above,
+  // because those fixtures invented the indentation. On the real screen the
+  // cursor marker sits at COLUMN 0 on this row — `❯    Next`, exactly as it
+  // does on an option row — and a regex demanding leading whitespace made the
+  // row invisible precisely when the cursor had reached it. Which is when
+  // advancing needs to see it: `advance` came back null, the route refused, and
+  // the Next button did nothing.
+  const onNext = [
+    "←  ☐ Tea  ✔ Submit  →",
+    "",
+    "Which teas do you drink?",
+    "",
+    "  1. [ ] Green tea",
+    "  Light and grassy, lower caffeine.",
+    "  2. [ ] Type something",
+    "❯    Next",
+  ].join("\n");
+
+  const d = parseAskDialog(onNext);
+
+  expect(d!.advance).toBe("Next");
+  expect(d!.cursor).toEqual({ kind: "advance" });
+});
+
+test("an unindented word is not mistaken for the advance row", () => {
+  // The `\s+` after the optional cursor is what keeps this true: a description
+  // line that happens to read `Next` is prose, not a button.
+  const prose = [
+    "←  ☐ Tea  ✔ Submit  →",
+    "",
+    "Which teas do you drink?",
+    "",
+    "  1. [ ] Green tea",
+    "Next",
+    "  2. [ ] Black tea",
+    "  Strong and malty.",
+  ].join("\n");
+
+  expect(parseAskDialog(prose)!.advance).toBeNull();
+});

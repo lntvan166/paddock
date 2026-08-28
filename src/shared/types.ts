@@ -417,6 +417,20 @@ export interface KeyResult extends ActionResult {
    * anything.
    */
   selected?: string | null;
+  /**
+   * The re-parsed question dialog after the key landed, for the same reason
+   * `selected` is here and learned the same way.
+   *
+   * The omission was a shipped bug: `/prompt` is fetched once per state change
+   * and never polled, so an arrow key moved the agent to the next question
+   * while the UI kept rendering the previous one. Reported as "cannot jump to
+   * next tab" — the key had worked the whole time.
+   *
+   * Absent means "this response has nothing to say about it"; `null` means
+   * "there is no dialog on screen". A caller must treat only `null` as a
+   * clearing signal, never `undefined`.
+   */
+  dialog?: AskDialog | null;
 }
 
 /**

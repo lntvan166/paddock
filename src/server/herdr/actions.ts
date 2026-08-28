@@ -538,7 +538,15 @@ export function createActions(socketPath: string): HerdrActions {
 
     async readPromptScreen(target) {
       const res = await request<HerdrPaneRead>(socketPath, "agent.read", {
-        target, source: "visible", lines: 60, format: "text", strip_ansi: false,
+        // `format: "ansi"`, not `"text"` with `strip_ansi: false` — measured, and
+        // the distinction is the whole feature: the FORMAT decides whether
+        // escapes come through, and a text-format read arrives with zero of them
+        // however the flag is set. `readOutput` above has always used the ansi
+        // format for the same reason. Getting this wrong cost a live test: the
+        // dialog parsed fine but every tab reported "not current", because the
+        // one thing only colour carries had been stripped before the parser saw
+        // it.
+        target, source: "visible", lines: 60, format: "ansi", strip_ansi: false,
       } satisfies HerdrAgentReadParams);
       return res.read.text;
     },

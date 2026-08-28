@@ -106,3 +106,83 @@ test("an agent that is no longer blocked has no dialog to answer", async () => {
   expect(res.status).toBe(409);
   expect(sent).toEqual([]);
 });
+
+/** The multi-select question, with the cursor wherever `cursorOn` says. */
+function dialogScreen(cursorOn: string) {
+  const mark = (row: string) => (row === cursorOn ? "❯" : " ");
+  return [
+    "←  ☐ Tea  ☐ Coffee  ✔ Submit  →",
+    "",
+    "Which teas do you drink?",
+    "",
+    `${mark("1")} 1. [✔] Green tea`,
+    "  Light and grassy, lower caffeine.",
+    `${mark("2")} 2. [ ] Type something`,
+    `${mark("advance")}    Next`,
+  ].join("\n");
+}
+
+function advanceHarness(reads: string[]) {
+  const keys: string[] = [];
+  const store = new AgentStore("dev-box");
+  store.replaceAll([{
+    hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
+    task: "Extract auth middleware", state: "blocked", workspaceId: "w1",
+    workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
+    stateSince: 0, stateSinceExact: false, updatedAt: 0, acknowledgedAt: null,
+    hasJournal: false,
+  } as Agent], 0);
+
+  let i = 0;
+  const app = createApp({
+    store, hub: new Hub(), health: () => ({}) as never,
+    actions: {
+      async readPromptScreen() { return reads[Math.min(i++, reads.length - 1)]!; },
+      async sendNavKey(_t: string, k: string) { keys.push(k); },
+      async sendChars() {},
+      async readOutput() { return { lines: dialogScreen("advance").split("\n"), source: "visible" }; },
+    } as never,
+  });
+  return { app, keys };
+}
+
+const advance = (app: ReturnType<typeof advanceHarness>["app"]) =>
+  app.request("/api/agents/w1:p1/dialog-advance", { method: "POST" });
+
+test("advancing reaches the Next row before pressing Enter", async () => {
+  // Found in a browser against a live agent: this used to be a plain `/key`
+  // with `enter`, which acts on whatever row the cursor is on — it unticked an
+  // option and advanced nothing.
+  const { app, keys } = advanceHarness([dialogScreen("1"), dialogScreen("advance")]);
+
+  const body = await (await advance(app)).json();
+
+  expect(body.ok).toBe(true);
+  expect(keys).toEqual(["down", "down", "enter"]);
+  expect(body.dialog, "the screen it produced comes back with it").not.toBeNull();
+});
+
+test("if the cursor cannot be placed, Enter is never sent", async () => {
+  const { app, keys } = advanceHarness([dialogScreen("1"), dialogScreen("1")]);
+
+  const res = await advance(app);
+
+  expect(res.status).toBe(409);
+  expect(keys.includes("enter"), "no blind Enter").toBe(false);
+});
+
+test("a nav key answers with the re-parsed dialog", async () => {
+  // The other half of "cannot jump to next tab": the arrow worked, but nothing
+  // in the response told the UI the question had changed.
+  const { app } = advanceHarness([dialogScreen("1")]);
+
+  const body = await (await app.request("/api/agents/w1:p1/key", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ key: "right" }),
+  })).json();
+
+  expect(body.ok).toBe(true);
+  expect(body.dialog).not.toBeNull();
+  expect(body.dialog.question).toBe("Which teas do you drink?");
+});

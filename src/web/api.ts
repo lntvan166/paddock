@@ -303,6 +303,25 @@ export async function sendKey(id: string, key: NavKey, f: Fetch = fetch): Promis
 }
 
 /**
+ * Advance a question dialog to its next question, or to Submit.
+ *
+ * Distinct from `sendKey(id, "enter")`, which is what this used to be and was a
+ * bug: Enter acts on the row the cursor is on, so with the cursor on an option
+ * it toggled that option instead of advancing. The server moves the cursor onto
+ * the `Next`/`Submit` row and verifies it before pressing anything.
+ */
+export async function advanceDialog(
+  id: string, f: Fetch = fetch,
+): Promise<KeyResult> {
+  try {
+    const res = await request(url(id, "dialog-advance"), {}, f);
+    return (await res.json()) as KeyResult;
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
+/**
  * Type into a question dialog's free-text row.
  *
  * Distinct from `sendText`, which submits a reply through `agent.prompt` — the
@@ -313,10 +332,10 @@ export async function sendKey(id: string, key: NavKey, f: Fetch = fetch): Promis
  */
 export async function typeIntoDialog(
   id: string, text: string, f: Fetch = fetch,
-): Promise<KeyResult & { dialog?: ParsedPrompt["dialog"] }> {
+): Promise<KeyResult> {
   try {
     const res = await request(url(id, "type"), { text }, f);
-    return (await res.json()) as KeyResult & { dialog?: ParsedPrompt["dialog"] };
+    return (await res.json()) as KeyResult;
   } catch (err) {
     return { ok: false, detail: String(err), lines: [], source: "" };
   }
@@ -334,10 +353,10 @@ export async function typeIntoDialog(
  * Answers with `dialog` as well as `lines`, so the checkbox on screen is
  * re-derived from what the agent now shows rather than from a local guess.
  */
-export async function sendDialogKey(id: string, key: string, f: Fetch = fetch): Promise<KeyResult & { dialog?: ParsedPrompt["dialog"] }> {
+export async function sendDialogKey(id: string, key: string, f: Fetch = fetch): Promise<KeyResult> {
   try {
     const res = await request(url(id, "dialog-key"), { key }, f);
-    return (await res.json()) as KeyResult & { dialog?: ParsedPrompt["dialog"] };
+    return (await res.json()) as KeyResult;
   } catch (err) {
     return { ok: false, detail: String(err), lines: [], source: "" };
   }

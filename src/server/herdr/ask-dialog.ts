@@ -42,8 +42,17 @@ const OPTION_RE = /^\s*(❯)?\s*(\d+)\.\s+(\S.*?)\s*$/;
 const CHECKBOX_RE = /^\[([ ✔x])\]\s*(.*)$/;
 /** Single-select's trailing pick marker. */
 const PICKED_RE = /^(.*\S)\s+✔$/;
-/** The unnumbered row below the options. */
-const ADVANCE_RE = /^\s+(❯)?\s*(Next|Submit)\s*$/;
+/**
+ * The unnumbered row below the options.
+ *
+ * `^\s*` before the cursor, not `^\s+`, and that one character was a bug found
+ * in a browser: the cursor marker sits at COLUMN 0 when it is on this row
+ * (`❯    Next`) exactly as it does on an option row, so requiring leading
+ * whitespace made the row invisible precisely when the cursor had reached it —
+ * which is when advancing needs to see it. The `\s+` after the marker is what
+ * still keeps a bare unindented `Next` in prose from matching.
+ */
+const ADVANCE_RE = /^\s*(❯)?\s+(Next|Submit)\s*$/;
 /** The label a fresh free-text row carries. Single-select adds a full stop. */
 const FREE_TEXT_LABEL_RE = /^Type something\.?$/;
 /** The rule that closes the option list, above `N. Chat about this`. */

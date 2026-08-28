@@ -201,7 +201,12 @@ test("the prompt read takes the visible screen, with colour kept", async () => {
 
   expect(await createActions(path).readPromptScreen("w1:p1")).toBe("snapshot");
   expect(seen[0].params.source).toBe("visible");
-  expect(seen[0].params.strip_ansi, "the escapes are the payload here").toBe(false);
+  // The FORMAT is what carries the escapes; `strip_ansi: false` on a text-format
+  // read yields none of them. Measured — and asserted because getting it wrong
+  // fails silently: the dialog still parses, it just never knows which question
+  // is current.
+  expect(seen[0].params.format, "the escapes are the payload here").toBe("ansi");
+  expect(seen[0].params.strip_ansi).toBe(false);
 });
 
 test("sendOptionKey sends the digit as a key", async () => {

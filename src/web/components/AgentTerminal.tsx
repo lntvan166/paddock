@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
 import {
-  answerWithKey, sendDialogKey, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  advanceDialog, answerWithKey, sendDialogKey, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
   sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
@@ -387,6 +387,13 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       // The cursor has moved, so the preview must move with it.
       if (res.selected !== undefined) {
         setPrompt((p) => (p ? { ...p, selected: res.selected ?? null } : p));
+      }
+      // And the DIALOG, which is what an arrow key changes. Without this the
+      // left/right arrows moved the agent to the next question while the UI
+      // kept rendering the previous one — reported as "cannot jump to next
+      // tab", with the key working the whole time.
+      if (res.dialog !== undefined) {
+        setPrompt((p) => (p ? { ...p, dialog: res.dialog ?? null } : p));
       }
     } else {
       setFeedback({ ok: false, detail: res.detail ?? "Key failed." });
@@ -774,7 +781,19 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                   .finally(() => setBusy(false));
               }}
               onArrow={(key) => void press(key)}
-              onAdvance={() => void press("enter")}
+              onAdvance={() => {
+                setBusy(true);
+                void advanceDialog(agent.agentId)
+                  .then((r) => {
+                    if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
+                    if (r.lines) pane.current?.apply(r.lines);
+                    if (r.dialog !== undefined) {
+                      setPrompt((p) => (p ? { ...p, dialog: r.dialog ?? null } : p));
+                    }
+                    setFeedback(null);
+                  })
+                  .finally(() => setBusy(false));
+              }}
               onType={(text) => {
                 setBusy(true);
                 void typeIntoDialog(agent.agentId, text)
