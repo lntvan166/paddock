@@ -2540,6 +2540,150 @@ body {
 
 .term-option:disabled { opacity: 0.5; }
 
+/* A recognised question dialog. Borrows `.term-options`' vocabulary rather than
+   inventing a second one: same danger edge, same surface, same scroll ceiling,
+   because it occupies the same slot on screen and answers the same kind of
+   question. */
+.dialog {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem var(--gutter);
+  padding-left: calc(var(--gutter) - var(--edge));
+  border-top: 1px solid var(--border);
+  border-left: var(--edge) solid var(--danger);
+  background: var(--surface);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* Which question you are on, and one step either way. The labels are not
+   buttons — see AskDialogView for why tapping one by name is deferred. */
+.dialog-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dialog-tab-list {
+  flex: 1;
+  display: flex;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.dialog-tab { white-space: nowrap; }
+
+/* The current question. `aria-current` carries the meaning for assistive tech
+   and drives the styling from the same fact, so the two cannot disagree. */
+.dialog-tab[aria-current="step"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dialog-prev-q,
+.dialog-next-q {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--t-md);
+  cursor: pointer;
+}
+
+.dialog-prev-q:disabled,
+.dialog-next-q:disabled { opacity: 0.5; }
+
+.dialog-question {
+  margin: 0;
+  font-size: var(--t-md);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.dialog-options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* Same button as `.term-option`, down to the radius and the wrap treatment: a
+   dialog's options and a prompt's options are the same thing to a thumb, and
+   two radii a thumb's width apart read as two designs. */
+.dialog-option {
+  min-height: 2.75rem;
+  padding: 0.5rem var(--pad-control);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  gap: 0.2rem 0.6rem;
+  align-items: baseline;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--t-md);
+  overflow-wrap: anywhere;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.dialog-option-key {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.dialog-option-label { grid-column: 2; }
+
+/* The agent's own description of the option. Smaller and quieter than the
+   label: it is what you read when the label alone is not enough, and it is the
+   reason the general parser refuses this screen in the first place. */
+.dialog-option-detail {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.dialog-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  font-weight: 600;
+}
+
+.dialog-option:disabled { opacity: 0.5; }
+
+.dialog-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+/* Next, or Submit — whichever the agent's own screen says. */
+.dialog-advance {
+  min-height: 2.75rem;
+  padding: 0.5rem var(--pad-control);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--accent-wash);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--t-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dialog-advance:disabled { opacity: 0.5; }
+
 /* What Enter would commit. Warn-coloured because the thing it prevents is
    committing a persistent grant by arrowing one step too far. */
 .term-selected {

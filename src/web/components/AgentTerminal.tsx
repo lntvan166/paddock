@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
 import {
-  answerWithKey, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  answerWithKey, sendDialogKey, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
   sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
 import { fileHash } from "@shared/route";
+import { AskDialogView } from "@web/components/AskDialogView";
 import { CommandList } from "@web/components/CommandList";
 import { QuickActions, QuickToggle } from "@web/components/QuickActions";
 import { StatusDot } from "@web/components/AgentRow";
@@ -748,7 +749,41 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               by one the way arrowing to it can. When the parser refuses (it does,
               on prompts whose options are separated by description lines) there
               are simply no buttons, and the keypad below is the floor. */}
-          {prompt?.options && prompt.options.length > 0 && (
+          {/* A recognised dialog replaces the option block entirely — it is the
+              same job done with the state the screen actually carries. When the
+              new parser refuses (`dialog === null`), which is every permission
+              prompt and every other harness, nothing below changes at all. */}
+          {prompt?.dialog && (
+            <AskDialogView
+              dialog={prompt.dialog}
+              busy={busy}
+              onToggle={(key) => {
+                setBusy(true);
+                void sendDialogKey(agent.agentId, key)
+                  .then((r) => {
+                    if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
+                    // The screen and the dialog together: the mark the operator
+                    // just tapped has to come from what the agent now shows,
+                    // not from a local mirror that could disagree with it.
+                    if (r.lines) pane.current?.apply(r.lines);
+                    if (r.dialog !== undefined) {
+                      setPrompt((p) => (p ? { ...p, dialog: r.dialog ?? null } : p));
+                    }
+                    setFeedback(null);
+                  })
+                  .finally(() => setBusy(false));
+              }}
+              onArrow={(key) => void press(key)}
+              onAdvance={() => void press("enter")}
+            />
+          )}
+
+          {/* ABSENT is treated exactly as null, not as a third case. A body
+              without the field — an older server, or any response that omits it
+              — must fall back to these buttons rather than render neither: a
+              screen with no controls at all is the silent disabling this
+              project refuses elsewhere. */}
+          {!prompt?.dialog && prompt?.options && prompt.options.length > 0 && (
             <div className="term-options" role="group" aria-label="Answer">
               {prompt.question && <p className="term-question">{prompt.question}</p>}
               {prompt.options.map((o) => (

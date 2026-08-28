@@ -303,6 +303,27 @@ export async function sendKey(id: string, key: NavKey, f: Fetch = fetch): Promis
 }
 
 /**
+ * Send a question dialog's option digit, and get the screen back.
+ *
+ * Distinct from `answerWithKey`, which posts to `/answer` and waits for the
+ * agent to stop being blocked. A dialog digit never unblocks anything —
+ * measured: a multi-select digit toggles a checkbox and a single-select digit
+ * only advances to the review tab — so that wait would hang every tap for its
+ * full budget and then report failure for a toggle that worked.
+ *
+ * Answers with `dialog` as well as `lines`, so the checkbox on screen is
+ * re-derived from what the agent now shows rather than from a local guess.
+ */
+export async function sendDialogKey(id: string, key: string, f: Fetch = fetch): Promise<KeyResult & { dialog?: ParsedPrompt["dialog"] }> {
+  try {
+    const res = await request(url(id, "dialog-key"), { key }, f);
+    return (await res.json()) as KeyResult & { dialog?: ParsedPrompt["dialog"] };
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
+/**
  * Type into the terminal, in any state.
  *
  * Distinct from `answerWithText`, which answers a PROMPT and is refused with a

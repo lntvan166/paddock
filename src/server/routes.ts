@@ -1229,6 +1229,51 @@ export function createApp(deps: AppDeps) {
     });
 
     /**
+     * Send one option digit to a question dialog, and answer with the screen.
+     *
+     * NOT `/answer`, and the difference is measured rather than stylistic.
+     * `/answer` commits a reply and then calls `waitUntilUnblocked`, because an
+     * answered prompt is expected to move on. A dialog digit never unblocks
+     * anything: a multi-select digit TOGGLES a checkbox, and even a
+     * single-select digit only advances to the review tab — the agent stays
+     * `blocked` until "Submit answers". Routed through `/answer`, every
+     * checkbox tap would wait out the full 15s budget and then report a failure
+     * for a toggle that had already worked.
+     *
+     * So this settles and re-reads, the way `/key` does, and returns the parsed
+     * screen with it. That is what keeps the checkbox on the phone honest:
+     * `/prompt` is fetched once per state change and never polled, so a mark
+     * derived only from that fetch would lag the agent until the state changed.
+     *
+     * Gated on `blocked` for the same reason `/answer` is: no dialog exists in
+     * any other state, and a digit typed into whatever replaced it is a
+     * keystroke the operator did not ask for.
+     */
+    app.post("/api/agents/:id/dialog-key", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+      if (agent.state !== "blocked") {
+        return c.json({ ok: false, detail: `agent is ${agent.state}, no dialog to answer` }, 409);
+      }
+
+      const key = (await jsonBody(c)).key;
+      if (typeof key !== "string" || !OPTION_KEY_RE.test(key)) {
+        return c.json({ ok: false, detail: `key must be an option digit, e.g. "2"` }, 400);
+      }
+
+      try {
+        await actions.sendOptionKey(agent.agentId, key);
+        // A TUI repaints asynchronously after the write — see `/key`'s note.
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readOutput(agent.agentId, agent.state);
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+      }
+    });
+
+    /**
      * Type into the terminal. Accepted in EVERY state.
      *
      * This is not a loosening of `/answer`'s guard — it is the capability that
