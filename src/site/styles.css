@@ -142,17 +142,24 @@ body {
   border-color: var(--site-accent);
 }
 
+/* The bezel. It does NOT clip the demo — it sits behind it.
+   `overflow: hidden` here asked Safari to build a rounded mask for a composited
+   iframe, which is its own well-worn way of painting a blank white layer. The
+   iframe is exactly this element's content box, so nothing ever overflowed:
+   the clip existed only to round the corners, and the corners can round
+   themselves. If Safari declines to round an iframe the screen is square inside
+   a rounded bezel — cosmetic, and something you can look at. */
 .phone {
   width: 390px;
   height: 780px;
   max-height: 86vh;
   border-radius: 34px;
-  overflow: hidden;
   border: 10px solid #1b1b1f;
   background: #1b1b1f;
 }
 
-.demo { width: 100%; height: 100%; border: 0; display: block; }
+/* 34px bezel radius less the 10px border is the screen's own 24. */
+.demo { width: 100%; height: 100%; border: 0; display: block; border-radius: 24px; }
 
 @media (max-width: 999px) {
   .split { grid-template-columns: 1fr; gap: 0; }
@@ -163,6 +170,7 @@ body {
      the real experience and the framed one is the compromise. */
   .fullscreen { color: var(--site-accent); border-color: var(--site-accent); }
   .phone { width: 100%; height: 70vh; border-radius: 20px; border-width: 6px; }
+  .demo { border-radius: 14px; }
   .sec { min-height: 0; padding: 28px 0; }
   .hero { padding-top: 8vh; }
 }

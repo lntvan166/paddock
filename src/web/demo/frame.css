@@ -56,30 +56,26 @@ html[data-demo-embedded="on"] body {
 }
 
 html[data-demo-embedded="on"] #root {
-  height: 100%;
-  /* The shell scrolls inside the frame rather than stretching the document
-     back out, which is what left it zero-high in the first place. */
+  /* THE IFRAME VIEWPORT, stated directly.
+     This has been three things. `height: 100%` plus `transform: translate(0)`
+     first — correct per spec, and it kept the construct Safari is worst at:
+     `position: fixed` inside a transformed, clipped ancestor. Then
+     `position: relative` with absolute children, which removed the transform
+     but still depended on a percentage resolving through `html` and `body`.
+
+     A percentage that resolves to 0 is the trap: `overflow: hidden` then clips
+     an empty box, every absolutely-positioned shell inside it disappears, and
+     the iframe paints its own white canvas — the exact symptom, produced by the
+     rule written to prevent it.
+
+     `position: fixed; inset: 0` is the iframe's viewport by definition. No
+     chain to resolve, no layer to composite, and it is what the app already
+     does to itself in the browser this keeps failing in. */
+  position: fixed;
+  inset: 0;
   overflow: hidden;
-  /* An ORDINARY containing block, not a transformed one.
-     This first shipped as `transform: translate(0)` — correct per spec, and the
-     same trick the 760px frame below uses. It did not fix Safari, and the
-     reason is that it kept the hostile construct rather than removing it:
-     `position: fixed` inside a transformed, clipped ancestor inside an IFRAME.
-     The app stacks that three deep — `.app-shell`, then `.screen`/`.term`
-     inside it, then `.detail` and `.quick-add-fab` above those. Chromium
-     composites it and paints; Safari painted nothing, which is a white
-     rectangle. `position: relative` plus absolute children is the same
-     geometry down a path every engine has agreed on for twenty years. */
-  position: relative;
 }
 
-/* The app's fixed shells, resolved against the phone above.
-   Per spec these are already contained by a positioned ancestor's transform,
-   so this changes no geometry — it changes which code path Safari takes to
-   arrive at it. tests/demo-embedded.test.ts fails when a new `position: fixed`
-   rule appears in the app and is left off this list, because the symptom of
-   missing one is a control that escapes the phone and lands on the landing
-   page, which no other test can see. */
 html[data-demo-embedded="on"] .app-shell,
 html[data-demo-embedded="on"] .screen,
 html[data-demo-embedded="on"] .term,

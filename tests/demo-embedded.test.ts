@@ -110,18 +110,24 @@ test("an embedded demo positions the shells against #root, not the viewport", ()
   expect(embedded).toMatch(/position:\s*absolute/);
 });
 
-test("#root is an ordinary positioned ancestor, not a transformed one", () => {
-  // The transform was the compositing trick; with nothing fixed left inside,
-  // it buys nothing and is the layer Safari mishandled.
+test("#root is the iframe viewport, and depends on no height chain to be it", () => {
   const rootRule = css.slice(
     css.indexOf('[data-demo-embedded="on"] #root'),
     css.indexOf("@media (min-width: 760px)"),
   );
-  // Declarations only. The block explains WHY the transform is gone, and a scan
-  // that reads prose as code reports the thing it just removed.
+  // Declarations only. The block explains what it replaced, and a scan that
+  // reads prose as code reports the very things it just removed.
   const declarations = rootRule.replace(/\/\*[\s\S]*?\*\//g, "");
-  expect(declarations).toMatch(/position:\s*relative/);
-  expect(declarations, "the transformed containing block is still there").not.toMatch(
+
+  // `position: fixed; inset: 0` IS the iframe viewport — no transform to
+  // composite, and no `height: 100%` that has to resolve through html and body
+  // to mean anything. A percentage that resolves to 0 gives a clipped, empty
+  // box, and every absolutely-positioned shell inside it disappears: a white
+  // rectangle, from a rule whose whole job was preventing one.
+  expect(declarations).toMatch(/position:\s*fixed/);
+  expect(declarations).toMatch(/inset:\s*0/);
+  expect(declarations, "the transformed containing block is back").not.toMatch(
     /transform:\s*translate\(0\)/,
   );
+  expect(declarations, "#root is sized by a percentage again").not.toMatch(/height:\s*100%/);
 });

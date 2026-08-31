@@ -159,3 +159,44 @@ test("the full-screen link is relative, like every other URL this file uses", ()
   expect(link, "the full-screen link is missing its class").not.toBe("");
   expect(link, "the full-screen link hardcodes a host").not.toContain("https://");
 });
+
+/**
+ * The phone does not CLIP the demo, it just sits behind it.
+ *
+ * Third round on the same white rectangle, and this is the construct the
+ * evidence actually points at. Measured by elimination, not guessed:
+ *
+ *   - `/app/` opens normally in Safari, so the app and its bundle are fine.
+ *   - `/app/?embed=1` opens normally in Safari, so the embed-only CSS is fine.
+ *   - Only the demo INSIDE the phone is white, so it is the wrapper.
+ *   - It was white at phone width too, where `.phone-rail` is `position:
+ *     static`, so it is not the sticky rail.
+ *
+ * That leaves `overflow: hidden` plus `border-radius` on the iframe's parent —
+ * Safari has to build a rounded mask for a composited child, and when it fails
+ * the layer paints as blank white. The iframe is exactly the content box, so
+ * nothing was ever overflowing: the clip existed only to round the corners.
+ *
+ * The radius moves onto the iframe itself. If Safari declines to round an
+ * iframe the corners are square inside a rounded bezel — cosmetic, and a
+ * failure you can look at, instead of a white rectangle where the product is.
+ */
+const siteCss = readFileSync("src/site/styles.css", "utf8");
+
+function rule(css: string, selector: string): string {
+  const at = css.indexOf(`${selector} {`);
+  expect(at, `no rule for ${selector}`).toBeGreaterThan(-1);
+  return css.slice(at, css.indexOf("}", at));
+}
+
+test("the phone does not clip the iframe", () => {
+  expect(rule(siteCss, ".phone"), "the phone still clips a composited iframe").not.toContain(
+    "overflow: hidden",
+  );
+});
+
+test("the screen's corners are rounded on the iframe itself", () => {
+  // Otherwise dropping the clip just squares them off everywhere, not only in
+  // the engine that could not handle the mask.
+  expect(rule(siteCss, ".demo")).toContain("border-radius");
+});
