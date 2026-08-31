@@ -5,7 +5,7 @@
 <h1 align="center">paddock</h1>
 
 <p align="center">
-  <a href="https://paddock-bice.vercel.app/">demo</a> ·
+  <a href="https://trypaddock.vercel.app/">demo</a> ·
   <a href="#install">install</a> ·
   <a href="docs/running-locally.md">running locally</a> ·
   <a href="#docs">docs</a>
@@ -58,7 +58,7 @@ walk back and look.
   <img src="docs/images/04-spaces.png" alt="Every space and tab, with rename, close and create" width="46%">
 </p>
 
-[**try the live demo →**](https://paddock-bice.vercel.app/) — synthetic
+[**try the live demo →**](https://trypaddock.vercel.app/) — synthetic
 agents, no install, best in mobile mode. It opens on a page that walks you
 through every screen; the phone beside the text is the real dashboard, not a
 picture of one.
@@ -77,11 +77,11 @@ has stopped and needs you.
 ## install
 
 ```bash
-curl -fsSL https://paddock-bice.vercel.app/install.sh | sh
+curl -fsSL https://trypaddock.vercel.app/install.sh | sh
 ```
 
 Installs to `~/.local/bin/paddock`, no `sudo`, checksum verified before anything
-is written · [read it first](https://paddock-bice.vercel.app/install.sh) ·
+is written · [read it first](https://trypaddock.vercel.app/install.sh) ·
 [binaries](https://github.com/lntvan166/paddock/releases)
 
 Or with Homebrew, which pulls in herdr as a dependency:

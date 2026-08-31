@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/lntvan166/paddock/security/advisories/new
     about: Report privately, not as a public issue. See SECURITY.md.
   - name: Try the demo
-    url: https://paddock-bice.vercel.app/
+    url: https://trypaddock.vercel.app/
     about: Synthetic agents, no install — useful for reproducing UI issues.

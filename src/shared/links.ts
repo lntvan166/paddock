@@ -9,10 +9,11 @@
  * Settings card both read it from here.
  */
 /**
- * NOT `paddock.vercel.app` — that name was already taken, so Vercel assigned
- * this one. It is the project's real production alias; do not "correct" it to
- * the tidier form, which belongs to someone else and 404s for us.
+ * NOT `paddock.vercel.app` — that name belongs to someone else (the word is an
+ * F1 term as well as a horse enclosure, and both were claimed). `trypaddock`
+ * was chosen over `paddock-herdr` so the install URL does not depend on a name
+ * this project does not control. Do not "correct" it to the shorter form.
  */
-export const SITE_URL = "https://paddock-bice.vercel.app";
+export const SITE_URL = "https://trypaddock.vercel.app";
 export const INSTALL_URL = `${SITE_URL}/install.sh`;
 export const TOUR_URL = `${SITE_URL}/#tour`;
