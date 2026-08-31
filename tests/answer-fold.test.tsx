@@ -3,7 +3,7 @@ import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
 import { AgentTerminal } from "@web/components/AgentTerminal";
 import { digestOf } from "@shared/screen";
-import { agent, click, render, settle, stubFetch, unmount } from "./support/render";
+import { agent, click, render, settle, stubFetch, typeInto, unmount } from "./support/render";
 
 const realFetch = globalThis.fetch;
 afterEach(async () => {
@@ -104,4 +104,41 @@ test("nothing folds on a pane with no question at all", async () => {
   const host = await mount(NO_PANEL_PROMPT, "working");
   expect(host.querySelectorAll(".term-reply").length).toBe(1);
   expect(host.querySelectorAll(".term-fold").length).toBe(0);
+});
+
+/**
+ * And a way back down again.
+ *
+ * The first version folded on its own and could then only be opened — the
+ * operator reported it: "its can show, but how can I hide it again?" Sticky-open
+ * was meant to stop the composer closing under a thumb mid-reply, which argues
+ * against re-folding it AUTOMATICALLY, not against offering the fold at all.
+ */
+test("once expanded, there is a named way to fold it back", async () => {
+  const host = await mount(OPTIONS_PROMPT);
+  await click(host.querySelector(".term-fold") as HTMLElement);
+
+  const hide = host.querySelector(".term-unfold") as HTMLElement;
+  expect(hide, "expanded with no way back").not.toBeNull();
+  expect(hide.textContent ?? "").toMatch(/hide/i);
+});
+
+test("tapping it folds the composer away again", async () => {
+  const host = await mount(OPTIONS_PROMPT);
+  await click(host.querySelector(".term-fold") as HTMLElement);
+  expect(host.querySelectorAll(".term-reply").length).toBe(1);
+
+  await click(host.querySelector(".term-unfold") as HTMLElement);
+  expect(host.querySelectorAll(".term-reply").length).toBe(0);
+  expect(host.querySelectorAll(".term-fold").length, "no way back up").toBe(1);
+});
+
+test("a half-typed reply cannot be folded out of sight", async () => {
+  // Same rule the notes field keeps: text folded away is either lost or sent
+  // unseen. The control is withdrawn rather than disabled, because a disabled
+  // button invites tapping at the one moment it will not work.
+  const host = await mount(OPTIONS_PROMPT);
+  await click(host.querySelector(".term-fold") as HTMLElement);
+  await typeInto(host.querySelector(".term-reply-field") as HTMLTextAreaElement, "wait");
+  expect(host.querySelectorAll(".term-unfold").length).toBe(0);
 });

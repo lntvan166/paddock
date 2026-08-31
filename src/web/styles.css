@@ -1125,6 +1125,22 @@ body {
 
 .term-fold-mark { color: var(--accent); }
 
+/* The way back down, in the control row beside Keys and Quick rather than as a
+   row of its own — a fold that cost a row to offer would give back part of what
+   folding just won. */
+.term-unfold {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+  padding: 0 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--t-md);
+}
+
 .term-notes-actions {
   display: flex;
   flex-wrap: wrap;

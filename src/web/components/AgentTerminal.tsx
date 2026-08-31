@@ -740,19 +740,34 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
    * the fallback this project keeps for every prompt it refuses to read — so it
    * stays open there, and on any pane with no question at all.
    */
-  const folded =
-    hasAnswerPanel &&
-    !composerOpen &&
-    // NEVER over an open keypad. "The pad never closes itself once it is open"
-    // is an existing rule with a test of its own, and a dialog arriving while
-    // the operator has the pad up would otherwise close it under their thumb —
-    // the exact hazard that rule exists for.
-    keypad === "hidden" &&
-    // NEVER over work in progress. A half-typed reply or a staged image folded
-    // out of sight is either lost or sent unseen, which is the same objection
-    // that keeps a typed note from collapsing.
-    reply.trim() === "" &&
-    attached.length === 0;
+  /**
+   * Is folding safe right now?
+   *
+   * NEVER over an open keypad: "the pad never closes itself once it is open" is
+   * an existing rule with a test of its own, and a dialog arriving while the
+   * operator has the pad up would otherwise close it under their thumb.
+   *
+   * NEVER over work in progress either. A half-typed reply or a staged image
+   * folded out of sight is lost or sent unseen — the same objection that keeps
+   * a typed note from collapsing.
+   */
+  const canFold = keypad === "hidden" && reply.trim() === "" && attached.length === 0;
+
+  const folded = hasAnswerPanel && !composerOpen && canFold;
+
+  /**
+   * The way back down, offered whenever folding is safe and the composer is up.
+   *
+   * The first version of this folded on its own and could then only be opened,
+   * which the operator hit immediately: "its can show, but how can I hide it
+   * again?" Sticky-open exists to stop the composer closing under a thumb
+   * mid-reply — that argues against re-folding AUTOMATICALLY, not against
+   * offering the fold at all.
+   *
+   * Withdrawn rather than disabled when unsafe: a disabled button invites a tap
+   * at the one moment it will not work.
+   */
+  const canUnfold = hasAnswerPanel && composerOpen && canFold;
 
   return (
     <PaneTerminal
@@ -1077,6 +1092,17 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
           </button>
         ) : (
         <>
+          {canUnfold && (
+            <button
+              type="button"
+              className="term-unfold"
+              aria-expanded="true"
+              onClick={() => setComposerOpen(false)}
+            >
+              <span aria-hidden="true" className="term-fold-mark">⌄</span>
+              Hide
+            </button>
+          )}
           <KeypadToggle pad={keypad} onChange={setKeypad} />
           {/* No replies, no control. An operator who cleared the list gets no
               toggle rather than one that opens an empty panel. */}
