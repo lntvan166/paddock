@@ -4,15 +4,70 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+
+    <title>paddock — watch and answer your coding agents from your phone</title>
+    <meta
+      name="description"
+      content="Watch and answer herdr coding agents from your phone. Grouped by what needs you, showing each agent's own option labels, over a tunnel you open with one command."
+    />
+
+    <!-- Link previews.
+         These are the ONLY thing Slack, Discord, iMessage and search crawlers
+         read: none of them run the page's JavaScript, so a card built at
+         runtime is a card nobody outside a browser ever sees. Absolute URLs,
+         because a preview is fetched with no page to resolve against.
+
+         The URL is repeated here rather than imported — this file is static
+         and has no module graph. tests/site-meta.test.ts asserts it matches
+         SITE_URL in src/shared/links.ts, so the two cannot drift. -->
+    <link rel="canonical" href="https://trypaddock.vercel.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="paddock" />
+    <meta property="og:url" content="https://trypaddock.vercel.app/" />
+    <meta property="og:title" content="paddock — answer your coding agents from the sofa" />
+    <meta
+      property="og:description"
+      content="Watch and answer herdr coding agents from your phone. Grouped by what needs you, showing each agent's own option labels, over a tunnel you open with one command."
+    />
+    <meta property="og:image" content="https://trypaddock.vercel.app/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The paddock dashboard on a phone, listing agents grouped by which ones need an answer."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <!-- The app's icons, reached through the assembled /app/ directory rather
          than copied: two sets would be two things to regenerate when the mark
          changes, and `make icons` only knows about one. -->
     <link rel="icon" type="image/png" sizes="32x32" href="/app/favicon-32-v2.png" />
     <link rel="icon" type="image/png" sizes="180x180" href="/app/favicon-180-v2.png" />
-    <title>paddock — watch and answer your coding agents from your phone</title>
   </head>
   <body>
-    <main id="site"></main>
+    <main id="site">
+      <!-- STATIC, and it must stay that way.
+           This page used to build its hero with innerHTML, which meant a
+           crawler, a link unfurler and anyone with JavaScript off received an
+           empty <main>. The headline and the install command are the two
+           things a stranger needs, so they are HTML. `main.ts` adds the tour
+           button and the scrolling half BELOW; it must never overwrite this. -->
+      <header class="hero">
+        <p class="eyebrow">the phone half of your agents</p>
+        <h1>Answer your coding agents<br />from the sofa.</h1>
+        <p class="lede">
+          You have several agents running in herdr panes. You step away from the
+          desk. One finishes, another hits a permission prompt, and both sit
+          there waiting — because the only way to find out is to walk back and
+          look.
+        </p>
+        <p class="install"><code>curl -fsSL https://trypaddock.vercel.app/install.sh | sh</code></p>
+        <!-- Filled by main.ts: a tour button with no JavaScript behind it would
+             be a control that does nothing, which is worse than no control. -->
+        <div id="hero-actions"></div>
+      </header>
+      <div id="split"></div>
+    </main>
     <script type="module" src="../src/site/main.ts"></script>
   </body>
 </html>

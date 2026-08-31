@@ -1,0 +1,64 @@
+<!doctype html>
+<!--
+  Source for site/public/og.png, the 1200x630 card link previews show.
+
+  Rendered by hand and COMMITTED, the same arrangement `scripts/build-icons.sh`
+  uses for the app icons: the raster is what ships, and regenerating it needs a
+  browser that CI has no reason to install. Open this file at exactly 1200x630
+  and screenshot it when the headline or the screenshot beside it changes.
+
+  Every agent name visible here comes from the demo's invented fixtures.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1200px; height: 630px; overflow: hidden; }
+      body {
+        background: #08090a;
+        color: #f2f3f5;
+        font: 16px/1.5 system-ui, -apple-system, sans-serif;
+        display: flex;
+        align-items: center;
+        gap: 56px;
+        padding: 0 72px;
+      }
+      .left { flex: 1; }
+      .mark {
+        display: flex; align-items: center; gap: 14px; margin-bottom: 34px;
+      }
+      .mark img { width: 46px; height: 46px; }
+      .mark span { font-size: 34px; font-weight: 700; letter-spacing: -0.01em; }
+      h1 {
+        font-size: 56px; line-height: 1.08; letter-spacing: -0.02em;
+        font-weight: 700; margin-bottom: 26px;
+      }
+      p { font-size: 23px; color: #9a9aa6; margin-bottom: 34px; max-width: 30ch; }
+      code {
+        display: inline-block; padding: 14px 20px; border-radius: 10px;
+        background: #14161a; color: #e0a838;
+        font: 20px ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .right { width: 300px; flex-shrink: 0; }
+      .right img {
+        width: 300px; border-radius: 22px; border: 8px solid #1b1b1f;
+        display: block; box-shadow: 0 30px 70px rgb(0 0 0 / 0.55);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="left">
+      <div class="mark">
+        <img src="../docs/images/logo.png" alt="" />
+        <span>paddock</span>
+      </div>
+      <h1>Answer your coding<br />agents from the sofa.</h1>
+      <p>Watch and answer herdr agents from your phone.</p>
+      <code>curl -fsSL trypaddock.vercel.app/install.sh | sh</code>
+    </div>
+    <div class="right">
+      <img src="../docs/images/01-agents.png" alt="" />
+    </div>
+  </body>
+</html>

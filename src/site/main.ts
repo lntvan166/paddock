@@ -1,6 +1,5 @@
 import "./styles.css";
 import "./tour/overlay.css";
-import { INSTALL_URL } from "@shared/links";
 import { SECTIONS, sectionForScroll } from "@site/page";
 import { createTour } from "@site/tour/engine";
 import { TOUR_STEPS } from "@site/tour/steps";
@@ -16,26 +15,27 @@ import { awaitAnchor, spotlightRect } from "@site/tour/spotlight";
  *
  * The demo is the real app in a same-origin iframe. Routing is hash-only
  * (src/web/route.ts), so steering it is one assignment and no component changes.
+ *
+ * THE HERO IS NOT RENDERED HERE. It is static markup in site/index.html,
+ * because a crawler, a link unfurler and a reader with JavaScript off all
+ * receive the HTML and none of them run this file — building the headline at
+ * runtime meant every link preview of this page was an empty box. This module
+ * fills the two holes that markup leaves and never overwrites it.
  */
 const APP_SRC = "/app/";
 const root = document.getElementById("site")!;
+const splitMount = document.getElementById("split")!;
+const heroActions = document.getElementById("hero-actions")!;
 
 const escapeHtml = (s: string): string =>
   s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-root.innerHTML = `
-  <header class="hero">
-    <p class="eyebrow">the phone half of your agents</p>
-    <h1>Answer your coding agents<br />from the sofa.</h1>
-    <p class="lede">
-      You have several agents running in herdr panes. You step away from the desk.
-      One finishes, another hits a permission prompt, and both sit there waiting —
-      because the only way to find out is to walk back and look.
-    </p>
-    <p class="install"><code>curl -fsSL ${escapeHtml(INSTALL_URL)} | sh</code></p>
-    <button type="button" class="tour-start">Take the tour</button>
-    <p class="hint">Or scroll — the phone follows along, and you can tap it any time.</p>
-  </header>
+heroActions.innerHTML = `
+  <button type="button" class="tour-start">Take the tour</button>
+  <p class="hint">Or scroll — the phone follows along, and you can tap it any time.</p>
+`;
+
+splitMount.outerHTML = `
   <div class="split">
     <div class="copy">
       ${SECTIONS.map(

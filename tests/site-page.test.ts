@@ -54,12 +54,12 @@ test("scroll is locked while the tour runs", () => {
   expect(main).toContain("overflow");
 });
 
-test("the install command the hero shows comes from the shared constant", () => {
-  // One source for the site's own address. A literal here and another in
-  // Settings is two things to change when the domain moves, and the github.io
-  // retirement is what that costs.
-  expect(main, "the hero does not read the shared URL").toContain("@shared/links");
-  expect(main, "the hero hardcodes a hostname").not.toContain("https://trypaddock.vercel.app");
+test("the page's script hardcodes no hostname of its own", () => {
+  // One source for the site's own address. The hero and its install command are
+  // static markup in site/index.html now, so THAT file carries the URL and
+  // tests/site-meta.test.ts pins it to SITE_URL. This module must not grow a
+  // second copy: two literals is what the github.io retirement cost to fix.
+  expect(main, "main.ts hardcodes a hostname").not.toMatch(/https:\/\/[a-z0-9.-]*paddock/);
 });
 
 /**
