@@ -248,23 +248,29 @@ function emphasise(text: string): string {
 }
 
 /**
- * One line, with its code spans held out of the emphasis pass.
+ * One line: code spans rendered, emphasis applied around them.
  *
- * A code span is quoted material: `**` inside one is ordinary text the agent
- * typed, and styling it would rewrite what was said.
+ * The spans are swapped for placeholders BEFORE emphasis rather than being cut
+ * out of it, because bold routinely wraps a code span — `**Send with `x`**`
+ * appeared in a live journal page with its asterisks intact. Splitting the line
+ * on the span left `**` opening in one fragment and closing in another, so
+ * neither half matched and both markers survived into the transcript.
+ *
+ * A placeholder is NUL-delimited: it cannot occur in journal prose, and it
+ * carries no markdown character for `emphasise` to act on. The span's contents
+ * are therefore never styled, which is the property this had to keep — `**`
+ * inside a code span is ordinary text the agent typed.
  */
 function renderInline(line: string): string {
-  const parts: string[] = [];
-  const re = /`([^`]+)`/g;
-  let at = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(line)) !== null) {
-    parts.push(emphasise(line.slice(at, m.index)));
-    parts.push(`${MD_CODE}${m[1]!}${MD_OFF}`);
-    at = m.index + m[0].length;
-  }
-  parts.push(emphasise(line.slice(at)));
-  return parts.join("");
+  const spans: string[] = [];
+  const held = line.replace(/`([^`]+)`/g, (_m, code: string) => {
+    spans.push(code);
+    return `\u0000${spans.length - 1}\u0000`;
+  });
+  return emphasise(held).replace(
+    /\u0000(\d+)\u0000/g,
+    (_m, i: string) => `${MD_CODE}${spans[Number(i)]!}${MD_OFF}`,
+  );
 }
 
 /**

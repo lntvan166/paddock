@@ -13,7 +13,7 @@ import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
 import { RowActions } from "@web/components/RowActions";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
-import { trimSeen } from "@web/journal-overlap";
+import { hasProse, trimSeen } from "@web/journal-overlap";
 import { NotesField } from "@web/components/NotesField";
 import { ImageIcon, SendIcon } from "@web/components/ui/icons";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
@@ -630,7 +630,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
            * journal whose every page overlaps costs one extra request, not an
            * unbounded run of them.
            */
-          const load = (cursor: string | null, first: boolean, follow: boolean): Promise<void> =>
+          const load = (cursor: string | null, first: boolean): Promise<void> =>
             fetchHistory(agent.agentId, cursor, JOURNAL_PAGE_TURNS)
             .then((page) => {
               if (page.source !== "journal") {
@@ -669,11 +669,24 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               }));
               restore();
 
-              // Nothing survived the trim: the whole page was already on
-              // screen. Go straight to the next one rather than leave the tap
-              // looking like it failed.
-              if (fresh.length === 0 && follow && page.hasMore && page.cursor !== null) {
-                return load(page.cursor, false, false);
+              // NOTHING READABLE survived the trim — which is not the same
+              // as nothing at all. A short session whose every turn is already
+              // on screen leaves a bare `you · 18:58` behind, and measured in
+              // the browser that grew the transcript by eleven characters and
+              // read as a broken button. So the test is whether there is prose
+              // to read, not whether the array is empty.
+              //
+              // Bounded, never a loop to the end of the file: each try costs a
+              // request, and a journal that is genuinely exhausted sets `done`
+              // through `hasMore` and takes the button away honestly.
+              // Gated on the trim having actually REMOVED something. A page
+              // that is simply short is honest content and the operator asked
+              // for it; only a page emptied out by the trim is the dead tap,
+              // and only the first page is ever trimmed. So this costs at most
+              // one extra request, once.
+              const trimmed = fresh.length < page.lines.length;
+              if (first && trimmed && !hasProse(fresh) && page.hasMore && page.cursor !== null) {
+                return load(page.cursor, false);
               }
               return undefined;
             })
@@ -694,7 +707,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               setJournalBusy(false);
             });
 
-          void load(journal.cursor, journal.lines.length === 0 && journal.cursor === null, true);
+          void load(journal.cursor, journal.lines.length === 0 && journal.cursor === null);
         }}
       >
         Show earlier

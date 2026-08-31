@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { trimSeen } from "@web/journal-overlap";
+import { hasProse, trimSeen } from "@web/journal-overlap";
 
 /**
  * The first tap of "Show earlier" used to serve content already on screen.
@@ -168,4 +168,32 @@ test("ANSI in either source is ignored", () => {
 test("an empty screen trims nothing", () => {
   const page = ["The migration plan needs one more pass before it can run on staging."];
   expect(trimSeen(page, [])).toEqual(page);
+});
+
+/**
+ * "Did that tap actually reveal anything?"
+ *
+ * The trim can leave a page holding nothing but a header and blank lines — a
+ * short session whose every turn is already on screen does exactly that. The
+ * first version of the caller only fetched another page when the trim left
+ * ZERO lines, so a page trimmed down to `you · 18:58` counted as a success:
+ * measured in the browser, one tap of Show earlier grew the transcript by
+ * eleven characters and looked broken.
+ */
+test("a page trimmed to a bare header carries nothing to read", () => {
+  expect(hasProse(["", "you · 18:58", ""])).toBe(false);
+});
+
+test("a page with a real turn in it carries something to read", () => {
+  expect(hasProse(["agent · 18:58", "Rollback is a single DROP INDEX, with no data loss."])).toBe(true);
+});
+
+test("a tool line alone is not something to read", () => {
+  // `▸ Bash · …` is the journal's own summary of a call whose output is not
+  // here. Revealing one and nothing else is the same dead tap.
+  expect(hasProse(["", "▸ Bash · Commit the notes feature"])).toBe(false);
+});
+
+test("an empty page carries nothing", () => {
+  expect(hasProse([])).toBe(false);
 });

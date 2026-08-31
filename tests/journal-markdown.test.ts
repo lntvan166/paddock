@@ -84,3 +84,19 @@ test("text with no markdown is returned untouched", () => {
   const src = "Rollback is a single DROP INDEX, with no data loss.";
   expect(renderMarkdown(src)).toBe(src);
 });
+
+test("bold that wraps a code span is still bold", () => {
+  // Found in a live journal page: `**Send with \`<the option>\`**` came out
+  // with its asterisks intact, because code spans were pulled out BEFORE
+  // emphasis ran and the `**` pair was split across two fragments that no
+  // longer matched each other.
+  const out = renderMarkdown("- **Send with `<the option>`** → the note");
+  expect(out, "the asterisks survived").not.toContain("**");
+  expect(out).toContain(BOLD);
+  expect(out).toContain(`${CODE}<the option>`);
+});
+
+test("a code span inside bold still keeps its own markers literal", () => {
+  const out = renderMarkdown("**run `echo **hi**` now**");
+  expect(out).toContain("echo **hi**");
+});

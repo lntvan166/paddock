@@ -126,3 +126,26 @@ export function trimSeen(page: string[], screen: string[]): string[] {
 
   return sawReal ? page.slice(0, cut) : page;
 }
+
+/** A journal-only summary of a call whose output is not in the transcript. */
+const TOOL_LINE_RE = /^\s*▸/;
+
+/**
+ * Does this page hold anything the operator can actually read?
+ *
+ * "The trim left some lines" is not the same as "the tap revealed something".
+ * A short session whose every turn is already on screen trims down to a header
+ * and a blank line, and measured in the browser that made one tap of Show
+ * earlier grow the transcript by eleven characters — `you · 18:58` — which
+ * reads as a broken control rather than as the end of the history.
+ *
+ * A tool line does not count either: `▸ Bash · …` names a call whose output is
+ * not here, so revealing one and nothing else is the same dead tap.
+ */
+export function hasProse(lines: readonly string[]): boolean {
+  return lines.some((line) => {
+    if (TOOL_LINE_RE.test(line)) return false;
+    const flat = flatten(line);
+    return flat !== "" && flat.split(" ").length >= MIN_WORDS;
+  });
+}
