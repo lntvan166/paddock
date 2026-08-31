@@ -44,6 +44,15 @@ const NOTES_OPEN_RE = /ctrl\+g to edit/;
 const NOTES_LINE_RE = /Notes:\s*(.*?)\s*$/;
 
 /**
+ * The dialog states its own contract in its footer, so that is what is read.
+ *
+ * Not inferred from the notes field beside it: the two happen to travel
+ * together today, and a shape that gains one without the other would answer
+ * itself the wrong way silently.
+ */
+const COMMIT_BY_CURSOR_RE = /Enter to select/;
+
+/**
  * The dialog's own words in the field, which are not the operator's note.
  *
  * Both measured: the closed hint, and the placeholder shown while the field is
@@ -328,6 +337,7 @@ export function parsePrompt(raw: string): ParsedPrompt {
   return {
     question: lastRunQuestion,
     notes: readNotes(stripped),
+    commit: stripped.some((l) => COMMIT_BY_CURSOR_RE.test(l)) ? "cursor" : "digit",
     options: usable ? lastRun : null,
     selected: usable ? fromRun : selected,
     // Composed HERE rather than at each route, and that is a deliberate choice

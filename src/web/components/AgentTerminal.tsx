@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
 import {
-  answerWithKey, moveDialogTab, sendDialogKey, sendNote, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  answerWithKey, moveDialogTab, selectOption, sendDialogKey, sendNote, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
   sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
@@ -889,8 +889,21 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                   aria-pressed={isSelected(o)}
                   onClick={() => {
                     setBusy(true);
-                    void answerWithKey(agent.agentId, o.key)
-                      .then((r) => setFeedback(r))
+                    // WHICH keystroke answers this prompt is the prompt's to
+                    // say, not ours to assume. A permission prompt takes its
+                    // digit; a question dialog ignores digits entirely and
+                    // wants its cursor walked onto the row — measured, a digit
+                    // sent there did nothing and the wait for an unblock then
+                    // timed out and reported a failure for a keystroke that
+                    // never landed.
+                    const commit = prompt.commit === "cursor"
+                      ? selectOption(agent.agentId, o.key)
+                      : answerWithKey(agent.agentId, o.key);
+                    void commit
+                      .then((r) => {
+                        setFeedback(r.ok ? null : r);
+                        if (r.ok && "lines" in r && r.lines) pane.current?.apply(r.lines);
+                      })
                       .finally(() => setBusy(false));
                   }}
                 >

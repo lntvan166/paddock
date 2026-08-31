@@ -423,3 +423,25 @@ test("a live preview dialog reports its question and cursor", () => {
     "1. Scaffold a brand new Next.js application from scratch here (Recommended)",
   );
 });
+
+/**
+ * HOW a prompt is answered, which is not the same for both shapes.
+ *
+ * A permission prompt takes a digit: "1" answers it outright. The question
+ * dialog does NOT — measured on a live agent, sending "1" to it changed
+ * nothing at all: the cursor stayed on option 1, the dialog stayed up, the
+ * agent stayed blocked, and `/answer` then waited out its budget and reported a
+ * failure for a keystroke that had never done anything. Its footer says so in
+ * words: "Enter to select · ↑/↓ to navigate".
+ *
+ * That is the mislabelled control CLAUDE.md bans, and it appeared the moment
+ * the option parser started succeeding on this shape — before that, no buttons
+ * rendered and nothing lied.
+ */
+test("a question dialog is committed by moving the cursor, not by a digit", () => {
+  expect(parsePrompt(LIVE_PREVIEW_DIALOG).commit).toBe("cursor");
+});
+
+test("a permission prompt is still committed by its digit", () => {
+  expect(parsePrompt(REAL_SHAPE).commit).toBe("digit");
+});

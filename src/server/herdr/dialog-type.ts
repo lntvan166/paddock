@@ -323,3 +323,66 @@ export async function addNote(
   await io.sendNavKey(target, "enter");
   return { ok: true };
 }
+
+/**
+ * Commit a question dialog's option by walking its cursor onto it.
+ *
+ * MEASURED, because the obvious way does not work. A digit sent to this dialog
+ * changed nothing at all: the cursor stayed put, the dialog stayed up, the
+ * agent stayed blocked, and `/answer`'s wait for an unblock then timed out and
+ * reported a failure for a keystroke that had never done anything. On screen
+ * that was a button claiming to choose an option and silently doing nothing —
+ * the mislabelled control `CLAUDE.md` bans, and it appeared the moment the
+ * option parser started succeeding on this shape.
+ *
+ * The dialog states its own contract: "Enter to select · ↑/↓ to navigate".
+ * Measured against it, ↑/↓ move between the options and Enter commits the one
+ * under the cursor. So that is what this sends.
+ *
+ * Refused rather than attempted when the prompt is not this shape, or when the
+ * option is not on screen, or when the cursor cannot be located — every one of
+ * those is a case where the number of arrow presses would be a guess, and the
+ * row it landed on could be a persistent grant.
+ */
+export async function selectByCursor(
+  target: string,
+  key: string,
+  io: DialogIo,
+): Promise<TypeOutcome> {
+  const before = parsePrompt(await io.readPromptScreen(target));
+  if (before.commit !== "cursor") {
+    return { ok: false, detail: "this prompt is not answered by its cursor" };
+  }
+  const options = before.options;
+  if (options === null) return { ok: false, detail: "no options on screen" };
+
+  const to = options.findIndex((o) => o.key === key);
+  if (to === -1) return { ok: false, detail: `no option ${key} on screen` };
+
+  const from = options.findIndex((o) => o.selected);
+  if (from === -1) return { ok: false, detail: "cannot see which option the cursor is on" };
+
+  const steps = to - from;
+  for (let i = 0; i < Math.abs(steps); i++) {
+    await io.sendNavKey(target, steps > 0 ? "down" : "up");
+  }
+
+  if (steps !== 0) {
+    // A TUI repaints asynchronously, so the confirmation below has to read a
+    // frame that has actually landed — the rule `reachRow` above records, and
+    // the one two entries of a measured table got wrong.
+    await io.settle?.();
+
+    // CONFIRMED, never assumed. Enter commits whatever row the cursor is
+    // actually on, and a miscount would commit a different answer than the one
+    // tapped — which on a permission-shaped option is a standing grant.
+    const after = parsePrompt(await io.readPromptScreen(target));
+    const now = after.options?.findIndex((o) => o.selected) ?? -1;
+    if (now === -1 || after.options?.[now]?.key !== key) {
+      return { ok: false, detail: "the cursor did not reach that option — nothing was sent" };
+    }
+  }
+
+  await io.sendNavKey(target, "enter");
+  return { ok: true };
+}

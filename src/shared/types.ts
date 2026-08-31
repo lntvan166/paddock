@@ -239,6 +239,23 @@ export interface ParsedPrompt {
    */
   notes: PromptNotes | null;
   /**
+   * How this prompt is answered.
+   *
+   * `digit` is the permission prompt: sending "1" answers it, which is what
+   * `/answer` has always done.
+   *
+   * `cursor` is the question dialog, and it is NOT the same. Measured on a live
+   * agent, a digit sent to it changed nothing — the cursor stayed put, the
+   * dialog stayed up, the agent stayed blocked, and the wait for an unblock
+   * timed out and reported a failure for a keystroke that never did anything.
+   * Its footer says what it wants: "Enter to select · ↑/↓ to navigate". So the
+   * cursor is walked onto the option and Enter commits it.
+   *
+   * Answering the wrong way is not a degraded answer, it is a button that
+   * claims to choose and does not — the mislabelled control CLAUDE.md bans.
+   */
+  commit: "digit" | "cursor";
+  /**
    * The structured dialog, when the screen is one paddock fully recognises.
    *
    * Null is the ordinary case and means "render the existing controls": a

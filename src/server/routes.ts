@@ -3,7 +3,7 @@ import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { expandHome } from "@server/herdr/tree";
-import { addNote, moveDialogTab, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
+import { addNote, moveDialogTab, selectByCursor, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
@@ -1412,6 +1412,45 @@ export function createApp(deps: AppDeps) {
      * dialog exists in any other state, and these keystrokes typed into
      * whatever replaced it are input the operator never asked to send.
      */
+    /**
+     * Commit a question dialog's option by walking its cursor onto it.
+     *
+     * NOT `/answer`, and the difference is measured. `/answer` sends the
+     * option's DIGIT and then waits for the agent to leave `blocked`. Sent to
+     * this dialog a digit does nothing at all — measured, the cursor stayed
+     * put and the dialog stayed up — so the wait ran out its budget and
+     * reported a failure for a keystroke that had never landed. On a phone
+     * that was a button claiming to answer and silently not answering.
+     *
+     * Settles and re-reads instead of waiting, the way `/dialog-key` does: the
+     * agent may unblock on this Enter or may advance to another question, and
+     * a route that assumed the first would fail honestly-looking failures for
+     * the second.
+     */
+    app.post("/api/agents/:id/select", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+      if (agent.state !== "blocked") {
+        return c.json({ ok: false, detail: `agent is ${agent.state}, no dialog to answer` }, 409);
+      }
+
+      const key = (await jsonBody(c)).key;
+      if (typeof key !== "string" || !OPTION_KEY_RE.test(key)) {
+        return c.json({ ok: false, detail: `key must be an option digit, e.g. "2"` }, 400);
+      }
+
+      try {
+        const outcome = await selectByCursor(agent.agentId, key, { ...actions, settle });
+        if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readOutput(agent.agentId, agent.state);
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, selected: parsed.selected });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+      }
+    });
+
     app.post("/api/agents/:id/note", async (c) => {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);

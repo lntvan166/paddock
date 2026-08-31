@@ -367,6 +367,24 @@ export async function moveDialogTab(
  * one silently discards the operator's choice — so the caller says which it
  * means and the server never guesses.
  */
+/**
+ * Commit a question dialog's option by walking its cursor onto it.
+ *
+ * Distinct from `answerWithKey`, which sends the option's digit. Measured, a
+ * digit does nothing to this dialog — so a button wired to the wrong one of
+ * these two is a control that claims to answer and does not.
+ */
+export async function selectOption(
+  id: string, key: string, f: Fetch = fetch,
+): Promise<KeyResult & { selected?: string | null }> {
+  try {
+    const res = await request(url(id, "select"), { key }, f);
+    return await bodyOrDetail<KeyResult>(res) as KeyResult;
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
 export async function sendNote(
   id: string,
   text: string,
