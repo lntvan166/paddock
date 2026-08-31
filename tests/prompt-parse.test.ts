@@ -292,3 +292,70 @@ test("an ordinary prompt reports no dialog at all", () => {
   expect(p.options, "this one the general parser reads fine").not.toBeNull();
   expect(p.dialog, "and there is no dialog to report").toBeNull();
 });
+
+/**
+ * The question dialog with a preview panel beside it, and labels that wrap.
+ *
+ * Structure copied from a real AskUserQuestion screen photographed on a phone;
+ * content invented. Three things about it defeated the parser at once, and all
+ * three came from ONE cause:
+ *
+ * `OPTION_RE` needs a leading digit, so an option whose label WRAPPED onto a
+ * continuation line ("locally" under "Merge back to main") did not match — and
+ * a non-matching line ends the run. Every run became a singleton, so
+ * `contiguous` (which needs two) rejected them and `options` came back null;
+ * ending a run also clears `lastQuestion`, so the question came back null too;
+ * and with no usable menu `selected` fell back to the global cursor scan, which
+ * returned the option line WITH the preview panel's border still attached.
+ *
+ * On the phone that rendered as "ENTER SELECTS 1. Merge back to main ╭────╮"
+ * over two box-drawing fragments and no answer buttons at all.
+ */
+const WRAPPED_WITH_PANEL = `
+ Implementation complete. What would you like to do?
+
+ ❯ 1. Merge back to main            ╭────────────────────────────╮
+       locally                      │ git checkout main          │
+    2. Push and create a Pull       │ git pull                   │
+       Request                      │ git merge feature-branch   │
+    3. Keep the branch as-is        │ make test                  │
+                                    ╰────────────────────────────╯
+
+                                    Notes: press n to add notes
+
+ Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
+`;
+
+test("a wrapped option label does not end the run", () => {
+  // The whole defect in one assertion: three options were on screen and the
+  // operator was offered none.
+  const p = parsePrompt(WRAPPED_WITH_PANEL);
+  expect(p.options).not.toBeNull();
+  expect(p.options!.map((o) => o.key)).toEqual(["1", "2", "3"]);
+});
+
+test("the question survives a wrapped option label", () => {
+  const p = parsePrompt(WRAPPED_WITH_PANEL);
+  expect(p.question).toBe("Implementation complete. What would you like to do?");
+});
+
+test("a wrapped label is joined, not truncated to its first line", () => {
+  const p = parsePrompt(WRAPPED_WITH_PANEL);
+  expect(p.options![0]!.label).toBe("Merge back to main locally");
+  expect(p.options![1]!.label).toBe("Push and create a Pull Request");
+  expect(p.options![2]!.label).toBe("Keep the branch as-is");
+});
+
+test("the preview panel beside the options is not part of any label", () => {
+  // A label carrying `╭────╮` is not wrong enough to mislabel the button, but
+  // it is the panel's border read as the operator's own words.
+  const p = parsePrompt(WRAPPED_WITH_PANEL);
+  for (const o of p.options!) {
+    expect(o.label, `${o.key} carries the preview panel`).not.toMatch(/[╭╮╰╯│─]/);
+  }
+});
+
+test("the cursor is reported without the panel attached to it", () => {
+  const p = parsePrompt(WRAPPED_WITH_PANEL);
+  expect(p.selected).toBe("1. Merge back to main locally");
+});

@@ -6,6 +6,23 @@ const OPTION_RE = /^\s*(❯\s*)?(\d+)\.\s+(.*\S)\s*$/;
 const QUESTION_RE = /^\s*(\S.*\?)\s*$/;
 
 /**
+ * A preview panel sharing the option's line, and everything after it.
+ *
+ * The question dialog can draw a box to the RIGHT of the menu, so one screen
+ * row holds an option and a slab of unrelated preview:
+ *
+ *   ❯ 1. Merge back to main            ╭──────────────────╮
+ *         locally                      │ git checkout main │
+ *
+ * `OPTION_RE` is anchored to end of line, so the border became part of the
+ * label and the cursor line was reported with `╭────╮` hanging off it. Cut at
+ * two or more spaces followed by a box-drawing character (U+2500–U+257F):
+ * columns are always separated by a gutter, and no option label reaches that
+ * block after a gutter. An em dash is U+2014 and is deliberately outside it.
+ */
+const SIDE_PANEL_RE = /\s{2,}[\u2500-\u257F].*$/;
+
+/**
  * Any line carrying the cursor marker, whether or not it looks like an option.
  *
  * Deliberately looser than OPTION_RE: some prompts park the cursor on a
@@ -81,12 +98,41 @@ function stripAnsi(line: string): string {
  * because the concatenation happens to number contiguously.
  */
 export function parsePrompt(raw: string): ParsedPrompt {
+  /**
+   * Parsed FIRST, because it decides whether wrapped labels are adopted below.
+   *
+   * `raw`, not the stripped lines: `parseAskDialog` needs the escapes.
+   *
+   * The question dialog's own shape puts a DESCRIPTION under each option, which
+   * is indented exactly like a wrapped label and cannot be told from one by
+   * looking. The general parser is required to refuse that shape — its refusal
+   * is what routes the screen to the dialog parser instead — so the two rules
+   * are separated by ownership rather than by a guess about indentation: a
+   * screen the dialog parser claims is never re-read as wrapped prose here.
+   */
+  const dialog = parseAskDialog(raw);
+  const adoptWrapped = dialog === null;
+
   // The nearest question line seen anywhere before the run currently being
   // scanned (or, once a run ends, before the next one starts).
   let lastQuestion: string | null = null;
 
   let currentRun: PromptOption[] = [];
   let currentRunQuestion: string | null = null;
+  /**
+   * Indent of the option line the run is currently on, or -1 between runs.
+   *
+   * A label too long for the column wraps onto a line with no number on it, so
+   * `OPTION_RE` misses it and — before this — it ENDED THE RUN. Every option
+   * became a run of one, `contiguous` (which needs two) rejected them all, and
+   * a screen showing three answers offered none. Closing the run also cleared
+   * `lastQuestion`, so the question vanished with them.
+   *
+   * The indent is what tells a wrapped label from the next paragraph: a
+   * continuation sits under its own label, further in than the number that
+   * introduced it.
+   */
+  let runIndent = -1;
 
   let lastRun: PromptOption[] = [];
   let lastRunQuestion: string | null = null;
@@ -104,7 +150,7 @@ export function parsePrompt(raw: string): ParsedPrompt {
     // kept. Matching raw bytes made a coloured menu parse as no menu at all,
     // so the preview vanished on the first arrow-down — the same class of
     // failure the ANSI note above records, one call site over.
-    const line = stripAnsi(rawLine);
+    const line = stripAnsi(rawLine).replace(SIDE_PANEL_RE, "");
 
     const cur = CURSOR_RE.exec(line);
     if (cur) selected = cur[1]!;
@@ -117,6 +163,17 @@ export function parsePrompt(raw: string): ParsedPrompt {
         currentRunQuestion = lastQuestion;
       }
       currentRun.push({ key: opt[2]!, label: opt[3]!, selected: Boolean(opt[1]) });
+      runIndent = line.length - line.trimStart().length;
+      continue;
+    }
+
+    // A wrapped label: no number, but indented past the number that introduced
+    // it, and immediately after it — a blank line still ends the run below, so
+    // a later paragraph that happens to be deeply indented cannot be adopted.
+    const last = currentRun[currentRun.length - 1];
+    if (adoptWrapped && last !== undefined && line.trim() !== ""
+        && line.length - line.trimStart().length > runIndent) {
+      last.label = `${last.label} ${line.trim()}`;
       continue;
     }
 
@@ -126,6 +183,7 @@ export function parsePrompt(raw: string): ParsedPrompt {
       lastRun = currentRun;
       lastRunQuestion = currentRunQuestion;
       currentRun = [];
+      runIndent = -1;
       // The question that applied to the run that just closed must not
       // survive into the next one. Without this reset, two runs separated
       // only by a blank line (no fresh question in between) would let the
@@ -205,7 +263,7 @@ export function parsePrompt(raw: string): ParsedPrompt {
     //
     // `raw`, not the stripped lines: `parseAskDialog` needs the escapes. The
     // current tab of a dialog is marked ONLY by a background colour.
-    dialog: parseAskDialog(raw),
+    dialog,
     raw,
   };
 }
