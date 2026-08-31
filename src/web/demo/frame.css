@@ -60,11 +60,32 @@ html[data-demo-embedded="on"] #root {
   /* The shell scrolls inside the frame rather than stretching the document
      back out, which is what left it zero-high in the first place. */
   overflow: hidden;
-  /* Load-bearing, for the reason the framed case gives below: a transform makes
-     this the containing block for fixed descendants, so the shell resolves
-     against the phone instead of against an iframe viewport Safari would not
-     lay out. */
-  transform: translate(0);
+  /* An ORDINARY containing block, not a transformed one.
+     This first shipped as `transform: translate(0)` — correct per spec, and the
+     same trick the 760px frame below uses. It did not fix Safari, and the
+     reason is that it kept the hostile construct rather than removing it:
+     `position: fixed` inside a transformed, clipped ancestor inside an IFRAME.
+     The app stacks that three deep — `.app-shell`, then `.screen`/`.term`
+     inside it, then `.detail` and `.quick-add-fab` above those. Chromium
+     composites it and paints; Safari painted nothing, which is a white
+     rectangle. `position: relative` plus absolute children is the same
+     geometry down a path every engine has agreed on for twenty years. */
+  position: relative;
+}
+
+/* The app's fixed shells, resolved against the phone above.
+   Per spec these are already contained by a positioned ancestor's transform,
+   so this changes no geometry — it changes which code path Safari takes to
+   arrive at it. tests/demo-embedded.test.ts fails when a new `position: fixed`
+   rule appears in the app and is left off this list, because the symptom of
+   missing one is a control that escapes the phone and lands on the landing
+   page, which no other test can see. */
+html[data-demo-embedded="on"] .app-shell,
+html[data-demo-embedded="on"] .screen,
+html[data-demo-embedded="on"] .term,
+html[data-demo-embedded="on"] .detail,
+html[data-demo-embedded="on"] .quick-add-fab {
+  position: absolute;
 }
 
 @media (min-width: 760px) {

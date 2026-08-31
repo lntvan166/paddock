@@ -51,16 +51,6 @@ test("an embedded demo gives its document a real height", () => {
   expect(block).toMatch(/height:\s*100%/);
 });
 
-test("an embedded demo gives the fixed shell a containing block", () => {
-  // Without this the shell resolves against the iframe's viewport, which is the
-  // construct Safari would not paint. `translate(0)` is what makes `#root` the
-  // containing block for fixed descendants — the same trick the 760px frame
-  // already relies on, and for the same stated reason.
-  const beforeQuery = css.slice(0, css.indexOf("@media (min-width: 760px)"));
-  const rootRule = beforeQuery.slice(beforeQuery.indexOf('[data-demo-embedded="on"] #root'));
-  expect(rootRule).toMatch(/transform:\s*translate\(0\)/);
-});
-
 test("a real phone opening the demo directly is untouched", () => {
   // It is under 760px too, and it must keep the dynamic viewport units the
   // keyboard inset depends on. Nothing may key the embedded rules on width.
@@ -68,4 +58,70 @@ test("a real phone opening the demo directly is untouched", () => {
   const block = beforeQuery.slice(beforeQuery.indexOf('[data-demo-embedded="on"]'));
   expect(block, "the embedded rules would catch a real phone too")
     .not.toContain("max-width");
+});
+
+/**
+ * And the construct the first fix LEFT IN PLACE, which is why the phone was
+ * still white after it shipped.
+ *
+ * Giving `#root` a transform made it the containing block for the app's fixed
+ * shells, and that is correct per spec — but `position: fixed` inside a
+ * transformed, `overflow: hidden` ancestor inside an IFRAME is the single most
+ * Safari-hostile arrangement in CSS, and the app stacks it three deep:
+ * `.app-shell` fixed, `.screen`/`.term` fixed inside it, `.detail` and
+ * `.quick-add-fab` fixed on top. Chromium composites it; Safari painted
+ * nothing, which is a white rectangle.
+ *
+ * So the embedded demo does not USE fixed positioning. `#root` becomes an
+ * ordinary positioned ancestor and every fixed shell becomes `absolute`
+ * against it — identical geometry, and a path every engine has agreed on for
+ * twenty years. Nothing here changes the app a real phone loads directly.
+ */
+const APP_CSS = readFileSync("src/web/styles.css", "utf8");
+
+/** Every selector in the app whose own block declares `position: fixed`. */
+function fixedSelectors(css: string): string[] {
+  const out: string[] = [];
+  let selector = "";
+  for (const raw of css.split("\n")) {
+    const line = raw.trim();
+    if (line.endsWith("{") && !line.startsWith("@")) selector = line.slice(0, -1).trim();
+    // `position: fixed` inside a comment is prose about the rule, not the rule.
+    else if (/^position:\s*fixed/.test(line) && selector) out.push(selector);
+  }
+  return [...new Set(out.flatMap((s) => s.split(",").map((p) => p.trim())))];
+}
+
+test("the guard can actually see the app's fixed shells", () => {
+  // A parser that matches nothing would pass every assertion below in silence.
+  const found = fixedSelectors(APP_CSS);
+  expect(found, "the fixed-position scan found nothing").toContain(".app-shell");
+  expect(found.length).toBeGreaterThan(3);
+});
+
+test("an embedded demo positions the shells against #root, not the viewport", () => {
+  const embedded = css.slice(css.indexOf('[data-demo-embedded="on"]'));
+  for (const sel of fixedSelectors(APP_CSS)) {
+    expect(
+      embedded,
+      `${sel} is still position: fixed when embedded — the arrangement Safari would not paint`,
+    ).toContain(`[data-demo-embedded="on"] ${sel}`);
+  }
+  expect(embedded).toMatch(/position:\s*absolute/);
+});
+
+test("#root is an ordinary positioned ancestor, not a transformed one", () => {
+  // The transform was the compositing trick; with nothing fixed left inside,
+  // it buys nothing and is the layer Safari mishandled.
+  const rootRule = css.slice(
+    css.indexOf('[data-demo-embedded="on"] #root'),
+    css.indexOf("@media (min-width: 760px)"),
+  );
+  // Declarations only. The block explains WHY the transform is gone, and a scan
+  // that reads prose as code reports the thing it just removed.
+  const declarations = rootRule.replace(/\/\*[\s\S]*?\*\//g, "");
+  expect(declarations).toMatch(/position:\s*relative/);
+  expect(declarations, "the transformed containing block is still there").not.toMatch(
+    /transform:\s*translate\(0\)/,
+  );
 });
