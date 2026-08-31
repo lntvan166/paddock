@@ -118,7 +118,18 @@ const screens: Record<string, string[]> = { ...SCREENS };
 const recent = new Map<string, { digest: string; lines: string[] }[]>();
 
 function screenFor(id: string): string[] {
-  if (id === "d1:p1") return blockedScreen(cursor);
+  /**
+   * The blocked pane is REGENERATED so its ❯ marker tracks up and down — but
+   * only while it is still blocked.
+   *
+   * This used to be unconditional, which made `answer()`'s own
+   * `screens[id] = WORKING_SCREEN` dead code: the demo answered the prompt,
+   * dropped the option buttons, and then went on showing the permission prompt
+   * for ever. Anything else written for this pane — a reply echo — landed in
+   * the same slot nothing read.
+   */
+  const blockedNow = agents.find((a) => a.agentId === id)?.state === "blocked";
+  if (id === "d1:p1" && blockedNow) return blockedScreen(cursor);
   return screens[id] ?? IDLE_DOCS_SCREEN;
 }
 
@@ -332,8 +343,28 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
     });
   }
 
+  /**
+   * A reply, echoed into the transcript the demo shows.
+   *
+   * It used to answer `ok: true` with the screen UNCHANGED — so an operator
+   * typed, sent, and watched nothing happen. That is the mislabelled control
+   * `CLAUDE.md` bans, in the one place people look at paddock without running
+   * it.
+   *
+   * Simulated rather than refused, like `key` and `answer` beside it. The
+   * refusal `demo-actions.ts` holds is for writes paddock genuinely cannot
+   * perform here; this transcript is synthetic, and appending to it is what
+   * actually happened.
+   */
   if (route === "text") {
+    const typed = typeof body.text === "string" ? body.text.trim() : "";
+    if (typed !== "") {
+      // The harness's own prompt marker, so the echoed line reads as the
+      // operator's turn rather than as more agent output.
+      screens[id] = [...screenFor(id), "", `[38;2;255;255;255m❯ ${typed}[0m`];
+    }
     const lines = liveScreen(id);
+    remember(id, digestOf(lines), lines);
     return json({ ok: true, lines, source: "visible", digest: digestOf(lines) });
   }
 

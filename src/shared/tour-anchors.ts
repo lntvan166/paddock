@@ -14,9 +14,13 @@ export const TOUR_ANCHORS = [
   "needs-you",
   "answer-options",
   "reply-field",
-  "file-frame",
   "space-tree",
   "theme-picker",
+  // LAST, and deliberately. Leaving a file view sends the hash back to the pane
+  // the file was opened from (`App.tsx`'s FileScreen `onBack`), which is right
+  // when a person taps Back and wrong for a tour that navigates onward — it
+  // bounced the two steps that used to follow it. Nothing follows it now.
+  "file-frame",
 ] as const;
 
 export type TourAnchor = (typeof TOUR_ANCHORS)[number];

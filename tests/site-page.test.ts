@@ -82,9 +82,8 @@ test("the anchor is scrolled into view before it is measured", () => {
   // An anchor below the phone's own fold has a rect nobody can see, and the
   // spotlight lands on a control that is genuinely not there yet. Both the
   // outer page and the phone scroll, so both are brought into view first.
-  expect(main).toContain("scrollIntoView");
-  const at = main.indexOf("scrollIntoView({ block: \"center\", inline: \"nearest\" })");
-  expect(at, "the anchor itself is never scrolled into view").toBeGreaterThan(-1);
+  const at = main.indexOf("bringIntoView(el)");
+  expect(at, "the anchor itself is never brought into view").toBeGreaterThan(-1);
   // And measured only after that scroll has been applied — the same rule as
   // waiting for the repaint, one frame later.
   expect(main.indexOf("spotlightRect", at)).toBeGreaterThan(
@@ -98,4 +97,39 @@ test("a superseded step cannot move the spotlight", () => {
   // reads as a spotlight pointing at the wrong control, with nothing in the
   // console to explain it.
   expect(main).toContain("mine !== token");
+});
+
+test("the tour resets the demo before it starts", () => {
+  // It answers the blocked agent and sends a reply, so a second run would open
+  // on the wreckage of the first: nothing blocked, a transcript already replied
+  // to, and step two pointing at options that are gone.
+  expect(main, "a second run inherits the first one's state").toContain("location.reload()");
+  expect(main, "the tour starts before the reload has landed").toMatch(/addEventListener\("load"/);
+});
+
+test("Next performs the step's act through the demo's own routes", () => {
+  // Not by driving its DOM: the demo already simulates these, so asking it the
+  // way the app asks it is less code and exercises the same path.
+  expect(main).toContain("perform(step)");
+  expect(main).toMatch(/api\/agents\//);
+});
+
+test("a step whose act fails still advances", () => {
+  // A demo that would not answer must not strand the visitor on a Next that
+  // does nothing.
+  const fn = main.slice(main.indexOf("async function perform"));
+  expect(fn.slice(0, fn.indexOf("\n}"))).toContain("catch");
+});
+
+test("the tour never scrolls the app sideways", () => {
+  // `scrollIntoView` walks every scrollable ancestor, and one of them is the
+  // pager's horizontal track: moving it fires the pager's own index change,
+  // which rewrites the URL to whichever tab it landed on. Measured — a step
+  // that navigated to `#/spaces` was dragged to `#/` a second later by the
+  // tour's own scroll.
+  // Scoped to the ANCHOR. The tour also scrolls the phone itself into view on
+  // the host page before locking, which is a different element and correct.
+  expect(main, "the anchor is still scrolled by every ancestor")
+    .not.toContain("el.scrollIntoView");
+  expect(main).toContain("bringIntoView");
 });

@@ -2,7 +2,7 @@ import "./styles.css";
 import "./tour/overlay.css";
 import { SECTIONS, sectionForScroll } from "@site/page";
 import { createTour } from "@site/tour/engine";
-import { TOUR_STEPS } from "@site/tour/steps";
+import { TOUR_STEPS, type TourStep } from "@site/tour/steps";
 import { awaitAnchor, spotlightRect } from "@site/tour/spotlight";
 
 /**
@@ -58,6 +58,74 @@ splitMount.outerHTML = `
 `;
 
 const frame = root.querySelector<HTMLIFrameElement>(".demo")!;
+
+/**
+ * Bring an anchor into view WITHOUT switching the app's tab.
+ *
+ * `scrollIntoView` walks every scrollable ancestor, and one of them is the
+ * pager's horizontal track: moving it fires the pager's own index change, which
+ * rewrites the URL to whichever tab it landed on. Measured — a step that
+ * navigated to `#/spaces` was dragged to `#/` about a second later, by the
+ * tour's own scroll, and the two steps that used a tab hash appeared never to
+ * navigate at all.
+ *
+ * So only the nearest VERTICAL scroller moves, and nothing horizontal is
+ * touched. If there is none, the anchor is already where the frame can show it.
+ */
+function bringIntoView(el: HTMLElement): void {
+  let node: HTMLElement | null = el.parentElement;
+  const view = el.ownerDocument.defaultView;
+  if (!view) return;
+  while (node) {
+    const style = view.getComputedStyle(node);
+    if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) {
+      const a = el.getBoundingClientRect();
+      const box = node.getBoundingClientRect();
+      node.scrollTop += a.top + a.height / 2 - (box.top + box.height / 2);
+      return;
+    }
+    node = node.parentElement;
+  }
+}
+
+/** The pane a step addresses, taken from the hash it navigates to. */
+function paneOf(hash: string): string | null {
+  const m = /^#\/(?:pane|agent)\/(.+)$/.exec(hash);
+  return m ? decodeURIComponent(m[1]!) : null;
+}
+
+/**
+ * Do the thing the step just described, through the demo's OWN routes.
+ *
+ * Not by driving its DOM: the demo already simulates these — `answer` unblocks
+ * the agent, `text` echoes the reply into the transcript — so asking it the way
+ * the app asks it is both less code and a genuine exercise of the same path.
+ * The demo is synthetic throughout, so "real" here means the visitor sees the
+ * state the control produces, which is all a demonstration owes them.
+ *
+ * Failures are swallowed on purpose, and only here: a demo that would not
+ * answer must not strand the visitor mid-tour with a Next that does nothing.
+ * The step still advances.
+ */
+async function perform(step: TourStep): Promise<void> {
+  const pane = paneOf(step.hash);
+  if (step.act === undefined || pane === null) return;
+  const win = frame.contentWindow;
+  if (!win) return;
+  const url = `/api/agents/${encodeURIComponent(pane)}/`;
+  const body = step.act === "send-reply" ? { text: step.reply ?? "" } : { key: "1" };
+  try {
+    await win.fetch(url + (step.act === "send-reply" ? "text" : "answer"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    // The app polls; give it a beat to repaint before the next step measures.
+    await new Promise((r) => setTimeout(r, 400));
+  } catch {
+    // Deliberately ignored — see above.
+  }
+}
 const stepFor = (anchor: string) => TOUR_STEPS.find((s) => s.anchor === anchor);
 
 /** Hash-only routing means this is the whole of "drive the demo". */
@@ -126,7 +194,13 @@ const tour = createTour({
       </div>`;
 
     callout.querySelector(".tour-skip")!.addEventListener("click", () => tour.skip());
-    callout.querySelector(".tour-next")!.addEventListener("click", () => tour.next());
+    callout.querySelector(".tour-next")!.addEventListener("click", (e) => {
+      // Disabled while the act runs, so a second tap cannot answer twice or
+      // skip the step whose effect is still arriving.
+      const btn = e.currentTarget as HTMLButtonElement;
+      btn.disabled = true;
+      void perform(step).finally(() => tour.next());
+    });
 
     goto(step.hash);
     const mine = ++token;
@@ -143,8 +217,9 @@ const tour = createTour({
         // The phone scrolls too. An anchor near the bottom of a screen sits
         // below the phone's own fold, and its rect is then a position nobody
         // can see — the spotlight lands on a control that is genuinely not
-        // there yet. Bring it into the middle of the frame first.
-        el.scrollIntoView({ block: "center", inline: "nearest" });
+        // there yet. Bring it into the middle of the frame first, vertically
+        // ONLY: see `bringIntoView` for what the horizontal half did.
+        bringIntoView(el);
 
         // And measure only after that scroll has been applied. Same rule as
         // waiting for the repaint above: reading the rect in this tick reads
@@ -261,5 +336,15 @@ root.querySelector(".tour-start")!.addEventListener("click", () => {
   document.documentElement.style.overflow = "hidden";
   document.body.append(hole, line, callout);
 
-  tour.start();
+  /**
+   * A clean demo every time the tour starts.
+   *
+   * The tour ANSWERS the blocked agent and sends a reply, so a second run would
+   * otherwise open on the wreckage of the first: nothing blocked, a transcript
+   * already replied to, and step two pointing at options that are gone. The
+   * demo's state is module-level inside the frame, so a reload is a guaranteed
+   * reset rather than a hand-written undo that has to be kept in step with it.
+   */
+  frame.addEventListener("load", () => tour.start(), { once: true });
+  frame.contentWindow?.location.reload();
 });

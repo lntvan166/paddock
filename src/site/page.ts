@@ -26,11 +26,6 @@ export const SECTIONS: readonly Section[] = [
     body: "A field that grows to what you wrote, slash-command autocomplete read from the project's own .claude, and a screenshot attached by pasting it.",
   },
   {
-    anchor: "file-frame",
-    heading: "Open what an agent made",
-    body: "Tap a path in the output to read an HTML page, a PDF or an image on the phone, or download it — sandboxed twice, so a page an agent wrote can never reach paddock's own API.",
-  },
-  {
     anchor: "space-tree",
     heading: "The whole herd",
     body: "Every space and every tab, not only the agents that happen to be busy. Rename, close, or start something new from the phone.",
@@ -39,6 +34,11 @@ export const SECTIONS: readonly Section[] = [
     anchor: "theme-picker",
     heading: "Pick a theme",
     body: "paddock's own light and dark, plus Dracula, Gruvbox and Nord — every one checked against WCAG AA, including the state colours. Red always means an agent has stopped and needs you.",
+  },
+  {
+    anchor: "file-frame",
+    heading: "Open what an agent made",
+    body: "Tap a path in the output to read an HTML page, a PDF or an image on the phone, or download it — sandboxed twice, so a page an agent wrote can never reach paddock's own API.",
   },
 ];
 

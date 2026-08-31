@@ -1,5 +1,15 @@
 import type { TourAnchor } from "@shared/tour-anchors";
 
+/**
+ * What pressing Next demonstrates, if anything.
+ *
+ * A NAME rather than a function, so this file stays data: performing one needs
+ * the iframe, which the site owns. The demo is synthetic throughout, so these
+ * do not have to be "real" in any deeper sense than the demo itself is — what
+ * matters is that the visitor sees the state the control produces.
+ */
+export type TourAct = "answer-option" | "send-reply";
+
 export type TourStep = {
   anchor: TourAnchor;
   /** The demo's hash for this step. Routing is hash-only, so this is the whole
@@ -7,6 +17,10 @@ export type TourStep = {
   hash: string;
   title: string;
   body: string;
+  /** Performed as the visitor presses Next, so the demo moves with the story. */
+  act?: TourAct;
+  /** The line `send-reply` types. Present only on that step. */
+  reply?: string;
 };
 
 /** Invented, like every other fixture here. See CLAUDE.md. `d1:p1` is the
@@ -25,19 +39,16 @@ export const TOUR_STEPS: readonly TourStep[] = [
     anchor: "answer-options",
     hash: `#/pane/${BLOCKED_AGENT}`,
     title: "Its own words, not a guess",
-    body: "These are the agent's real option labels, read from its screen — never invented. The row Enter would commit is named before you tap it.",
+    body: "These are the agent's real option labels, read from its screen — never invented. The row Enter would commit is named before you tap it. Next answers it.",
+    act: "answer-option",
   },
   {
     anchor: "reply-field",
     hash: `#/pane/${BLOCKED_AGENT}`,
     title: "Or answer properly",
-    body: "A field that grows to what you wrote, with slash-commands read from the project's own .claude — and a screenshot attached by pasting it.",
-  },
-  {
-    anchor: "file-frame",
-    hash: `#/file/${DEMO_FILE}`,
-    title: "Open what it made",
-    body: "Tap a path in the output and the page, PDF or image opens here — sandboxed twice, so a page an agent wrote can never reach paddock's own API.",
+    body: "A field that grows to what you wrote, with slash-commands read from the project's own .claude — and a screenshot attached by pasting it. Next sends one.",
+    act: "send-reply",
+    reply: "hold off on staging until the backfill finishes",
   },
   {
     anchor: "space-tree",
@@ -50,5 +61,11 @@ export const TOUR_STEPS: readonly TourStep[] = [
     hash: "#/settings",
     title: "Five themes, all legible",
     body: "paddock's own light and dark, plus Dracula, Gruvbox and Nord — each checked against WCAG AA, including the state colours. Red always means an agent has stopped.",
+  },
+  {
+    anchor: "file-frame",
+    hash: `#/file/${DEMO_FILE}`,
+    title: "Open what it made",
+    body: "Tap a path in the output and the page, PDF or image opens here — sandboxed twice, so a page an agent wrote can never reach paddock's own API.",
   },
 ];
