@@ -3,7 +3,7 @@
 # its checksum, and installs it to ~/.local/bin.
 #
 # Read before running:
-#   curl -fsSL https://raw.githubusercontent.com/lntvan166/paddock/main/install.sh | less
+#   curl -fsSL https://github.com/lntvan166/paddock/raw/main/install.sh | less
 #
 # No sudo. ~/.local/bin is user-writable, so nothing here needs privilege
 # escalation — a one-liner that asks for root to install a dashboard is a

@@ -25,12 +25,16 @@ export const SITE_URL = "https://trypaddock.vercel.app";
  * from GitHub releases, so serving the script from the same origin takes the
  * marketing site out of the install path: renaming the site cannot break it.
  *
- * `raw.githubusercontent.com` rather than `releases/latest/download` because
- * the release URL only resolves once a tagged release CARRIES the asset, and
- * the tag that first attaches it has not shipped yet — a pinned URL that 404s
- * today is worse than an unpinned one that works. `release.yml` attaches it
- * from now on; this can move to the pinned form after the next release.
+ * NOT `releases/latest/download/install.sh`, which would be the pinned form:
+ * that URL resolves only once a TAGGED release carries the asset, and the tag
+ * that first attaches it has not shipped. `release.yml` attaches it from now
+ * on, so this can move to the pinned form after the next release.
+ *
+ * And `/raw/main/` rather than `raw.githubusercontent.com` for length alone.
+ * The two serve identical bytes — the first 302s to the second, which `-L`
+ * follows — but it is 56 characters against 67, and this string is read off a
+ * README, a landing page and a terminal. The retired github.io URL was 46 and
+ * this is the shortest that does not depend on a host paddock is renting.
  */
-export const INSTALL_URL =
-  "https://raw.githubusercontent.com/lntvan166/paddock/main/install.sh";
+export const INSTALL_URL = "https://github.com/lntvan166/paddock/raw/main/install.sh";
 export const TOUR_URL = `${SITE_URL}/#tour`;

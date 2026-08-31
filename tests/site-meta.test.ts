@@ -93,3 +93,21 @@ test("the page still says what it is for a crawler that reads only the head", ()
   // window they actually show.
   expect(meta("name", "description")!.length).toBeLessThan(200);
 });
+
+/**
+ * The published command follows redirects, because the URL is one.
+ *
+ * `github.com/…/raw/main/install.sh` 302s to `raw.githubusercontent.com`. It
+ * is used over the target directly for length — 56 characters against 67, on a
+ * string that is read off a README, a landing page and a terminal — and the
+ * whole saving depends on `-L`. Drop it while tidying the flags and the
+ * installer becomes an empty body and a silent success.
+ */
+test("the published install command follows the redirect it depends on", () => {
+  const readme = readFileSync("README.md", "utf8");
+  for (const [name, text] of [["README.md", readme], ["site/index.html", html]] as const) {
+    const cmd = /curl (-\S+) https:\/\/\S*install\.sh/.exec(text);
+    expect(cmd, `${name} publishes no install command`).not.toBeNull();
+    expect(cmd![1], `${name}: curl will not follow the /raw/ redirect`).toContain("L");
+  }
+});
