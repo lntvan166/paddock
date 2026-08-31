@@ -53,3 +53,32 @@ test("a span with no path is returned untouched", () => {
   const input = [{ text: "nothing here", dim: true }];
   expect(splitPaths(input)).toEqual(input);
 });
+
+/**
+ * The boundary used to be a zero-width lookbehind and is a consumed capture
+ * group now, because Safari had no lookbehind before 16.4 and the shipped
+ * bundle threw on load in it. These are the cases that distinguish the two.
+ */
+test("paths separated by a single space are both found", () => {
+  // The old zero-width boundary left the space for the next match to look
+  // behind at. Consuming it must not eat the second path's own boundary.
+  expect(pathsIn("/srv/a.md /srv/b.md")).toEqual(["/srv/a.md", "/srv/b.md"]);
+});
+
+test("the text between two adjacent paths survives intact", () => {
+  // The offset the split uses moved from `m.index` to `m.index + m[1].length`.
+  // Get that wrong and the separating space is swallowed into the prose span
+  // before it, or duplicated into the one after.
+  const out = splitPaths([span("/srv/a.md /srv/b.md")]);
+  expect(out.map((s) => s.text).join("")).toBe("/srv/a.md /srv/b.md");
+});
+
+test("a path after a tab or newline still counts", () => {
+  expect(pathsIn("see\t/srv/a.md")).toEqual(["/srv/a.md"]);
+  expect(pathsIn("see\n/srv/a.md")).toEqual(["/srv/a.md"]);
+});
+
+test("no span is dropped or duplicated when a path leads the line", () => {
+  const out = splitPaths([span("/srv/a.md was written")]);
+  expect(out.map((s) => s.text).join("")).toBe("/srv/a.md was written");
+});

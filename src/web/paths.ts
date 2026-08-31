@@ -29,10 +29,25 @@ export interface PathSpan extends AnsiSpan {
  */
 
 /**
- * `\S*` cannot span whitespace, so a match is exactly one token. The lookbehind
- * is what makes "after whitespace" the trigger rather than "contains a slash".
+ * `\S*` cannot span whitespace, so a match is exactly one token. Group 1 is the
+ * boundary — start of span, or one whitespace character — and group 2 is the
+ * token, which is what makes "after whitespace" the trigger rather than
+ * "contains a slash".
+ *
+ * A LOOKBEHIND said this more directly, and did: `(?<=^|\s)`. Safari had no
+ * lookbehind until 16.4, and vite's `safari14` target does not save you —
+ * esbuild rewrites the literal to `new RegExp("(?<=…)")`, which PARSES fine and
+ * then throws `SyntaxError` at module evaluation, at the top level of the
+ * bundle. React never mounts, and an empty `#root` paints an iframe's default
+ * white. That was the white phone on the demo site, and this is the same bundle
+ * an operator runs. tests/browser-support.test.ts reads the BUILT output for
+ * it, because this suite runs on Bun's JavaScriptCore — the same engine family
+ * as Safari, but current enough to accept everything Safari 15 refuses.
+ *
+ * The boundary is CONSUMED here where the lookbehind was zero-width, so the
+ * token starts at `m.index + m[1].length` rather than at `m.index`.
  */
-const PATH_RE = /(?<=^|\s)(?:file:\/\/)?[~/]\S*/g;
+const PATH_RE = /(^|\s)((?:file:\/\/)?[~/]\S*)/g;
 
 /** Punctuation that ends a sentence rather than a filename. */
 const TRAILING = /[.,;:!?)\]}>'"]+$/;
@@ -51,12 +66,13 @@ export function splitPaths(spans: readonly AnsiSpan[]): PathSpan[] {
     PATH_RE.lastIndex = 0;
 
     for (let m = PATH_RE.exec(span.text); m !== null; m = PATH_RE.exec(span.text)) {
-      const token = m[0].replace(TRAILING, "");
+      const start = m.index + m[1]!.length;
+      const token = m[2]!.replace(TRAILING, "");
       if (token.length < MIN_PATH_LEN) continue;
 
-      if (m.index > last) out.push({ ...span, text: span.text.slice(last, m.index) });
+      if (start > last) out.push({ ...span, text: span.text.slice(last, start) });
       out.push({ ...span, text: token, path: token });
-      last = m.index + token.length;
+      last = start + token.length;
     }
 
     // Untouched when nothing matched: the common line has no path in it, and
