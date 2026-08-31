@@ -240,6 +240,25 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
    */
   if (path.endsWith("/api/harnesses")) return json({ kinds: ["claude", "codex"] });
 
+  /**
+   * The file viewer's metadata.
+   *
+   * It had no route at all, so `/api/files/...` fell through to the agent regex
+   * below and answered 404 — the file viewer rendered an error on the hosted
+   * demo, which is the same failure `/api/spaces` had above and for the same
+   * reason.
+   *
+   * ONLY the metadata is answered here. `FileViewer` loads the bytes through
+   * `<iframe src={fileUrl(id)}>`, and an iframe src is a browser navigation
+   * that never passes through the `fetch` this module replaces. The bytes are a
+   * real static file under `site/public/api/files/`; mocking them here would
+   * leave a blank frame under a correct-looking header, which reads as a
+   * product bug rather than a demo's limit.
+   */
+  if (/\/api\/files\/[0-9a-f]{32}\/meta$/.test(path)) {
+    return json({ ok: true, name: "coverage-report.html", render: "iframe" });
+  }
+
   // Space and tab management. All writes, all refused — see `refuse`.
   if (/\/api\/(spaces|tabs)\/[^/]+\/\w+/.test(path)) return refuse();
 
@@ -261,6 +280,33 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
       if (base) return json({ patch: diffScreens(base, lines), source: "visible" });
     }
     return json({ lines, source: "visible", digest });
+  }
+
+  /**
+   * The slash-commands the reply field offers.
+   *
+   * INVENTED, and that is the whole reason this lives here rather than in the
+   * server-side demo. `src/server/index.ts` sets `readCommands: undefined` in
+   * DEMO deliberately — reading the operator's real `.claude` directory would
+   * put their actual project's commands into a README screenshot, which is
+   * exactly "the fixture leak CLAUDE.md says gets past reviewers".
+   *
+   * The browser demo has no disk to leak from, so it can show the feature
+   * honestly with fixtures. Without this the field says "No commands in this
+   * project" on the hosted demo, which reads as the feature being broken
+   * rather than as a demo having no project.
+   */
+  if (route === "commands") {
+    return json({
+      ok: true,
+      commands: [
+        { command: "/review", description: "Review the diff for correctness and reuse", source: "command" },
+        { command: "/refactor", description: "Extract a module and update its call sites", source: "command" },
+        { command: "/release", description: "Tag, build and publish", source: "command" },
+        { command: "/test", description: "Run the suite and summarise failures", source: "command" },
+        { command: "/commit", description: "Stage, write a message, and commit", source: "skill" },
+      ],
+    });
   }
 
   if (route === "prompt") {

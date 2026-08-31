@@ -8,7 +8,9 @@
     "dev:web": "vite",
     "build:web": "vite build",
     "test": "bun run build:web && bun run scripts/gen-embedded.ts && bun test",
-    "build:demo": "VITE_PADDOCK_DEMO=1 vite build --base=/paddock/ --outDir dist-demo"
+    "build:site": "vite build -c vite.site.config.ts",
+    "build:app": "VITE_PADDOCK_DEMO=1 vite build --base=/app/ --outDir dist-app",
+    "build:demo": "bun run build:site && bun run build:app && bun run scripts/assemble-site.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

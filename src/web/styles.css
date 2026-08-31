@@ -40,7 +40,6 @@
      commit, which is the only place in the app that needs to say "this one"
      without saying "danger" or "done". */
   --accent-wash: #fbeee6;
-
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
      of the theme rule — it is a consequence of where the colours come from.
@@ -1063,6 +1062,21 @@ body {
 }
 
 .card-row + .card-row { border-top: 1px solid var(--border); }
+
+/* The one link that leaves the app, in the interaction colour.
+   Inheriting the body colour made it identical to the label beside it — a
+   control an operator cannot tell is a control, which is the same failure the
+   borderless settings fields had above. There is no hover state to fall back
+   on on a phone, so the colour IS the affordance, and 2.75rem keeps the tap
+   target at the app's stated 44px. */
+.help-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
 
 /* Text and number fields inside a card. Replaces `.settings-field input`,
    whose deletion left every settings field borderless, transparent and 19px

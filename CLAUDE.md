@@ -27,7 +27,7 @@ single most important rule in this file.
   nobody notices that a demo fixture is named after someone's internal tickets.
 - **Config ships as `.env.example` only.** Never commit `.env`.
 - **Screenshots and README images come from `paddock serve --demo`**, never a live
-  session.
+  session — with two screens it deliberately cannot render, below.
   - **`--demo` can show every screen, since 2026-08-27.** It used to leave
     `HerdrActions` unset, so the herdr-backed routes were never registered and
     404'd honestly — which meant the terminal pane and both Spaces screens
@@ -48,6 +48,26 @@ single most important rule in this file.
     the permission prompt — the thing paddock exists for — is always on screen
     rather than appearing every thirtieth tick. That is also what makes the
     README's blocked screenshot reproducible instead of a race.
+
+  - **Two screens `--demo` cannot render, by design.** `src/server/index.ts`
+    sets `readCommands`, `saveImage` and `files` to `undefined` in demo mode
+    on purpose: reading the operator's real `.claude` would put their actual
+    project's commands into a screenshot — the fixture leak this file warns
+    about — and a demo must never serve a real file off their disk. So the
+    slash-command field and the file viewer have NO source in `--demo`, and
+    that is correct.
+
+    Their screenshots come from the **browser demo** (`bun run build:demo`,
+    then open `/app/`), whose commands and one HTML report are invented
+    fixtures in `src/web/demo/backend.ts`. It has no disk to leak from, which
+    makes it strictly safer for those two shots. Everything else still comes
+    from `paddock --demo`. See `docs/decisions.md` 32.
+
+  - **The demo is two builds now**, assembled by `scripts/assemble-site.ts`: a
+    landing page at the root and the app under `/app/`. `dist-site/` and
+    `dist-app/` are build output and gitignored — a `git add -A` committed the
+    built site once, which also breaks `make check-clean`, because the scanner
+    walks tracked files and hashed asset names change under it on every build.
 
   - **One narrow exception: a device frame showing no session content.** The
     Home Screen shot in `README.md` cannot come from the demo, because the thing

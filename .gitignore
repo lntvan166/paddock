@@ -13,6 +13,13 @@
 node_modules/
 dist/
 dist-demo/
+# The site build's two halves. `dist-demo/` above was the whole published
+# directory before the split; these replace it, and both are build output.
+# Without them a `git add -A` commits the built site — which happened once, and
+# also broke `make check-clean`, because the scanner walks tracked files and the
+# hashed asset names change under it on every rebuild.
+dist-site/
+dist-app/
 build/
 *.tsbuildinfo
 paddock

@@ -10,6 +10,7 @@ import { TunnelSection } from "@web/components/settings/TunnelSection";
 import { TelegramSection } from "@web/components/settings/TelegramSection";
 import { NotifySection } from "@web/components/settings/NotifySection";
 import { PushSection } from "@web/components/settings/PushSection";
+import { HelpSection } from "@web/components/settings/HelpSection";
 import { InfoSection } from "@web/components/settings/InfoSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
@@ -449,6 +450,7 @@ export function Settings(_props: SettingsProps = {}) {
       <section className="band" aria-labelledby="band-info">
         <h2 className="band-label" id="band-info">Info</h2>
         <p className="band-hint">Read-only. What build is running, and what this device can see.</p>
+        <HelpSection />
         <InfoSection health={health} />
         {/* Which bundle this browser is running — moved here from the
             dashboard, where it competed with the tab bar for the bottom of the
