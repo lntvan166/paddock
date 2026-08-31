@@ -40,6 +40,22 @@
      commit, which is the only place in the app that needs to say "this one"
      without saying "danger" or "done". */
   --accent-wash: #fbeee6;
+  /* The tour overlay's own ground, on bare :root because a colour defined only
+     inside a media query is undefined for a manual toggle in the other
+     direction — and an undefined colour is not a fallback, it is nothing.
+
+     The tour presents the same dark surface in every theme. It is chrome, not
+     content, and the house rule is that a theme changes hue and never meaning;
+     a spotlight that restyled itself per palette would be five surfaces to keep
+     legible instead of one. No :root[data-theme] block overrides these.
+
+     The panel is opaque and the scrim is not: the scrim dims the page, the
+     panel is what callout text is actually read against. tests/themes.test.ts
+     measures against the panel for that reason. */
+  --tour-scrim: rgb(6 7 9 / 0.86);
+  --tour-panel: #14161a;
+  --tour-text: #f2f3f5;
+  --tour-accent: #8ab4ff;
 
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
