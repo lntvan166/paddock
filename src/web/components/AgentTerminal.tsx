@@ -876,7 +876,15 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               screen with no controls at all is the silent disabling this
               project refuses elsewhere. */}
           {!prompt?.dialog && prompt?.options && prompt.options.length > 0 && (
-            <div className="term-options" role="group" aria-label="Answer" data-tour="answer-options">
+            <div
+              className="term-options"
+              /* A question dialog's rows CHOOSE; a permission prompt's rows
+                 ACT. Same markup, so the roles have to differ or a screen
+                 reader hears "pressed" for a selection that sent nothing. */
+              role={prompt.commit === "cursor" ? "radiogroup" : "group"}
+              aria-label="Answer"
+              data-tour="answer-options"
+            >
               {prompt.question && <p className="term-question">{prompt.question}</p>}
               {prompt.options.map((o) => (
                 <Button
@@ -886,7 +894,9 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                   className="term-option"
                   data-prompt-option={o.key}
                   disabled={busy}
-                  aria-pressed={isSelected(o)}
+                  role={prompt.commit === "cursor" ? "radio" : undefined}
+                  aria-checked={prompt.commit === "cursor" ? isSelected(o) : undefined}
+                  aria-pressed={prompt.commit === "cursor" ? undefined : isSelected(o)}
                   onClick={() => {
                     setBusy(true);
                     // WHICH keystroke answers this prompt is the prompt's to
@@ -927,6 +937,14 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                       below, so the badge shows the key pressing this will send.
                       Rendering it makes a three-option prompt scannable at arm's
                       length instead of three similar sentences. */}
+                  {/* The mark is the affordance: a dot says CHOSEN where a
+                      border alone said only "highlighted", and these rows are
+                      otherwise identical to the ones that answer on one tap. */}
+                  {prompt.commit === "cursor" && (
+                    <span aria-hidden="true" className="term-option-mark">
+                      {isSelected(o) ? "●" : "○"}
+                    </span>
+                  )}
                   <span aria-hidden="true" className="term-option-key">{o.key}</span>
                   <span className="term-option-label">{o.label}</span>
                 </Button>
@@ -944,7 +962,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               the operator's choice while the screen still shows it highlighted. */}
           {prompt?.notes && (
             <NotesField
-              selected={prompt.selected}
+              optionKey={prompt.options?.find((o) => isSelected(o))?.key ?? null}
               busy={busy}
               onSend={(text, mode) => {
                 setBusy(true);

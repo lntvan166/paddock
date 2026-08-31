@@ -2602,7 +2602,8 @@ body {
    phone at arm's length is a hairline: three options of identical weight, one
    of them a slightly different shade of grey at the edge. The fill is what
    makes it findable without reading. */
-.term-option[aria-pressed="true"] {
+.term-option[aria-pressed="true"],
+.term-option[aria-checked="true"] {
   border-color: var(--accent);
   background: var(--accent-wash);
   font-weight: 600;
@@ -3461,6 +3462,22 @@ body {
 }
 
 .term-option-label { min-width: 0; }
+
+/* The chosen mark on a question dialog's rows.
+
+   A border alone said "highlighted"; these rows look exactly like the ones
+   that answer on one tap, and an operator reported tapping one expecting to
+   choose and having it sent. The dot is what makes choosing visible as
+   choosing. Hidden from assistive tech — role=radio and aria-checked already
+   carry it there. */
+.term-option-mark {
+  flex-shrink: 0;
+  font-size: var(--t-md);
+  line-height: 1;
+  color: var(--fg-dim);
+}
+
+.term-option[aria-checked="true"] .term-option-mark { color: var(--accent); }
 
 /* ── Spaces screen ──────────────────────────────────────────────────────────
    No new colour tokens: every value below is one already defined on bare

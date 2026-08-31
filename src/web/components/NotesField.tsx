@@ -21,12 +21,18 @@ import { Button } from "@web/components/shadcn/button";
  * see.
  */
 export function NotesField({
-  selected,
+  optionKey,
   busy,
   onSend,
 }: {
-  /** The option Enter would commit, as the dialog reports it, or null. */
-  selected: string | null;
+  /**
+   * The digit of the option that would be committed, or null when none is.
+   *
+   * The NUMBER, not the sentence: the chosen row is a marked radio directly
+   * above this field, so repeating its whole label here said the same thing
+   * twice and made a two-line block the loudest thing on the dialog.
+   */
+  optionKey: string | null;
   busy: boolean;
   onSend: (text: string, mode: "note-only" | "with-option") => void;
 }) {
@@ -55,7 +61,7 @@ export function NotesField({
         >
           Send note only
         </Button>
-        {selected !== null && (
+        {optionKey !== null && (
           <Button
             type="button"
             className="term-notes-send"
@@ -66,9 +72,8 @@ export function NotesField({
             disabled={busy}
             onClick={() => onSend(text, "with-option")}
           >
-            {/* The option's own words, so the operator commits what they read,
-                and "with" only when a note is actually going along. */}
-            {empty ? "Send " : "Send with "}{selected}
+            {/* Names the option and says whether a note rides along. */}
+            {empty ? `Send option ${optionKey}` : `Send option ${optionKey} with note`}
           </Button>
         )}
       </div>

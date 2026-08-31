@@ -17,28 +17,28 @@ afterEach(async () => { await unmount(); });
  */
 test("both answers are offered, and each says what it sends", async () => {
   const host = await render(
-    <NotesField selected="1. Merge back to main" busy={false} onSend={() => {}} />,
+    <NotesField optionKey="1" busy={false} onSend={() => {}} />,
   );
   const labels = [...host.querySelectorAll("button")].map((b) => b.textContent ?? "");
   expect(labels.some((l) => /note only/i.test(l))).toBe(true);
-  expect(labels.some((l) => /1\. Merge back to main/.test(l))).toBe(true);
+  expect(labels.some((l) => /option 1/.test(l))).toBe(true);
 });
 
-test("the option button names the option Enter would commit", async () => {
-  // Not "Send with option" — the operator has to see WHICH one, because the
-  // keypad's cursor may have moved since they last looked.
-  const host = await render(
-    <NotesField selected="2. Keep the branch as-is" busy={false} onSend={() => {}} />,
-  );
-  const withOption = [...host.querySelectorAll("button")]
-    .find((b) => /Keep the branch as-is/.test(b.textContent ?? ""));
-  expect(withOption).toBeDefined();
+test("the send button names the option number, not its whole sentence", async () => {
+  // The chosen row is a marked radio directly above this button, so the
+  // sentence is already on screen. Repeating it made a two-line block the
+  // loudest thing on the dialog.
+  const host = await render(<NotesField optionKey="2" busy={false} onSend={() => {}} />);
+  const send = [...host.querySelectorAll("button")]
+    .find((b) => /option 2/.test(b.textContent ?? ""));
+  expect(send).toBeDefined();
+  expect(send!.textContent).toBe("Send option 2");
 });
 
-test("with no cursor on screen, only the note-only answer is offered", async () => {
+test("with no option chosen, only the note-only answer is offered", async () => {
   // There is no option to commit, so a button claiming to commit one would be
   // claiming something paddock cannot see.
-  const host = await render(<NotesField selected={null} busy={false} onSend={() => {}} />);
+  const host = await render(<NotesField optionKey={null} busy={false} onSend={() => {}} />);
   const labels = [...host.querySelectorAll("button")].map((b) => b.textContent ?? "");
   expect(labels.some((l) => /note only/i.test(l))).toBe(true);
   expect(labels.length).toBe(1);
@@ -47,7 +47,7 @@ test("with no cursor on screen, only the note-only answer is offered", async () 
 test("a note-only answer is refused until something has been typed", async () => {
   // An empty note sent as "notes only" is an answer that says nothing.
   const host = await render(
-    <NotesField selected="1. Merge back to main" busy={false} onSend={() => {}} />,
+    <NotesField optionKey="1" busy={false} onSend={() => {}} />,
   );
   const noteOnly = [...host.querySelectorAll("button")]
     .find((b) => /note only/i.test(b.textContent ?? "")) as HTMLButtonElement;
@@ -59,30 +59,30 @@ test("the option can be committed with no note at all", async () => {
   // the only way to commit one, and disabling it would strand the operator on
   // a dialog they cannot answer without inventing a note.
   const host = await render(
-    <NotesField selected="1. Merge back to main" busy={false} onSend={() => {}} />,
+    <NotesField optionKey="1" busy={false} onSend={() => {}} />,
   );
   const withOption = [...host.querySelectorAll("button")]
-    .find((b) => /Merge back to main/.test(b.textContent ?? "")) as HTMLButtonElement;
+    .find((b) => /option 1/.test(b.textContent ?? "")) as HTMLButtonElement;
   expect(withOption.disabled).toBe(false);
 });
 
 test("the send button says whether a note is going with it", async () => {
   const host = await render(
-    <NotesField selected="1. Merge back to main" busy={false} onSend={() => {}} />,
+    <NotesField optionKey="1" busy={false} onSend={() => {}} />,
   );
   const withOption = [...host.querySelectorAll("button")]
-    .find((b) => /Merge back to main/.test(b.textContent ?? ""))!;
-  expect(withOption.textContent).toBe("Send 1. Merge back to main");
+    .find((b) => /option 1/.test(b.textContent ?? ""))!;
+  expect(withOption.textContent).toBe("Send option 1");
 
   await typeInto(host.querySelector("textarea") as HTMLTextAreaElement, "rebase first");
-  expect(withOption.textContent).toBe("Send with 1. Merge back to main");
+  expect(withOption.textContent).toBe("Send option 1 with note");
 });
 
 test("each button sends its own mode", async () => {
   const sent: Array<{ text: string; mode: string }> = [];
   const host = await render(
     <NotesField
-      selected="1. Merge back to main"
+      optionKey="1"
       busy={false}
       onSend={(text, mode) => sent.push({ text, mode })}
     />,
@@ -93,7 +93,7 @@ test("each button sends its own mode", async () => {
 
   const buttons = [...host.querySelectorAll("button")] as HTMLButtonElement[];
   await click(buttons.find((b) => /note only/i.test(b.textContent ?? ""))!);
-  await click(buttons.find((b) => /Merge back to main/.test(b.textContent ?? ""))!);
+  await click(buttons.find((b) => /option 1/.test(b.textContent ?? ""))!);
 
   expect(sent).toEqual([
     { text: "please rebase first", mode: "note-only" },
@@ -103,7 +103,7 @@ test("each button sends its own mode", async () => {
 
 test("a busy field cannot be sent twice", async () => {
   const host = await render(
-    <NotesField selected="1. Merge back to main" busy={true} onSend={() => {}} />,
+    <NotesField optionKey="1" busy={true} onSend={() => {}} />,
   );
   for (const b of host.querySelectorAll("button")) {
     expect((b as HTMLButtonElement).disabled).toBe(true);
