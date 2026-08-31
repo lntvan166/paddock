@@ -556,9 +556,8 @@ Expected: FAIL — `vercel.json` does not exist.
 
 ```json
 {
-  "buildCommand": null,
+  "buildCommand": "bun run build:demo",
   "outputDirectory": "dist-site",
-  "cleanUrls": false,
   "headers": [
     {
       "source": "/api/files/(.*)",
@@ -576,7 +575,7 @@ Expected: FAIL — `vercel.json` does not exist.
 }
 ```
 
-`buildCommand: null` is deliberate: the workflow builds and deploys `--prebuilt`, so Vercel must not build anything itself. Turn the Git integration off in the project settings as well — see Step 7.
+`buildCommand` is the repo's own build: `vercel build` runs it and writes `.vercel/output`, which `--prebuilt` then publishes. Turn the Git integration off in the project settings — that, not the config, is what stops an ungated build on push.
 
 - [ ] **Step 4: Rewrite the workflow's publish half**
 
@@ -593,14 +592,17 @@ permissions:
       # install.sh is copied by scripts/assemble-site.ts, which throws when it
       # is missing rather than publishing a site whose install command 404s.
 
-      - name: Deploy to Vercel
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: Build with Vercel
+        # `--prebuilt` publishes .vercel/output, which only `vercel build`
+        # writes — deploying without it publishes nothing. vercel.json's
+        # buildCommand is `bun run build:demo`, so this IS the site build and
+        # the gates above have already passed by the time it runs.
         run: |
           bunx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
-          bunx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+          bunx vercel@latest build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy to Vercel
+        run: bunx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 ```
 
 Change the `concurrency.group` from `pages` to `vercel`, and delete the `environment:` block with it.

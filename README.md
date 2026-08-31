@@ -5,7 +5,7 @@
 <h1 align="center">paddock</h1>
 
 <p align="center">
-  <a href="https://lntvan166.github.io/paddock/">demo</a> ·
+  <a href="https://paddock.vercel.app/">demo</a> ·
   <a href="#install">install</a> ·
   <a href="docs/running-locally.md">running locally</a> ·
   <a href="#docs">docs</a>
@@ -48,7 +48,7 @@ walk back and look.
 - **install as an app** — Add to Home Screen gives it an icon and no browser chrome
 - **cheap to watch** — adaptive polling, and only changed lines on the wire
 
-[**try the live demo →**](https://lntvan166.github.io/paddock/) — synthetic
+[**try the live demo →**](https://paddock.vercel.app/) — synthetic
 agents, no install, best in mobile mode.
 
 **pick a theme.** paddock ships its own light and dark, plus Dracula, Gruvbox
@@ -65,11 +65,11 @@ has stopped and needs you.
 ## install
 
 ```bash
-curl -fsSL https://lntvan166.github.io/paddock/install.sh | sh
+curl -fsSL https://paddock.vercel.app/install.sh | sh
 ```
 
 Installs to `~/.local/bin/paddock`, no `sudo`, checksum verified before anything
-is written · [read it first](https://lntvan166.github.io/paddock/install.sh) ·
+is written · [read it first](https://paddock.vercel.app/install.sh) ·
 [binaries](https://github.com/lntvan166/paddock/releases)
 
 Or with Homebrew, which pulls in herdr as a dependency:

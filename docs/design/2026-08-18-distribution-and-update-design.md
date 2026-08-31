@@ -8,7 +8,7 @@
 Make paddock installable and upgradable in one command each:
 
 ```bash
-curl -fsSL https://lntvan166.github.io/paddock/install.sh | sh
+curl -fsSL https://paddock.vercel.app/install.sh | sh
 paddock update
 ```
 
@@ -152,7 +152,7 @@ is a broken install command on a site that otherwise looks healthy.
 The published command is:
 
 ```bash
-curl -fsSL https://lntvan166.github.io/paddock/install.sh | sh
+curl -fsSL https://paddock.vercel.app/install.sh | sh
 ```
 
 The README will also show how to read it before running it, because telling

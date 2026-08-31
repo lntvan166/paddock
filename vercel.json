@@ -1,0 +1,18 @@
+{
+  "buildCommand": "bun run build:demo",
+  "outputDirectory": "dist-site",
+  "headers": [
+    {
+      "source": "/api/files/(.*)",
+      "headers": [
+        { "key": "content-type", "value": "text/html; charset=utf-8" },
+        { "key": "content-security-policy", "value": "sandbox" },
+        { "key": "x-content-type-options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/install.sh",
+      "headers": [{ "key": "content-type", "value": "text/plain; charset=utf-8" }]
+    }
+  ]
+}

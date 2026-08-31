@@ -664,7 +664,7 @@ Create `install.sh`:
 # its checksum, and installs it to ~/.local/bin.
 #
 # Read before running:
-#   curl -fsSL https://lntvan166.github.io/paddock/install.sh | less
+#   curl -fsSL https://paddock.vercel.app/install.sh | less
 #
 # No sudo. ~/.local/bin is user-writable, so nothing here needs privilege
 # escalation — a one-liner that asks for root to install a dashboard is a habit
@@ -1242,12 +1242,12 @@ Add above Quick start:
 ## Install
 
 ```bash
-curl -fsSL https://lntvan166.github.io/paddock/install.sh | sh
+curl -fsSL https://paddock.vercel.app/install.sh | sh
 ```
 
 Installs to `~/.local/bin/paddock`. No `sudo`. The script verifies the release
 checksum before writing anything — read it first with
-`curl -fsSL https://lntvan166.github.io/paddock/install.sh | less`.
+`curl -fsSL https://paddock.vercel.app/install.sh | less`.
 
 Upgrade with `paddock update`. paddock never updates itself unasked.
 

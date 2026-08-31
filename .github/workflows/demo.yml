@@ -1,10 +1,15 @@
-# Publishes the browser-only demo to GitHub Pages.
+# Publishes the browser-only demo to Vercel.
 #
 # The demo has no server: `VITE_PADDOCK_DEMO=1` swaps `fetch` and `WebSocket`
 # for an in-browser mock before the app mounts, so the real UI runs unmodified
-# against synthetic data. That is what makes it hostable on Pages at all, and
-# what keeps it from drifting from the product — there are no demo branches in
-# any component.
+# against synthetic data. That is what makes it hostable on static hosting at
+# all, and what keeps it from drifting from the product — there are no demo
+# branches in any component.
+#
+# The site is two builds assembled into one directory by
+# scripts/assemble-site.ts: a landing page at the root, and the app under
+# /app/ so that its manifest's relative `start_url` resolves to the dashboard
+# rather than to the landing page.
 name: demo
 
 on:
@@ -14,17 +19,19 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Never cancel a running deploy halfway; queue instead.
 concurrency:
-  group: pages
+  group: vercel
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -33,28 +40,27 @@ jobs:
       # Gates live in ci.yml, which also covers pull requests. Kept here as
       # well because this workflow publishes: a demo that ships from a red
       # tree would be advertising something that does not work.
+      #
+      # Vercel's own Git integration is deliberately DISABLED for this project.
+      # It would build on push and bypass all three of these, which is the one
+      # thing this job exists to prevent.
       - run: make check
       - run: make check-clean
       - run: make test
 
-      - run: bun run build:demo
+      - name: Build with Vercel
+        # Runs vercel.json's buildCommand — `bun run build:demo` — and writes
+        # .vercel/output. The gates above have already passed by this point.
+        run: |
+          bunx vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          bunx vercel@latest build --prod --token="$VERCEL_TOKEN"
 
-      # install.sh is served from the Pages site, so it must ride along in the
-      # artifact. Without this the published install command 404s while every
-      # other page on the site keeps working — a failure that looks like health.
-      - run: cp install.sh dist-demo/install.sh
-
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist-demo
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4
+      - name: Deploy to Vercel
+        # --prebuilt publishes .vercel/output as built above. Without it Vercel
+        # rebuilds remotely, and the gates would have been bypassed after all.
+        #
+        # install.sh reaches the published directory via
+        # scripts/assemble-site.ts, which throws when it is missing rather than
+        # publishing a site whose install command 404s while every other page
+        # keeps working.
+        run: bunx vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN"
