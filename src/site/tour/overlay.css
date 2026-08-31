@@ -4,9 +4,29 @@
  * own enormous spread shadow. One box to position, nothing to clip, and the
  * lit control keeps receiving the tap the step is waiting for.
  *
- * Every colour here comes from the --tour-* tokens, which live on bare :root in
- * styles.css and are checked for AA against --tour-panel in every theme by
- * tests/themes.test.ts. */
+ * The tokens live HERE, not in the app's stylesheet.
+ *
+ * The overlay renders in the SITE's document, which never loads
+ * src/web/styles.css — tokens defined there resolve to nothing here, and an
+ * undefined custom property in a box-shadow or outline makes the whole
+ * declaration invalid. The first build of this had exactly that: the tour ran,
+ * the callout appeared, and there was no scrim and no spotlight at all, because
+ * both colours were simply absent.
+ *
+ * Nothing themes them, either. The tour is site-only — the app links out to it
+ * from Settings rather than running it — so there is no [data-theme] in scope
+ * and no palette to inherit from. One dark surface, defined once, checked for
+ * AA by tests/tour-contrast.test.ts. */
+
+:root {
+  /* The panel is opaque and the scrim is not: the scrim dims the page, the
+     panel is what callout text is actually read against. The contrast test
+     measures against the panel for that reason. */
+  --tour-scrim: rgb(6 7 9 / 0.86);
+  --tour-panel: #14161a;
+  --tour-text: #f2f3f5;
+  --tour-accent: #8ab4ff;
+}
 
 .tour-hole {
   position: fixed;
@@ -18,6 +38,28 @@
   pointer-events: none;
   transition: left 180ms ease, top 180ms ease, width 180ms ease, height 180ms ease;
 }
+
+/* The connector, drawn rather than implied.
+ *
+ * A callout sitting in the dark near a lit control still leaves the reader to
+ * infer which control it means — and on a wide window the two can be 400px
+ * apart with the phone's bezel between them. The line removes the inference. */
+.tour-line {
+  position: fixed;
+  inset: 0;
+  z-index: 91;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tour-line line {
+  stroke: var(--tour-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.tour-line circle { fill: var(--tour-accent); }
 
 .tour-callout {
   position: fixed;

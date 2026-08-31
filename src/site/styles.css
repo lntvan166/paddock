@@ -1,0 +1,142 @@
+/* The landing page.
+ *
+ * Its own stylesheet, not the app's: the two share nothing but the tour tokens,
+ * and importing the dashboard's would drag its whole cascade onto a page that
+ * needs six rules.
+ *
+ * No device detection, per the house rule — a width query for layout, and
+ * nothing that asks what the device is. */
+
+:root {
+  --site-bg: #fbfbfd;
+  --site-fg: #1b1b1f;
+  --site-dim: #6b6b76;
+  --site-accent: #b4542e;
+  --site-code-bg: #eef0f4;
+}
+
+/* Redefined, never defined only here — the palette above is complete on its
+   own, so a browser with no preference still gets every colour. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --site-bg: #08090a;
+    --site-fg: #f2f3f5;
+    --site-dim: #9a9aa6;
+    --site-accent: #e0a838;
+    --site-code-bg: #14161a;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--site-bg);
+  color: var(--site-fg);
+  font: 16px/1.6 system-ui, -apple-system, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.hero {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 14vh 24px 8vh;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--site-dim);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hero h1 { margin: 0 0 18px; font-size: clamp(32px, 6vw, 56px); line-height: 1.1; }
+.lede { margin: 0 0 28px; max-width: 60ch; color: var(--site-dim); }
+
+/* The scroll container is the PARENT, not the code element. `max-width: 100%`
+   on an inline-block that also has `overflow-x: auto` does not cap it against
+   its container — the install one-liner pushed 8px past the viewport on a
+   390px screen and the whole body scrolled sideways, which the house rules
+   forbid. Wide content scrolls inside its own box; the page never does. */
+.install {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.install code {
+  display: inline-block;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--site-code-bg);
+  /* 16px floor: anything smaller makes iOS Safari zoom the page on focus, and
+     this is the one line a visitor may want to select. */
+  font: 16px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+}
+
+.tour-start {
+  display: block;
+  margin: 24px 0 10px;
+  font: inherit;
+  padding: 12px 20px;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--site-accent);
+  background: transparent;
+  color: var(--site-accent);
+}
+
+.hint { margin: 0; color: var(--site-dim); font-size: 14px; }
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 48px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 24px 12vh;
+}
+
+.sec {
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.num { color: var(--site-dim); font-variant-numeric: tabular-nums; font-size: 13px; }
+.sec h2 { margin: 6px 0 10px; font-size: 26px; }
+.sec p { margin: 0; max-width: 52ch; color: var(--site-dim); }
+
+.phone-rail {
+  position: sticky;
+  top: 5vh;
+  height: 90vh;
+  display: flex;
+  align-items: center;
+}
+
+.phone {
+  width: 390px;
+  height: 780px;
+  max-height: 86vh;
+  border-radius: 34px;
+  overflow: hidden;
+  border: 10px solid #1b1b1f;
+  background: #1b1b1f;
+}
+
+.demo { width: 100%; height: 100%; border: 0; display: block; }
+
+@media (max-width: 999px) {
+  .split { grid-template-columns: 1fr; gap: 0; }
+  /* The phone cannot sit beside anything here, so it leads instead — one
+     full-width live demo, with the sections reading beneath it. */
+  .phone-rail { position: static; height: auto; order: -1; margin-bottom: 8vh; }
+  .phone { width: 100%; height: 70vh; border-radius: 20px; border-width: 6px; }
+  .sec { min-height: 0; padding: 28px 0; }
+  .hero { padding-top: 8vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}

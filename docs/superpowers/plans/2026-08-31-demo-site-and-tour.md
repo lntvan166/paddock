@@ -2052,3 +2052,69 @@ State plainly, without assuming any of it is done:
 - The Vercel project must exist, with its **Git integration disabled**, and `VERCEL_TOKEN` / `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` set as repository secrets.
 - The real project URL must be confirmed and replaced if it is not `paddock.vercel.app`.
 - **The install URL has changed** and belongs in the next release notes.
+
+---
+
+## Corrections made during execution
+
+Recorded rather than silently folded in, because most of them are things the
+plan asserted and the running page disproved.
+
+**Task 1 — the site entry path.** The plan said a leading `/` in `site/index.html`
+resolves from the project root. It does not: vite resolves it against
+`config.root`, which is `site/`. The entry is reached as `../src/site/main.ts`.
+
+**Task 2 — the demo file is a directory.** `fileUrl(id)` is `/api/files/<id>` and
+`fileDownloadUrl(id)` is `/api/files/<id>/download`, so `<id>` must be both a
+document and a folder. A directory with an `index.html` serves both, on Vercel
+and on any local static server, with no rewrite rules — and the extension gets
+the content type right for free.
+
+**Task 3 — `--prebuilt` needs `vercel build`.** It publishes `.vercel/output`,
+which only `vercel build` writes; deploying without it publishes nothing. The
+workflow now runs the gates, then `vercel build` (whose `buildCommand` is the
+repo's own `build:demo`), then `deploy --prebuilt`.
+
+**Task 4 — the answer-options anchor was on the wrong component.** It went on
+`AskDialogView`'s `.dialog-options`, which is the AskUserQuestion surface. The
+demo's blocked agent renders `.term-options` in `AgentTerminal`, so the step
+timed out and the tour bailed. **The contract test cannot catch this**: it proves
+an anchor exists in the source, not that it is on the screen the step navigates
+to. Only running the tour catches it.
+
+**Task 5 — the tour tokens were in the wrong stylesheet.** They were added to
+`src/web/styles.css`, which the SITE never loads. An undefined custom property
+inside a `box-shadow` or `outline` invalidates the whole declaration, so the tour
+ran with no scrim and no spotlight at all and nothing failed. They now live in
+`src/site/tour/overlay.css` beside their only consumer, with
+`tests/tour-contrast.test.ts` asserting both that every `var(--tour-*)` used is
+defined and that the text clears AA on the panel. The per-theme assertions were
+removed: the tour renders in the site's document, where no `[data-theme]` is in
+scope.
+
+**Task 6 — `advance: "hash"` was not an advance condition.** A step whose anchor
+merely appears satisfies itself the instant it renders, so steps 04–06 flashed
+past unread. Renamed `next`: those steps get an explicit Next control, because
+their destination offers the visitor nothing to tap. Steps 01–03 remain real
+actions with `Show me`.
+
+**Task 8 — four defects only the browser found.**
+
+1. *Double advance.* `Show me` clicked the anchor (firing the same listener a
+   real tap does, which advances) and then called `showMe()` as well, so 01
+   jumped to 03. It now satisfies BY ANCHOR, which is idempotent: once the click
+   has advanced, the stale anchor no longer matches.
+2. *Stale rect.* A superseded step's `awaitAnchor` still resolved and wrote its
+   rectangle over the current step's. Guarded by a step token.
+3. *Measure after the SCROLL, not just the repaint.* The tour locked the page
+   wherever the visitor was — the hero, where the phone is barely peeking — and
+   spotlit controls at y=1220 in a 900px window. The phone is scrolled into view
+   before locking, the anchor is scrolled into view inside the frame, and the
+   measurement waits a frame for both. This is the same rule as the repaint one,
+   which the plan stated and which was still not enough.
+4. *Callout off-screen, and a sideways-scrolling body.* The callout aligned its
+   top with the lit control and ran off the bottom; it is now clamped after
+   layout, when its height is first known. And `max-width: 100%` on an
+   inline-block that also has `overflow-x: auto` does not cap it — the install
+   one-liner pushed the whole page 8px sideways, so the scroll container moved to
+   the parent.

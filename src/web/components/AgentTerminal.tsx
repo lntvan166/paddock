@@ -834,7 +834,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               screen with no controls at all is the silent disabling this
               project refuses elsewhere. */}
           {!prompt?.dialog && prompt?.options && prompt.options.length > 0 && (
-            <div className="term-options" role="group" aria-label="Answer">
+            <div className="term-options" role="group" aria-label="Answer" data-tour="answer-options">
               {prompt.question && <p className="term-question">{prompt.question}</p>}
               {prompt.options.map((o) => (
                 <Button

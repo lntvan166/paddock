@@ -7,9 +7,17 @@ export type TourStep = {
   hash: string;
   title: string;
   body: string;
-  /** What counts as done. `click` is a tap inside the anchor; `hash` is the app
-   *  having navigated itself, for steps whose action IS the navigation. */
-  advance: "click" | "hash";
+  /**
+   * What counts as done.
+   *
+   * `click` waits for a real tap inside the anchor. `next` is for steps whose
+   * destination offers the visitor nothing to tap — the tour has already
+   * navigated, and the step exists to show what arrived. Those get an explicit
+   * Next rather than advancing on their own: an anchor appearing is not the
+   * visitor having read anything, and a step that satisfies itself the instant
+   * it renders flashes past unread.
+   */
+  advance: "click" | "next";
 };
 
 /** Invented, like every other fixture here. See CLAUDE.md. `d1:p1` is the
@@ -44,20 +52,20 @@ export const TOUR_STEPS: readonly TourStep[] = [
     hash: `#/file/${DEMO_FILE}`,
     title: "Open what it made",
     body: "Tap a path in the output and the page, PDF or image opens here — sandboxed twice, so a page an agent wrote can never reach paddock's own API.",
-    advance: "hash",
+    advance: "next",
   },
   {
     anchor: "space-tree",
     hash: "#/spaces",
     title: "Every space, every tab",
     body: "The whole herd, not just the agents that happen to be busy. Rename, close, or start something new from here.",
-    advance: "hash",
+    advance: "next",
   },
   {
     anchor: "theme-picker",
     hash: "#/settings",
     title: "Five themes, all legible",
     body: "paddock's own light and dark, plus Dracula, Gruvbox and Nord — each checked against WCAG AA, including the state colours. Red always means an agent has stopped.",
-    advance: "hash",
+    advance: "next",
   },
 ];

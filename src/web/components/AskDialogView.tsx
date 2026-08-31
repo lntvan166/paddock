@@ -126,7 +126,7 @@ export function AskDialogView({ dialog, busy, onToggle, onArrow, onType }: {
       {/* `data-mode` because the two modes MEAN different things on a tap: multi
           toggles and stays, single picks and advances. The styling says so, and
           a test asserts it, so the difference cannot quietly disappear. */}
-      <div className="dialog-options" role="group" aria-label="Answer" data-mode={dialog.mode} data-tour="answer-options">
+      <div className="dialog-options" role="group" aria-label="Answer" data-mode={dialog.mode}>
         {answerable.map((o) => (
           <Button
             key={o.key}
