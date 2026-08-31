@@ -13,6 +13,7 @@ import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
 import { RowActions } from "@web/components/RowActions";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
+import { trimSeen } from "@web/journal-overlap";
 import { ImageIcon, SendIcon } from "@web/components/ui/icons";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
@@ -619,7 +620,17 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
           setJournalBusy(true);
           // The agent's own log, not the reconstructed path — see design
           // decision 18.
-          void fetchHistory(agent.agentId, journal.cursor, JOURNAL_PAGE_TURNS)
+          /**
+           * One page, with the first one bounded against the live screen.
+           *
+           * `follow` exists for the case the trim leaves nothing: page one can
+           * be entirely on screen, and a tap that then rendered nothing would
+           * be a control that looks broken. It runs ONCE — never a loop — so a
+           * journal whose every page overlaps costs one extra request, not an
+           * unbounded run of them.
+           */
+          const load = (cursor: string | null, first: boolean, follow: boolean): Promise<void> =>
+            fetchHistory(agent.agentId, cursor, JOURNAL_PAGE_TURNS)
             .then((page) => {
               if (page.source !== "journal") {
                 // The server has no journal for THIS pane after all — no
@@ -636,19 +647,34 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                 ctx.revealMore();
                 return;
               }
+              // The FIRST page is the newest turns, because it is fetched with
+              // no cursor and the reader reads that as "from the end of the
+              // file" — so most of it is already on the screen below. Every
+              // later page carries a cursor and is genuinely older, and is
+              // taken whole.
+              const fresh = first ? trimSeen(page.lines, ctx.onScreen) : page.lines;
+
               // PREPEND: a page fetched with a cursor is older than what is
               // already held. `cursor` and `done` move with it, in ONE write,
               // so a pane reopened between taps never sees lines whose cursor
               // has not caught up.
               patchJournal((held) => ({
                 ...held,
-                lines: [...page.lines, ...held.lines],
+                lines: [...fresh, ...held.lines],
                 cursor: page.cursor,
                 // A genuine "no more journal pages" — the only case that
                 // ends the affordance without a fallback.
                 done: !page.hasMore,
               }));
               restore();
+
+              // Nothing survived the trim: the whole page was already on
+              // screen. Go straight to the next one rather than leave the tap
+              // looking like it failed.
+              if (fresh.length === 0 && follow && page.hasMore && page.cursor !== null) {
+                return load(page.cursor, false, false);
+              }
+              return undefined;
             })
             .catch((err) => {
               // A transient failure (network blip, herdr hiccup) is NOT
@@ -666,6 +692,8 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               journalBusyRef.current = false;
               setJournalBusy(false);
             });
+
+          void load(journal.cursor, journal.lines.length === 0 && journal.cursor === null, true);
         }}
       >
         Show earlier

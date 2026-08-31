@@ -273,6 +273,15 @@ export type PaneLoad = (since: string | null) => Promise<OutputResult | PaneOutp
 export interface EarlierContext {
   /** Reconstructed lines still held back. 0 once all of them are on screen. */
   remaining: number;
+  /**
+   * The live viewport, as currently rendered.
+   *
+   * Passed so a journal-backed owner can tell which of the turns it just
+   * fetched are already down there. Its first page has no cursor, so the
+   * reader serves the NEWEST turns — the ones on this screen — and prepending
+   * them unbounded is what showed the operator the same passage twice.
+   */
+  onScreen: string[];
   /** Snapshot gaps in the reconstructed scrollback. */
   gaps: number;
   /** Reveal another page of RECONSTRUCTED scrollback, pinning the scroll. */
@@ -971,7 +980,9 @@ export function PaneTerminal({
 
   // `undefined` means the slot declined to decide; `null` means it decided
   // there is nothing to offer. Only the first falls through to the built-in.
-  const slot = earlier ? earlier({ remaining, gaps: history.gaps, revealMore, pinScroll }) : undefined;
+  const slot = earlier
+    ? earlier({ remaining, gaps: history.gaps, revealMore, pinScroll, onScreen: output })
+    : undefined;
   const earlierNode = slot !== undefined ? slot : (remaining > 0 && (
     <button type="button" className="term-earlier" onClick={revealMore}>
       Show earlier
