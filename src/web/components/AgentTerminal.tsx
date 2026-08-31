@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
 import {
-  answerWithKey, moveDialogTab, sendDialogKey, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  answerWithKey, moveDialogTab, sendDialogKey, sendNote, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
   sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
@@ -14,6 +14,7 @@ import { Button } from "@web/components/shadcn/button";
 import { RowActions } from "@web/components/RowActions";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
 import { trimSeen } from "@web/journal-overlap";
+import { NotesField } from "@web/components/NotesField";
 import { ImageIcon, SendIcon } from "@web/components/ui/icons";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
@@ -890,6 +891,31 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                 </Button>
               ))}
             </div>
+          )}
+
+          {/* The dialog's notes field, offered only when the dialog has one.
+
+              Two send buttons, because the agent receives two different
+              answers: measured, Enter with the field open submits the note
+              ALONE and discards the option the cursor is sitting on, while Esc
+              first keeps the note and lets Enter commit both. A single Send
+              would have to guess between them, and guessing wrong throws away
+              the operator's choice while the screen still shows it highlighted. */}
+          {prompt?.notes && (
+            <NotesField
+              selected={prompt.selected}
+              busy={busy}
+              onSend={(text, mode) => {
+                setBusy(true);
+                void sendNote(agent.agentId, text, mode)
+                  .then((r) => {
+                    if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
+                    if (r.lines) pane.current?.apply(r.lines);
+                    setFeedback(null);
+                  })
+                  .finally(() => setBusy(false));
+              }}
+            />
           )}
 
           {/* What Enter would commit, right where the thumb is.

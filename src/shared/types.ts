@@ -188,6 +188,26 @@ export interface PromptOption {
   selected: boolean;
 }
 
+/**
+ * The question dialog's notes field, when it has one.
+ *
+ * MEASURED on a live agent, because the interaction is not what it looks like.
+ * While the field is OPEN every keystroke types into it — a digit types a digit
+ * rather than choosing an option — and Enter submits the note ALONE, discarding
+ * whichever option the cursor is visibly sitting on. Pressing Esc first closes
+ * the field, KEEPS the note, and lets Enter commit the option and the note
+ * together.
+ *
+ * So `open` is not decoration: it is the difference between an answer that
+ * carries the operator's choice and one that silently throws it away.
+ */
+export interface PromptNotes {
+  /** What the dialog currently holds, "" when empty. Never the placeholder. */
+  text: string;
+  /** Keys type into the field, and Enter would submit the note with no option. */
+  open: boolean;
+}
+
 export interface ParsedPrompt {
   /** The question line, e.g. "Do you want to proceed?". Null when not found. */
   question: string | null;
@@ -210,6 +230,14 @@ export interface ParsedPrompt {
    * prompt shapes the option parser deliberately refuses to read.
    */
   selected: string | null;
+  /**
+   * The notes field, or null when this prompt has none.
+   *
+   * null is the ordinary case: a permission prompt has no notes, and offering
+   * a control that sends `n` there would be a keystroke the dialog has no use
+   * for.
+   */
+  notes: PromptNotes | null;
   /**
    * The structured dialog, when the screen is one paddock fully recognises.
    *

@@ -1069,6 +1069,58 @@ body {
    borderless settings fields had above. There is no hover state to fall back
    on on a phone, so the colour IS the affordance, and 2.75rem keeps the tap
    target at the app's stated 44px. */
+/* The question dialog's notes field.
+
+   Sits below the answer buttons because it is the less common path: an
+   operator answers a dialog far more often than they annotate one. The two
+   send buttons are laid out with the safer answer first — "note only" chooses
+   nothing, while the other commits an option. */
+.term-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.term-notes-field {
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--border);
+  /* --r-sm is the step the scale reserves for inputs. */
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg);
+  padding: 0.5rem 0.625rem;
+  /* 16px LITERAL, not a scale step, and that is the documented exception:
+     iOS Safari zooms the viewport when a focused field is under 16px and does
+     not zoom back out. tests/tokens.test.ts asserts this by reading the markup
+     for every input and textarea, because the two older guards looked at
+     selectors and a third field slipped past both. */
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.term-notes-field:disabled { opacity: 0.5; }
+
+.term-notes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Both buttons keep the app's 44px target, and the option one is allowed to
+   wrap: it carries the option's own words, which can be a whole sentence, and
+   truncating them would be the mislabelled control this field exists to
+   avoid. */
+.term-notes-send {
+  min-height: 2.75rem;
+  height: auto;
+  flex: 1 1 auto;
+  white-space: normal;
+  text-align: left;
+}
+
 .help-link {
   color: var(--accent);
   text-decoration: none;

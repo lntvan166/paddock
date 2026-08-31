@@ -3,7 +3,7 @@ import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { expandHome } from "@server/herdr/tree";
-import { moveDialogTab, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
+import { addNote, moveDialogTab, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
 import {
@@ -1393,6 +1393,64 @@ export function createApp(deps: AppDeps) {
         const out = await actions.readOutput(agent.agentId, agent.state);
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+      }
+    });
+
+    /**
+     * Add a note to a question dialog, and commit it.
+     *
+     * `mode` is the whole of this route, and it is a MEASURED distinction
+     * rather than a preference. Sent as `note-only` the agent receives
+     * "(no option selected) notes: …"; sent as `with-option` it receives the
+     * option under the cursor AND the note. The keystrokes differ by one Esc,
+     * and getting it wrong silently discards the operator's answer — so the
+     * caller states which one it means and the server never guesses.
+     *
+     * Gated on `blocked` for the reason `/answer` and `/dialog-key` are: no
+     * dialog exists in any other state, and these keystrokes typed into
+     * whatever replaced it are input the operator never asked to send.
+     */
+    app.post("/api/agents/:id/note", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+      if (agent.state !== "blocked") {
+        return c.json({ ok: false, detail: `agent is ${agent.state}, no dialog to answer` }, 409);
+      }
+
+      const body = await jsonBody(c);
+      const text = body.text;
+      const mode = body.mode;
+      const chars = typeof text === "string" ? [...text] : [];
+      const printable = chars.every((ch) => {
+        const code = ch.codePointAt(0) ?? 0;
+        return code >= 0x20 && code !== 0x7f;
+      });
+      if (
+        typeof text !== "string" || text.trim() === "" ||
+        chars.length > MAX_TYPE_CHARS || !printable
+      ) {
+        return c.json({
+          ok: false,
+          detail: "text must be printable characters within the length limit",
+        }, 400);
+      }
+      if (mode !== "note-only" && mode !== "with-option") {
+        return c.json({
+          ok: false,
+          detail: `mode must be "note-only" or "with-option"`,
+        }, 400);
+      }
+
+      try {
+        const outcome = await addNote(agent.agentId, chars, mode, { ...actions, settle });
+        if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
+        // A TUI repaints asynchronously after the write — see `/key`'s note.
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readOutput(agent.agentId, agent.state);
+        const parsed = parsePrompt(out.lines.join("\n"));
+        return c.json({ ok: true, ...out, selected: parsed.selected, notes: parsed.notes });
       } catch (err) {
         return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
       }

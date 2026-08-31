@@ -358,6 +358,29 @@ export async function moveDialogTab(
  * moves the cursor onto the row and verifies it from a re-read before a single
  * character is sent.
  */
+/**
+ * Add a note to a question dialog, and commit it.
+ *
+ * `mode` is measured, not stylistic. `note-only` reaches the agent as
+ * "(no option selected) notes: …"; `with-option` commits the option the cursor
+ * is on AND the note. The keystrokes differ by one Esc, and sending the wrong
+ * one silently discards the operator's choice — so the caller says which it
+ * means and the server never guesses.
+ */
+export async function sendNote(
+  id: string,
+  text: string,
+  mode: "note-only" | "with-option",
+  f: Fetch = fetch,
+): Promise<KeyResult & { selected?: string | null }> {
+  try {
+    const res = await request(url(id, "note"), { text, mode }, f);
+    return await bodyOrDetail<KeyResult>(res) as KeyResult;
+  } catch (err) {
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
 export async function typeIntoDialog(
   id: string, text: string, f: Fetch = fetch,
 ): Promise<KeyResult> {

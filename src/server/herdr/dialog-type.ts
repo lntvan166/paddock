@@ -1,4 +1,5 @@
 import { parseAskDialog } from "@server/herdr/ask-dialog";
+import { parsePrompt } from "@server/herdr/prompt-parse";
 import type { AskDialog } from "@shared/types";
 
 export interface TypeOutcome { ok: boolean; detail?: string }
@@ -13,7 +14,15 @@ export interface TabOutcome extends TypeOutcome { dialog?: AskDialog }
  */
 export interface DialogIo {
   readPromptScreen(target: string): Promise<string>;
-  sendNavKey(target: string, key: "up" | "down" | "enter" | "left" | "right"): Promise<void>;
+  /**
+   * `esc` is in this union for ONE caller: closing the notes field.
+   *
+   * Everywhere else Esc cancels a dialog, which is why it is not a key paddock
+   * sends casually. Measured on the notes field it does something different —
+   * it closes the field and KEEPS what was typed — and that is the only way to
+   * commit an option and a note together.
+   */
+  sendNavKey(target: string, key: "up" | "down" | "enter" | "left" | "right" | "esc"): Promise<void>;
   sendChars(target: string, chars: string[]): Promise<void>;
   sendOptionKey(target: string, key: string): Promise<void>;
   /**
@@ -254,5 +263,63 @@ export async function typeIntoFreeText(
   const erase = Array.from({ length: n }, () => "backspace");
 
   await io.sendChars(target, [...toEnd, ...erase, ...chars]);
+  return { ok: true };
+}
+
+/**
+ * Add a note to a question dialog, and commit it.
+ *
+ * TWO SEQUENCES, and they are not interchangeable. Measured on a live agent by
+ * asking the probe to quote what it received:
+ *
+ *   n, type, Enter        ->  "…?"=(no option selected) notes: hello
+ *   n, type, Esc, Enter   ->  "…?"="Scaffold a new Next.js app…" notes: ok
+ *
+ * The cursor was sitting VISIBLY on option 1 for both. The first sequence threw
+ * that option away anyway — so "open the field, type, press Enter" is the
+ * obvious implementation and it silently discards the operator's answer. Esc is
+ * what makes the difference, because it closes the field while KEEPING the
+ * note, and Enter then commits the option under the cursor along with it.
+ *
+ * `with-option` commits the option the cursor is ALREADY on — the one paddock
+ * shows as "Enter selects". Moving to a different option first is deliberately
+ * not done here: whether a digit still selects once the field has been open was
+ * never measured, and the operator can move the cursor with the keypad before
+ * adding a note.
+ */
+export async function addNote(
+  target: string,
+  chars: string[],
+  mode: "note-only" | "with-option",
+  io: DialogIo,
+): Promise<TypeOutcome> {
+  const before = parsePrompt(await io.readPromptScreen(target));
+  if (before.notes === null) {
+    return { ok: false, detail: "this prompt has no notes field" };
+  }
+
+  // `n` opens the field only while it is CLOSED. Sent while open it is just a
+  // character, and the note would begin with a stray "n".
+  if (!before.notes.open) {
+    await io.sendChars(target, ["n"]);
+    await io.settle?.();
+
+    // Confirmed rather than assumed, the way `reachRow` confirms a cursor move:
+    // typing into a field that never opened would send the note's characters to
+    // the dialog as option keystrokes.
+    const opened = parsePrompt(await io.readPromptScreen(target));
+    if (opened.notes === null || !opened.notes.open) {
+      return { ok: false, detail: "the notes field did not open — nothing was typed" };
+    }
+  }
+
+  await io.sendChars(target, chars);
+  await io.settle?.();
+
+  if (mode === "with-option") {
+    await io.sendNavKey(target, "esc");
+    await io.settle?.();
+  }
+  await io.sendNavKey(target, "enter");
   return { ok: true };
 }

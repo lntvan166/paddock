@@ -1,5 +1,5 @@
 import { parseAskDialog } from "@server/herdr/ask-dialog";
-import type { ParsedPrompt, PromptOption } from "@shared/types";
+import type { ParsedPrompt, PromptNotes, PromptOption } from "@shared/types";
 
 /** `❯ 1. Yes` / `   2. No` — the cursor marker is optional. */
 const OPTION_RE = /^\s*(❯\s*)?(\d+)\.\s+(.*\S)\s*$/;
@@ -29,6 +29,48 @@ const BOX_CHAR_RE = /[\u2500-\u257F]/;
  * A candidate needs a gutter of two spaces and real content to its left, which
  * is what separates a panel edge from a full-width horizontal rule at column 0.
  */
+/** The dialog advertises the field in its footer, open or closed. */
+const NOTES_OFFERED_RE = /\bn to add notes\b/;
+
+/**
+ * Shown only while the field has focus — the discriminator for OPEN.
+ *
+ * Measured: the footer gains `ctrl+g to edit in VS Code` on `n` and loses it on
+ * `Esc`. The `Notes:` line alone cannot tell the two apart, because a note kept
+ * after Esc looks identical to one being typed.
+ */
+const NOTES_OPEN_RE = /ctrl\+g to edit/;
+
+const NOTES_LINE_RE = /Notes:\s*(.*?)\s*$/;
+
+/**
+ * The dialog's own words in the field, which are not the operator's note.
+ *
+ * Both measured: the closed hint, and the placeholder shown while the field is
+ * open and empty. Reporting either as a note would put the dialog's
+ * instructions into the answer.
+ */
+const NOTES_EMPTY = new Set(["press n to add notes", "Add notes on this design…"]);
+
+/**
+ * Read the notes field, from lines that still have their right-hand column.
+ *
+ * Called BEFORE `cutPanel`, deliberately: the hint sits in the panel's own
+ * column, so the cut that removes the preview removes this too.
+ */
+function readNotes(lines: readonly string[]): PromptNotes | null {
+  if (!lines.some((l) => NOTES_OFFERED_RE.test(l))) return null;
+  let text = "";
+  for (const line of lines) {
+    const m = NOTES_LINE_RE.exec(line);
+    if (m) text = m[1]!;
+  }
+  return {
+    text: NOTES_EMPTY.has(text) ? "" : text,
+    open: lines.some((l) => NOTES_OPEN_RE.test(l)),
+  };
+}
+
 function panelColumn(lines: readonly string[]): number | null {
   let found: number | null = null;
   for (const line of lines) {
@@ -285,6 +327,7 @@ export function parsePrompt(raw: string): ParsedPrompt {
 
   return {
     question: lastRunQuestion,
+    notes: readNotes(stripped),
     options: usable ? lastRun : null,
     selected: usable ? fromRun : selected,
     // Composed HERE rather than at each route, and that is a deliberate choice
