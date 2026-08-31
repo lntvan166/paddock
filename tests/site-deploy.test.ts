@@ -1,48 +1,46 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 
-const wf = readFileSync(".github/workflows/demo.yml", "utf8");
+/**
+ * The demo site is built by Vercel from this file, on every push to main.
+ *
+ * That is a RECONSIDERED position, and the cost is real: Vercel does not wait
+ * for CI, so a red tree can publish. The gates still run in `ci.yml`; they no
+ * longer block the deploy. `docs/decisions.md` 30 records why that was
+ * accepted. What this file guards is everything that is still checkable
+ * without a workflow: that the build produces the assembled directory, that
+ * the retirement of the old host is complete, and that the served file routes
+ * carry the headers the real ones do.
+ */
 const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as {
   buildCommand?: string;
+  installCommand?: string;
   outputDirectory?: string;
   headers?: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
 };
 
-/**
- * demo.yml states why its gates exist: "a demo that ships from a red tree would
- * be advertising something that does not work." Vercel's own Git integration
- * would build on push and bypass all three, so it stays off and the workflow
- * keeps publishing.
- */
-test("the three gates still run before anything is published", () => {
-  for (const gate of ["make check", "make check-clean", "make test"]) {
-    expect(wf, `${gate} no longer gates the deploy`).toContain(gate);
-  }
-});
-
-/** The CLI is invoked as `bunx vercel@latest <cmd>`, so the version pin sits
- *  between the two words a naive `includes` would look for. */
-const at = (cmd: string): number => wf.search(new RegExp(`vercel(@\\S+)?\\s+${cmd}`));
-
-test("the gates run BEFORE the deploy, not beside it", () => {
-  const tested = wf.indexOf("make test");
-  const deploy = at("deploy");
-  expect(deploy).toBeGreaterThan(-1);
-  expect(deploy, "a deploy that races its own gates is not gated").toBeGreaterThan(tested);
-});
-
-test("the deploy publishes what vercel build produced, not a fresh remote build", () => {
-  // --prebuilt reads .vercel/output, which `vercel build` writes. Without the
-  // build step it deploys nothing; without --prebuilt Vercel rebuilds remotely
-  // and the gates are bypassed after all.
-  expect(at("build"), "nothing writes .vercel/output").toBeGreaterThan(-1);
-  expect(wf).toContain("--prebuilt");
-  expect(at("build")).toBeLessThan(at("deploy"));
-});
-
-test("vercel builds the assembled site, using the repo's own build", () => {
+test("vercel builds the assembled site with the repo's own build", () => {
   expect(vercel.buildCommand).toBe("bun run build:demo");
+  // The published directory is the one scripts/assemble-site.ts writes — the
+  // landing page at its root and the app under /app/. Point this anywhere else
+  // and the deploy is green with no demo in it.
   expect(vercel.outputDirectory).toBe("dist-site");
+});
+
+test("the install uses bun and the committed lockfile", () => {
+  // Without this Vercel may reach for npm, which has no lockfile here and
+  // would resolve a different dependency tree than every test ran against.
+  expect(vercel.installCommand).toContain("bun install");
+  expect(vercel.installCommand).toContain("--frozen-lockfile");
+});
+
+test("the gates still run somewhere, even though they no longer block", () => {
+  // They stopped gating the deploy when the Git integration was turned on. If
+  // they stopped running altogether, nothing would report a red tree at all.
+  const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+  for (const gate of ["make check", "make check-clean", "make test"]) {
+    expect(ci, `${gate} no longer runs anywhere`).toContain(gate);
+  }
 });
 
 test("nothing in the repository still points at the retired host", () => {
@@ -52,7 +50,6 @@ test("nothing in the repository still points at the retired host", () => {
     "README.md",
     "install.sh",
     ".github/ISSUE_TEMPLATE/config.yml",
-    ".github/workflows/demo.yml",
     "docs/design/2026-08-18-distribution-and-update-design.md",
     "docs/plans/2026-08-18-distribution-and-update.md",
   ];

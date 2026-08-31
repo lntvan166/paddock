@@ -26,6 +26,13 @@ single most important rule in this file.
   likely to be broken by accident: a reviewer notices a hardcoded hostname, but
   nobody notices that a demo fixture is named after someone's internal tickets.
 - **Config ships as `.env.example` only.** Never commit `.env`.
+- **There are NO demo branches in any component.** `VITE_PADDOCK_DEMO=1` swaps
+  `fetch` and `WebSocket` for an in-browser mock before the app mounts, so the
+  real UI runs unmodified against synthetic data. That is what keeps the demo
+  from drifting from the product, and it is why `data-tour` attributes are
+  rendered unconditionally rather than behind the flag. This sentence used to
+  live in `.github/workflows/demo.yml`, which is gone; the rule is not.
+
 - **Screenshots and README images come from `paddock serve --demo`**, never a live
   session — with two screens it deliberately cannot render, below.
   - **`--demo` can show every screen, since 2026-08-27.** It used to leave

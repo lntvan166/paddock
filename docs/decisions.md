@@ -986,19 +986,28 @@ session does not silently re-litigate them.
     human copies changed. **The change is owed to the next release notes** —
     once the old host is gone that is the only mitigation left.
 
-    Vercel's Git integration stays OFF. `demo.yml` gates its publish on `make
-    check`, `make check-clean` and `make test` because "a demo that ships from
-    a red tree would be advertising something that does not work", and a build
-    on push would bypass all three.
+    **Git integration: reconsidered, and now ON.** The first form of this
+    decision kept it off, because `demo.yml` gated publishing on `make check`,
+    `make check-clean` and `make test` — "a demo that ships from a red tree
+    would be advertising something that does not work" — and a build on push
+    bypasses all three. The operator weighed that against three GitHub secrets
+    and a Vercel token to mint by hand, and chose the simpler wiring.
+
+    So `demo.yml` is deleted and Vercel builds on every push to `main`. The
+    cost is stated rather than hidden: **the gates and the deploy now race.**
+    `ci.yml` still runs all three on every push and pull request, so a red tree
+    is still reported — it is no longer prevented from publishing. If that ever
+    bites, the token-gated form is `git log` away.
 
 31. **`data-tour` anchors are rendered unconditionally, in every build.** The
     site's tour points at six controls it does not own, and identifies them by
     attribute rather than by class.
 
     Not behind `import.meta.env.VITE_PADDOCK_DEMO`, even though the tour is
-    demo-only. `demo.yml` states the property that keeps the demo honest —
+    demo-only. `CLAUDE.md` states the property that keeps the demo honest —
     "there are no demo branches in any component" — and a conditional attribute
-    would be exactly such a branch. A static string of a few dozen bytes has no
+    would be exactly such a branch. (That sentence lived in `demo.yml` until
+    that file was deleted; the rule moved rather than lapsed.) A static string of a few dozen bytes has no
     code path to drift, costs the operator nothing measurable, and means the
     anchors exist in the build anyone could actually debug.
 

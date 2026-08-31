@@ -50,7 +50,7 @@ test("every data-tour in the app is one the tour knows about", () => {
 });
 
 test("the anchors are unconditional, not branched on the demo flag", () => {
-  // demo.yml states the property that keeps the demo honest: "there are no demo
+  // CLAUDE.md states the property that keeps the demo honest: "there are no demo
   // branches in any component." An attribute behind import.meta.env would be
   // exactly such a branch, and would also mean the anchors are absent from the
   // build anyone could ever debug.

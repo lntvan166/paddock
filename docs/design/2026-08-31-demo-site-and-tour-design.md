@@ -115,6 +115,12 @@ CI would call green.
 
 ### Deploy stays gated
 
+> **SUPERSEDED, 2026-08-31.** The operator chose Vercel's Git integration
+> instead, weighing the gate against three secrets and a hand-minted token.
+> `demo.yml` is deleted and the gates now run beside the deploy rather than
+> before it. `docs/decisions.md` 30 records the trade. The reasoning below is
+> kept because it is still why the gate mattered, and what was given up.
+
 `demo.yml` runs `make check`, `make check-clean` and `make test` before it
 publishes, and says why: *"a demo that ships from a red tree would be
 advertising something that does not work."*

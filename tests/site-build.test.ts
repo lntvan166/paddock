@@ -44,7 +44,7 @@ test("the landing page survives the assembly", () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("install.sh rides along, as demo.yml has always required", () => {
+test("install.sh rides along, as the published install command requires", () => {
   const { root, siteDir, appDir, installScript } = fixture();
   assembleSite({ siteDir, appDir, installScript });
   expect(existsSync(join(siteDir, "install.sh"))).toBe(true);

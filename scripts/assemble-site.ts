@@ -35,8 +35,9 @@ export function assembleSite(opts: {
   rmSync(appDir, { recursive: true, force: true });
 
   // install.sh is served from the site, so it must ride along in the published
-  // directory. demo.yml has carried this copy since Pages, for the same reason:
-  // without it the published install command 404s while the site looks healthy.
+  // directory. The Pages workflow carried this copy for the same reason, and
+  // this is now its only home: without it the published install command 404s
+  // while the site looks healthy.
   cpSync(installScript, join(siteDir, "install.sh"));
 }
 
