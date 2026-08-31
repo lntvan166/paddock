@@ -234,12 +234,14 @@ Create `site/index.html`:
   </head>
   <body>
     <main id="site"></main>
-    <script type="module" src="/src/site/main.ts"></script>
+    <script type="module" src="../src/site/main.ts"></script>
   </body>
 </html>
 ```
 
-Note the `src` path: with `root: "site"`, a leading `/` resolves from the project root, so `/src/site/main.ts` is correct and `./src/...` is not.
+Note the `src` path. Vite resolves a leading `/` against `config.root`, which is
+`site/` here — so `/src/site/main.ts` would look for `site/src/site/main.ts` and
+fail the build. The entry is reached relatively, as `../src/site/main.ts`.
 
 Create `src/site/main.ts`:
 
