@@ -53,6 +53,13 @@ splitMount.outerHTML = `
       <div class="phone">
         <iframe class="demo" src="${APP_SRC}" title="paddock, running against synthetic agents"></iframe>
       </div>
+      <!-- The same build with no page around it. On a phone that is
+           indistinguishable from the installed PWA, which is the strongest
+           thing this site can show, and it used to be reachable only by typing
+           the path. A NEW TAB: the landing page keeps its place and its tour,
+           so the two run side by side rather than one replacing the other.
+           Relative, so it works on a preview deployment and on localhost. -->
+      <a class="fullscreen" href="/app/" target="_blank" rel="noopener">Open full screen &#8599;</a>
     </div>
   </div>
 `;

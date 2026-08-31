@@ -133,3 +133,29 @@ test("the tour never scrolls the app sideways", () => {
     .not.toContain("el.scrollIntoView");
   expect(main).toContain("bringIntoView");
 });
+
+/**
+ * A way out of the phone, into the real thing.
+ *
+ * The embedded demo is 390px of a landing page, and on a narrow screen it is
+ * 70vh of one — enough to watch, cramped to USE. `/app/` is the same build with
+ * no page around it, which on a phone is indistinguishable from the installed
+ * PWA. That is the strongest thing this site can show, and it was reachable
+ * only by typing the path.
+ *
+ * A new tab, deliberately: the landing page keeps its place and its tour, and
+ * the two run side by side rather than one replacing the other.
+ */
+test("the phone offers a way to open the demo full screen", () => {
+  expect(main, "no way to leave the frame").toContain('href="/app/"');
+  expect(main, "the landing page is replaced instead of joined").toContain('target="_blank"');
+  expect(main).toContain("noopener");
+});
+
+test("the full-screen link is relative, like every other URL this file uses", () => {
+  // Same rule as the hostname test above, and it is what makes the link work on
+  // a preview deployment and on localhost as well as on the live site.
+  const link = /<a[^>]*class="fullscreen"[^>]*>/.exec(main)?.[0] ?? "";
+  expect(link, "the full-screen link is missing its class").not.toBe("");
+  expect(link, "the full-screen link hardcodes a host").not.toContain("https://");
+});

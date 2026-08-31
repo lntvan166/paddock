@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://trypaddock.vercel.app/">demo</a> ·
+  <a href="https://trypaddock.vercel.app/app/">full screen</a> ·
   <a href="#install">install</a> ·
   <a href="docs/running-locally.md">running locally</a> ·
   <a href="#docs">docs</a>
@@ -21,7 +22,7 @@
 
 <p align="center">
   <img src="docs/images/01-agents.png" alt="The agent list, grouped by what needs attention" width="46%">
-  <img src="docs/images/02-blocked.png" alt="A blocked agent showing its real options and what Enter will commit" width="46%">
+  <img src="docs/images/02-blocked.png" alt="A blocked agent: its real options, with the reply field folded away so the transcript keeps the screen" width="46%">
 </p>
 
 **watch and answer your coding agents from your phone.**
@@ -49,7 +50,7 @@ walk back and look.
 - **cheap to watch** — adaptive polling, and only changed lines on the wire
 
 <p align="center">
-  <img src="docs/images/03-terminal.png" alt="A blocked agent with every control at once: its real options, the key row, and the reply field" width="46%">
+  <img src="docs/images/03-terminal.png" alt="The same agent with the composer unfolded: options, the key row, quick keys and the reply field at once" width="46%">
   <img src="docs/images/07-compose.png" alt="The reply field, with slash-commands read from the project's own .claude" width="46%">
 </p>
 
@@ -62,6 +63,11 @@ walk back and look.
 agents, no install, best in mobile mode. It opens on a page that walks you
 through every screen; the phone beside the text is the real dashboard, not a
 picture of one.
+
+Or open it [**full screen →**](https://trypaddock.vercel.app/app/), which is
+the same build with no page around it. On a phone that is what the installed
+app looks like, down to the keyboard inset — the tour explains paddock, this
+one lets you use it.
 
 **pick a theme.** paddock ships its own light and dark, plus Dracula, Gruvbox
 and Nord. Every one is checked against WCAG AA — including the three state

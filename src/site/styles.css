@@ -112,7 +112,34 @@ body {
   top: 5vh;
   height: 90vh;
   display: flex;
+  /* A column now: the phone, and a way out of it underneath. */
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* Quiet on purpose. The tour button in the hero is the primary invitation and
+   this must not compete with it — it is the door for someone already sold, who
+   wants the demo without a landing page wrapped around it. */
+.fullscreen {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--site-dim);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+/* Both states, because a link that only announces itself on hover announces
+   itself to nobody on a touch screen. */
+.fullscreen:focus-visible,
+.fullscreen:hover {
+  color: var(--site-accent);
+  border-color: var(--site-accent);
 }
 
 .phone {
@@ -132,6 +159,9 @@ body {
   /* The phone cannot sit beside anything here, so it leads instead — one
      full-width live demo, with the sections reading beneath it. */
   .phone-rail { position: static; height: auto; order: -1; margin-bottom: 8vh; }
+  /* Where it matters most: this viewport IS a phone, so the frameless build is
+     the real experience and the framed one is the compromise. */
+  .fullscreen { color: var(--site-accent); border-color: var(--site-accent); }
   .phone { width: 100%; height: 70vh; border-radius: 20px; border-width: 6px; }
   .sec { min-height: 0; padding: 28px 0; }
   .hero { padding-top: 8vh; }
