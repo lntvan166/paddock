@@ -359,3 +359,67 @@ test("the cursor is reported without the panel attached to it", () => {
   const p = parsePrompt(WRAPPED_WITH_PANEL);
   expect(p.selected).toBe("1. Merge back to main locally");
 });
+
+
+/**
+ * A REAL question dialog with a preview panel, captured from a live Claude Code
+ * agent through `herdr agent read --source detection`.
+ *
+ * The reconstruction above was built from a phone screenshot and got the shape
+ * right but one detail wrong, which is exactly why this exists. Once the
+ * preview box CLOSES, the same right-hand column keeps going with ordinary
+ * prose — the "Notes:" hint sits there. A cut that looked for box-drawing
+ * characters left option three reading "…and only minimal Notes: press n to add
+ * notes tooling installed": the dialog's own instructions, pasted into an
+ * answer the operator would tap.
+ *
+ * So the box only LOCATES the column and the column is what gets cut. Kept
+ * verbatim because a remembered measurement decays silently, which is the
+ * lesson `tests/dialog-live.test.ts` was written to record.
+ */
+const LIVE_PREVIEW_DIALOG = `
+Which setup path should I use for this project?
+
+❯ 1. Scaffold a brand new         ┌──────────────────────────────────────────┐
+    Next.js application from      │ npx create-next-app@latest . --yes       │
+    scratch here (Recommended)    │ npm install                              │
+  2. Clone an existing            │ npm run dev                              │
+    repository and wire it up     │ vercel link --yes                        │
+    to Vercel                     └──────────────────────────────────────────┘
+  3. Start with an empty
+    workspace and only minimal    Notes: press n to add notes
+    tooling installed
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Chat about this
+
+Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
+`;
+
+test("a live preview dialog yields all three options with clean labels", () => {
+  const p = parsePrompt(LIVE_PREVIEW_DIALOG);
+  expect(p.options).not.toBeNull();
+  expect(p.options!.map((o) => o.label)).toEqual([
+    "Scaffold a brand new Next.js application from scratch here (Recommended)",
+    "Clone an existing repository and wire it up to Vercel",
+    "Start with an empty workspace and only minimal tooling installed",
+  ]);
+});
+
+test("the dialog's own Notes hint never becomes part of an answer", () => {
+  // The specific regression: the hint shares a line with option three's wrapped
+  // label, and a character-based cut could not see it.
+  const p = parsePrompt(LIVE_PREVIEW_DIALOG);
+  for (const o of p.options!) {
+    expect(o.label, `${o.key} carries the dialog's instructions`).not.toContain("Notes:");
+    expect(o.label).not.toContain("press n");
+  }
+});
+
+test("a live preview dialog reports its question and cursor", () => {
+  const p = parsePrompt(LIVE_PREVIEW_DIALOG);
+  expect(p.question).toBe("Which setup path should I use for this project?");
+  expect(p.selected).toBe(
+    "1. Scaffold a brand new Next.js application from scratch here (Recommended)",
+  );
+});

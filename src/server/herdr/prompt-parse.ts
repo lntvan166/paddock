@@ -5,22 +5,56 @@ import type { ParsedPrompt, PromptOption } from "@shared/types";
 const OPTION_RE = /^\s*(❯\s*)?(\d+)\.\s+(.*\S)\s*$/;
 const QUESTION_RE = /^\s*(\S.*\?)\s*$/;
 
+/** Box-drawing, U+2500–U+257F. An em dash is U+2014 and deliberately outside it. */
+const BOX_CHAR_RE = /[\u2500-\u257F]/;
+
 /**
- * A preview panel sharing the option's line, and everything after it.
+ * The column a preview panel starts at, or null when there is no panel.
  *
  * The question dialog can draw a box to the RIGHT of the menu, so one screen
- * row holds an option and a slab of unrelated preview:
+ * row holds an option and a slab of unrelated preview. Measured on a live
+ * Claude Code dialog, the whole right-hand column starts at one fixed offset:
  *
- *   ❯ 1. Merge back to main            ╭──────────────────╮
- *         locally                      │ git checkout main │
+ *   ❯ 1. Scaffold a brand new         ┌──────────────────────────┐
+ *       Next.js application from      │ npx create-next-app@latest │
+ *       to Vercel                     └──────────────────────────┘
+ *       workspace and only minimal    Notes: press n to add notes
  *
- * `OPTION_RE` is anchored to end of line, so the border became part of the
- * label and the cursor line was reported with `╭────╮` hanging off it. Cut at
- * two or more spaces followed by a box-drawing character (U+2500–U+257F):
- * columns are always separated by a gutter, and no option label reaches that
- * block after a gutter. An em dash is U+2014 and is deliberately outside it.
+ * A CHARACTER test is not enough, and that last line is why: once the box
+ * closes, the same column carries ordinary prose. Cutting only box-drawing
+ * characters left option three reading "…and only minimal Notes: press n to
+ * add notes tooling installed". So the box is used to LOCATE the column, and
+ * the column is what gets cut.
+ *
+ * A candidate needs a gutter of two spaces and real content to its left, which
+ * is what separates a panel edge from a full-width horizontal rule at column 0.
  */
-const SIDE_PANEL_RE = /\s{2,}[\u2500-\u257F].*$/;
+function panelColumn(lines: readonly string[]): number | null {
+  let found: number | null = null;
+  for (const line of lines) {
+    for (let i = 2; i < line.length; i++) {
+      if (!BOX_CHAR_RE.test(line[i]!)) continue;
+      if (line[i - 1] !== " " || line[i - 2] !== " ") break;
+      if (line.slice(0, i).trim() === "") break;
+      found = found === null ? i : Math.min(found, i);
+      break;
+    }
+  }
+  return found;
+}
+
+/**
+ * One line with the right-hand column removed.
+ *
+ * The gutter is re-checked per line rather than assumed: a footer running past
+ * the panel's column ("Enter to select · ↑/↓ to navigate · n to add notes") has
+ * no two spaces there and must survive whole.
+ */
+function cutPanel(line: string, col: number | null): string {
+  if (col === null || line.length <= col) return line;
+  if (line[col - 1] !== " " || line[col - 2] !== " ") return line;
+  return line.slice(0, col).replace(/\s+$/, "");
+}
 
 /**
  * Any line carrying the cursor marker, whether or not it looks like an option.
@@ -143,14 +177,18 @@ export function parsePrompt(raw: string): ParsedPrompt {
   // prompt can still carry a marker, and the live one is always further down.
   let selected: string | null = null;
 
-  for (const rawLine of raw.split("\n")) {
+  // Stripped once, up front, because the panel's column has to be known before
+  // any line is matched against it.
+  const stripped = raw.split("\n").map((l) => stripAnsi(l));
+  const panelAt = panelColumn(stripped);
+
+  for (const line of stripped.map((l) => cutPanel(l, panelAt))) {
     // Stripped HERE rather than left to the callers, because both now come
     // through this function: `/prompt` reads a detection snapshot with
     // `strip_ansi: true`, but `/key` re-reads the LIVE screen with colour
     // kept. Matching raw bytes made a coloured menu parse as no menu at all,
     // so the preview vanished on the first arrow-down — the same class of
     // failure the ANSI note above records, one call site over.
-    const line = stripAnsi(rawLine).replace(SIDE_PANEL_RE, "");
 
     const cur = CURSOR_RE.exec(line);
     if (cur) selected = cur[1]!;
