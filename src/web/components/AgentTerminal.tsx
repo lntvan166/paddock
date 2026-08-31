@@ -15,6 +15,7 @@ import { RowActions } from "@web/components/RowActions";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
 import { hasProse, trimSeen } from "@web/journal-overlap";
 import { NotesField } from "@web/components/NotesField";
+import { ChevronDownIcon, ChevronUpIcon } from "@web/components/ui/icons";
 import { ImageIcon, SendIcon } from "@web/components/ui/icons";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
@@ -1087,7 +1088,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
             aria-expanded="false"
             onClick={() => setComposerOpen(true)}
           >
-            <span aria-hidden="true" className="term-fold-mark">⌃</span>
+            <ChevronUpIcon className="term-fold-glyph" />
             Reply · Keys
           </button>
         ) : (
@@ -1099,7 +1100,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               aria-expanded="true"
               onClick={() => setComposerOpen(false)}
             >
-              <span aria-hidden="true" className="term-fold-mark">⌄</span>
+              <ChevronDownIcon className="term-fold-glyph" />
               Hide
             </button>
           )}

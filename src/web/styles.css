@@ -1123,7 +1123,10 @@ body {
   font-size: var(--t-md);
 }
 
-.term-fold-mark { color: var(--accent); }
+/* Sized and centred exactly like the Keys and Quick glyphs beside it — the
+   `⌃`/`⌄` text arrowheads that were here first sit off the baseline next to a
+   label, which read as a misaligned control on a phone. */
+.term-fold-glyph { width: 15px; height: 15px; flex: none; color: var(--accent); }
 
 /* The way back down, in the control row beside Keys and Quick rather than as a
    row of its own — a fold that cost a row to offer would give back part of what

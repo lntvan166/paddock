@@ -21,6 +21,11 @@ const NAMES = [
   "ImageIcon",
   // `FlashIcon` with the Quick actions beside the Keys toggle.
   "FlashIcon",
+  // The chevrons joined with the fold that hides the composer while an answer
+  // panel is on screen. Drawn here rather than taken from lucide because they
+  // sit in the same row as `KeyboardIcon` and `FlashIcon`, whose 1.5 stroke
+  // they have to match.
+  "ChevronUpIcon", "ChevronDownIcon",
 ] as const;
 
 test("every icon the module exports is in the list the tests below walk", async () => {

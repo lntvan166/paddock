@@ -1,5 +1,5 @@
 /**
- * Sixteen hand-written glyphs: one per settings card, the three in the
+ * Eighteen hand-written glyphs: one per settings card, the three in the
  * bottom `TabBar` — Agents, Spaces and Settings — and the terminal's own
  * four, `KeyboardIcon`, `BackspaceIcon`, `ImageIcon` and `FlashIcon`.
  *
@@ -102,6 +102,18 @@ export function PlugIcon({ className }: IconProps) {
  *  stroked path does not. Reported as "the back arrow is thin and has space on
  *  its left" — the thinness is a 600-weight text glyph against these 2px
  *  strokes, and the space is U+2039's own left bearing. */
+/** The fold, open and shut. A CHEVRON rather than the `⌃`/`⌄` arrowheads that
+ *  were here first: those are text characters, and they sit off the baseline
+ *  beside a label — the misalignment was visible on a phone. Drawn to the same
+ *  24-box as every other glyph, so it centres the way `KeyboardIcon` does. */
+export function ChevronUpIcon({ className }: IconProps) {
+  return <Svg className={className}><path d="M5 15l7-7 7 7" /></Svg>;
+}
+
+export function ChevronDownIcon({ className }: IconProps) {
+  return <Svg className={className}><path d="M5 9l7 7 7-7" /></Svg>;
+}
+
 export function BackIcon({ className }: IconProps) {
   return <Svg className={className}><path d="M15 5l-7 7 7 7" /></Svg>;
 }
