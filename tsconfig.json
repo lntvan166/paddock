@@ -15,7 +15,8 @@
       "@shared/herdr-api": ["./src/shared/herdr-api.d.ts"],
       "@shared/*": ["./src/shared/*"],
       "@server/*": ["./src/server/*"],
-      "@web/*": ["./src/web/*"]
+      "@web/*": ["./src/web/*"],
+      "@site/*": ["./src/site/*"]
     },
     "baseUrl": "."
   },
