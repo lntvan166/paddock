@@ -46,23 +46,6 @@ test("the site URL in this static file matches the one the code uses", () => {
   );
 });
 
-/**
- * The installer is served by GitHub, not by this site.
- *
- * It used to come from whatever host the landing page happened to live on, and
- * that host has now changed THREE times — github.io, then two Vercel names —
- * each time leaving a published `curl … | sh` that 404s in a README which
- * otherwise reads correctly. The binaries it downloads already live on GitHub
- * releases; pointing the script at the same origin removes the marketing site
- * from the install path entirely, so renaming the site can never break it.
- */
-test("the install command does not depend on the site's hostname", () => {
-  expect(INSTALL_URL, "the installer is served by the landing page again").not.toContain(
-    new URL(SITE_URL).hostname,
-  );
-  expect(INSTALL_URL).toMatch(/^https:\/\/(raw\.githubusercontent\.com|github\.com)\//);
-});
-
 test("the image the card points at actually exists, at the size it claims", () => {
   // A 404 image is a card with a grey box where the screenshot should be, and
   // the tag being present is not evidence the file is.
@@ -95,19 +78,26 @@ test("the page still says what it is for a crawler that reads only the head", ()
 });
 
 /**
- * The published command follows redirects, because the URL is one.
+ * Every published copy of the command is the same command.
  *
- * `github.com/…/raw/main/install.sh` 302s to `raw.githubusercontent.com`. It
- * is used over the target directly for length — 56 characters against 67, on a
- * string that is read off a README, a landing page and a terminal — and the
- * whole saving depends on `-L`. Drop it while tidying the flags and the
- * installer becomes an empty body and a silent success.
+ * There are three — README, the landing page's hero, and install.sh's own
+ * header telling you how to read it before running it. This URL has now been
+ * four hosts, and each change has to reach all three: a README that reads
+ * correctly beside a hero advertising a dead one is the failure this catches.
+ * The flags travel with it, since they are what makes the command work.
  */
-test("the published install command follows the redirect it depends on", () => {
-  const readme = readFileSync("README.md", "utf8");
-  for (const [name, text] of [["README.md", readme], ["site/index.html", html]] as const) {
-    const cmd = /curl (-\S+) https:\/\/\S*install\.sh/.exec(text);
+test("every published install command agrees, URL and flags", () => {
+  const sources = [
+    ["README.md", readFileSync("README.md", "utf8")],
+    ["site/index.html", html],
+    ["install.sh", readFileSync("install.sh", "utf8")],
+  ] as const;
+  const flags = new Set<string>();
+  for (const [name, text] of sources) {
+    const cmd = /curl (-\S+) (https:\/\/\S*install\.sh)/.exec(text);
     expect(cmd, `${name} publishes no install command`).not.toBeNull();
-    expect(cmd![1], `${name}: curl will not follow the /raw/ redirect`).toContain("L");
+    expect(cmd![2], `${name} advertises a URL that is not INSTALL_URL`).toBe(INSTALL_URL);
+    flags.add(cmd![1]!);
   }
+  expect(flags.size, `the three disagree on flags: ${[...flags].join(" vs ")}`).toBe(1);
 });

@@ -83,11 +83,11 @@ has stopped and needs you.
 ## install
 
 ```bash
-curl -fsSL https://github.com/lntvan166/paddock/raw/main/install.sh | sh
+curl -fsSL https://trypaddock.vercel.app/install.sh | sh
 ```
 
 Installs to `~/.local/bin/paddock`, no `sudo`, checksum verified before anything
-is written · [read it first](https://github.com/lntvan166/paddock/blob/main/install.sh) ·
+is written · [read it first](https://trypaddock.vercel.app/install.sh) ·
 [binaries](https://github.com/lntvan166/paddock/releases)
 
 Or with Homebrew, which pulls in herdr as a dependency:

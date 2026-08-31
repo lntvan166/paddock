@@ -16,25 +16,21 @@
  */
 export const SITE_URL = "https://trypaddock.vercel.app";
 /**
- * Served by GitHub, NOT by the site above.
+ * Served by the site, and shortest for it.
  *
- * The published `curl … | sh` used to point at whatever host the landing page
- * lived on, and that host has changed three times — github.io, then two Vercel
- * names — each rename leaving an install command that 404s in a README which
- * otherwise reads correctly. The binaries this script downloads already come
- * from GitHub releases, so serving the script from the same origin takes the
- * marketing site out of the install path: renaming the site cannot break it.
+ * This has been four URLs. github.io, retired with Pages. `paddock.vercel.app`,
+ * which belongs to someone else. `paddock-bice`, which Vercel assigned. Then
+ * the GitHub copy, at 56 characters against this one's 40 — long enough that
+ * it stopped reading as a command and started reading as a paragraph, on a
+ * string whose whole job is to be typed off a README or a phone screen.
  *
- * NOT `releases/latest/download/install.sh`, which would be the pinned form:
- * that URL resolves only once a TAGGED release carries the asset, and the tag
- * that first attaches it has not shipped. `release.yml` attaches it from now
- * on, so this can move to the pinned form after the next release.
- *
- * And `/raw/main/` rather than `raw.githubusercontent.com` for length alone.
- * The two serve identical bytes — the first 302s to the second, which `-L`
- * follows — but it is 56 characters against 67, and this string is read off a
- * README, a landing page and a terminal. The retired github.io URL was 46 and
- * this is the shortest that does not depend on a host paddock is renting.
+ * KNOWN COST, accepted deliberately: renaming the site breaks this command,
+ * and it has broken three times already. The mitigations are that it is one
+ * constant, that tests/site-meta.test.ts pins the landing page's copy of it to
+ * this value, and that `release.yml` now attaches install.sh to every release —
+ * so `github.com/lntvan166/paddock/releases/latest/download/install.sh` exists
+ * as a permanent fallback that no rename can take away, whether or not it is
+ * the one advertised.
  */
-export const INSTALL_URL = "https://github.com/lntvan166/paddock/raw/main/install.sh";
+export const INSTALL_URL = `${SITE_URL}/install.sh`;
 export const TOUR_URL = `${SITE_URL}/#tour`;
