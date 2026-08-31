@@ -213,6 +213,90 @@ function stripMachineElements(text: string): string {
  * Truncate to AT MOST `max` characters, ellipsis included, so a cut is never
  * mistaken for the end and a caller's cap is never off by one.
  */
+/**
+ * The escapes the harness itself uses, MEASURED rather than chosen.
+ *
+ * Captured from a live Claude Code viewport through `/api/agents/:id/output`:
+ * bold is a plain SGR 1, inline code is a specific periwinkle, and both close
+ * with a full reset rather than a targeted one. Journal prose that emits the
+ * same codes renders identically to the live screen above it, through the ANSI
+ * parser the client already runs — so nothing on the client has to know a
+ * journal exists.
+ */
+const MD_BOLD = "\x1b[1m";
+const MD_ITALIC = "\x1b[3m";
+const MD_CODE = "\x1b[38;2;177;185;249m";
+const MD_OFF = "\x1b[0m";
+
+/**
+ * Emphasis OUTSIDE code spans. Bold first, or `**x**` is read as two italics.
+ *
+ * A marker only opens when a non-space follows it and only closes when a
+ * non-space precedes it — markdown's own rule, and load-bearing here. Without
+ * it, `2 * 3 … a lone **` italicised the whole clause between the two stray
+ * markers: arithmetic and a dangling marker became styling, and the operator
+ * lost the characters they typed.
+ *
+ * Underscores are deliberately NOT emphasis at all. A coding transcript is full
+ * of snake_case, and eating an identifier is a worse failure than a missed
+ * italic.
+ */
+function emphasise(text: string): string {
+  return text
+    .replace(/\*\*(?!\s)([^*]*[^\s*])\*\*/g, `${MD_BOLD}$1${MD_OFF}`)
+    .replace(/(^|[^*])\*(?!\s)([^*\n]*[^\s*])\*/g, `$1${MD_ITALIC}$2${MD_OFF}`);
+}
+
+/**
+ * One line, with its code spans held out of the emphasis pass.
+ *
+ * A code span is quoted material: `**` inside one is ordinary text the agent
+ * typed, and styling it would rewrite what was said.
+ */
+function renderInline(line: string): string {
+  const parts: string[] = [];
+  const re = /`([^`]+)`/g;
+  let at = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    parts.push(emphasise(line.slice(at, m.index)));
+    parts.push(`${MD_CODE}${m[1]!}${MD_OFF}`);
+    at = m.index + m[0].length;
+  }
+  parts.push(emphasise(line.slice(at)));
+  return parts.join("");
+}
+
+/**
+ * Render the journal's markdown the way the harness renders it on screen.
+ *
+ * The journal holds SOURCE — the harness stores what the model wrote, not what
+ * it drew. Blended above the live viewport with no divider, that read as raw
+ * markdown under prose that had been styled a line earlier: the same message in
+ * two skins.
+ *
+ * Applied AFTER `clamp`, never before: clamping counts characters, and an
+ * escape cut in half by the ceiling would paint the rest of the transcript.
+ *
+ * Fenced blocks are returned untouched. They quote code, where every marker is
+ * literal and styling one would corrupt what it quotes. Headings and list
+ * markers are left alone too, because the viewport leaves them alone — a dash
+ * stays a dash there, measured.
+ */
+export function renderMarkdown(text: string): string {
+  let fenced = false;
+  return text
+    .split("\n")
+    .map((line) => {
+      if (/^\s*```/.test(line)) {
+        fenced = !fenced;
+        return line;
+      }
+      return fenced ? line : renderInline(line);
+    })
+    .join("\n");
+}
+
 export function clamp(text: string, max: number): string {
   return text.length <= max ? text : text.slice(0, Math.max(0, max - 1)) + "…";
 }
@@ -326,7 +410,7 @@ export function toLines(entries: readonly JournalEntry[]): string[] {
   let group: string | null = null;
 
   for (const e of entries) {
-    const body = clamp(stripMenu(stripAnsi(e.text)).trim(), MAX_TEXT_CHARS);
+    const body = renderMarkdown(clamp(stripMenu(stripAnsi(e.text)).trim(), MAX_TEXT_CHARS));
     if (body === "" && e.tools.length === 0) continue;
     const who = e.role === "user" ? "you" : "agent";
     const time = hhmm(e.at);
