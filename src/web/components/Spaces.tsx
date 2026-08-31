@@ -183,7 +183,7 @@ export function Spaces({ active = true, load = fetchSpaceTree, senders, createSe
       ) : null}
 
       {tree !== null && (
-        <ul className="spaces">
+        <ul className="spaces" data-tour="space-tree">
           {sortSpaces(tree.spaces).map((s) => (
             <SpaceRow key={s.spaceId} space={s} onChanged={() => void refresh()} senders={senders} />
           ))}

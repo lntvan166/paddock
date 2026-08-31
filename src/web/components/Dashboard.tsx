@@ -115,7 +115,7 @@ export function Dashboard({ active = true }: { active?: boolean }) {
             const collapsible = key === "idle";
             const open = !collapsible || idleOpen;
             return (
-              <section key={key}>
+              <section key={key} data-tour={key === "needs-you" ? "needs-you" : undefined}>
                 <SectionHeader
                   title={SECTION_TITLES[key]}
                   count={list.length}

@@ -32,6 +32,7 @@ export function DeviceSection({ prefs, setPref }: DeviceSectionProps) {
           <span>Theme</span>
           <select
             data-field="theme"
+            data-tour="theme-picker"
             value={prefs.theme}
             onChange={(e) => setPref("theme", e.target.value as ThemePref)}
           >

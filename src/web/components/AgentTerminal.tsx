@@ -1066,6 +1066,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               id="term-reply-input"
               ref={replyRef}
               className="term-reply-field"
+              data-tour="reply-field"
               rows={1}
               value={reply}
               disabled={busy}

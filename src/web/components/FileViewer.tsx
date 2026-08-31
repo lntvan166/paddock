@@ -51,6 +51,7 @@ export function FileViewer({ id, name, render, onBack }: {
             src={fileUrl(id)}
             sandbox=""
             title={name}
+            data-tour="file-frame"
           />
         )}
 

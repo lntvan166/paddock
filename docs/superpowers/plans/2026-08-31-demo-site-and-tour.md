@@ -694,19 +694,27 @@ function sources(dir: string, out: string[] = []): string[] {
 
 const web = sources("src/web").map((p) => readFileSync(p, "utf8")).join("\n");
 
+/**
+ * The anchor names actually rendered.
+ *
+ * `[^"]*` between the attribute and the value because one of these is a
+ * ternary — `data-tour={key === "needs-you" ? ...}` — and a literal
+ * `data-tour="` match would silently miss it, which is exactly the undercount
+ * this file exists to prevent.
+ */
+const rendered = new Set([...web.matchAll(/data-tour[^"]*"([a-z-]+)"/g)].map((m) => m[1]!));
+
 test("every anchor the tour names exists in the app", () => {
   for (const a of TOUR_ANCHORS) {
-    expect(web, `no component renders data-tour="${a}"`).toContain(`"${a}"`);
-    expect(web).toContain("data-tour");
+    expect([...rendered], `no component renders data-tour="${a}"`).toContain(a);
   }
 });
 
 test("every data-tour in the app is one the tour knows about", () => {
   // The other direction. An orphan attribute is dead weight in the operator's
   // bundle and a hint that a step was deleted without its anchor.
-  const found = [...web.matchAll(/data-tour=\{?"([a-z-]+)"/g)].map((m) => m[1]!);
-  expect(found.length).toBeGreaterThanOrEqual(TOUR_ANCHORS.length);
-  for (const f of new Set(found)) {
+  expect(rendered.size, "the anchor scan found nothing to check").toBeGreaterThan(0);
+  for (const f of rendered) {
     expect(TOUR_ANCHORS as readonly string[], `data-tour="${f}" matches no step`).toContain(f);
   }
 });
