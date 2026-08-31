@@ -282,6 +282,33 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
     return json({ lines, source: "visible", digest });
   }
 
+  /**
+   * The slash-commands the reply field offers.
+   *
+   * INVENTED, and that is the whole reason this lives here rather than in the
+   * server-side demo. `src/server/index.ts` sets `readCommands: undefined` in
+   * DEMO deliberately — reading the operator's real `.claude` directory would
+   * put their actual project's commands into a README screenshot, which is
+   * exactly "the fixture leak CLAUDE.md says gets past reviewers".
+   *
+   * The browser demo has no disk to leak from, so it can show the feature
+   * honestly with fixtures. Without this the field says "No commands in this
+   * project" on the hosted demo, which reads as the feature being broken
+   * rather than as a demo having no project.
+   */
+  if (route === "commands") {
+    return json({
+      ok: true,
+      commands: [
+        { command: "/review", description: "Review the diff for correctness and reuse", source: "command" },
+        { command: "/refactor", description: "Extract a module and update its call sites", source: "command" },
+        { command: "/release", description: "Tag, build and publish", source: "command" },
+        { command: "/test", description: "Run the suite and summarise failures", source: "command" },
+        { command: "/commit", description: "Stage, write a message, and commit", source: "skill" },
+      ],
+    });
+  }
+
   if (route === "prompt") {
     if (agent.state !== "blocked") return json({ question: null, options: null, selected: null, raw: "" });
     return json({

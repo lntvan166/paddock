@@ -48,8 +48,20 @@ walk back and look.
 - **install as an app** — Add to Home Screen gives it an icon and no browser chrome
 - **cheap to watch** — adaptive polling, and only changed lines on the wire
 
+<p align="center">
+  <img src="docs/images/03-terminal.png" alt="A blocked agent with every control at once: its real options, the key row, and the reply field" width="46%">
+  <img src="docs/images/07-compose.png" alt="The reply field, with slash-commands read from the project's own .claude" width="46%">
+</p>
+
+<p align="center">
+  <img src="docs/images/08-file.png" alt="An HTML page an agent generated, opened on the phone" width="46%">
+  <img src="docs/images/04-spaces.png" alt="Every space and tab, with rename, close and create" width="46%">
+</p>
+
 [**try the live demo →**](https://paddock.vercel.app/) — synthetic
-agents, no install, best in mobile mode.
+agents, no install, best in mobile mode. It opens on a page that walks you
+through every screen; the phone beside the text is the real dashboard, not a
+picture of one.
 
 **pick a theme.** paddock ships its own light and dark, plus Dracula, Gruvbox
 and Nord. Every one is checked against WCAG AA — including the three state

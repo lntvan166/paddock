@@ -972,3 +972,54 @@ session does not silently re-litigate them.
     the agent to leave `blocked`, and no dialog interaction unblocks anything
     until "Submit answers", so every checkbox tap would have hung for the full
     wait and then reported failure for a toggle that worked.
+
+30. **GitHub Pages is retired; the demo site is Vercel-only.** Taken with the
+    consequence stated and accepted: `curl -fsSL
+    https://lntvan166.github.io/paddock/install.sh | sh` is printed in the
+    release notes of every version already shipped, and all of those begin
+    returning 404. Keeping Pages alive to serve `install.sh` alone was offered
+    and declined.
+
+    Recorded so a future reader finding the dead URL knows it was a choice.
+    Nothing functional moved: `install.sh` fetches binaries from GitHub
+    Releases and the update check queries `api.github.com`; only the URL a
+    human copies changed. **The change is owed to the next release notes** —
+    once the old host is gone that is the only mitigation left.
+
+    Vercel's Git integration stays OFF. `demo.yml` gates its publish on `make
+    check`, `make check-clean` and `make test` because "a demo that ships from
+    a red tree would be advertising something that does not work", and a build
+    on push would bypass all three.
+
+31. **`data-tour` anchors are rendered unconditionally, in every build.** The
+    site's tour points at six controls it does not own, and identifies them by
+    attribute rather than by class.
+
+    Not behind `import.meta.env.VITE_PADDOCK_DEMO`, even though the tour is
+    demo-only. `demo.yml` states the property that keeps the demo honest —
+    "there are no demo branches in any component" — and a conditional attribute
+    would be exactly such a branch. A static string of a few dozen bytes has no
+    code path to drift, costs the operator nothing measurable, and means the
+    anchors exist in the build anyone could actually debug.
+
+    `tests/tour-anchors.test.ts` asserts the contract in both directions. Note
+    its limit, found the hard way: it proves an anchor exists in the SOURCE, not
+    that it is on the screen the step navigates to. The `answer-options` anchor
+    was first placed on `AskDialogView`, which the demo never shows, and only
+    running the tour caught it.
+
+32. **The site's screenshots of the file viewer and the slash-command field
+    come from the BROWSER demo, not from `paddock --demo`.** This looks like a
+    violation of the screenshot rule and is the opposite of one.
+
+    `src/server/index.ts` sets `readCommands`, `saveImage` and `files` to
+    `undefined` in demo mode deliberately: reading the operator's real `.claude`
+    directory would put their actual project's commands into a README
+    screenshot — "the fixture leak `CLAUDE.md` says gets past reviewers" — and
+    a demo must never serve a real file off their disk. So `paddock --demo`
+    *cannot* render those two screens, correctly.
+
+    The browser demo has no disk to leak from. Its commands and its one HTML
+    report are invented fixtures in `src/web/demo/backend.ts`, which makes it a
+    strictly safer source for those two shots than the server demo could be.
+    Everything else still comes from `paddock --demo`.
