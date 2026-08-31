@@ -37,30 +37,61 @@ export function NotesField({
   onSend: (text: string, mode: "note-only" | "with-option") => void;
 }) {
   const [text, setText] = useState("");
+  /**
+   * Folded until asked for, because it is optional and the transcript is not.
+   *
+   * Measured on a 390x844 phone with a dialog up, this block took 140px of a
+   * screen whose transcript had 359 — a fifth of the reading area for something
+   * most answers never use.
+   */
+  const [open, setOpen] = useState(false);
   const empty = text.trim() === "";
 
   return (
     <div className="term-notes" role="group" aria-label="Notes">
-      <label className="sr-only" htmlFor="term-notes-input">Notes</label>
-      <textarea
-        id="term-notes-input"
-        className="term-notes-field"
-        rows={2}
-        value={text}
-        disabled={busy}
-        placeholder="Add a note…"
-        onChange={(e) => setText(e.target.value)}
-      />
+      {open && (
+        <>
+          <label className="sr-only" htmlFor="term-notes-input">Notes</label>
+          <textarea
+            id="term-notes-input"
+            className="term-notes-field"
+            rows={2}
+            value={text}
+            disabled={busy}
+            placeholder="Add a note…"
+            onChange={(e) => setText(e.target.value)}
+          />
+        </>
+      )}
       <div className="term-notes-actions">
-        <Button
-          type="button"
-          variant="outline"
-          className="term-notes-send"
-          disabled={busy || empty}
-          onClick={() => onSend(text, "note-only")}
-        >
-          Send note only
-        </Button>
+        {/* Only offered once the field is open. A "note only" button beside a
+            field nobody has opened would send an answer with nothing in it. */}
+        {open && (
+          <Button
+            type="button"
+            variant="outline"
+            className="term-notes-send"
+            disabled={busy || empty}
+            onClick={() => onSend(text, "note-only")}
+          >
+            Send note only
+          </Button>
+        )}
+        {/* Opens the field, and CANNOT close it once something is typed: a
+            hidden note is either sent unseen or silently dropped, and both are
+            worse than the height it costs. */}
+        {(!open || empty) && (
+          <Button
+            type="button"
+            variant="outline"
+            className="term-notes-toggle"
+            disabled={busy}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? "− Note" : "+ Note"}
+          </Button>
+        )}
         {optionKey !== null && (
           <Button
             type="button"

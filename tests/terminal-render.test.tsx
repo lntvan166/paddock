@@ -170,7 +170,16 @@ test("the keypad opens itself only when it is the only way to answer", async () 
     await settle();
     expect(textsOf(host, ".term-option").length).toBe(2);
     expect(textsOf(host, ".term-key"), "options already are the arrows").toEqual([]);
-    expect(host.querySelector(".term-keys-toggle")).not.toBeNull();
+    // The `Keys` toggle used to be asserted HERE, on the grounds that it was
+    // one tap from bringing the pad back. It now sits behind the fold, because
+    // the chrome under the transcript measured 439px of an 844px screen while a
+    // panel was up and the operator could not read the question they were
+    // answering. The affordance is not gone — the fold bar names it, and it
+    // never folds over an open pad or a half-typed reply.
+    expect(host.querySelector(".term-keys-toggle"), "still costing a row").toBeNull();
+    const fold = host.querySelector(".term-fold");
+    expect(fold, "no way back to the keypad at all").not.toBeNull();
+    expect(fold!.textContent ?? "").toMatch(/keys/i);
     await unmount();
   }
 });

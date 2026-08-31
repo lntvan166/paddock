@@ -187,6 +187,15 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
   /** Whether the `/prompt` fetch below has settled — see its own note. */
   const [promptLoaded, setPromptLoaded] = useState(false);
   const [reply, setReply] = useState("");
+  /**
+   * Whether the operator has opened the composer while an answer panel is up.
+   *
+   * Sticky for the life of this pane, and that is the point: measured on a
+   * phone, the chrome below the transcript took 439px of 844 while a dialog was
+   * on screen, so it folds — but something that re-folded itself after being
+   * opened would close under a thumb mid-reply. Nothing ever collapses it back.
+   */
+  const [composerOpen, setComposerOpen] = useState(false);
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
 
   /**
@@ -715,6 +724,36 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
     );
   };
 
+  /**
+   * Is there a panel on screen that already answers this question?
+   *
+   * Both shapes count, and they are mutually exclusive: the recognised dialog
+   * REPLACES the option block. The multi-select one carries its own free-text
+   * row, so folding the composer under it removes no way of answering at all.
+   */
+  const hasAnswerPanel = Boolean(prompt?.dialog) || Boolean(prompt?.options?.length);
+
+  /**
+   * Folded only when there is another way to answer.
+   *
+   * A parse that produced nothing leaves the reply field as the ONLY answer —
+   * the fallback this project keeps for every prompt it refuses to read — so it
+   * stays open there, and on any pane with no question at all.
+   */
+  const folded =
+    hasAnswerPanel &&
+    !composerOpen &&
+    // NEVER over an open keypad. "The pad never closes itself once it is open"
+    // is an existing rule with a test of its own, and a dialog arriving while
+    // the operator has the pad up would otherwise close it under their thumb —
+    // the exact hazard that rule exists for.
+    keypad === "hidden" &&
+    // NEVER over work in progress. A half-typed reply or a staged image folded
+    // out of sight is either lost or sent unseen, which is the same objection
+    // that keeps a typed note from collapsing.
+    reply.trim() === "" &&
+    attached.length === 0;
+
   return (
     <PaneTerminal
       ref={pane}
@@ -1023,6 +1062,20 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
         //
         // `setKeypad` is the only thing that differs between the two callers,
         // which is exactly the shape the pad itself already had.
+        folded ? (
+          /* NAMED, not a bare chevron. On touch there is no hover to reveal
+             what a glyph means, and a control nobody can identify is one they
+             have to find by poking. */
+          <button
+            type="button"
+            className="term-fold"
+            aria-expanded="false"
+            onClick={() => setComposerOpen(true)}
+          >
+            <span aria-hidden="true" className="term-fold-mark">⌃</span>
+            Reply · Keys
+          </button>
+        ) : (
         <>
           <KeypadToggle pad={keypad} onChange={setKeypad} />
           {/* No replies, no control. An operator who cleared the list gets no
@@ -1060,8 +1113,13 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
             </button>
           )}
         </>
+        )
       }
-      afterControls={
+      /* The keypad and the reply form: the taller half of the chrome, and the
+         half a parsed answer panel makes redundant. Folded with the toggles
+         above rather than separately — two controls that vanish independently
+         are two things to hunt for. */
+      afterControls={folded ? null : (
         <>
           {/* These keys move the agent's own cursor on a screen the operator
               can see; they assert nothing about what an option means, which is
@@ -1256,7 +1314,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
             </Button>
           </form>
         </>
-      }
+      )}
     />
   );
 }

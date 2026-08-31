@@ -1103,6 +1103,28 @@ body {
 
 .term-notes-field:disabled { opacity: 0.5; }
 
+/* The bar that stands in for the folded composer.
+
+   Full width and a real touch target, because it IS the way back to the reply
+   field: measured, the chrome under the transcript took 439px of an 844px
+   screen while a dialog was up, so it folds — but a way back that is hard to
+   hit is a reply field the operator cannot reach. */
+.term-fold {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  font: inherit;
+  font-size: var(--t-md);
+}
+
+.term-fold-mark { color: var(--accent); }
+
 .term-notes-actions {
   display: flex;
   flex-wrap: wrap;
