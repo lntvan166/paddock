@@ -1,0 +1,82 @@
+/* The tour overlay.
+ *
+ * The scrim is NOT a full-screen element with a punched hole: it is the hole's
+ * own enormous spread shadow. One box to position, nothing to clip, and the
+ * lit control keeps receiving the tap the step is waiting for.
+ *
+ * Every colour here comes from the --tour-* tokens, which live on bare :root in
+ * styles.css and are checked for AA against --tour-panel in every theme by
+ * tests/themes.test.ts. */
+
+.tour-hole {
+  position: fixed;
+  z-index: 91;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px var(--tour-scrim);
+  outline: 2px solid var(--tour-accent);
+  /* The hole must not eat the tap the step is waiting for. */
+  pointer-events: none;
+  transition: left 180ms ease, top 180ms ease, width 180ms ease, height 180ms ease;
+}
+
+.tour-callout {
+  position: fixed;
+  z-index: 92;
+  max-width: 34ch;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--tour-panel);
+  color: var(--tour-text);
+}
+
+.tour-callout h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: var(--tour-accent);
+}
+
+.tour-callout p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.tour-controls {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.tour-controls button {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--tour-accent);
+  background: transparent;
+  color: var(--tour-accent);
+  /* Comfortably past the 44px touch target once padding and font are counted;
+     no hover-only affordance, per the house rule. */
+  min-height: 34px;
+}
+
+/* Below the breakpoint there is no space outside the bezel, so the callout
+   docks to the bottom of the screen instead of sitting beside the phone. Same
+   engine, same tokens, reflowed — and the safe-area inset is added only here,
+   because only here is the callout against the bottom edge. */
+@media (max-width: 999px) {
+  .tour-callout {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    top: auto;
+    max-width: none;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The spotlight cuts between steps rather than sliding. A travelling hole is
+     the most motion-heavy thing on the page. */
+  .tour-hole { transition: none; }
+}
