@@ -23,7 +23,7 @@ Every task's requirements implicitly include these. They are repository rules, n
 - **Respect `prefers-reduced-motion`** and `env(safe-area-inset-bottom)`.
 - **Never swallow errors.** No `2>/dev/null`, no unconditional `exit 0`, no empty catch blocks.
 - **File ids must match `/^[0-9a-f]{32}$/`** — `FILE_HASH_RE` in `src/shared/route.ts` rejects anything else, so a demo file id must be exactly 32 lowercase hex characters.
-- **Site URL is `https://paddock.vercel.app`** — a placeholder pending operator confirmation. It appears in exactly one code constant (`src/shared/links.ts`) plus documentation; changing it later is a find-and-replace.
+- **Site URL is `https://paddock-bice.vercel.app`** — a placeholder pending operator confirmation. It appears in exactly one code constant (`src/shared/links.ts`) plus documentation; changing it later is a find-and-replace.
 
 ---
 
@@ -625,7 +625,7 @@ test("install.sh reaches the published directory, or the build fails loudly", ()
 
 - [ ] **Step 6: Replace every retired URL**
 
-Replace `https://lntvan166.github.io/paddock/` with `https://paddock.vercel.app/` throughout. In `README.md` the demo links (lines 8, 51) become `https://paddock.vercel.app/`, and the install lines (68, 72) become `https://paddock.vercel.app/install.sh`.
+Replace `https://lntvan166.github.io/paddock/` with `https://paddock-bice.vercel.app/` throughout. In `README.md` the demo links (lines 8, 51) become `https://paddock-bice.vercel.app/`, and the install lines (68, 72) become `https://paddock-bice.vercel.app/install.sh`.
 
 Run: `grep -rn "github.io" --include='*.md' --include='*.sh' --include='*.yml' --include='*.ts' . | grep -v node_modules | grep -v dist`
 Expected: no output.
@@ -635,7 +635,7 @@ Expected: no output.
 These cannot be done from the repository and must be reported to the operator, not assumed:
 1. Create the Vercel project and **disable its Git integration**, so only the workflow deploys.
 2. Add `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` as repository secrets.
-3. Confirm the project URL matches the `https://paddock.vercel.app` written into the files above.
+3. Confirm the project URL matches the `https://paddock-bice.vercel.app` written into the files above.
 4. **The install URL has changed** — it belongs in the next release notes. Every previously published release prints the retired one.
 
 - [ ] **Step 8: Run everything, then commit**
@@ -1639,7 +1639,7 @@ root.innerHTML = `
   <header class="hero">
     <h1>paddock</h1>
     <p class="lede">Watch and answer your coding agents from your phone.</p>
-    <p class="install"><code>curl -fsSL https://paddock.vercel.app/install.sh | sh</code></p>
+    <p class="install"><code>curl -fsSL https://paddock-bice.vercel.app/install.sh | sh</code></p>
     <button type="button" class="tour-start">Take the tour</button>
   </header>
   <div class="split">
@@ -1930,7 +1930,7 @@ Create `src/shared/links.ts`:
  * link is not that. It is still a hardcoded URL, so it lives here once rather
  * than being repeated at each call site.
  */
-export const SITE_URL = "https://paddock.vercel.app";
+export const SITE_URL = "https://paddock-bice.vercel.app";
 export const TOUR_URL = `${SITE_URL}/#tour`;
 ```
 

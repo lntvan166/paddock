@@ -59,7 +59,7 @@ test("the install command the hero shows comes from the shared constant", () => 
   // Settings is two things to change when the domain moves, and the github.io
   // retirement is what that costs.
   expect(main, "the hero does not read the shared URL").toContain("@shared/links");
-  expect(main, "the hero hardcodes a hostname").not.toContain("https://paddock.vercel.app");
+  expect(main, "the hero hardcodes a hostname").not.toContain("https://paddock-bice.vercel.app");
 });
 
 /**

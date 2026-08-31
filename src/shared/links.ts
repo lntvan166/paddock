@@ -8,6 +8,11 @@
  * than being repeated at each call site — the site's own hero and the app's
  * Settings card both read it from here.
  */
-export const SITE_URL = "https://paddock.vercel.app";
+/**
+ * NOT `paddock.vercel.app` — that name was already taken, so Vercel assigned
+ * this one. It is the project's real production alias; do not "correct" it to
+ * the tidier form, which belongs to someone else and 404s for us.
+ */
+export const SITE_URL = "https://paddock-bice.vercel.app";
 export const INSTALL_URL = `${SITE_URL}/install.sh`;
 export const TOUR_URL = `${SITE_URL}/#tour`;
