@@ -240,6 +240,25 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
    */
   if (path.endsWith("/api/harnesses")) return json({ kinds: ["claude", "codex"] });
 
+  /**
+   * The file viewer's metadata.
+   *
+   * It had no route at all, so `/api/files/...` fell through to the agent regex
+   * below and answered 404 — the file viewer rendered an error on the hosted
+   * demo, which is the same failure `/api/spaces` had above and for the same
+   * reason.
+   *
+   * ONLY the metadata is answered here. `FileViewer` loads the bytes through
+   * `<iframe src={fileUrl(id)}>`, and an iframe src is a browser navigation
+   * that never passes through the `fetch` this module replaces. The bytes are a
+   * real static file under `site/public/api/files/`; mocking them here would
+   * leave a blank frame under a correct-looking header, which reads as a
+   * product bug rather than a demo's limit.
+   */
+  if (/\/api\/files\/[0-9a-f]{32}\/meta$/.test(path)) {
+    return json({ ok: true, name: "coverage-report.html", render: "iframe" });
+  }
+
   // Space and tab management. All writes, all refused — see `refuse`.
   if (/\/api\/(spaces|tabs)\/[^/]+\/\w+/.test(path)) return refuse();
 

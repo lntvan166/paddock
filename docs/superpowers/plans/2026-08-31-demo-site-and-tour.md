@@ -286,8 +286,8 @@ The hosted demo has no `/api/files` handling at all, so `#/file/:id` renders an 
 
 **Files:**
 - Modify: `src/web/demo/backend.ts` (add a branch beside the `/api/spaces` one, around line 210)
-- Create: `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90` (the bytes)
-- Create: `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90/download` — see Step 4
+- Create: `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90/index.html` (the bytes)
+- Create: `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90/download` — same bytes
 - Test: `tests/demo-backend-files.test.ts`
 
 **Interfaces:**
@@ -392,7 +392,13 @@ In `src/web/demo/backend.ts`, immediately after the `/api/harnesses` line (curre
 
 - [ ] **Step 4: Add the bytes**
 
-Create `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90` — no extension, matching `fileUrl(id)` exactly. Every name and number in it is invented:
+`fileUrl(id)` is `/api/files/<id>` while `fileDownloadUrl(id)` is
+`/api/files/<id>/download`, so `<id>` must be both a document and a folder. A
+DIRECTORY with an `index.html` is the one shape that serves both — on Vercel and
+on any local static server — with no rewrite rules to keep in sync, and the
+`.html` extension gets the content type right for free.
+
+Create `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90/index.html`. Every name and number in it is invented:
 
 ```html
 <!doctype html>
@@ -425,7 +431,7 @@ Create `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90` — no extension
 </html>
 ```
 
-Also create `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90/download` with **identical bytes**. The viewer's header renders a Download link unconditionally, and a 404 behind a visible control is a dead control in a screenshot. Its `content-disposition` header comes from `vercel.json` in Task 3.
+Copy it to `site/public/api/files/a1b2c3d4e5f60718293a4b5c6d7e8f90/download`. The viewer's header renders a Download link unconditionally, and a 404 behind a visible control is a dead control in a screenshot. The anchor's own `download={name}` attribute names the saved file, so no `content-disposition` header is needed.
 
 - [ ] **Step 5: Run the tests**
 
