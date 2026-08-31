@@ -44,7 +44,15 @@ test("the landing page survives the assembly", () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("install.sh rides along, as the published install command requires", () => {
+/**
+ * The site keeps serving install.sh even though README no longer points here.
+ *
+ * The documented command reads the copy on GitHub now, so this one is no
+ * longer load-bearing — but the site URL was published for months and the OG
+ * card still shows it, and a bookmarked `curl … | sh` that starts 404ing is a
+ * worse failure than an extra 4 KB in the bundle.
+ */
+test("install.sh rides along, so the URL published for months keeps resolving", () => {
   const { root, siteDir, appDir, installScript } = fixture();
   assembleSite({ siteDir, appDir, installScript });
   expect(existsSync(join(siteDir, "install.sh"))).toBe(true);

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { expect, test } from "bun:test";
-import { SITE_URL } from "@shared/links";
+import { INSTALL_URL, SITE_URL } from "@shared/links";
 
 /**
  * Link previews, and the reason they are asserted at all.
@@ -41,9 +41,26 @@ test("the site URL in this static file matches the one the code uses", () => {
   expect(html, "the canonical link disagrees with SITE_URL").toContain(
     `<link rel="canonical" href="${SITE_URL}/" />`,
   );
-  expect(html, "the hero's install command disagrees with SITE_URL").toContain(
-    `curl -fsSL ${SITE_URL}/install.sh | sh`,
+  expect(html, "the hero's install command disagrees with INSTALL_URL").toContain(
+    `curl -fsSL ${INSTALL_URL} | sh`,
   );
+});
+
+/**
+ * The installer is served by GitHub, not by this site.
+ *
+ * It used to come from whatever host the landing page happened to live on, and
+ * that host has now changed THREE times — github.io, then two Vercel names —
+ * each time leaving a published `curl … | sh` that 404s in a README which
+ * otherwise reads correctly. The binaries it downloads already live on GitHub
+ * releases; pointing the script at the same origin removes the marketing site
+ * from the install path entirely, so renaming the site can never break it.
+ */
+test("the install command does not depend on the site's hostname", () => {
+  expect(INSTALL_URL, "the installer is served by the landing page again").not.toContain(
+    new URL(SITE_URL).hostname,
+  );
+  expect(INSTALL_URL).toMatch(/^https:\/\/(raw\.githubusercontent\.com|github\.com)\//);
 });
 
 test("the image the card points at actually exists, at the size it claims", () => {

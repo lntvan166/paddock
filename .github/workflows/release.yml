@@ -82,6 +82,14 @@ jobs:
       - name: Checksums
         run: cd out && sha256sum paddock-* > SHA256SUMS && cat SHA256SUMS
 
+      # The installer ships as an asset too, so `releases/latest/download/
+      # install.sh` resolves and the published `curl … | sh` can be pinned to a
+      # release rather than tracking `main`. It is attached AFTER the checksum
+      # step on purpose: SHA256SUMS globs `paddock-*`, and the script's job is
+      # to verify that manifest, not to appear in it.
+      - name: Ship the installer alongside the binaries
+        run: cp install.sh out/
+
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}

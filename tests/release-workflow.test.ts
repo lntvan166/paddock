@@ -94,3 +94,26 @@ test("a failed tap push does not silently pass", () => {
   expect(tail).not.toContain("|| true");
   expect(tail).not.toContain("continue-on-error");
 });
+
+/**
+ * install.sh ships as a release asset, so the published install command can
+ * eventually be pinned to a release instead of tracking `main`.
+ *
+ * The URL in README reads `raw.githubusercontent.com/.../main/install.sh`
+ * today because `releases/latest/download/install.sh` resolves only once a
+ * TAGGED release carries the file, and none does yet — a pinned URL that 404s
+ * is worse than an unpinned one that works. This step is what makes the pinned
+ * form available from the next tag onwards; without it, the note in
+ * `src/shared/links.ts` promises a move that can never happen.
+ */
+test("install.sh is attached to the release, alongside the binaries", () => {
+  expect(wf, "install.sh is never copied into the upload directory").toMatch(
+    /cp\s+install\.sh\s+out\//,
+  );
+});
+
+test("install.sh does not land in SHA256SUMS", () => {
+  // The manifest lists the binaries install.sh verifies. It globs `paddock-*`
+  // precisely so the script never ends up asked to check itself.
+  expect(wf).toContain("sha256sum paddock-*");
+});
