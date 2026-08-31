@@ -68,15 +68,14 @@ test("the page's script hardcodes no hostname of its own", () => {
  * because reproducing them needs a real iframe, a real layout and real
  * scrolling — none of which happy-dom has.
  */
-test("show me advances by anchor, never by index", () => {
-  // It used to click the anchor AND call showMe(). The click fires the same
-  // listener a real tap does, which already advances — so the tour jumped from
-  // 01 straight to 03. Satisfying by anchor is idempotent: once the click has
-  // advanced, the stale anchor no longer matches and is ignored.
-  const handler = main.slice(main.indexOf('.tour-showme")?.addEventListener'));
-  const body = handler.slice(0, handler.indexOf("});"));
-  expect(body, "show me advances twice").not.toContain("tour.showMe()");
-  expect(body).toContain("tour.satisfy(step.anchor)");
+test("the tour never reaches into the demo to click for the visitor", () => {
+  // It used to advance on the real event, with a "show me" that clicked the
+  // highlighted control itself — which made every step a puzzle and let a stray
+  // touch aimed at reading satisfy a step. The tour highlights and the visitor
+  // presses Next; the demo stays tappable whenever the tour is NOT running,
+  // which is where exploring belongs.
+  expect(main, "the tour is clicking the demo's controls").not.toMatch(/el\.click\(\)/);
+  expect(main, "a step still waits for a tap").not.toContain("tour.satisfy");
 });
 
 test("the anchor is scrolled into view before it is measured", () => {

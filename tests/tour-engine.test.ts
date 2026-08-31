@@ -3,9 +3,21 @@ import { createTour, type Tour } from "@site/tour/engine";
 import { TOUR_STEPS, type TourStep } from "@site/tour/steps";
 import { TOUR_ANCHORS } from "@shared/tour-anchors";
 
+/**
+ * The tour walks; it does not hand over the controls.
+ *
+ * It used to advance on the REAL event — a tap inside the highlighted control —
+ * with a "show me" escape after an idle window. That made every step a small
+ * puzzle, and the visitor had to operate a demo they had not been shown yet to
+ * see the next thing. It also meant the tour competed with the app underneath
+ * for the same tap.
+ *
+ * So it highlights and the visitor presses Next. The demo stays live and
+ * tappable whenever the tour is not running, which is where exploring belongs.
+ */
 const steps: readonly TourStep[] = [
-  { anchor: "needs-you", hash: "#/", title: "one", body: "b", advance: "click" },
-  { anchor: "answer-options", hash: "#/pane/x", title: "two", body: "b", advance: "click" },
+  { anchor: "needs-you", hash: "#/", title: "one", body: "b" },
+  { anchor: "answer-options", hash: "#/pane/x", title: "two", body: "b" },
 ];
 
 function tour() {
@@ -15,76 +27,52 @@ function tour() {
     steps,
     onStep: (_s, i) => seen.push(i),
     onEnd: () => { ended = true; },
-    hintAfterMs: 3000,
   });
   return { t, seen, ended: () => ended };
 }
 
-test("a step advances on the real action, not on being asked nicely", () => {
+test("it opens on the first step", () => {
   const { t, seen } = tour();
   t.start();
   expect(seen).toEqual([0]);
-  t.satisfy("answer-options");           // the wrong anchor
-  expect(t.index(), "an unrelated click advanced the tour").toBe(0);
-  t.satisfy("needs-you");
-  expect(t.index()).toBe(1);
-  expect(seen).toEqual([0, 1]);
+  expect(t.current()?.anchor).toBe("needs-you");
 });
 
-test("the tour ends after the last step, once", () => {
+test("next walks forward one step at a time", () => {
+  const { t, seen } = tour();
+  t.start();
+  t.next();
+  expect(seen).toEqual([0, 1]);
+  expect(t.current()?.anchor).toBe("answer-options");
+});
+
+test("the tour ends after the last step", () => {
   const { t, ended } = tour();
   t.start();
-  t.satisfy("needs-you");
-  t.satisfy("answer-options");
+  t.next();
+  t.next();
   expect(ended()).toBe(true);
   expect(t.current()).toBeNull();
 });
 
-test("show me appears only after the idle window, and only if nothing happened", () => {
-  // A hint that appears instantly reads as an instruction to press it, which
-  // makes the tour a slideshow again. One that never appears traps a visitor
-  // hunting for a control they cannot find.
-  const { t } = tour();
-  t.start();
-  t.tick(0);
-  expect(t.hintVisible()).toBe(false);
-  t.tick(2999);
-  expect(t.hintVisible()).toBe(false);
-  t.tick(3000);
-  expect(t.hintVisible()).toBe(true);
-});
-
-test("the idle window restarts on each step", () => {
-  const { t } = tour();
-  t.start();
-  t.tick(0);
-  t.tick(3000);
-  expect(t.hintVisible()).toBe(true);
-  t.satisfy("needs-you");
-  // A hint carried across a step boundary would appear immediately on step two,
-  // before the visitor has had any chance to act.
-  expect(t.hintVisible()).toBe(false);
-});
-
-test("show me satisfies the current step", () => {
-  const { t } = tour();
-  t.start();
-  t.showMe();
-  expect(t.index()).toBe(1);
-});
-
-test("skip ends the tour wherever it is", () => {
+test("skip ends it wherever it is", () => {
   const { t, ended } = tour();
   t.start();
-  expect(ended()).toBe(false);
   t.skip();
   expect(ended()).toBe(true);
-  // And a late event cannot resurrect it.
-  t.satisfy("needs-you");
   expect(t.current()).toBeNull();
 });
 
-test("every real step names an anchor the app actually renders", () => {
+test("nothing advances a tour that has already ended", () => {
+  const { t, seen } = tour();
+  t.start();
+  t.skip();
+  t.next();
+  expect(seen).toEqual([0]);
+  expect(t.current()).toBeNull();
+});
+
+test("every step names an anchor the app actually renders", () => {
   for (const s of TOUR_STEPS) {
     expect(TOUR_ANCHORS as readonly string[]).toContain(s.anchor);
   }

@@ -22,7 +22,10 @@ import { awaitAnchor, spotlightRect } from "@site/tour/spotlight";
  * runtime meant every link preview of this page was an empty box. This module
  * fills the two holes that markup leaves and never overwrites it.
  */
-const APP_SRC = "/app/";
+/* `?embed` tells the demo it is inside the site's phone rather than being read
+   on a real one, which is what turns on the height rules in `demo/frame.css`.
+   The tour steers by hash, so the query survives every step. */
+const APP_SRC = "/app/?embed=1";
 const root = document.getElementById("site")!;
 const splitMount = document.getElementById("split")!;
 const heroActions = document.getElementById("hero-actions")!;
@@ -99,8 +102,6 @@ line.setAttribute("class", "tour-line");
 dot.setAttribute("r", "3");
 line.append(stroke, dot);
 
-let raf = 0;
-
 /**
  * Which step's measurement is still wanted.
  *
@@ -113,36 +114,19 @@ let token = 0;
 
 const tour = createTour({
   steps: TOUR_STEPS,
-  hintAfterMs: 3000,
   onStep: (step, i) => {
     callout.innerHTML = `
       <h3>0${i + 1} · ${escapeHtml(step.title)}</h3>
       <p>${escapeHtml(step.body)}</p>
       <div class="tour-controls">
-        ${
-          step.advance === "next"
-            ? '<button type="button" class="tour-next">Next</button>'
-            : '<button type="button" class="tour-showme" hidden>Show me</button>'
-        }
         <button type="button" class="tour-skip">Skip</button>
+        <button type="button" class="tour-next">${
+          i + 1 === TOUR_STEPS.length ? "Done" : "Next"
+        }</button>
       </div>`;
 
     callout.querySelector(".tour-skip")!.addEventListener("click", () => tour.skip());
-    callout.querySelector(".tour-next")?.addEventListener("click", () => tour.satisfy(step.anchor));
-
-    callout.querySelector(".tour-showme")?.addEventListener("click", () => {
-      const el = frame.contentDocument?.querySelector<HTMLElement>(
-        `[data-tour="${step.anchor}"]`,
-      );
-      // Do the thing the step asked for, rather than skipping past it — the
-      // click fires the same listener a real tap would, which is what advances.
-      if (el) el.click();
-      // And satisfy by ANCHOR, not by index: if the click above already
-      // advanced, this no longer matches the current step and is ignored.
-      // Calling showMe() here instead advanced a second time, and 01 jumped
-      // straight to 03.
-      tour.satisfy(step.anchor);
-    });
+    callout.querySelector(".tour-next")!.addEventListener("click", () => tour.next());
 
     goto(step.hash);
     const mine = ++token;
@@ -184,15 +168,6 @@ const tour = createTour({
           });
         });
 
-        // A `next` step has nothing here to wait for — the tour navigated, and
-        // the step exists to show what arrived. It advances on its own control,
-        // wired below, never on the anchor merely existing.
-        if (step.advance === "click") {
-          el.addEventListener("click", () => tour.satisfy(step.anchor), {
-            once: true,
-            capture: true,
-          });
-        }
       })
       .catch((err: unknown) => {
         if (mine !== token) return;
@@ -203,7 +178,6 @@ const tour = createTour({
       });
   },
   onEnd: () => {
-    cancelAnimationFrame(raf);
     hole.remove();
     callout.remove();
     line.remove();
@@ -287,12 +261,5 @@ root.querySelector(".tour-start")!.addEventListener("click", () => {
   document.documentElement.style.overflow = "hidden";
   document.body.append(hole, line, callout);
 
-  const loop = (t: number): void => {
-    tour.tick(t);
-    const showme = callout.querySelector<HTMLButtonElement>(".tour-showme");
-    if (showme) showme.hidden = !tour.hintVisible();
-    raf = requestAnimationFrame(loop);
-  };
-  raf = requestAnimationFrame(loop);
   tour.start();
 });

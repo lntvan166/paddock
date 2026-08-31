@@ -34,6 +34,39 @@
   --demo-bezel: #26282f;
 }
 
+/* THE EMBEDDED DEMO, at any width.
+ *
+ * The app's shell is `position: fixed; inset: 0`, which leaves `html`, `body`
+ * and `#root` with no height at all — measured in the live iframe, all three
+ * were 0 while the shell was 591. Chromium paints a fixed element against the
+ * iframe's viewport regardless. Safari, handed a zero-height iframe document,
+ * rendered the phone as a white rectangle.
+ *
+ * The frame below already fixes this for a laptop — it sizes `#root` and gives
+ * it a transform so the fixed shell has a containing block. Those rules live
+ * inside the width query, and the site's phone is 390px wide, so the embedded
+ * case never got them. This is the same treatment, ungated.
+ *
+ * Keyed on EMBEDDING, never on width: a real phone opening the demo directly is
+ * under that breakpoint too, and it has to keep the dynamic viewport units the
+ * keyboard inset depends on. */
+html[data-demo-embedded="on"],
+html[data-demo-embedded="on"] body {
+  height: 100%;
+}
+
+html[data-demo-embedded="on"] #root {
+  height: 100%;
+  /* The shell scrolls inside the frame rather than stretching the document
+     back out, which is what left it zero-high in the first place. */
+  overflow: hidden;
+  /* Load-bearing, for the reason the framed case gives below: a transform makes
+     this the containing block for fixed descendants, so the shell resolves
+     against the phone instead of against an iframe viewport Safari would not
+     lay out. */
+  transform: translate(0);
+}
+
 @media (min-width: 760px) {
   html[data-demo-frame="on"] body {
     min-height: 100dvh;
