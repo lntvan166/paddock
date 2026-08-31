@@ -375,10 +375,10 @@ export async function moveDialogTab(
  * these two is a control that claims to answer and does not.
  */
 export async function selectOption(
-  id: string, key: string, f: Fetch = fetch,
+  id: string, key: string, commit: boolean, f: Fetch = fetch,
 ): Promise<KeyResult & { selected?: string | null }> {
   try {
-    const res = await request(url(id, "select"), { key }, f);
+    const res = await request(url(id, "select"), { key, commit }, f);
     return await bodyOrDetail<KeyResult>(res) as KeyResult;
   } catch (err) {
     return { ok: false, detail: String(err), lines: [], source: "" };

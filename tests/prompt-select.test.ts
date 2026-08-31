@@ -51,21 +51,21 @@ function fakeDialog(startCursor = 1) {
 
 test("an option below the cursor is reached by moving down", async () => {
   const d = fakeDialog(1);
-  const r = await selectByCursor("w1:p1", "3", d.io as never);
+  const r = await selectByCursor("w1:p1", "3", true, d.io as never);
   expect(r.ok).toBe(true);
   expect(d.committedValue()).toBe(3);
 });
 
 test("an option above the cursor is reached by moving up", async () => {
   const d = fakeDialog(3);
-  const r = await selectByCursor("w1:p1", "1", d.io as never);
+  const r = await selectByCursor("w1:p1", "1", true, d.io as never);
   expect(r.ok).toBe(true);
   expect(d.committedValue()).toBe(1);
 });
 
 test("the option already under the cursor commits with no movement", async () => {
   const d = fakeDialog(2);
-  const r = await selectByCursor("w1:p1", "2", d.io as never);
+  const r = await selectByCursor("w1:p1", "2", true, d.io as never);
   expect(r.ok).toBe(true);
   expect(d.committedValue()).toBe(2);
   expect(d.keys.filter((k) => k === "up" || k === "down")).toEqual([]);
@@ -74,20 +74,20 @@ test("the option already under the cursor commits with no movement", async () =>
 test("a digit is never sent, because it does nothing on this dialog", async () => {
   // The fake throws if one is. This is the whole defect being guarded.
   const d = fakeDialog(1);
-  await selectByCursor("w1:p1", "2", d.io as never);
+  await selectByCursor("w1:p1", "2", true, d.io as never);
   expect(d.committedValue()).toBe(2);
 });
 
 test("Enter is the last key, never sent before the cursor arrives", async () => {
   const d = fakeDialog(1);
-  await selectByCursor("w1:p1", "3", d.io as never);
+  await selectByCursor("w1:p1", "3", true, d.io as never);
   expect(d.keys[d.keys.length - 1]).toBe("enter");
   expect(d.keys.filter((k) => k === "enter").length).toBe(1);
 });
 
 test("an option the screen does not offer is refused, not guessed at", async () => {
   const d = fakeDialog(1);
-  const r = await selectByCursor("w1:p1", "9", d.io as never);
+  const r = await selectByCursor("w1:p1", "9", true, d.io as never);
   expect(r.ok).toBe(false);
   expect(d.committedValue()).toBeNull();
   expect(d.keys).toEqual([]);
@@ -104,7 +104,41 @@ test("a prompt that takes digits is refused by this path", async () => {
     sendOptionKey: async () => {},
     settle: async () => {},
   };
-  const r = await selectByCursor("w1:p1", "1", io as never);
+  const r = await selectByCursor("w1:p1", "1", true, io as never);
   expect(r.ok).toBe(false);
   expect(r.detail).toContain("cursor");
+});
+
+/**
+ * Moving without committing.
+ *
+ * Reported from a phone: "I click 2 with purpose choose option 2 to add note
+ * but it send immediately." A permission prompt SHOULD answer on one tap — that
+ * is what paddock is for. A question dialog is deliberative: it carries a
+ * preview panel and a notes field, and the operator is choosing before they
+ * commit. The TUI itself is two steps, arrows then Enter, and paddock now
+ * matches it rather than collapsing them.
+ */
+test("moving the cursor without committing sends no Enter", async () => {
+  const d = fakeDialog(1);
+  const r = await selectByCursor("w1:p1", "3", false, d.io as never);
+  expect(r.ok).toBe(true);
+  expect(d.committedValue()).toBeNull();
+  expect(d.keys).not.toContain("enter");
+});
+
+test("moving the cursor still lands on the option asked for", async () => {
+  const d = fakeDialog(1);
+  await selectByCursor("w1:p1", "2", false, d.io as never);
+  // Committing afterwards must take the row the move reached.
+  await selectByCursor("w1:p1", "2", true, d.io as never);
+  expect(d.committedValue()).toBe(2);
+});
+
+test("a move onto the option already under the cursor does nothing at all", async () => {
+  const d = fakeDialog(2);
+  const r = await selectByCursor("w1:p1", "2", false, d.io as never);
+  expect(r.ok).toBe(true);
+  expect(d.keys).toEqual([]);
+  expect(d.committedValue()).toBeNull();
 });

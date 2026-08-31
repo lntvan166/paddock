@@ -59,11 +59,16 @@ export function NotesField({
           <Button
             type="button"
             className="term-notes-send"
-            disabled={busy || empty}
+            /* Enabled with an empty note, because tapping an option MOVES the
+               cursor now rather than answering — so this is the only way to
+               commit one, and disabling it would strand the operator on a
+               dialog they cannot answer without inventing a note. */
+            disabled={busy}
             onClick={() => onSend(text, "with-option")}
           >
-            {/* The option's own words, so the operator commits what they read. */}
-            Send with {selected}
+            {/* The option's own words, so the operator commits what they read,
+                and "with" only when a note is actually going along. */}
+            {empty ? "Send " : "Send with "}{selected}
           </Button>
         )}
       </div>

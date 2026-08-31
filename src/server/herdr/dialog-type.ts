@@ -347,6 +347,7 @@ export async function addNote(
 export async function selectByCursor(
   target: string,
   key: string,
+  commit: boolean,
   io: DialogIo,
 ): Promise<TypeOutcome> {
   const before = parsePrompt(await io.readPromptScreen(target));
@@ -383,6 +384,12 @@ export async function selectByCursor(
     }
   }
 
-  await io.sendNavKey(target, "enter");
+  // MOVING IS NOT ANSWERING, and the two are separate because an operator
+  // reported them collapsed: "I click 2 with purpose choose option 2 to add
+  // note but it send immediately." A permission prompt should answer on one
+  // tap — that is what paddock is for. A question dialog is deliberative: it
+  // carries a preview panel and a notes field, and the TUI itself takes two
+  // steps, arrows then Enter. paddock now takes the same two.
+  if (commit) await io.sendNavKey(target, "enter");
   return { ok: true };
 }

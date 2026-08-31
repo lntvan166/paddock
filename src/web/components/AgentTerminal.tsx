@@ -896,13 +896,28 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                     // sent there did nothing and the wait for an unblock then
                     // timed out and reported a failure for a keystroke that
                     // never landed.
-                    const commit = prompt.commit === "cursor"
-                      ? selectOption(agent.agentId, o.key)
+                    //
+                    // A QUESTION DIALOG IS NOT ANSWERED BY TAPPING AN OPTION.
+                    // It is deliberative — a preview panel, a notes field — and
+                    // the operator is choosing before committing. Reported from
+                    // a phone: "I click 2 with purpose choose option 2 to add
+                    // note but it send immediately." So a tap MOVES the cursor
+                    // here, exactly as ↑/↓ do in the TUI, and the send button
+                    // below commits. A permission prompt still answers on one
+                    // tap, which is what paddock exists for.
+                    const act = prompt.commit === "cursor"
+                      ? selectOption(agent.agentId, o.key, false)
                       : answerWithKey(agent.agentId, o.key);
-                    void commit
+                    void act
                       .then((r) => {
                         setFeedback(r.ok ? null : r);
-                        if (r.ok && "lines" in r && r.lines) pane.current?.apply(r.lines);
+                        if ("lines" in r && r.lines) pane.current?.apply(r.lines);
+                        // The cursor moved, so what Enter would commit moved
+                        // with it — and the send button's label names it.
+                        const moved = (r as { selected?: string | null }).selected;
+                        if (r.ok && moved !== undefined) {
+                          setPrompt((p) => (p === null ? p : { ...p, selected: moved }));
+                        }
                       })
                       .finally(() => setBusy(false));
                   }}
@@ -933,7 +948,18 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               busy={busy}
               onSend={(text, mode) => {
                 setBusy(true);
-                void sendNote(agent.agentId, text, mode)
+                // An empty note with an option is not a note at all — it is the
+                // option on its own, and `/note` refuses empty text by design.
+                // Tapping an option only MOVES the cursor now, so this is the
+                // path that actually commits one.
+                const act = text.trim() === "" && mode === "with-option" && prompt.options
+                  ? selectOption(
+                      agent.agentId,
+                      prompt.options.find((o) => isSelected(o))?.key ?? prompt.options[0]!.key,
+                      true,
+                    )
+                  : sendNote(agent.agentId, text, mode);
+                void act
                   .then((r) => {
                     if (!r.ok) { setFeedback({ ok: false, detail: r.detail ?? "Failed." }); return; }
                     if (r.lines) pane.current?.apply(r.lines);

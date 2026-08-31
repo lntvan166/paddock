@@ -44,13 +44,38 @@ test("with no cursor on screen, only the note-only answer is offered", async () 
   expect(labels.length).toBe(1);
 });
 
-test("sending is refused until something has been typed", async () => {
+test("a note-only answer is refused until something has been typed", async () => {
+  // An empty note sent as "notes only" is an answer that says nothing.
   const host = await render(
     <NotesField selected="1. Merge back to main" busy={false} onSend={() => {}} />,
   );
-  for (const b of host.querySelectorAll("button")) {
-    expect((b as HTMLButtonElement).disabled, "an empty note is sendable").toBe(true);
-  }
+  const noteOnly = [...host.querySelectorAll("button")]
+    .find((b) => /note only/i.test(b.textContent ?? "")) as HTMLButtonElement;
+  expect(noteOnly.disabled).toBe(true);
+});
+
+test("the option can be committed with no note at all", async () => {
+  // Tapping an option MOVES the cursor now — it no longer answers — so this is
+  // the only way to commit one, and disabling it would strand the operator on
+  // a dialog they cannot answer without inventing a note.
+  const host = await render(
+    <NotesField selected="1. Merge back to main" busy={false} onSend={() => {}} />,
+  );
+  const withOption = [...host.querySelectorAll("button")]
+    .find((b) => /Merge back to main/.test(b.textContent ?? "")) as HTMLButtonElement;
+  expect(withOption.disabled).toBe(false);
+});
+
+test("the send button says whether a note is going with it", async () => {
+  const host = await render(
+    <NotesField selected="1. Merge back to main" busy={false} onSend={() => {}} />,
+  );
+  const withOption = [...host.querySelectorAll("button")]
+    .find((b) => /Merge back to main/.test(b.textContent ?? ""))!;
+  expect(withOption.textContent).toBe("Send 1. Merge back to main");
+
+  await typeInto(host.querySelector("textarea") as HTMLTextAreaElement, "rebase first");
+  expect(withOption.textContent).toBe("Send with 1. Merge back to main");
 });
 
 test("each button sends its own mode", async () => {

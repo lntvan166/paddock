@@ -1434,13 +1434,17 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: `agent is ${agent.state}, no dialog to answer` }, 409);
       }
 
-      const key = (await jsonBody(c)).key;
+      const body = await jsonBody(c);
+      const key = body.key;
       if (typeof key !== "string" || !OPTION_KEY_RE.test(key)) {
         return c.json({ ok: false, detail: `key must be an option digit, e.g. "2"` }, 400);
       }
+      // Absent means COMMIT, so an older client that knows nothing about
+      // moving keeps answering rather than silently doing half the action.
+      const commit = body.commit !== false;
 
       try {
-        const outcome = await selectByCursor(agent.agentId, key, { ...actions, settle });
+        const outcome = await selectByCursor(agent.agentId, key, commit, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
         await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
         const out = await actions.readOutput(agent.agentId, agent.state);
