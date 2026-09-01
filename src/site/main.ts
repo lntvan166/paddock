@@ -305,6 +305,7 @@ const tour = createTour({
     line.remove();
     // Left behind, this is an invisible sheet over a page nobody can use again.
     block.remove();
+    document.body.classList.remove("tour-on");
     document.documentElement.style.overflow = "";
   },
 });
@@ -383,6 +384,8 @@ root.querySelector(".tour-start")!.addEventListener("click", () => {
   // scroll behind the scrim desynchronises it from what it points at — and a
   // takeover should not scroll anyway.
   document.documentElement.style.overflow = "hidden";
+  // Blurs the copy and leaves the phone alone. See overlay.css.
+  document.body.classList.add("tour-on");
   document.body.append(block, hole, line, callout);
 
   /**

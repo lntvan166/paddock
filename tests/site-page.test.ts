@@ -311,3 +311,48 @@ test("starting a tour returns the demo to the dashboard first", () => {
   expect(homeAt, "it goes home AFTER the reload, which reloads the old route")
     .toBeLessThan(reloadAt);
 });
+
+/**
+ * The page recedes; the phone does not.
+ *
+ * The first overlay dimmed everything and cut ONE hole, the size of the
+ * highlighted control — so the phone spent the whole tour under an 86%-opaque
+ * black sheet with a small window in it. The demo is the thing the tour is
+ * about, and it was the least visible thing on screen.
+ *
+ * The copy around it is what should recede, and it recedes by being BLURRED
+ * rather than blacked out: the reader can still see a page is there and where
+ * they are in it. The phone keeps its own colours at full strength, the
+ * spotlight still marks the control under discussion, and `.tour-block` still
+ * means nothing in either half is clickable.
+ */
+test("the tour blurs the page around the phone", () => {
+  const dim = rule(overlayCss, ".tour-on .hero,\n.tour-on .copy");
+  expect(dim).toMatch(/filter:\s*blur\(/);
+});
+
+test("the phone itself is never blurred or dimmed", () => {
+  // The whole point. A selector reaching the rail would put the demo behind
+  // exactly the sheet this replaces.
+  const on = overlayCss.slice(overlayCss.indexOf(".tour-on"));
+  const blurRules = on.split("}").filter((r) => /filter:\s*blur\(/.test(r));
+  expect(blurRules.length).toBeGreaterThan(0);
+  for (const r of blurRules) {
+    expect(r, "a blur rule reaches the phone").not.toContain("phone");
+    expect(r, "a blur rule reaches the demo iframe").not.toContain(".demo");
+  }
+});
+
+test("the hole no longer paints a full-screen scrim", () => {
+  // It was `box-shadow: 0 0 0 9999px` — the sheet itself. The outline that
+  // marks the control stays; that is the highlight.
+  const hole = rule(overlayCss, ".tour-hole");
+  expect(hole, "the hole still spreads a scrim over everything").not.toMatch(/9999px/);
+  expect(hole, "the spotlight lost its outline").toMatch(/outline:/);
+});
+
+test("the blur is applied and removed with the tour", () => {
+  expect(main).toContain("tour-on");
+  const end = main.slice(main.indexOf("block.remove()"));
+  expect(end.slice(0, 300), "the page stays blurred after the tour").toContain("tour-on");
+});

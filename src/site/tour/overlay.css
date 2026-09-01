@@ -22,7 +22,9 @@
   /* The panel is opaque and the scrim is not: the scrim dims the page, the
      panel is what callout text is actually read against. The contrast test
      measures against the panel for that reason. */
-  --tour-scrim: rgb(6 7 9 / 0.86);
+  /* Around the spotlight, so it reads against a phone at full brightness
+     rather than against a blacked-out one. */
+  --tour-glow: rgb(138 180 255 / 0.22);
   --tour-panel: #14161a;
   --tour-text: #f2f3f5;
   --tour-accent: #8ab4ff;
@@ -48,13 +50,20 @@
   background: transparent;
 }
 
+/* The spotlight. An outline and a glow, not a hole in a sheet.
+ *
+ * It used to BE the scrim: `box-shadow: 0 0 0 9999px`, dimming the whole page
+ * and cutting one window the size of the highlighted control. That put the
+ * phone — the thing a tour is about — under an 86%-opaque black sheet for the
+ * whole tour, and made it the least visible object on screen. The page recedes
+ * by blurring instead (below), so this only has to mark its control. */
 .tour-hole {
   position: fixed;
   z-index: 91;
   border-radius: 10px;
-  box-shadow: 0 0 0 9999px var(--tour-scrim);
   outline: 2px solid var(--tour-accent);
-  /* The hole must not eat the tap the step is waiting for. */
+  box-shadow: 0 0 0 4px var(--tour-glow);
+  /* `.tour-block` beneath takes the click, in the lit rectangle too. */
   pointer-events: none;
   transition: left 180ms ease, top 180ms ease, width 180ms ease, height 180ms ease;
 }
@@ -122,6 +131,23 @@
   min-height: 34px;
 }
 
+/* Everything that is NOT the phone, pushed back.
+ *
+ * Blur rather than black: the reader can still see a page is there and roughly
+ * where in it they are, which a sheet took away. Nothing here may name .phone,
+ * .phone-rail or .demo — putting the demo behind a filter is the sheet again
+ * with extra steps, and tests/site-page.test.ts fails if a selector reaches it.
+ *
+ * `filter` on an ancestor makes it a containing block for fixed descendants.
+ * Neither of these contains one, and the overlay is appended to <body> rather
+ * than inside them, so it stays put. */
+.tour-on .hero,
+.tour-on .copy {
+  filter: blur(4px);
+  opacity: 0.5;
+  transition: filter 180ms ease, opacity 180ms ease;
+}
+
 /* Below the breakpoint there is no space outside the bezel, so the callout
    docks to the bottom of the screen instead of sitting beside the phone. Same
    engine, same tokens, reflowed — and the safe-area inset is added only here,
@@ -141,4 +167,7 @@
   /* The spotlight cuts between steps rather than sliding. A travelling hole is
      the most motion-heavy thing on the page. */
   .tour-hole { transition: none; }
+
+  .tour-on .hero,
+  .tour-on .copy { transition: none; }
 }
