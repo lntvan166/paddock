@@ -28,6 +28,26 @@
   --tour-accent: #8ab4ff;
 }
 
+/* The page, held still.
+ *
+ * The scrim above is a box-shadow, and a box-shadow is not hit-testable — so
+ * for as long as the tour ran, every control on the page stayed live under it.
+ * Measured in WebKit: `elementFromPoint` at the centre of the spotlight
+ * returned the demo iframe. A visitor who tapped the phone mid-tour navigated
+ * it out from under the step describing it, and the walkthrough stopped
+ * walking without anything having failed.
+ *
+ * Transparent: the dimming is still the hole's shadow. This only takes the
+ * clicks. It sits BELOW the hole — which keeps `pointer-events: none`, so the
+ * lit rectangle is caught here too — and below the callout, whose Skip and
+ * Next are the only two controls a tour offers. */
+.tour-block {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: transparent;
+}
+
 .tour-hole {
   position: fixed;
   z-index: 91;

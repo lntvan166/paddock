@@ -247,3 +247,67 @@ test("a hash asked for too early is not lost, it is applied on load", () => {
 test("the phone does not shrink to fit its rail", () => {
   expect(rule(siteCss, ".phone")).toContain("flex-shrink: 0");
 });
+
+/**
+ * While the tour runs, the tour has the controls.
+ *
+ * Measured in WebKit with the tour on screen: `document.elementFromPoint` at
+ * the centre of the spotlight returned `IFRAME.demo`. Nothing blocked. The
+ * scrim is the hole's own spread shadow and a box-shadow is not hit-testable,
+ * and the hole itself is `pointer-events: none` — so every part of the page,
+ * lit or dimmed, stayed live under the overlay.
+ *
+ * That `pointer-events: none` is a leftover. It was correct when a tap on the
+ * highlighted control was what advanced the step; the tour walks by Next now,
+ * and a visitor who taps the demo mid-tour navigates it out from under the
+ * step that is describing it — the walkthrough stops walking, without anything
+ * having failed.
+ *
+ * A transparent blocker beneath the hole and above the page. The hole keeps
+ * `pointer-events: none` so the blocker takes the click even inside the lit
+ * rectangle; the callout sits above both, so Skip and Next still work. Those
+ * two are the only controls during a tour, which is the whole point of one.
+ */
+const overlayCss = readFileSync("src/site/tour/overlay.css", "utf8");
+
+test("the tour puts a blocker over the page", () => {
+  const block = rule(overlayCss, ".tour-block");
+  expect(block).toMatch(/position:\s*fixed/);
+  expect(block).toMatch(/inset:\s*0/);
+  expect(main, "the blocker is never added to the page").toContain("tour-block");
+});
+
+test("the blocker sits under the hole and the callout, and over everything else", () => {
+  const z = (sel: string) => Number(/z-index:\s*(\d+)/.exec(rule(overlayCss, sel))?.[1] ?? NaN);
+  expect(z(".tour-block")).toBeLessThan(z(".tour-hole"));
+  expect(z(".tour-block")).toBeLessThan(z(".tour-callout"));
+});
+
+test("the blocker actually takes pointer events", () => {
+  // The failure it exists to prevent is a full-screen element that is see-
+  // through to clicks as well as to light, which is what the hole already is.
+  expect(rule(overlayCss, ".tour-block")).not.toMatch(/pointer-events:\s*none/);
+});
+
+test("the blocker is removed when the tour ends", () => {
+  // Left behind, it is an invisible sheet over a page nobody can click again.
+  const end = main.slice(main.indexOf("hole.remove()"));
+  expect(end.slice(0, 200)).toContain("block.remove()");
+});
+
+/**
+ * And a tour always opens where step 01 says it does.
+ *
+ * The demo stays live between tours, so a visitor who explored and left it on
+ * Spaces got a second tour whose first step described the agent list while the
+ * phone showed something else. `reload()` alone does not fix that: it keeps the
+ * whole URL, fragment included.
+ */
+test("starting a tour returns the demo to the dashboard first", () => {
+  const start = main.slice(main.indexOf('.tour-start")!.addEventListener'));
+  const reloadAt = start.indexOf("location.reload()");
+  const homeAt = start.indexOf('goto("#/")');
+  expect(homeAt, "nothing sends the demo home before a tour").toBeGreaterThan(-1);
+  expect(homeAt, "it goes home AFTER the reload, which reloads the old route")
+    .toBeLessThan(reloadAt);
+});

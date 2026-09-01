@@ -203,8 +203,11 @@ addEventListener("scroll", () => { following = true; }, { passive: true });
 // --- gear two: the tour ------------------------------------------------------
 const hole = document.createElement("div");
 const callout = document.createElement("div");
+/** Takes every click the tour is not offering. See overlay.css. */
+const block = document.createElement("div");
 hole.className = "tour-hole";
 callout.className = "tour-callout";
+block.className = "tour-block";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const line = document.createElementNS(SVG_NS, "svg");
@@ -300,6 +303,8 @@ const tour = createTour({
     hole.remove();
     callout.remove();
     line.remove();
+    // Left behind, this is an invisible sheet over a page nobody can use again.
+    block.remove();
     document.documentElement.style.overflow = "";
   },
 });
@@ -378,7 +383,7 @@ root.querySelector(".tour-start")!.addEventListener("click", () => {
   // scroll behind the scrim desynchronises it from what it points at — and a
   // takeover should not scroll anyway.
   document.documentElement.style.overflow = "hidden";
-  document.body.append(hole, line, callout);
+  document.body.append(block, hole, line, callout);
 
   /**
    * A clean demo every time the tour starts.
@@ -390,6 +395,17 @@ root.querySelector(".tour-start")!.addEventListener("click", () => {
    * reset rather than a hand-written undo that has to be kept in step with it.
    */
   frame.addEventListener("load", () => tour.start(), { once: true });
+  /**
+   * Home BEFORE the reload, not after.
+   *
+   * The demo stays live between tours, so a visitor who explored and left it
+   * on Spaces got a second tour whose step 01 described the agent list while
+   * the phone showed something else. `reload()` does not fix that on its own —
+   * it keeps the whole URL, fragment included. Setting the route first is a
+   * same-document navigation that lands instantly, so the reload that follows
+   * starts from the dashboard and there is no wrong screen to flash through.
+   */
+  goto("#/");
   // The listener registered at module scope runs first and sets it back.
   frameReady = false;
   frame.contentWindow?.location.reload();
