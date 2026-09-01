@@ -327,8 +327,15 @@ test("starting a tour returns the demo to the dashboard first", () => {
  * means nothing in either half is clickable.
  */
 test("the tour blurs the page around the phone", () => {
-  const dim = rule(overlayCss, ".tour-on .hero,\n.tour-on .copy");
-  expect(dim).toMatch(/filter:\s*blur\(/);
+  // Found by declaration rather than by selector: the list of what recedes
+  // grows as the page does — nav, facts, closing section — and a test keyed to
+  // the exact selector text fails on every addition without one being wrong.
+  const blurs = overlayCss.split("}").filter((r) => /filter:\s*blur\(/.test(r));
+  expect(blurs.length, "nothing on the page is blurred during a tour").toBeGreaterThan(0);
+  const all = blurs.join(" ");
+  for (const sel of [".tour-on .hero", ".tour-on .copy"]) {
+    expect(all, `${sel} is not among what recedes`).toContain(sel);
+  }
 });
 
 test("the phone itself is never blurred or dimmed", () => {

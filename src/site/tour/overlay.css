@@ -169,8 +169,12 @@
  * `filter` on an ancestor makes it a containing block for fixed descendants.
  * Neither of these contains one, and the overlay is appended to <body> rather
  * than inside them, so it stays put. */
+.tour-on .nav,
 .tour-on .hero,
-.tour-on .copy {
+.tour-on .copy,
+.tour-on .facts,
+.tour-on .close,
+.tour-on .footer {
   filter: blur(4px);
   opacity: 0.5;
   transition: filter 180ms ease, opacity 180ms ease;
@@ -200,6 +204,10 @@
   .tour-line.is-placed,
   .tour-callout.is-placed { transition: none; }
 
+  .tour-on .nav,
   .tour-on .hero,
-  .tour-on .copy { transition: none; }
+  .tour-on .copy,
+  .tour-on .facts,
+  .tour-on .close,
+  .tour-on .footer { transition: none; }
 }

@@ -3,7 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="light dark" />
+    <!-- The landing page commits to one dark palette. The APP under /app/ is a
+         separate document with six themes and follows the visitor; this page
+         does not, so it declares what it is rather than claiming both. -->
+    <meta name="color-scheme" content="dark" />
 
     <title>paddock — watch and answer your coding agents from your phone</title>
     <meta
@@ -43,31 +46,121 @@
          changes, and `make icons` only knows about one. -->
     <link rel="icon" type="image/png" sizes="32x32" href="/app/favicon-32-v2.png" />
     <link rel="icon" type="image/png" sizes="180x180" href="/app/favicon-180-v2.png" />
+
+    <!-- ONE display face, ONE weight, and only on this page.
+         src/web/styles.css says system fonts only, because a webfont is the
+         biggest single payload on a slow link — and that rule is about the app
+         an operator loads over a tunnel on a train, not a landing page a
+         stranger opens once. tests/tokens.test.ts still forbids any font
+         reaching the app's bundle, and tests/site-type.test.ts holds this to
+         one family at one weight so it cannot quietly become four.
+         Prose stays system-ui: this is for headlines only. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&display=swap"
+    />
   </head>
   <body>
+    <!-- STATIC, all of it, and it must stay that way.
+         This page used to build its hero with innerHTML, which meant a crawler,
+         a link unfurler and anyone with JavaScript off received an empty
+         <main>. `main.ts` fills the two marked holes and adds the scrolling
+         half; it must never overwrite what is here. -->
+    <nav class="nav">
+      <a class="brand" href="/">
+        <img src="/app/favicon-32-v2.png" alt="" width="22" height="22" />
+        <span>paddock</span>
+      </a>
+      <div class="nav-links">
+        <a href="/app/" target="_blank" rel="noopener">Live demo</a>
+        <a href="https://github.com/lntvan166/paddock" target="_blank" rel="noopener">GitHub</a>
+        <a class="nav-cta" href="#install">Install</a>
+      </div>
+    </nav>
+
     <main id="site">
-      <!-- STATIC, and it must stay that way.
-           This page used to build its hero with innerHTML, which meant a
-           crawler, a link unfurler and anyone with JavaScript off received an
-           empty <main>. The headline and the install command are the two
-           things a stranger needs, so they are HTML. `main.ts` adds the tour
-           button and the scrolling half BELOW; it must never overwrite this. -->
       <header class="hero">
-        <p class="eyebrow">the phone half of your agents</p>
-        <h1>Answer your coding agents<br />from the sofa.</h1>
+        <p class="eyebrow"><span class="rule"></span>the phone half of your agents</p>
+        <h1>Answer your coding agents<br /><span class="hot">from the sofa.</span></h1>
         <p class="lede">
           You have several agents running in herdr panes. You step away from the
           desk. One finishes, another hits a permission prompt, and both sit
           there waiting — because the only way to find out is to walk back and
           look.
         </p>
-        <p class="install"><code>curl -fsSL https://trypaddock.vercel.app/install.sh | sh</code></p>
+        <div class="install" id="install">
+          <!-- main.ts appends a Copy button here, and to every other .install
+               box. Not shipped statically: `navigator.clipboard` is absent on
+               an insecure origin and can be withheld by a browser's settings,
+               and a COPY that silently does nothing is the mislabelled control
+               this project bans everywhere else. -->
+          <code>curl -fsSL https://trypaddock.vercel.app/install.sh | sh</code>
+        </div>
+        <p class="sub">
+          macOS &amp; Linux · Intel &amp; ARM · MIT ·
+          <a href="https://github.com/lntvan166/paddock/blob/main/install.sh" target="_blank" rel="noopener"
+            >read it before you run it →</a
+          >
+        </p>
         <!-- Filled by main.ts: a tour button with no JavaScript behind it would
              be a control that does nothing, which is worse than no control. -->
         <div id="hero-actions"></div>
       </header>
+
+      <!-- Facts, not metrics.
+           herdr.dev's equivalent band is stars and install counts. paddock has
+           no numbers like that worth printing and will not invent any, so these
+           are four things about the product that are true and checkable —
+           tests/site-facts.test.ts reads the theme list and the release matrix
+           and fails when either stops matching. -->
+      <section class="facts" aria-label="paddock in four numbers">
+        <div class="fact">
+          <p class="fact-n">6</p>
+          <p class="fact-l">themes, each checked for AA</p>
+        </div>
+        <div class="fact">
+          <p class="fact-n">4</p>
+          <p class="fact-l">builds — macOS &amp; Linux, Intel &amp; ARM</p>
+        </div>
+        <div class="fact">
+          <p class="fact-n">1</p>
+          <p class="fact-l">binary, nothing else to install</p>
+        </div>
+        <div class="fact">
+          <p class="fact-n">0</p>
+          <p class="fact-l">accounts to create</p>
+        </div>
+      </section>
+
       <div id="split"></div>
+
+      <section class="close">
+        <h2>Put the herd<br /><span class="hot">in your pocket.</span></h2>
+        <p class="lede">
+          One command on the machine the agents already run on. Nothing else
+          about your setup changes, and nothing new asks you to sign in.
+        </p>
+        <div class="install">
+          <code>curl -fsSL https://trypaddock.vercel.app/install.sh | sh</code>
+        </div>
+        <p class="sub">
+          <a href="/app/" target="_blank" rel="noopener">Open the demo full screen →</a>
+        </p>
+      </section>
     </main>
+
+    <footer class="footer">
+      <p>
+        paddock is the phone half of
+        <a href="https://github.com/herdrdev/herdr" target="_blank" rel="noopener">herdr</a>. The
+        idea comes from
+        <a href="https://github.com/dcolinmorgan/herdr-remote" target="_blank" rel="noopener"
+          >herdr-remote</a
+        >; paddock reuses the concept and none of the implementation.
+      </p>
+    </footer>
     <script type="module" src="../src/site/main.ts"></script>
   </body>
 </html>

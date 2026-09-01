@@ -38,12 +38,53 @@ heroActions.innerHTML = `
   <p class="hint">Or scroll — the phone follows along, and you can tap it any time.</p>
 `;
 
+/**
+ * Copy the install command, but only where copying works.
+ *
+ * `navigator.clipboard` is absent on an insecure origin and can be withheld by
+ * a browser's own settings. A COPY button that renders anyway and silently does
+ * nothing is the mislabelled control this project bans everywhere else; the
+ * line is selectable text either way, so the fallback is simply not offering
+ * a button.
+ */
+if (navigator.clipboard) {
+  // EVERY install box, not just the hero's. The page prints the command twice
+  // — once at the top and once in the closing section — and a copy button on
+  // one of them is a page where the same control works in one place and is
+  // missing in the other.
+  for (const box of document.querySelectorAll<HTMLElement>(".install")) {
+    const code = box.querySelector("code");
+    if (!code) continue;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "install-copy";
+    copy.textContent = "Copy";
+    box.append(copy);
+    copy.addEventListener("click", () => {
+      void navigator.clipboard
+        .writeText(code.textContent ?? "")
+        .then(() => {
+          // Says what happened, then says what it is again. A button left on
+          // "Copied" is a button whose label has stopped being true.
+          copy.textContent = "Copied";
+          setTimeout(() => { copy.textContent = "Copy"; }, 1600);
+        })
+        .catch(() => {
+          // Never swallowed: a refused clipboard is worth saying out loud, and
+          // the label must not keep claiming a success that did not happen.
+          copy.textContent = "Failed";
+          console.error("paddock: the browser refused the clipboard write");
+        });
+    });
+  }
+}
+
 splitMount.outerHTML = `
   <div class="split">
     <div class="copy">
       ${SECTIONS.map(
         (s, i) => `<section class="sec" data-section="${s.anchor}">
-          <span class="num">0${i + 1}</span>
+          <p class="num">0${i + 1}</p>
           <h2>${escapeHtml(s.heading)}</h2>
           <p>${escapeHtml(s.body)}</p>
         </section>`,

@@ -2,55 +2,175 @@
  *
  * Its own stylesheet, not the app's: the two share nothing but the tour tokens,
  * and importing the dashboard's would drag its whole cascade onto a page that
- * needs six rules.
+ * does not run it.
+ *
+ * ONE PALETTE, deliberately. The app has six themes and follows the visitor;
+ * this page commits to a single dark ground and paints every colour explicitly,
+ * so it holds whatever the browser is set to. `<meta name="color-scheme">` says
+ * dark for the same reason — form controls and scrollbars should agree with the
+ * page rather than with the OS.
+ *
+ * The accent is paddock's amber, not the mauve of the site this borrows its
+ * structure from. Same bones, different hue: a landing page that reads as
+ * somebody else's is worse than one that reads as nothing.
  *
  * No device detection, per the house rule — a width query for layout, and
  * nothing that asks what the device is. */
 
 :root {
-  --site-bg: #fbfbfd;
-  --site-fg: #1b1b1f;
-  --site-dim: #6b6b76;
-  --site-accent: #b4542e;
-  --site-code-bg: #eef0f4;
+  --site-bg: #0f0f12;
+  /* Panels: install box, facts band, the closing section. Barely lifted, so
+     the page reads as one surface with things ON it rather than as stripes. */
+  --site-raise: #17171c;
+  --site-line: #26262e;
+  /* The numeral beside each section. Quiet enough to be rhythm rather than
+     content, and still 3.3:1 on the page ground — it is real text a screen
+     reader announces, and at 44px/800 that clears AA for large text. A hairline
+     colour here would have made it decoration nobody sighted could read. */
+  --site-ghost: #646473;
+  --site-fg: #f4f2ee;
+  /* Warm-biased grey rather than a neutral one, so it belongs to the amber
+     rather than sitting next to it. AA on both grounds; see
+     tests/site-contrast.test.ts. */
+  --site-dim: #a29e96;
+  --site-accent: #e8a33d;
+  --site-accent-soft: rgb(232 163 61 / 0.13);
+  --site-code-bg: #17171c;
+
+  /* Display only. Prose is system-ui and always will be — this exists for
+     headlines, the facts band and the wordmark, which is the whole of what a
+     webfont buys and the whole of what it costs. */
+  --site-display: "Bricolage Grotesque", system-ui, -apple-system, sans-serif;
+  --site-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Redefined, never defined only here — the palette above is complete on its
-   own, so a browser with no preference still gets every colour. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --site-bg: #08090a;
-    --site-fg: #f2f3f5;
-    --site-dim: #9a9aa6;
-    --site-accent: #e0a838;
-    --site-code-bg: #14161a;
-  }
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
   background: var(--site-bg);
   color: var(--site-fg);
-  font: 16px/1.6 system-ui, -apple-system, sans-serif;
+  font: 16px/1.65 system-ui, -apple-system, sans-serif;
   -webkit-text-size-adjust: 100%;
 }
+
+a { color: var(--site-accent); }
+
+/* --- chrome ---------------------------------------------------------------- */
+
+/* Below `.tour-block` (z-index 90) on purpose: during a tour the blocker has to
+   cover the nav too, or Install stays clickable while the page is meant to be
+   held still. */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 24px;
+  height: 58px;
+  background: rgb(15 15 18 / 0.86);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--site-line);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--site-fg);
+  text-decoration: none;
+  font-family: var(--site-display);
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+}
+
+.brand img { display: block; border-radius: 5px; }
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.nav-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 9px;
+  color: var(--site-dim);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.nav-links a:hover,
+.nav-links a:focus-visible { color: var(--site-fg); }
+
+.nav-cta {
+  color: var(--site-accent) !important;
+  border-color: var(--site-line) !important;
+  background: var(--site-accent-soft);
+}
+
+/* --- hero ------------------------------------------------------------------ */
 
 .hero {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 14vh 24px 8vh;
+  padding: 11vh 24px 9vh;
 }
 
+/* The rule before the label is the one flourish borrowed wholesale: it turns a
+   line of small caps into a masthead, and costs one pseudo-free span. */
 .eyebrow {
-  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 22px;
   color: var(--site-dim);
-  font-size: 13px;
-  letter-spacing: 0.14em;
+  font-family: var(--site-mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
-.hero h1 { margin: 0 0 18px; font-size: clamp(32px, 6vw, 56px); line-height: 1.1; }
-.lede { margin: 0 0 28px; max-width: 60ch; color: var(--site-dim); }
+.eyebrow .rule {
+  width: 46px;
+  height: 1px;
+  background: var(--site-line);
+}
+
+h1,
+.close h2,
+.sec h2,
+.fact-n {
+  font-family: var(--site-display);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.hero h1 {
+  margin: 0 0 24px;
+  font-size: clamp(40px, 7.4vw, 92px);
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+/* One phrase carries the colour. Two would be a pattern and none would be a
+   paragraph in a big font. */
+.hot { color: var(--site-accent); }
+
+.lede {
+  margin: 0 0 30px;
+  max-width: 54ch;
+  color: var(--site-dim);
+  font-size: 17px;
+}
 
 /* The scroll container is the PARENT, not the code element. `max-width: 100%`
    on an inline-block that also has `overflow-x: auto` does not cap it against
@@ -58,34 +178,100 @@ body {
    390px screen and the whole body scrolled sideways, which the house rules
    forbid. Wide content scrolls inside its own box; the page never does. */
 .install {
+  display: flex;
+  align-items: stretch;
   max-width: 100%;
-  overflow-x: auto;
+  width: fit-content;
+  border: 1px solid var(--site-line);
+  border-radius: 11px;
+  background: var(--site-code-bg);
+  overflow: hidden;
 }
 
 .install code {
-  display: inline-block;
-  padding: 12px 16px;
-  border-radius: 10px;
-  background: var(--site-code-bg);
+  display: block;
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: var(--site-fg);
   /* 16px floor: anything smaller makes iOS Safari zoom the page on focus, and
      this is the one line a visitor may want to select. */
-  font: 16px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 16px/1.4 var(--site-mono);
   white-space: pre;
 }
 
-.tour-start {
-  display: block;
-  margin: 24px 0 10px;
-  font: inherit;
-  padding: 12px 20px;
-  min-height: 44px;
-  border-radius: 10px;
-  border: 1px solid var(--site-accent);
+.install-copy {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 0 14px;
+  border: 0;
+  border-left: 1px solid var(--site-line);
   background: transparent;
+  color: var(--site-dim);
+  font: 12px/1 var(--site-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.install-copy:hover,
+.install-copy:focus-visible { color: var(--site-accent); }
+
+.sub {
+  margin: 14px 0 0;
+  color: var(--site-dim);
+  font-family: var(--site-mono);
+  font-size: 12.5px;
+}
+
+.tour-start {
+  display: inline-flex;
+  align-items: center;
+  margin: 28px 0 10px;
+  font: inherit;
+  padding: 12px 22px;
+  min-height: 46px;
+  border-radius: 11px;
+  border: 1px solid var(--site-accent);
+  background: var(--site-accent-soft);
   color: var(--site-accent);
+  cursor: pointer;
 }
 
 .hint { margin: 0; color: var(--site-dim); font-size: 14px; }
+
+/* --- the facts band -------------------------------------------------------- */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  max-width: 1100px;
+  margin: 0 auto;
+  border-block: 1px solid var(--site-line);
+}
+
+.fact { padding: 30px 24px; }
+.fact + .fact { border-left: 1px solid var(--site-line); }
+
+.fact-n {
+  margin: 0 0 6px;
+  font-size: clamp(30px, 4vw, 50px);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.fact-l {
+  margin: 0;
+  max-width: 22ch;
+  color: var(--site-dim);
+  font-family: var(--site-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* --- the scrolling half ---------------------------------------------------- */
 
 .split {
   display: grid;
@@ -103,14 +289,37 @@ body {
   justify-content: center;
 }
 
-.num { color: var(--site-dim); font-variant-numeric: tabular-nums; font-size: 13px; }
-.sec h2 { margin: 6px 0 10px; font-size: 26px; }
-.sec p { margin: 0; max-width: 52ch; color: var(--site-dim); }
+/* A ghost numeral rather than a caption. It is the only thing on this page that
+   repeats six times, so it carries the rhythm; at label size it read as
+   metadata nobody needed. */
+/* `.sec .num`, not `.num`. As a <p> inside the section it loses to `.sec p`
+   (0,1,1 against 0,1,0) and rendered at full body-grey — the exact cascade
+   collision that turns a designed page back into a default one. */
+.sec .num {
+  margin: 0 0 2px;
+  color: var(--site-ghost);
+  font-family: var(--site-display);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  font-size: 44px;
+  line-height: 1;
+}
+
+.sec h2 {
+  margin: 0 0 12px;
+  font-size: clamp(26px, 3vw, 38px);
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+.sec p { margin: 0; max-width: 50ch; color: var(--site-dim); }
 
 .phone-rail {
   position: sticky;
-  top: 5vh;
-  height: 90vh;
+  /* Clear of the sticky nav, not merely near the top: at 5vh the phone's own
+     top slid under it on any window shorter than 1160px. */
+  top: calc(58px + 3vh);
+  height: calc(94vh - 58px);
   display: flex;
   /* A column now: the phone, and a way out of it underneath. */
   flex-direction: column;
@@ -128,7 +337,8 @@ body {
   min-height: 44px;
   padding: 8px 14px;
   border-radius: 10px;
-  font-size: 14px;
+  font-family: var(--site-mono);
+  font-size: 12.5px;
   color: var(--site-dim);
   text-decoration: none;
   border: 1px solid transparent;
@@ -155,15 +365,46 @@ body {
   /* Leaves the rail room for the link beneath it. A flex item shrinks below
      its own height by default, and 86vh of phone in a 90vh rail crushed it to
      396px in a short window. */
-  max-height: calc(90vh - 68px);
+  max-height: calc(94vh - 58px - 68px);
   flex-shrink: 0;
   border-radius: 34px;
   border: 10px solid #1b1b1f;
   background: #1b1b1f;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 0.55);
 }
 
 /* 34px bezel radius less the 10px border is the screen's own 24. */
 .demo { width: 100%; height: 100%; border: 0; display: block; border-radius: 24px; }
+
+/* --- the close ------------------------------------------------------------- */
+
+.close {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 12vh 24px;
+  border-top: 1px solid var(--site-line);
+}
+
+.close h2 {
+  margin: 0 0 22px;
+  font-size: clamp(34px, 5.6vw, 68px);
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.footer {
+  padding: 34px 24px 60px;
+  border-top: 1px solid var(--site-line);
+}
+
+.footer p {
+  max-width: 1100px;
+  margin: 0 auto;
+  color: var(--site-dim);
+  font-size: 14px;
+}
+
+/* --- narrow ---------------------------------------------------------------- */
 
 @media (max-width: 999px) {
   .split { grid-template-columns: 1fr; gap: 0; }
@@ -176,7 +417,21 @@ body {
   .phone { width: 100%; height: 70vh; border-radius: 20px; border-width: 6px; }
   .demo { border-radius: 14px; }
   .sec { min-height: 0; padding: 28px 0; }
-  .hero { padding-top: 8vh; }
+  .hero { padding-top: 7vh; }
+  /* Two columns rather than one: four stacked cells is a screen of its own,
+     and these are meant to be taken in at a glance. */
+  .facts { grid-template-columns: repeat(2, 1fr); }
+  .fact { padding: 22px 18px; }
+  .fact:nth-child(odd) { border-left: 0; }
+  .fact:nth-child(n + 3) { border-top: 1px solid var(--site-line); }
+  /* The label is the first thing to go: a 22ch line under a numeral needs the
+     numeral's own column, and at this width it does not have one. */
+  .nav-links a { padding: 0 9px; }
+}
+
+@media (max-width: 560px) {
+  /* Live demo duplicates the phone directly below it here. */
+  .nav-links a:first-child { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
