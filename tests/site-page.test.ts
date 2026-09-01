@@ -409,3 +409,45 @@ test("a step hides the marks before it moves them, and reveals them after", () =
   // positioned, and revealing before it shows a line pointing at nothing.
   expect(show).toBeGreaterThan(step.indexOf("drawConnector(r)"));
 });
+
+/**
+ * An anchor lands where you can read it, not under the nav.
+ *
+ * Measured on production: clicking Install scrolled `#install` to y=0 — behind
+ * a 58px sticky nav — from anywhere on the page. From the top it was worse than
+ * doing nothing, scrolling DOWN 646px to hide a box that had been fully visible
+ * a moment earlier.
+ *
+ * `scroll-margin-top` on the target is the fix, and it has to come from the
+ * same number as the nav's height or the two drift the next time the bar
+ * changes size.
+ */
+test("the nav's height is a token, not a number typed twice", () => {
+  expect(siteCss, "no --nav-h to hang the scroll offset off").toContain("--nav-h");
+  const nav = rule(siteCss, ".nav");
+  expect(nav, "the nav's height is not the token").toMatch(/height:\s*var\(--nav-h\)/);
+});
+
+test("an anchor target clears the sticky nav", () => {
+  const install = rule(siteCss, ".install");
+  expect(install, "#install still lands under the bar").toMatch(/scroll-margin-top:/);
+  expect(install, "the offset is a literal that will drift from the nav").toContain("--nav-h");
+});
+
+/**
+ * And the reduced-motion rule guards something now.
+ *
+ * `@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto } }`
+ * was already here, overriding a `smooth` that was never declared — a rule
+ * that read as care and did nothing at all. Either the base sets smooth or the
+ * override should go; the base sets it, because a jump between two points a
+ * screen apart is the one place smooth scrolling earns its keep.
+ */
+test("smooth scrolling is declared, so opting out of it means something", () => {
+  const html = rule(siteCss, "html");
+  expect(html, "no base scroll-behavior — the reduced-motion rule guards nothing").toMatch(
+    /scroll-behavior:\s*smooth/,
+  );
+  const reduced = siteCss.slice(siteCss.indexOf("prefers-reduced-motion"));
+  expect(reduced).toMatch(/scroll-behavior:\s*auto/);
+});

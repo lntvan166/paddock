@@ -42,6 +42,19 @@
      webfont buys and the whole of what it costs. */
   --site-display: "Bricolage Grotesque", system-ui, -apple-system, sans-serif;
   --site-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* One number for the sticky bar. The nav's height, what an anchor target has
+     to clear, and where the phone rail starts all read it — typed separately
+     they drift the next time the bar changes, and the symptom of that is an
+     anchor landing behind the nav, which is what it was doing. */
+  --nav-h: 58px;
+}
+
+html {
+  /* Declared, so the `prefers-reduced-motion` override at the end of this file
+     guards something. It was already there, turning off a `smooth` nothing had
+     ever set — a rule that read as care and did nothing. */
+  scroll-behavior: smooth;
 }
 
 * { box-sizing: border-box; }
@@ -70,7 +83,7 @@ a { color: var(--site-accent); }
   justify-content: space-between;
   gap: 16px;
   padding: 0 24px;
-  height: 58px;
+  height: var(--nav-h);
   background: rgb(15 15 18 / 0.86);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--site-line);
@@ -178,6 +191,10 @@ h1,
    390px screen and the whole body scrolled sideways, which the house rules
    forbid. Wide content scrolls inside its own box; the page never does. */
 .install {
+  /* Clears the sticky nav when reached through `#install`. Without it the box
+     landed at y=0, behind the bar — and from the top of the page the jump
+     scrolled DOWN to hide a command that was already fully on screen. */
+  scroll-margin-top: calc(var(--nav-h) + 24px);
   display: flex;
   align-items: stretch;
   max-width: 100%;
@@ -318,8 +335,8 @@ h1,
   position: sticky;
   /* Clear of the sticky nav, not merely near the top: at 5vh the phone's own
      top slid under it on any window shorter than 1160px. */
-  top: calc(58px + 3vh);
-  height: calc(94vh - 58px);
+  top: calc(var(--nav-h) + 3vh);
+  height: calc(94vh - var(--nav-h));
   display: flex;
   /* A column now: the phone, and a way out of it underneath. */
   flex-direction: column;
@@ -365,7 +382,7 @@ h1,
   /* Leaves the rail room for the link beneath it. A flex item shrinks below
      its own height by default, and 86vh of phone in a 90vh rail crushed it to
      396px in a short window. */
-  max-height: calc(94vh - 58px - 68px);
+  max-height: calc(94vh - var(--nav-h) - 68px);
   flex-shrink: 0;
   border-radius: 34px;
   border: 10px solid #1b1b1f;
