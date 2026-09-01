@@ -65,7 +65,8 @@
   box-shadow: 0 0 0 4px var(--tour-glow);
   /* `.tour-block` beneath takes the click, in the lit rectangle too. */
   pointer-events: none;
-  transition: left 180ms ease, top 180ms ease, width 180ms ease, height 180ms ease;
+  /* Hidden until measured — see `.is-placed` below. */
+  opacity: 0;
 }
 
 /* The connector, drawn rather than implied.
@@ -80,6 +81,7 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
+  opacity: 0;
 }
 
 .tour-line line {
@@ -93,6 +95,7 @@
 .tour-callout {
   position: fixed;
   z-index: 92;
+  opacity: 0;
   max-width: 34ch;
   padding: 14px 16px;
   border-radius: 12px;
@@ -131,6 +134,31 @@
   min-height: 34px;
 }
 
+/* In place, and only then visible.
+ *
+ * A step opens by routing the phone, which repaints AT ONCE, while the hole
+ * cannot be positioned until the new screen's anchor exists — an `awaitAnchor`
+ * and two frames later. The hole used to travel there over 180ms as well, so
+ * the outline spent that time sliding across a screen it no longer described,
+ * from a control no longer on it. Reported as the screen changing first and
+ * the highlight arriving slower, which is precisely what it was doing.
+ *
+ * Nothing travels now. All three marks fade in together once the hole is
+ * measured and the connector drawn: a cut in the right place reads as instant,
+ * a slide into the right place reads as late. */
+.tour-hole.is-placed,
+.tour-line.is-placed,
+.tour-callout.is-placed {
+  opacity: 1;
+  /* The transition lives HERE rather than on the base rules, so it applies in
+     one direction only: arriving fades, leaving cuts. A symmetric fade spent
+     140ms dimming marks that describe the screen the visitor just left —
+     measured at +30ms after Next the route had already changed and the hole
+     was still on the previous screen at 19% — which is more of the same
+     lateness this replaced, not less. */
+  transition: opacity 140ms ease;
+}
+
 /* Everything that is NOT the phone, pushed back.
  *
  * Blur rather than black: the reader can still see a page is there and roughly
@@ -166,7 +194,11 @@
 @media (prefers-reduced-motion: reduce) {
   /* The spotlight cuts between steps rather than sliding. A travelling hole is
      the most motion-heavy thing on the page. */
-  .tour-hole { transition: none; }
+  /* Matching the placed selectors' specificity, or this loses to them and the
+     fade survives a setting that asked for no motion. */
+  .tour-hole.is-placed,
+  .tour-line.is-placed,
+  .tour-callout.is-placed { transition: none; }
 
   .tour-on .hero,
   .tour-on .copy { transition: none; }

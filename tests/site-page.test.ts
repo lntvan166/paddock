@@ -356,3 +356,49 @@ test("the blur is applied and removed with the tour", () => {
   const end = main.slice(main.indexOf("block.remove()"));
   expect(end.slice(0, 300), "the page stays blurred after the tour").toContain("tour-on");
 });
+
+/**
+ * The spotlight arrives with the screen, not after it.
+ *
+ * Reported: "the screen and animation not match, screen change first then
+ * animation of highlight show slower." Both halves of that are in the
+ * sequencing. `goto(step.hash)` runs synchronously when a step opens, so the
+ * phone repaints at once — but the hole cannot be positioned until the new
+ * screen's anchor exists, which is an `awaitAnchor` and two animation frames
+ * later. And the hole then TRAVELLED there, over a 180ms transition on left,
+ * top, width and height.
+ *
+ * So the outline spent that time sliding across a screen it no longer
+ * described, from a control that was no longer on it.
+ *
+ * Nothing travels now. The marks — hole, connector and callout — are hidden
+ * while a step resolves and fade in together once the hole has been measured
+ * and the connector drawn. A cut in the right place reads as instant; a slide
+ * into the right place reads as late, which is exactly what was reported.
+ */
+test("the spotlight does not travel between steps", () => {
+  const hole = rule(overlayCss, ".tour-hole");
+  expect(hole, "the hole still animates its position").not.toMatch(
+    /transition:[^;]*\b(left|top|width|height)\b/,
+  );
+});
+
+test("the marks are invisible until they are in place", () => {
+  for (const sel of [".tour-hole", ".tour-line", ".tour-callout"]) {
+    expect(rule(overlayCss, sel), `${sel} is visible before it is positioned`).toMatch(
+      /opacity:\s*0\b/,
+    );
+  }
+  expect(overlayCss, "nothing ever reveals the marks").toContain("is-placed");
+});
+
+test("a step hides the marks before it moves them, and reveals them after", () => {
+  const step = main.slice(main.indexOf("onStep:"), main.indexOf("onEnd:"));
+  const hide = step.indexOf("setPlaced(false)");
+  const show = step.indexOf("setPlaced(true)");
+  expect(hide, "a step never hides the previous step's spotlight").toBeGreaterThan(-1);
+  expect(show, "the spotlight is never revealed again").toBeGreaterThan(hide);
+  // Revealed only after the connector is drawn — that is the last thing
+  // positioned, and revealing before it shows a line pointing at nothing.
+  expect(show).toBeGreaterThan(step.indexOf("drawConnector(r)"));
+});

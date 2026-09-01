@@ -209,6 +209,18 @@ hole.className = "tour-hole";
 callout.className = "tour-callout";
 block.className = "tour-block";
 
+/**
+ * Show or hide the three marks together.
+ *
+ * They are positioned at different moments — the hole after the anchor exists,
+ * the callout after the hole, the connector after the callout has a height —
+ * so revealing each as it lands would stagger them across three frames. One
+ * flag, set once at the end, is what makes the step arrive as a single thing.
+ */
+function setPlaced(on: boolean): void {
+  for (const el of [hole, line, callout]) el.classList.toggle("is-placed", on);
+}
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 const line = document.createElementNS(SVG_NS, "svg");
 const stroke = document.createElementNS(SVG_NS, "line");
@@ -249,6 +261,9 @@ const tour = createTour({
       void perform(step).finally(() => tour.next());
     });
 
+    // Hidden BEFORE the route changes. The old rect describes the old screen,
+    // and the phone is about to repaint under it.
+    setPlaced(false);
     goto(step.hash);
     const mine = ++token;
 
@@ -287,6 +302,8 @@ const tour = createTour({
             if (mine !== token) return;
             clampCallout();
             drawConnector(r);
+            // Everything is where it belongs; show all three at once.
+            setPlaced(true);
           });
         });
 
