@@ -200,3 +200,50 @@ test("the screen's corners are rounded on the iframe itself", () => {
   // the engine that could not handle the mask.
   expect(rule(siteCss, ".demo")).toContain("border-radius");
 });
+
+/**
+ * Nothing is written into the frame until it has LOADED. This is the white
+ * phone, finally — reproduced in WebKit 26.5 rather than reasoned about.
+ *
+ *   webkit    url=about:blank#/          rootKids=NO ROOT
+ *   chromium  url=/app/?embed=1          rootKids=1
+ *
+ * The phone follows the copy by setting `contentWindow.location.hash`, and the
+ * IntersectionObserver delivers its first callback immediately — before the
+ * iframe has finished loading its `src`. Writing a hash then is a same-document
+ * navigation on the INITIAL blank document, and WebKit lets it win: the pending
+ * load of `/app/?embed=1` is cancelled and the frame sits on `about:blank#/`
+ * for good. Chromium lets the src load win, which is why every measurement
+ * taken here for three rounds looked perfect.
+ *
+ * It was never a paint bug, a compositing bug or a CSS bug. `#root` was missing
+ * from the frame's document, and `#root` is static markup — no JavaScript has
+ * to run for it to exist. That single fact ruled out everything else at once.
+ */
+test("the frame is not driven before it has loaded", () => {
+  expect(main, "no readiness flag — writes can land on about:blank").toContain("frameReady");
+  expect(main, "the early write is not turned away").toMatch(/if \(!frameReady\)/);
+});
+
+test("there is exactly one place that writes the frame's location", () => {
+  // Two would mean one of them is ungated, and the ungated one is the bug.
+  const writes = main.match(/location\.hash\s*=/g) ?? [];
+  expect(writes.length, `${writes.length} places write the frame's hash`).toBe(1);
+});
+
+test("a hash asked for too early is not lost, it is applied on load", () => {
+  // Dropping it would leave the phone on whatever route `src` names while the
+  // copy beside it has already scrolled somewhere else.
+  expect(main).toContain("pendingHash");
+});
+
+/**
+ * And the phone is not squeezed by the link beneath it.
+ *
+ * `.phone-rail` became a column to seat the full-screen link, which made the
+ * phone a flex item that shrinks: measured 390x396 in a short window, against
+ * the 780 it asks for. Flex items shrink below their own height by default.
+ */
+test("the phone does not shrink to fit its rail", () => {
+  expect(rule(siteCss, ".phone")).toContain("flex-shrink: 0");
+});

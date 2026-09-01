@@ -118,7 +118,9 @@ async function perform(step: TourStep): Promise<void> {
   const pane = paneOf(step.hash);
   if (step.act === undefined || pane === null) return;
   const win = frame.contentWindow;
-  if (!win) return;
+  // Same rule as `goto`: before load this is the blank document, whose `fetch`
+  // is not the demo backend and would post the tour's answer into the void.
+  if (!win || !frameReady) return;
   const url = `/api/agents/${encodeURIComponent(pane)}/`;
   const body = step.act === "send-reply" ? { text: step.reply ?? "" } : { key: "1" };
   try {
@@ -135,8 +137,43 @@ async function perform(step: TourStep): Promise<void> {
 }
 const stepFor = (anchor: string) => TOUR_STEPS.find((s) => s.anchor === anchor);
 
+/**
+ * The frame is not driven until it has LOADED, and this is why the phone was
+ * white in Safari for three rounds.
+ *
+ * `contentWindow` exists the moment the iframe is in the document — but it is
+ * the INITIAL blank document, not `/app/?embed=1`, which is still in flight.
+ * Setting a hash on it is a same-document navigation, and WebKit lets that win:
+ * the pending load is cancelled and the frame stays on `about:blank#/` for
+ * good. Chromium lets the `src` load win instead, so every measurement taken in
+ * it looked perfect while Safari showed a white rectangle.
+ *
+ * Reproduced in WebKit 26.5, which is also what finally identified it:
+ *   webkit    url=about:blank#/     rootKids=NO ROOT
+ *   chromium  url=/app/?embed=1     rootKids=1
+ *
+ * The IntersectionObserver below fires its first callback immediately, so this
+ * runs during page load every single time. It is not a race.
+ */
+let frameReady = false;
+/** The last route asked for too early. Dropping it would leave the phone
+ *  showing whatever `src` named while the copy has scrolled somewhere else. */
+let pendingHash: string | null = null;
+
+frame.addEventListener("load", () => {
+  frameReady = true;
+  if (pendingHash === null) return;
+  const hash = pendingHash;
+  pendingHash = null;
+  goto(hash);
+});
+
 /** Hash-only routing means this is the whole of "drive the demo". */
 function goto(hash: string): void {
+  if (!frameReady) {
+    pendingHash = hash;
+    return;
+  }
   if (frame.contentWindow) frame.contentWindow.location.hash = hash;
 }
 
@@ -353,5 +390,7 @@ root.querySelector(".tour-start")!.addEventListener("click", () => {
    * reset rather than a hand-written undo that has to be kept in step with it.
    */
   frame.addEventListener("load", () => tour.start(), { once: true });
+  // The listener registered at module scope runs first and sets it back.
+  frameReady = false;
   frame.contentWindow?.location.reload();
 });
