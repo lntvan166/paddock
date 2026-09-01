@@ -45,7 +45,23 @@ export function createTour(opts: {
   };
 
   return {
-    start: () => { if (!done && i < 0) enter(0); },
+    /**
+     * Always from the top, including after a run has finished.
+     *
+     * This used to refuse once `done` had latched, and nothing ever cleared it,
+     * so a tour was single-use. Taking a second one re-appended the overlay —
+     * the caller does that, not the engine — while the engine sat out, leaving
+     * the callout holding the LAST step's markup and the spotlight its last
+     * position. Reported as "start the 2nd, it's stuck in 06", and nothing was
+     * thrown or logged: a silent engine under a real-looking overlay.
+     *
+     * "Start" means start. Resuming is not a thing a walkthrough offers.
+     */
+    start: () => {
+      done = false;
+      i = -1;
+      enter(0);
+    },
     index: () => i,
     current: () => (done || i < 0 ? null : (opts.steps[i] ?? null)),
     next: () => { if (!done && i >= 0) enter(i + 1); },

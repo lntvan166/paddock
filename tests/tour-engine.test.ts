@@ -124,3 +124,45 @@ test("every act named by a step is one the site knows how to perform", () => {
     if (s.act !== undefined) expect(known).toContain(s.act);
   }
 });
+
+/**
+ * A tour can be taken twice.
+ *
+ * Reported from the live site: "after 1st wt, I start the 2 its stuck in 06."
+ * `start()` refused to do anything once the tour had ended — `done` latched and
+ * nothing cleared it — so a second Take the tour re-appended the overlay while
+ * the engine sat out. The callout still held the last step's markup and the
+ * spotlight its last position, which reads exactly as a tour frozen on 06.
+ *
+ * Nothing was thrown and nothing logged. The overlay is appended by the click
+ * handler and filled by the engine, so a silent engine leaves a real-looking
+ * tour on screen.
+ */
+test("a tour that ran to the end can be taken again, from the beginning", () => {
+  const { t, seen } = tour();
+  t.start();
+  t.next();
+  t.next(); // past the last step: ended
+  t.start();
+  expect(seen, "the second tour never opened").toEqual([0, 1, 0]);
+  expect(t.current()?.anchor).toBe("needs-you");
+});
+
+test("a tour that was skipped can be taken again too", () => {
+  const { t, seen, ended } = tour();
+  t.start();
+  t.skip();
+  t.start();
+  expect(seen).toEqual([0, 0]);
+  expect(ended(), "still reporting the skipped run").toBe(true);
+  expect(t.current()?.anchor).toBe("needs-you");
+});
+
+test("the second run walks, rather than resuming where the first stopped", () => {
+  const { t, seen } = tour();
+  t.start();
+  t.next(); // on step two
+  t.start(); // restart from the top
+  t.next();
+  expect(seen).toEqual([0, 1, 0, 1]);
+});
