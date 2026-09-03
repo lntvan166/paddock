@@ -1,3 +1,4 @@
+import { isViewable } from "@shared/file-kinds";
 import type { AnsiSpan } from "@web/ansi";
 
 /**
@@ -34,6 +35,11 @@ export interface PathSpan extends AnsiSpan {
  * token, which is what makes "after whitespace" the trigger rather than
  * "contains a slash".
  *
+ * The token now includes RELATIVE shapes — anything with a slash in it — and
+ * `linkable` below decides which of those is actually an address. It has to be
+ * matched first and judged second: the regex cannot tell `docs/report.md` from
+ * `and/or`, and only the extension can.
+ *
  * A LOOKBEHIND said this more directly, and did: `(?<=^|\s)`. Safari had no
  * lookbehind until 16.4, and vite's `safari14` target does not save you —
  * esbuild rewrites the literal to `new RegExp("(?<=…)")`, which PARSES fine and
@@ -47,10 +53,39 @@ export interface PathSpan extends AnsiSpan {
  * The boundary is CONSUMED here where the lookbehind was zero-width, so the
  * token starts at `m.index + m[1].length` rather than at `m.index`.
  */
-const PATH_RE = /(^|\s)((?:file:\/\/)?[~/]\S*)/g;
+const PATH_RE = /(^|\s)((?:file:\/\/)?[~.]?[\w.~/-]*\/\S*|[~/]\S*)/g;
 
 /** Punctuation that ends a sentence rather than a filename. */
 const TRAILING = /[.,;:!?)\]}>'"]+$/;
+
+/**
+ * Is this token an address, or is it a word with a slash in it?
+ *
+ * ABSOLUTE shapes are addresses on sight — `/srv/a`, `~/notes`, `file:///x`.
+ * There is nothing else they could be, so they link whatever their extension,
+ * exactly as they always have.
+ *
+ * A RELATIVE token has no such tell. `and/or` and `docs/report.md` are the same
+ * shape, and the only thing separating them is whether the last segment names
+ * something the viewer can put on screen. So the extension decides, using the
+ * same table the server uses to render it — a tap that resolves to a file save
+ * is worse than no link, because the operator expected to read the thing.
+ *
+ * The consequence, stated because it surprises: `src/web/api.ts` does NOT link.
+ * `.ts` is not a type the viewer renders, and this is the rule that keeps
+ * `and/or` prose.
+ */
+function linkable(token: string): boolean {
+  if (token.startsWith("file://")) return true;
+  if (token.startsWith("/") || token.startsWith("~")) return true;
+  // A scheme means a URL, and a URL is somebody else's file. `file://` is
+  // already home above; everything else with an authority is not on this disk.
+  if (token.includes("://")) return false;
+  // A relative path has to actually be a path: a bare `report.md` in prose is
+  // as often the name of a thing being discussed as it is an address.
+  if (!token.includes("/")) return false;
+  return isViewable(token);
+}
 
 /**
  * Below this a token is punctuation, not an address: a bare `/` in "either / or"
@@ -69,6 +104,7 @@ export function splitPaths(spans: readonly AnsiSpan[]): PathSpan[] {
       const start = m.index + m[1]!.length;
       const token = m[2]!.replace(TRAILING, "");
       if (token.length < MIN_PATH_LEN) continue;
+      if (!linkable(token)) continue;
 
       if (start > last) out.push({ ...span, text: span.text.slice(last, start) });
       out.push({ ...span, text: token, path: token });

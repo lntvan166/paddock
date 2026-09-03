@@ -33,11 +33,11 @@ function harness(over: { files?: boolean; maxFileBytes?: number } = {}) {
   });
 }
 
-const open = (app: ReturnType<typeof harness>, path: string) =>
+const open = (app: ReturnType<typeof harness>, path: string, agentId?: string) =>
   app.request("/api/files", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify(agentId === undefined ? { path } : { path, agentId }),
   });
 
 test("a path is exchanged for an id and the file's kind", async () => {
@@ -144,12 +144,36 @@ test("with no store configured there is no route at all", async () => {
   expect((await app.request(`/api/files/${"0".repeat(32)}`)).status).toBe(404);
 });
 
+/**
+ * Relative paths, resolved against the agent that printed them.
+ *
+ * The transcript links `docs/report.md` now, and a relative path means nothing
+ * without a directory. The client sends the pane's `agentId` and the route
+ * reads that agent's `cwd` out of the store — server-side deliberately, so the
+ * base is what paddock knows the agent to be doing rather than what a caller
+ * claimed.
+ */
+const agentAt = (cwd: string) => ({
+  hostId: "dev-box", agentId: "w1:p1", name: "docs-cleanup", task: "Rewrite the guide",
+  state: "working" as const, workspaceId: "w1", workspaceLabel: "docs", tabId: "w1:t1",
+  cwd, updatedAt: 0, acknowledgedAt: null, kind: null,
+});
+
+function withAgent(cwd: string) {
+  const store = new AgentStore("dev-box");
+  store.replaceAll([agentAt(cwd) as never], 0);
+  return createApp({ store, hub: new Hub(), health: () => ({}) as never, files: createFileStore() });
+}
+
 test("the forms the transcript linkifies are the forms this opens", async () => {
   // Found by using the feature: a `~/…` path answered "no file at ~/…", because
-  // expanding a tilde is a shell's job. `web/paths.ts` linkifies all three of
-  // these, so all three have to open.
+  // expanding a tilde is a shell's job. This is the contract between
+  // `web/paths.ts` and this route — every shape that becomes a link has to open
+  // — and it grew a fourth member when relative paths started linking.
+  const store = new AgentStore("dev-box");
+  store.replaceAll([agentAt(DIR) as never], 0);
   const app = createApp({
-    store: new AgentStore("dev-box"), hub: new Hub(), health: () => ({}) as never,
+    store, hub: new Hub(), health: () => ({}) as never,
     files: createFileStore(), homeDir: DIR,
   });
 
@@ -159,8 +183,49 @@ test("the forms the transcript linkifies are the forms this opens", async () => 
   const url = await (await open(app, `file://${page}`)).json();
   expect(url.name).toBe("design.html");
 
-  // And the one that cannot work says why, rather than reporting it missing.
-  const relative = await open(app, "design.html");
-  expect(relative.status).toBe(400);
-  expect((await relative.json()).detail).toContain("not an absolute path");
+  const absolute = await (await open(app, page)).json();
+  expect(absolute.name).toBe("design.html");
+
+  const relative = await (await open(app, "design.html", "w1:p1")).json();
+  expect(relative.name).toBe("design.html");
+});
+
+test("a relative path opens against the agent's working directory", async () => {
+  const app = withAgent(DIR);
+  const res = await open(app, "design.html", "w1:p1");
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({
+    ok: true, id: expect.any(String), name: "design.html", render: "iframe",
+  });
+});
+
+test("./ and a subdirectory resolve the way the agent's shell would", async () => {
+  const app = withAgent(join(DIR, "adir"));
+  writeFileSync(join(DIR, "adir", "note.md"), "# hi");
+  expect((await open(app, "./note.md", "w1:p1")).status).toBe(200);
+  // Up and back down, from a subdirectory of the agent's own cwd.
+  expect((await open(app, "../design.html", "w1:p1")).status).toBe(200);
+});
+
+test("an absolute path is unaffected by the agent it came from", async () => {
+  // It already means one thing. A cwd able to override it would make the same
+  // link open different files in different panes.
+  const app = withAgent("/somewhere/else");
+  expect((await open(app, page, "w1:p1")).status).toBe(200);
+});
+
+test("a relative path with no agent is refused, and says why", async () => {
+  const app = harness();
+  const res = await open(app, "design.html");
+  expect(res.status).toBe(400);
+  expect((await res.json()).detail).toContain("relative");
+});
+
+test("a relative path naming an agent paddock has never seen is refused", async () => {
+  // Not silently resolved against nothing: the operator gets told the pane is
+  // the problem rather than the file.
+  const app = withAgent(DIR);
+  const res = await open(app, "design.html", "w9:p9");
+  expect(res.status).toBe(400);
+  expect((await res.json()).detail).toContain("relative");
 });

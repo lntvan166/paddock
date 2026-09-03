@@ -82,3 +82,62 @@ test("no span is dropped or duplicated when a path leads the line", () => {
   const out = splitPaths([span("/srv/a.md was written")]);
   expect(out.map((s) => s.text).join("")).toBe("/srv/a.md was written");
 });
+
+/**
+ * Relative paths, linked only when the viewer can actually show the file.
+ *
+ * They were excluded outright: `web/paths.ts` matched `~/…`, `/…` and
+ * `file://…` only, and the server answered a relative path with "is not an
+ * absolute path". The stated reason was that "a relative path has no single
+ * answer, because paddock cannot see the caller's working directory" — and
+ * that stopped being true once `cwd` landed on the Agent payload. The pane a
+ * transcript belongs to names an agent, and that agent has a working
+ * directory.
+ *
+ * The EXTENSION is the gate, not the shape. A bare slash inside a word is not
+ * an address — `and/or` must stay prose, and so must `read src/web/api.ts`,
+ * because a tap that opens a download for a source file is worse than no link.
+ * So a relative token links when its extension is one the viewer renders, and
+ * `kindFor` in `@shared/file-kinds` is the single answer to that, shared with
+ * the server rather than copied.
+ */
+test("a relative path to something the viewer renders is a link", () => {
+  expect(pathsIn("wrote docs/report.md ok")).toEqual(["docs/report.md"]);
+  expect(pathsIn("open coverage/index.html")).toEqual(["coverage/index.html"]);
+  expect(pathsIn("see out/chart.png")).toEqual(["out/chart.png"]);
+});
+
+test("a leading ./ or ../ is still a relative path", () => {
+  expect(pathsIn("wrote ./notes.md")).toEqual(["./notes.md"]);
+  expect(pathsIn("wrote ../sibling/a.html")).toEqual(["../sibling/a.html"]);
+});
+
+test("a relative token the viewer cannot render stays prose", () => {
+  // A tap that resolves to a download is worse than no link at all: the
+  // operator taps a source path expecting to read it and gets a file save.
+  expect(pathsIn("read src/web/api.ts")).toEqual([]);
+  expect(pathsIn("and/or")).toEqual([]);
+  expect(pathsIn("run make/check")).toEqual([]);
+});
+
+test("a URL that happens to name a renderable file is still not a path", () => {
+  // The one shape the widened match could swallow. `file://` stays a path,
+  // because that IS a local file and the server already expands it.
+  expect(pathsIn("see http://example.com/report.md")).toEqual([]);
+  expect(pathsIn("see https://example.com/a/index.html")).toEqual([]);
+  expect(pathsIn("wrote file:///srv/a.html")).toEqual(["file:///srv/a.html"]);
+});
+
+test("an absolute path still links whatever its extension", () => {
+  // Unchanged, and deliberately: the extension gate exists to keep a bare
+  // slash in a word from becoming a link, and an absolute path has no such
+  // ambiguity to resolve.
+  expect(pathsIn("built /srv/app.ts")).toEqual(["/srv/app.ts"]);
+  expect(pathsIn("wrote ~/notes/todo.ts")).toEqual(["~/notes/todo.ts"]);
+});
+
+test("a bare filename with no directory is not a path", () => {
+  // "index.html" in prose is as often the name of a thing being discussed as
+  // it is an address, and there is no slash to say which.
+  expect(pathsIn("edit index.html now")).toEqual([]);
+});

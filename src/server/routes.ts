@@ -988,16 +988,40 @@ export function createApp(deps: AppDeps) {
 
     const body = await jsonBody(c);
     const asked = typeof body.path === "string" ? body.path : "";
-    // Normalised BEFORE the stat: the transcript linkifies `~/…` and
-    // `file://…`, and neither is something the filesystem can open. Without
-    // this the feature offers taps that always answer "no file".
-    const path = resolveOpenable(asked, deps.homeDir);
+
+    /**
+     * The base a RELATIVE path is measured from: the working directory of the
+     * agent whose transcript printed it.
+     *
+     * Read from the store rather than taken from the request. The client knows
+     * this value — `cwd` is on the Agent payload it already holds — but a
+     * filesystem base arriving as caller input is a different thing from one
+     * paddock looked up itself, and the second costs a single `find`.
+     *
+     * Undefined when no agent was named, or when the id is one paddock has
+     * never seen. `resolveOpenable` then refuses every relative shape, exactly
+     * as it did before any of this existed.
+     */
+    const agentId = typeof body.agentId === "string" ? body.agentId : "";
+    const base = agentId === ""
+      ? undefined
+      : deps.store.snapshot().find((a) => a.agentId === agentId)?.cwd;
+
+    // Normalised BEFORE the stat: the transcript linkifies `~/…`, `file://…`
+    // and relative paths, and none of those is something the filesystem can
+    // open. Without this the feature offers taps that always answer "no file".
+    const path = resolveOpenable(asked, deps.homeDir, base);
     if (path === null) {
       return asked.trim() === ""
         ? c.json({ ok: false, detail: "a path is required" }, 400)
-        // Said specifically: a relative path is not a typo, it is a path whose
-        // meaning depends on a working directory paddock cannot see.
-        : c.json({ ok: false, detail: `${asked.trim()} is not an absolute path` }, 400);
+        // Said specifically, and named for what it is: a relative path is not a
+        // typo, it is a path whose meaning depends on a working directory —
+        // and this reply means paddock could not find one for the pane it was
+        // asked from.
+        : c.json(
+            { ok: false, detail: `${asked.trim()} is relative, and this pane has no working directory to read it against` },
+            400,
+          );
     }
 
     // `statSync` rather than `Bun.file().exists()`, MEASURED: `exists()` returns

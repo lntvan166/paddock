@@ -15,10 +15,25 @@ import { expandHome } from "@server/herdr/tree";
  * The tilde half delegates to `expandHome`, which the create routes already
  * use — one expander, not two, so a future change to what `~` means cannot
  * apply to half of paddock. Its final gate is borrowed too: absolute, or
- * nothing. A relative path has no single answer, because paddock cannot see the
- * caller's working directory.
+ * nothing.
+ *
+ * RELATIVE PATHS, and why they are allowed now. This said "a relative path has
+ * no single answer, because paddock cannot see the caller's working directory",
+ * and that was true when it was written. It is not any more: `cwd` is on the
+ * Agent payload, a transcript belongs to a pane, and a pane names an agent. The
+ * route looks that cwd up in the store and passes it as `base` — server-side,
+ * so the base is authoritative rather than whatever a client sent.
+ *
+ * With NO base the old refusal stands exactly as it was. A pane may have no
+ * agent and an agent may report no cwd, and guessing one would open a file the
+ * operator never named.
  */
-export function resolveOpenable(raw: string, home: string | undefined): string | null {
+export function resolveOpenable(
+  raw: string,
+  home: string | undefined,
+  /** The agent's working directory, when the caller named an agent. */
+  base?: string | undefined,
+): string | null {
   let path = raw.trim();
   if (path === "") return null;
 
@@ -35,8 +50,43 @@ export function resolveOpenable(raw: string, home: string | undefined): string |
     }
   }
 
+  // A relative path is joined to the base BEFORE the gate below, so what
+  // reaches `expandHome` is already absolute. Absolute and `~` shapes skip
+  // this: each already means one thing, and a base able to override them would
+  // make the same link open different files in different panes.
+  if (!path.startsWith("/") && !path.startsWith("~")) {
+    const root = (base ?? "").trim().replace(/\/+$/, "");
+    // A relative base resolves against nothing in particular — the same failure
+    // this module exists to refuse — so it is not a base.
+    if (!root.startsWith("/")) return null;
+    path = normalise(`${root}/${path}`);
+  }
+
   // `expandHome` also enforces "absolute, or nothing", which is the whole of the
   // validation this needs: it refuses a still-tilde path when there is no home,
   // and every relative shape.
   return expandHome(path, home);
+}
+
+/**
+ * `.` and `..` resolved textually, the way a shell reads them.
+ *
+ * Textual rather than `realpath`: this runs before the stat, and a path that
+ * does not exist yet still has to come out of here as something nameable so the
+ * route can say "no file at …" with the name the operator would recognise.
+ *
+ * `..` above the root is dropped rather than refused. It is the same file the
+ * filesystem would reach — `/..` is `/` — and refusing would be a second, more
+ * confusing error for a path that simply resolves higher than expected. There
+ * is no boundary being defended here: this route already opens any absolute
+ * path, and Cloudflare Access is the gate for all of it.
+ */
+function normalise(path: string): string {
+  const out: string[] = [];
+  for (const part of path.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") out.pop();
+    else out.push(part);
+  }
+  return `/${out.join("/")}`;
 }

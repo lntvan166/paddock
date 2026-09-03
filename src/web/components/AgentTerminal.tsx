@@ -509,7 +509,9 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
    */
   const openPath = async (path: string) => {
     try {
-      const opened = await openFile(path);
+      // The pane's own agent, so a relative path in this transcript resolves
+      // against the directory this agent is actually running in.
+      const opened = await openFile(path, agent.agentId);
       location.hash = fileHash(opened.id);
     } catch (err) {
       setFeedback({ ok: false, detail: err instanceof Error ? err.message : "Could not open that file." });

@@ -71,3 +71,46 @@ test("ordinary output grows no links", async () => {
   const { host } = await mount(["reading src/web/api.ts now"]);
   expect(host.querySelector(".term-path")).toBeNull();
 });
+
+/**
+ * A relative path in the transcript, and the id that gives it a meaning.
+ *
+ * The route resolves `docs/report.md` against the agent's `cwd`, which it reads
+ * from its own store — so the ONE thing the client has to get right is naming
+ * the agent. A route test cannot see that: it posts the id itself. Miss it here
+ * and every relative tap answers "this pane has no working directory", with the
+ * server behaving perfectly.
+ */
+test("a relative path is tappable, and names the pane it came from", async () => {
+  const { host, calls } = await mount(["wrote docs/report.md"]);
+
+  const link = host.querySelector(".term-path");
+  expect(link?.textContent, "a relative path is not linked at all").toBe("docs/report.md");
+
+  await click(link);
+  await settle();
+
+  const asked = calls.find((c) => c.url.includes("/api/files"));
+  const body = asked?.body as { path: string; agentId?: string };
+  expect(body.path).toBe("docs/report.md");
+  expect(body.agentId, "the server has no agent to resolve against").toBe(agent().agentId);
+});
+
+test("an absolute path names the pane too, and is unaffected by it", async () => {
+  // Sent either way rather than only for relative paths: the client would
+  // otherwise have to decide what "relative" means, and that judgement already
+  // lives in one place on the server.
+  const { calls, host } = await mount(["wrote /srv/project/design.html"]);
+  await click(host.querySelector(".term-path"));
+  await settle();
+  const body = calls.find((c) => c.url.includes("/api/files"))?.body as { agentId?: string };
+  expect(body.agentId).toBe(agent().agentId);
+});
+
+test("a relative token the viewer cannot render is not a link", async () => {
+  // The gate that keeps `and/or` and a source path out of the transcript's
+  // links. Asserted through the component, because this is where a widened
+  // regex would show up as prose turning blue.
+  const { host } = await mount(["read src/web/api.ts and/or the docs"]);
+  expect(host.querySelectorAll(".term-path").length).toBe(0);
+});

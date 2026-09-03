@@ -48,3 +48,57 @@ test("a malformed escape does not throw", () => {
   // `decodeURIComponent("%")` throws. A bad URL is a refusal, not a 500.
   expect(resolveOpenable("file:///srv/%zz/a.md", HOME)).toBe("/srv/%zz/a.md");
 });
+
+/**
+ * Relative paths, resolved against the agent that printed them.
+ *
+ * This module's own comment said a relative path "has no single answer,
+ * because paddock cannot see the caller's working directory" — and that
+ * stopped being true once `cwd` landed on the Agent payload. A transcript
+ * belongs to a pane, a pane names an agent, and that agent has a directory it
+ * is running in. The route looks it up server-side rather than taking it from
+ * the client, so the base stays authoritative.
+ *
+ * With NO base the old refusal stands, unchanged: an absolute path or nothing.
+ */
+test("a relative path resolves against the base it is given", () => {
+  expect(resolveOpenable("docs/report.md", HOME, "/srv/project")).toBe(
+    "/srv/project/docs/report.md",
+  );
+});
+
+test("./ and ../ mean what a shell would mean by them", () => {
+  expect(resolveOpenable("./notes.md", undefined, "/srv/project")).toBe("/srv/project/notes.md");
+  expect(resolveOpenable("../sibling/a.html", undefined, "/srv/project/sub")).toBe(
+    "/srv/project/sibling/a.html",
+  );
+});
+
+test("a trailing slash on the base does not double up", () => {
+  expect(resolveOpenable("a.md", undefined, "/srv/project/")).toBe("/srv/project/a.md");
+});
+
+test("an absolute path ignores the base entirely", () => {
+  // It already means one thing. A base that could override it would make the
+  // same link open different files in different panes.
+  expect(resolveOpenable("/srv/a.md", undefined, "/elsewhere")).toBe("/srv/a.md");
+});
+
+test("a tilde path ignores the base too, and still expands", () => {
+  expect(resolveOpenable("~/notes/a.md", HOME, "/srv/project")).toBe(
+    `${HOME}/notes/a.md`,
+  );
+});
+
+test("with no base, a relative path is still refused", () => {
+  // The pane may have no agent, and an agent may report no cwd. Guessing a base
+  // would open a file the operator did not name.
+  expect(resolveOpenable("docs/a.md", HOME, undefined)).toBeNull();
+  expect(resolveOpenable("docs/a.md", HOME, "")).toBeNull();
+});
+
+test("a relative base is not a base", () => {
+  // It resolves against nothing in particular, which is the same failure this
+  // whole module exists to refuse.
+  expect(resolveOpenable("a.md", undefined, "relative/dir")).toBeNull();
+});

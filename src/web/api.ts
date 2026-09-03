@@ -175,11 +175,20 @@ export async function fetchPaneOutput(id: string, f: Fetch = fetch): Promise<Pan
  */
 export async function openFile(
   path: string,
+  /**
+   * The pane the path was printed in, when there is one.
+   *
+   * A RELATIVE path means nothing without a directory, and the server reads the
+   * agent's `cwd` from its own store rather than trusting a base sent from
+   * here. So this is an id, not a path: the client says which agent, the server
+   * decides what that means.
+   */
+  agentId: string | undefined,
   f: Fetch = fetch,
 ): Promise<{ id: string; name: string; render: RenderMode }> {
   const body = await readJson<{
     ok?: boolean; detail?: string; id?: string; name?: string; render?: RenderMode;
-  }>("/api/files", { path }, f);
+  }>("/api/files", agentId === undefined ? { path } : { path, agentId }, f);
 
   // Checked in the BODY as well as the status, like `uploadImage` and for the
   // same reason: `readJson` rejects on a non-2xx, and a 200 whose body says
