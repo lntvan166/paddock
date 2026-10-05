@@ -154,7 +154,9 @@ if (command === "update") {
 // `status` should not open a herdr socket or bind a port just to answer a
 // question that only needs the state file and a signal-0 probe.
 if (command === "status") {
-  process.exit(await runStatus({ dir: defaultConfigDir(), port: PORT }));
+  process.exit(await runStatus({
+    dir: defaultConfigDir(), port: PORT, service: serviceManager({ configDir: defaultConfigDir() }),
+  }));
 }
 
 // Before any server setup, like `status`: `local` hands the serving to the
@@ -178,6 +180,7 @@ if (command === "local") {
 if (command === "stop") {
   process.exit(await runStop({
     dir: defaultConfigDir(), port: PORT, force: flags.has("--force"),
+    service: serviceManager({ configDir: defaultConfigDir() }),
   }));
 }
 

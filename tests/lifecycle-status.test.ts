@@ -6,6 +6,7 @@ import { parseArgs } from "@server/cli";
 import { runStatus } from "@server/lifecycle/commands";
 import { writeState, type Probe } from "@server/lifecycle/state";
 import { glyph } from "@server/term";
+import type { ServiceManager } from "@server/lifecycle/service/types";
 
 const dir = () => mkdtemp(join(tmpdir(), "paddock-status-"));
 const probe = (alive: boolean, args: string | null): Probe =>
@@ -154,4 +155,45 @@ test("an unreadable state is ⚠, not ✗ — it is undetermined, not absent", a
   const code = await runStatus({ dir: d, probe: probe(false, null), log: (l) => out.push(l) });
   expect(code).toBe(1);
   expect(out[0]).toStartWith("⚠");
+});
+
+function svc(status: "absent" | "registered" | "active", over: Partial<ServiceManager> = {}) {
+  const calls: string[] = [];
+  const manager: ServiceManager = {
+    kind: "systemd", unitPath: "/path/to/unit", logHint: "journalctl --user -u paddock",
+    startsAt: async () => "boot",
+    install: async () => ({ warnings: [] }),
+    uninstall: async () => { calls.push("uninstall"); },
+    inspect: async () => status,
+    ...over,
+  };
+  return { service: { ok: true as const, manager }, calls };
+}
+
+test("status names an active service and where it starts", async () => {
+  const d = await mkdtemp(join(tmpdir(), "paddock-status-svc-"));
+  await writeState(d, { pid: 4242, args: "paddock", port: 8787, version: "0.9.0", startedAt: Date.now(), managedBy: "systemd" });
+  const { service } = svc("active");
+  const lines: string[] = [];
+  const code = await runStatus({ dir: d, service, probe: { isAlive: () => true, argsOf: () => "paddock" }, log: (l) => lines.push(l) });
+  expect(code).toBe(0);
+  expect(lines.join("\n")).toContain("service: systemd · starts at boot");
+});
+
+test("status names a registered service that is not serving, and where to look", async () => {
+  const d = await mkdtemp(join(tmpdir(), "paddock-status-svc-"));
+  const { service } = svc("registered");
+  const lines: string[] = [];
+  const code = await runStatus({ dir: d, service, log: (l) => lines.push(l) });
+  expect(code).toBe(1);
+  expect(lines.join("\n")).toContain("registered");
+  expect(lines.join("\n")).toContain("journalctl --user -u paddock");
+});
+
+test("no service: status prints no service line", async () => {
+  const d = await mkdtemp(join(tmpdir(), "paddock-status-svc-"));
+  const { service } = svc("absent");
+  const lines: string[] = [];
+  await runStatus({ dir: d, service, log: (l) => lines.push(l) });
+  expect(lines.join("\n")).not.toContain("service");
 });

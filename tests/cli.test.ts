@@ -216,6 +216,11 @@ function runVerb(verb: string, extraArgs: string[] = []) {
       PADDOCK_CONFIG_DIR: CONFIG,
       PADDOCK_HERDR_SOCKET: join(CONFIG, "no-such-herdr.sock"),
       PADDOCK_HERDR_WAIT_MS: "0",
+      // No user bus: `status`/`stop`/`start` now ask systemd about the
+      // `paddock local` unit, and the developer's real one must not decide
+      // this file's outcome — the same reason PADDOCK_PORT is randomised.
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
+      XDG_CONFIG_HOME: CONFIG,
       // An OS-assigned free port, not the default 8787. `status` and `stop`
       // now probe the port for an instance no state file describes, and the
       // default port is exactly where the developer's OWN paddock is

@@ -12,6 +12,8 @@ import { checkTunnelState, removeTunnelState, tunnelStateFile } from "@server/tu
 import { stopTunnel } from "@server/tunnel/stop";
 import { tunnelHint } from "@server/tunnel/preflight";
 import { duration, glyph, say } from "@server/term";
+import type { ServiceChoice } from "@server/lifecycle/service";
+import { ServiceError } from "@server/lifecycle/service/types";
 
 /**
  * What answers on a port, if anything paddock-shaped does.
@@ -75,6 +77,8 @@ export interface StatusOpts {
   dir: string;
   /** The port an untracked instance would be holding. */
   port?: number;
+  /** The `paddock local` service, if this platform has one. Injected for tests. */
+  service?: ServiceChoice;
   probe?: Probe;
   /** Injected so a test can drive the untracked-instance path. */
   listener?: Listener;
@@ -113,6 +117,7 @@ export async function runStatus(o: StatusOpts): Promise<number> {
   const log = o.log ?? say;
   const now = (o.now ?? Date.now)();
   const paddock = await reportPaddock(o, log, now);
+  await reportService(o.service, log);
   const tunnel = await reportTunnel(o, log, now);
 
   /**
@@ -230,6 +235,26 @@ async function reportTunnel(
   }
 }
 
+/**
+ * The service half of `status`. Silent when nothing is registered, for the
+ * reason `reportTunnel` is: most machines have none.
+ */
+async function reportService(
+  service: ServiceChoice | undefined,
+  log: (line: string) => void,
+): Promise<void> {
+  if (service === undefined || !service.ok) return;
+  const m = service.manager;
+  const got = await m.inspect();
+  if (got === "absent") return;
+  if (got === "active") {
+    log(`    service: ${m.kind} · starts at ${await m.startsAt()} · output: ${m.logHint}`);
+    return;
+  }
+  log(`${glyph("no")} service — registered (${m.kind}) but not serving; it keeps retrying`);
+  log(`    the usual cause is herdr not running · output: ${m.logHint}`);
+}
+
 /** `clearState`'s contract, for the tunnel's record. See its note. */
 async function clearTunnel(dir: string, log: (line: string) => void): Promise<void> {
   try {
@@ -246,6 +271,8 @@ export interface StopOpts {
   dir: string;
   /** The port an untracked instance would be holding. */
   port?: number;
+  /** The `paddock local` service, if this platform has one. Injected for tests. */
+  service?: ServiceChoice;
   /** Injected so a test can drive the untracked-instance path. */
   listener?: Listener;
   force?: boolean;
@@ -310,10 +337,41 @@ export async function runStop(o: StopOpts): Promise<number> {
    */
   const tunnel = await stopTunnel({ dir: o.dir, probe, log, signal: o.signal, waitMs });
 
-  const paddock = await stopPaddock(o, log, send, probe, waitMs, tunnel.stoppedServing);
+  /**
+   * THE SERVICE GOES BEFORE ANY SIGNAL. A supervised paddock that is merely
+   * SIGTERMed is still registered and starts again at the next boot — the
+   * opposite of what `stop` promises. Stopping it through its manager is also
+   * the only way that does not race the manager. If that fails, nothing is
+   * signalled: the operator gets the manager's own error instead.
+   */
+  const svc = await stopService(o.service, log);
+  if (svc.code !== 0) return svc.code;
+
+  const paddock = await stopPaddock(
+    o, log, send, probe, waitMs, tunnel.stoppedServing || svc.stopped,
+  );
   // The worse of the two. `paddock stop` succeeding while the tunnel it was
   // asked to close is still up would be a success report for a job half done.
   return paddock !== 0 ? paddock : tunnel.code;
+}
+
+async function stopService(
+  service: ServiceChoice | undefined,
+  log: (line: string) => void,
+): Promise<{ code: number; stopped: boolean }> {
+  if (service === undefined || !service.ok) return { code: 0, stopped: false };
+  const m = service.manager;
+  if ((await m.inspect()) === "absent") return { code: 0, stopped: false };
+  try {
+    await m.uninstall();
+  } catch (e) {
+    if (!(e instanceof ServiceError)) throw e;
+    log(`paddock: ${e.message}`);
+    log(`  nothing signalled — a supervised paddock would only be restarted. Unit: ${m.unitPath}`);
+    return { code: 1, stopped: false };
+  }
+  log(`${glyph("yes")} paddock — stopped, and removed from ${m.kind}; it will not start at boot`);
+  return { code: 0, stopped: true };
 }
 
 async function stopPaddock(
@@ -322,8 +380,11 @@ async function stopPaddock(
   send: (pid: number, sig: NodeJS.Signals) => void,
   probe: Probe,
   waitMs: number,
-  /** A self-serving tunnel was just stopped — see `StopTunnelResult`. */
-  tunnelWasServing: boolean,
+  /**
+   * A tunnel serving the dashboard (see `StopTunnelResult`), or the service,
+   * was just stopped — a "not running" line here would contradict it.
+   */
+  alreadyReported: boolean,
 ): Promise<number> {
   const got = await checkState(o.dir, probe);
 
@@ -339,7 +400,7 @@ async function stopPaddock(
       // way out, so this arm is reached for a process that was running a moment
       // ago and that this very command stopped — "✓ tunnel stopped" followed by
       // "paddock — not running" is one command contradicting itself.
-      if (!tunnelWasServing) log("paddock — not running");
+      if (!alreadyReported) log("paddock — not running");
       return 0;
     case "unreadable":
       // Distinct from "none" on purpose, same reasoning as runStatus: "could

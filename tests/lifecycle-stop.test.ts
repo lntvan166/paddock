@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runStop } from "@server/lifecycle/commands";
 import { stateFile, writeState, type Probe } from "@server/lifecycle/state";
+import { ServiceError, type ServiceManager } from "@server/lifecycle/service/types";
 
 const dir = () => mkdtemp(join(tmpdir(), "paddock-stop-"));
 const s = {
@@ -449,4 +450,73 @@ test("stop does not probe a port when a state file already answers", async () =>
   });
   expect(sent).toContain("SIGTERM");
   expect(probed).toBe(0);
+});
+
+function svc(status: "absent" | "registered" | "active", over: Partial<ServiceManager> = {}) {
+  const calls: string[] = [];
+  const manager: ServiceManager = {
+    kind: "systemd", unitPath: "/path/to/unit", logHint: "journalctl --user -u paddock",
+    startsAt: async () => "boot",
+    install: async () => ({ warnings: [] }),
+    uninstall: async () => { calls.push("uninstall"); },
+    inspect: async () => status,
+    ...over,
+  };
+  return { service: { ok: true as const, manager }, calls };
+}
+
+test("a registered service is uninstalled, and the supervised pid is never signalled", async () => {
+  // SIGTERM to a supervised process is the race where it comes straight back.
+  const d = await dir();
+  const { service, calls } = svc("active");
+  const sent: string[] = [];
+  const lines: string[] = [];
+  // After uninstall the process is gone and has removed its own record.
+  const code = await runStop({
+    dir: d, service,
+    probe: { isAlive: () => false, argsOf: () => null },
+    signal: (pid, sig) => sent.push(`${sig}->${pid}`),
+    log: (l) => lines.push(l), waitMs: 300,
+  });
+  expect(code).toBe(0);
+  expect(calls).toEqual(["uninstall"]);
+  expect(sent).toEqual([]);
+  expect(lines.join("\n")).toContain("removed from systemd");
+  // Not followed by a contradicting "not running" line.
+  expect(lines.join("\n")).not.toContain("paddock — not running");
+});
+
+test("a registered-but-dead service (crash loop) is still uninstalled", async () => {
+  const d = await dir();
+  const { service, calls } = svc("registered");
+  const code = await runStop({ dir: d, service, log: () => {}, waitMs: 300 });
+  expect(code).toBe(0);
+  expect(calls).toEqual(["uninstall"]);
+});
+
+test("an uninstall failure is reported, exits 1, and signals nothing", async () => {
+  const d = await dir();
+  await writeState(d, { ...s, managedBy: "systemd" });
+  const { service } = svc("active", { uninstall: async () => { throw new ServiceError("`systemctl --user stop paddock.service` failed: no bus"); } });
+  const sent: string[] = [];
+  const lines: string[] = [];
+  const code = await runStop({
+    dir: d, service, probe: { isAlive: () => true, argsOf: () => "paddock" },
+    signal: (pid, sig) => sent.push(`${sig}->${pid}`), log: (l) => lines.push(l), waitMs: 300,
+  });
+  expect(code).toBe(1);
+  expect(sent).toEqual([]);
+  expect(lines.join("\n")).toContain("no bus");
+});
+
+test("no service registered: stop behaves exactly as before", async () => {
+  const d = await dir();
+  await writeState(d, s);
+  const { service, calls } = svc("absent");
+  const sent: string[] = [];
+  const { probe } = dyingProbe(1, "paddock");
+  const code = await runStop({ dir: d, service, probe, signal: (pid, sig) => sent.push(`${sig}->${pid}`), log: () => {}, waitMs: 500 });
+  expect(code).toBe(0);
+  expect(calls).toEqual([]);
+  expect(sent).toEqual(["SIGTERM->4242"]);
 });
