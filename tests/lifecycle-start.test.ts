@@ -253,7 +253,7 @@ test("start points at the tunnel when no publicUrl is configured", async () => {
     healthCheck: async () => true,
   });
   expect(code).toBe(0);
-  expect(lines.join("\n")).toContain("paddock tunnel");
+  expect(lines.join("\n")).toContain("paddock start");
 });
 
 test("start says nothing about tunnels when publicUrl is set", async () => {
