@@ -454,7 +454,22 @@ test("update tells the operator to restart an instance still on the old version"
   expect(text).toContain("0.1.0");
   // The exact command, because "restart it" leaves the operator guessing which
   // of stop/start/kill is meant.
-  expect(text).toContain("paddock stop && paddock start");
+  expect(text).toContain("paddock stop");
+  expect(text).toContain("paddock local");
+});
+
+test("a service-managed instance is told to re-run `paddock local`, which restarts it", async () => {
+  const body = "NEW BINARY";
+  const h = await harness(body, await sha(body));
+  const said: string[] = [];
+  await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64",
+    current: "0.1.0", fetchImpl: h.fetchImpl, log: (l) => said.push(l),
+    running: async () => ({ pid: 3558072, port: 8787, version: "0.1.0", managedBy: "systemd" }),
+  });
+  const text = said.join("\n");
+  expect(text).toContain("paddock local");
+  expect(text).not.toContain("paddock stop");
 });
 
 test("update says nothing about restarting when the running instance is already new", async () => {
@@ -468,7 +483,7 @@ test("update says nothing about restarting when the running instance is already 
     current: "0.1.0", fetchImpl: h.fetchImpl, log: (l) => said.push(l),
     running: async () => ({ pid: 111, port: 8787, version: "9.9.9" }),
   });
-  expect(said.join("\n")).not.toContain("paddock stop && paddock start");
+  expect(said.join("\n")).not.toContain("restart it");
 });
 
 test("update says nothing about restarting when nothing is running", async () => {

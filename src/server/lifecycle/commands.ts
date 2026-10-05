@@ -7,10 +7,8 @@ import {
   systemProbe,
   type Probe,
 } from "@server/lifecycle/state";
-import { SettingsStore } from "@server/settings/store";
 import { checkTunnelState, removeTunnelState, tunnelStateFile } from "@server/tunnel/state";
 import { stopTunnel } from "@server/tunnel/stop";
-import { tunnelHint } from "@server/tunnel/preflight";
 import { duration, glyph, say } from "@server/term";
 import type { ServiceChoice } from "@server/lifecycle/service";
 import { ServiceError } from "@server/lifecycle/service/types";
@@ -594,161 +592,14 @@ export function childCommand(opts: ChildCommandOpts = {}): string[] {
   return opts.demo ? [...base, "--demo"] : base;
 }
 
-export interface StartOpts {
-  dir: string;
-  probe?: Probe;
-  log?: (line: string) => void;
-  waitMs?: number;
-  /** Forwarded to the real, uninjected spawn path — see ChildCommandOpts. */
-  demo?: boolean;
-  spawn?: () => { pid: number; exited: Promise<number> };
-  healthCheck?: (port: number) => Promise<boolean>;
-  logTail?: () => Promise<string>;
-}
-
 export function logFile(dir: string): string {
   return join(dir, "paddock.log");
 }
 
 /**
- * Success is only reported once the new instance is actually serving: the
- * state file has appeared AND a health request against its port answered.
- * Reporting success from the state file alone and letting the operator
- * discover a port conflict later is exactly the failure this command exists
- * to prevent.
- */
-export async function runStart(o: StartOpts): Promise<number> {
-  const log = o.log ?? say;
-  const waitMs = o.waitMs ?? 10_000;
-  const existing = await checkState(o.dir, o.probe);
-
-  switch (existing.kind) {
-    case "unreadable":
-      // Same reasoning as runStatus/runStop: an I/O error reading the state
-      // file is "cannot tell", not "nothing running". Guessing the latter
-      // would let this spawn a second paddock right alongside one already
-      // serving — the exact guess this module refuses to make.
-      log(
-        `paddock: could not read state (${existing.error}), refusing to guess — not starting`,
-      );
-      return 1;
-    case "running":
-      log(
-        `paddock: already running (pid ${existing.state.pid}, port ${existing.state.port})`,
-      );
-      return 1;
-    case "mismatch":
-      log(
-        `paddock: pid ${existing.state.pid} is not paddock any more — clearing stale state`,
-      );
-      await clearState(o.dir, log);
-      break;
-    case "stale":
-      // A crash left this behind. Cleared deliberately, before spawning: left
-      // in place, the poll loop below would keep reading the dead instance's
-      // own (still "running"-shaped, once it were alive again) file until the
-      // new child happened to overwrite it with its own — working by
-      // accident, not by design.
-      log(`paddock: clearing stale state for pid ${existing.state.pid}`);
-      await clearState(o.dir, log);
-      break;
-    case "none":
-      break;
-    default: {
-      // Exhaustiveness guard, not dead code kept out of habit: a sixth
-      // `StateCheck` variant added later, with no case added here, would
-      // otherwise fall through silently to spawning a second paddock — the
-      // single most consequential thing this function does — for a case
-      // nobody considered. `_exhaustive: never` turns that omission into a
-      // compile error instead of a silent wrong action; the throw is the
-      // runtime backstop for the (currently impossible) case this guard is
-      // bypassed some other way.
-      const _exhaustive: never = existing;
-      throw new Error(
-        `paddock: unhandled state check: ${JSON.stringify(_exhaustive)}`,
-      );
-    }
-  }
-
-  let child: { pid: number; exited: Promise<number> };
-  try {
-    child = o.spawn ? o.spawn() : await spawnDetached(o.dir, { demo: o.demo });
-  } catch (e) {
-    // The design's failure table: "start where the config dir is unwritable
-    // -> Refuse before spawning, exit non-zero." Unguarded this threw
-    // `EACCES ... open '.../paddock.log'` with a stack trace, which tells an
-    // operator the truth in the least usable form there is. Narrow on
-    // purpose: only the log-file preparation is turned into a refusal, so an
-    // unexpected failure inside Bun.spawn still surfaces loudly rather than
-    // being reported as a permissions problem it is not.
-    if (!(e instanceof ConfigDirUnusable)) throw e;
-    log(`paddock: cannot write ${e.file} (${e.reason}) — not starting`);
-    return 1;
-  }
-  const deadline = Date.now() + waitMs;
-  let childGone = false;
-  void child.exited.then(() => {
-    childGone = true;
-  });
-
-  const health = o.healthCheck ?? defaultHealthCheck;
-  while (Date.now() < deadline) {
-    const got = await checkState(o.dir, o.probe);
-    if (got.kind === "running" && (await health(got.state.port))) {
-      log(`paddock: started (pid ${got.state.pid}, port ${got.state.port})`);
-      // `runStart` did not read settings before this feature: it needs
-      // `publicUrl` only to decide whether to nudge toward `paddock tunnel`,
-      // so it loads the same config dir it already has rather than growing a
-      // second settings entry point. `detached: true` because this instance
-      // is the one `tunnelHint` calls "detached" — it just ran and returned,
-      // unlike the foreground process index.ts prints its own hint beside.
-      const settings = new SettingsStore(o.dir);
-      await settings.load();
-      const hint = tunnelHint(settings.current().publicUrl, true);
-      if (hint !== null) log(hint);
-      return 0;
-    }
-    // An early exit is a failure now, not in ten seconds' time.
-    if (childGone) break;
-    await Bun.sleep(100);
-  }
-
-  const tail = o.logTail ? await o.logTail() : await readLogTail(o.dir);
-  if (!childGone) {
-    // The wait expired but the child is still alive. It was reported as
-    // "the detached process did not start" — a live process holding the
-    // port, described to the operator as an absence, with no pid to act on.
-    //
-    // It is NOT killed here. Every other decision in this module refuses to
-    // signal on its own, and a child that bound but answers /api/health
-    // slowly is a working paddock, not garbage to tidy away. So report what
-    // is actually true, name the pid, and hand over the command that deals
-    // with it. Still non-zero: this is not the success `start` promises.
-    log(
-      `paddock: spawned pid ${child.pid}, but it did not answer /api/health ` +
-        `within ${Math.round(waitMs / 1000)}s — it is still running`,
-    );
-    // Deliberately hedged: the child records its state only after it binds,
-    // so one that is still coming up may not be visible to `status`/`stop`
-    // yet. The pid above is the handle that always works.
-    log(
-      "  once it has recorded state, `paddock status` shows it and `paddock stop` stops it",
-    );
-    if (tail.trim() !== "") log(tail.trim());
-    log(`  full log: ${logFile(o.dir)}`);
-    return 1;
-  }
-
-  log("paddock: the detached process did not start");
-  if (tail.trim() !== "") log(tail.trim());
-  log(`  full log: ${logFile(o.dir)}`);
-  return 1;
-}
-
-/**
  * The config dir could not be made to hold `paddock.log`.
  *
- * A distinct type, not a string match on the message, so `runStart` can turn
+ * A distinct type, not a string match on the message, so `runDetach` can turn
  * exactly this into a one-line refusal and let anything else it did not
  * anticipate keep its stack trace.
  */

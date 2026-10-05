@@ -35,7 +35,8 @@ import { serviceEnv, serviceKindOf } from "@server/lifecycle/service/env";
 import { serviceManager } from "@server/lifecycle/service";
 import { serviceArgv } from "@server/lifecycle/service/argv";
 import { runLocal } from "@server/lifecycle/local";
-import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
+import { runStatus, runStop } from "@server/lifecycle/commands";
+import { startRoute } from "@server/lifecycle/start";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, type NotifierOpts } from "@server/notify/notifier";
 import { PushStore } from "@server/push/store";
@@ -144,7 +145,10 @@ if (command === "update") {
       // at the one moment an operator is already watching output.
       const got = await checkState(defaultConfigDir());
       return got.kind === "running"
-        ? { pid: got.state.pid, port: got.state.port, version: got.state.version }
+        ? {
+          pid: got.state.pid, port: got.state.port, version: got.state.version,
+          managedBy: got.state.managedBy,
+        }
         : null;
     },
   }));
@@ -184,11 +188,6 @@ if (command === "stop") {
   }));
 }
 
-// Must run before any server setup below, same reasoning as the three verbs
-// above: `start` itself never binds a port or opens a herdr socket — it only
-// spawns a detached child (which is this same binary, re-invoked with no
-// verb, and IS the thing that binds a port) and waits for that child's own
-// state file and health endpoint to confirm it is actually serving.
 /**
  * `paddock pair` — the URL, code and QR of whatever tunnel is running.
  *
@@ -200,9 +199,6 @@ if (command === "pair") {
   process.exit(await runPair({ dir: defaultConfigDir() }));
 }
 
-if (command === "start") {
-  process.exit(await runStart({ dir: defaultConfigDir(), demo: DEMO }));
-}
 
 /**
  * `paddock tunnel` is dispatched in TWO halves, and this is the first of them.
@@ -224,7 +220,10 @@ if (command === "start") {
 let tunnelBin: string | undefined;
 let tunnelPublishRunning = false;
 let tunnelDeadlineMs: number | null = null;
-if (command === "tunnel") {
+// `start` joins here: it is `tunnel --detach`, below, with `--publish-running`
+// chosen for it. It never binds a port itself — `runDetach` spawns the child
+// that does, and waits for it.
+if (command === "tunnel" || command === "start") {
   const raw = values.get("--for");
   // `--for` with nothing after it. The parser leaves a trailing value flag
   // unconsumed, so `values` has no entry and `raw` is indistinguishable from
@@ -248,6 +247,21 @@ if (command === "tunnel") {
   // it safe to run beside an instance the plain form must refuse to.
   tunnelPublishRunning = flags.has("--publish-running");
 
+  // `start` is `tunnel --detach` that chooses `--publish-running` itself. See
+  // `lifecycle/start.ts` for the three cases.
+  if (command === "start") {
+    const service = serviceManager({ configDir: defaultConfigDir() });
+    const route = startRoute(
+      await checkState(defaultConfigDir()),
+      service.ok ? await service.manager.inspect() : "absent",
+    );
+    if (route.kind === "refuse") {
+      warn(route.message);
+      process.exit(1);
+    }
+    if (route.kind === "publish-running") tunnelPublishRunning = true;
+  }
+
   const pre = await preflight({ dir: defaultConfigDir(), publishRunning: tunnelPublishRunning });
   if (!pre.ok) {
     warn(pre.message);
@@ -270,7 +284,7 @@ if (command === "tunnel") {
    * notifier's case would have sent a startup notification from a process that
    * publishes nothing.
    */
-  if (flags.has("--detach")) {
+  if (flags.has("--detach") || command === "start") {
     process.exit(await runDetach({
       dir: defaultConfigDir(),
       forSpec: values.get("--for"),

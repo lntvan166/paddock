@@ -208,8 +208,8 @@ test("the reserved verbs still exit 2 and still point at the roadmap", () => {
 // of the `start` case lives for the whole budget — and `spawnSync`'s timeout
 // kills only the parent, leaving a detached paddock behind exactly as
 // `docs/roadmap.md` warns.
-function runVerb(verb: string, extraArgs: string[] = []) {
-  const r = Bun.spawnSync(["bun", "src/server/index.ts", verb, ...extraArgs], {
+function runVerb(verb: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}) {
+  const r = Bun.spawnSync([process.execPath, "src/server/index.ts", verb, ...extraArgs], {
     env: {
       ...process.env,
       PADDOCK_NO_UPDATE_CHECK: "1",
@@ -221,6 +221,7 @@ function runVerb(verb: string, extraArgs: string[] = []) {
       // this file's outcome — the same reason PADDOCK_PORT is randomised.
       DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
       XDG_CONFIG_HOME: CONFIG,
+      ...extraEnv,
       // An OS-assigned free port, not the default 8787. `status` and `stop`
       // now probe the port for an instance no state file describes, and the
       // default port is exactly where the developer's OWN paddock is
@@ -242,27 +243,15 @@ function runVerb(verb: string, extraArgs: string[] = []) {
   };
 }
 
-test("start's own parsing process never binds a port, whatever the detached child does", () => {
-  // `start` is now dispatched to real behaviour (runStart, tested in
-  // lifecycle-start.test.ts): it spawns a detached child — this same binary,
-  // re-invoked with no verb — and waits for THAT child's state file and
-  // health endpoint before reporting success. So this no longer exits 0 vs
-  // non-zero on a fixed rule; the durable property this test guards is
-  // narrower and still holds regardless: the process handling `start`'s own
-  // parsing and dispatch must never itself bind a port. Before Task 5's gate
-  // existed, it fell through every `if` in index.ts all the way to
-  // Bun.serve: `paddock start` silently became a foreground `serve` rather
-  // than the detach-and-return the verb promises.
-  //
-  // The bogus herdr socket above means the spawned child fails fast
-  // (ENOENT, not a hang), so this is also, incidentally, the case where the
-  // child never binds a port either — but that is not what is asserted here.
-  const r = runVerb("start");
-  expect(r.timedOut, "paddock start never exited on its own — it is serving").not.toBe(true);
-  expect(r.out, "paddock start printed the listening line — it bound a port")
-    .not.toContain("paddock listening");
-  expect(r.out, "start should report why the detached process did not come up")
-    .toContain("did not start");
+test("start is the detached tunnel: with no cloudflared it refuses at the terminal, binding nothing", () => {
+  // `start` now runs `tunnel --detach`, so it goes through preflight — and an
+  // empty PATH means no cloudflared, the cheapest refusal there is. This also
+  // keeps the test from ever opening a real public URL.
+  const r = runVerb("start", [], { PATH: "" });
+  expect(r.timedOut, "paddock start never exited — it is serving").not.toBe(true);
+  expect(r.code).not.toBe(0);
+  expect(r.out + r.err).not.toContain("paddock listening");
+  expect(r.out + r.err).toContain("cloudflared is not installed");
 });
 
 test("stop never binds a port or opens a herdr socket, whether or not anything is running", () => {

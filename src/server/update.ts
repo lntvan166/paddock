@@ -1,4 +1,5 @@
 import { chmod, realpath, rename, rm, stat } from "node:fs/promises";
+import type { ServiceKind } from "@server/lifecycle/service/types";
 import { dirname, join } from "node:path";
 import { upgradeCommand, type ManagedBy } from "@shared/types";
 import { say } from "@server/term";
@@ -124,7 +125,9 @@ export interface UpdateOpts {
    * and binaries, and the state file belongs to `lifecycle/`. `index.ts`
    * supplies the real one.
    */
-  running?: () => Promise<{ pid: number; port: number; version: string } | null>;
+  running?: () => Promise<
+    { pid: number; port: number; version: string; managedBy?: ServiceKind } | null
+  >;
   /**
    * How the download reports itself. Injected like `log` so no test needs a
    * pty; defaults to a bar on a tty and one line under a pipe.
@@ -380,7 +383,14 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
         "from the replaced binary.",
     );
     log("  restart it to pick this up:");
-    log("    paddock stop && paddock start");
+    if (live.managedBy !== undefined) {
+      // Re-running `local` rewrites the unit and restarts the service onto
+      // the new binary. `stop` would REMOVE the service, which is not a restart.
+      log("    paddock local");
+    } else {
+      log("    paddock stop, then start it again the way you did:");
+      log("    `paddock local`, `paddock start` or `paddock`");
+    }
   }
   return 0;
 }
