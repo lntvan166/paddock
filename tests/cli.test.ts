@@ -216,11 +216,11 @@ function runVerb(verb: string, extraArgs: string[] = [], extraEnv: Record<string
       PADDOCK_CONFIG_DIR: CONFIG,
       PADDOCK_HERDR_SOCKET: join(CONFIG, "no-such-herdr.sock"),
       PADDOCK_HERDR_WAIT_MS: "0",
-      // No user bus: `status`/`stop`/`start` now ask systemd about the
-      // `paddock local` unit, and the developer's real one must not decide
-      // this file's outcome — the same reason PADDOCK_PORT is randomised.
-      DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent",
-      XDG_CONFIG_HOME: CONFIG,
+      // `status`/`stop`/`start`/`local` talk to the `paddock local` service.
+      // Without this the spawned `stop` case reaches the developer's REAL
+      // systemd and stops their real service — a bad DBUS_SESSION_BUS_ADDRESS
+      // does not prevent that (systemctl --user uses its own private socket).
+      PADDOCK_NO_SERVICE: "1",
       ...extraEnv,
       // An OS-assigned free port, not the default 8787. `status` and `stop`
       // now probe the port for an instance no state file describes, and the

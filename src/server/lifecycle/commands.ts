@@ -550,8 +550,8 @@ async function stopPaddock(
 export interface ChildCommandOpts {
   /**
    * Forward `--demo` to the detached child. Narrow on purpose: this is not a
-   * general flag-forwarding mechanism, it is the one flag `serve` (what the
-   * child's bare re-invocation runs as) currently understands. Silently
+   * general flag-forwarding mechanism, it is the one flag both `serve` and a
+   * self-serving `tunnel` child understand. Silently
    * dropping it would detach a REAL, non-demo instance while the operator
    * believed they asked for the demo one — the same shape as `paddock updte`
    * once silently becoming `serve` instead of being refused (see cli.ts).
@@ -587,6 +587,9 @@ export function childCommand(opts: ChildCommandOpts = {}): string[] {
     const argv = [...base, "tunnel"];
     if (opts.tunnel.publishRunning === true) argv.push("--publish-running");
     if (opts.tunnel.for !== undefined) argv.push("--for", opts.tunnel.for);
+    // A tunnel serves through the same DEMO switch as `serve`. Dropping it
+    // here published real data for a `start --demo` that asked for synthetic.
+    if (opts.demo === true) argv.push("--demo");
     return argv;
   }
   return opts.demo ? [...base, "--demo"] : base;

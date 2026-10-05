@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stateFile } from "@server/lifecycle/state";
@@ -59,12 +59,27 @@ test("a detached child genuinely outlives the parent that started it", async () 
   // while still ephemeral-but-unassigned rather than a registered service
   // port.
   const port = freePort();
+  // `start` is the detached TUNNEL now. Everything it could reach for real is
+  // replaced: a fake cloudflared first on PATH (prints a quick-tunnel URL and
+  // sleeps — nothing is published), a herdr socket that does not exist (the
+  // child must be serving `--demo`, never the operator's live session), and
+  // no service manager. This test once opened a real public URL on every
+  // `make test`, because none of the three was in place.
+  const fakeBin = join(cfg, "bin");
+  await Bun.write(join(fakeBin, ".keep"), "");
+  const fake = join(fakeBin, "cloudflared");
+  await writeFile(fake, "#!/bin/sh\necho 'INF |  https://detach-test-only.trycloudflare.com  |' >&2\nexec sleep 600\n");
+  await chmod(fake, 0o755);
   const parent = Bun.spawn(["bun", "src/server/index.ts", "start", "--demo"], {
     env: {
       ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
       PADDOCK_PORT: String(port),
       PADDOCK_CONFIG_DIR: cfg,
       PADDOCK_NO_UPDATE_CHECK: "1",
+      PADDOCK_NO_SERVICE: "1",
+      PADDOCK_HERDR_SOCKET: join(cfg, "no-such-herdr.sock"),
+      PADDOCK_HERDR_WAIT_MS: "0",
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -82,6 +97,8 @@ test("a detached child genuinely outlives the parent that started it", async () 
       new Response(parent.stderr).text(),
     ]);
     expect(code, `paddock start failed\n--- stdout ---\n${out}\n--- stderr ---\n${err}`).toBe(0);
+    // The fake, and only the fake, published.
+    expect(out + err).toContain("detach-test-only.trycloudflare.com");
 
     const s = JSON.parse(await readFile(stateFile(cfg), "utf8"));
     child = s.pid;

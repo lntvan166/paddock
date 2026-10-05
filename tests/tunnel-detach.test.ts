@@ -131,6 +131,10 @@ test("the child command carries every flag that changes what the tunnel is", asy
 
   // And never --detach: the child would try to detach again, forever.
   expect(both).not.toContain("--detach");
-  // `--demo` is not a tunnel flag and must not leak in through this path.
-  expect(childCommand({ tunnel: {}, demo: true })).not.toContain("--demo");
+  // `--demo` IS forwarded. It used to be kept out as "not a tunnel flag", but
+  // a tunnel serves the dashboard through the same DEMO switch as `serve`, so
+  // dropping it published the operator's REAL herdr session for a `start
+  // --demo` that asked for synthetic data.
+  expect(childCommand({ tunnel: {}, demo: true })).toContain("--demo");
+  expect(childCommand({ tunnel: {} })).not.toContain("--demo");
 });

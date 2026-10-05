@@ -24,3 +24,15 @@ test("anything else is a refusal naming the platform, never a fallback", () => {
   expect(w.ok).toBe(false);
   expect(!w.ok && w.reason).toContain("win32");
 });
+
+test("PADDOCK_NO_SERVICE=1 turns service management off on every platform", () => {
+  // The seam every spawned-process test uses. Pointing the bus env at nowhere
+  // does NOT isolate systemctl --user — it connects to
+  // $XDG_RUNTIME_DIR/systemd/private first — so `make test` once stopped a
+  // real service. A refusal here means no test process can reach one.
+  for (const platform of ["linux", "darwin"]) {
+    const c = serviceManager({ ...base, platform, env: { PADDOCK_NO_SERVICE: "1" } });
+    expect(c.ok).toBe(false);
+    expect(!c.ok && c.reason).toContain("PADDOCK_NO_SERVICE");
+  }
+});

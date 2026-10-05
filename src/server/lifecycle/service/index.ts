@@ -27,6 +27,13 @@ export function serviceManager(o: {
   const env = o.env ?? process.env;
   const home = o.home ?? homedir();
   const run = o.run ?? spawnRun;
+  // The off switch, for a container with no user session and for every test
+  // that spawns paddock: with it set, nothing here can reach a real systemd or
+  // launchd. Env tricks on the bus address do not — systemctl --user finds
+  // $XDG_RUNTIME_DIR/systemd/private on its own.
+  if (env.PADDOCK_NO_SERVICE === "1") {
+    return { ok: false, reason: "service management is off here (PADDOCK_NO_SERVICE=1)" };
+  }
   if (platform === "linux") {
     const config = env.XDG_CONFIG_HOME || join(home, ".config");
     return {

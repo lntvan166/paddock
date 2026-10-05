@@ -289,6 +289,7 @@ if (command === "tunnel" || command === "start") {
       dir: defaultConfigDir(),
       forSpec: values.get("--for"),
       publishRunning: tunnelPublishRunning,
+      demo: DEMO,
       colour: useColour(process.env, Boolean(process.stdout.isTTY)),
       columns: process.stdout.columns ?? 0,
       rows: process.stdout.rows ?? 0,

@@ -22,6 +22,8 @@ export interface DetachOpts {
   /** `--for` as typed, forwarded to the child verbatim. */
   forSpec?: string;
   publishRunning?: boolean;
+  /** `--demo`, forwarded so a detached demo tunnel serves synthetic data. */
+  demo?: boolean;
 }
 
 /**
@@ -77,6 +79,7 @@ export async function runDetach(o: DetachOpts): Promise<number> {
       ? o.spawn()
       : await spawnDetached(o.dir, {
           tunnel: { for: o.forSpec, publishRunning: o.publishRunning },
+          demo: o.demo,
         });
   } catch (e) {
     // A narrow guard: only the log-file preparation becomes a
