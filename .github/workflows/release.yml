@@ -14,7 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # Pinned. Bun 1.4 stopped loading src/shared/herdr-api.d.ts as a module
+      # through the tsconfig path, so every value import of HERDR_PROTOCOL fails
+      # with "Cannot find module" — reproduced locally with 1.4.2. Unpin once the
+      # generated contract ships as a loadable module (docs/roadmap.md).
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
       - run: bun install --frozen-lockfile
 
       - run: make check

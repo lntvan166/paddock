@@ -154,6 +154,16 @@ surprise.
   manifest answers it, and the answer only decides whether the optional path is
   available at all.
 
+- **Bun 1.4 cannot load the generated herdr contract; CI is pinned to 1.3.14.**
+  `src/shared/herdr-api.d.ts` carries VALUES (`HERDR_PROTOCOL`,
+  `HERDR_AGENT_STATUSES`) and `tsconfig.json` maps `@shared/herdr-api` straight
+  to it. Bun 1.3 runs that file; Bun 1.4.2 answers "Cannot find module" for
+  every value import (reproduced 2026-10-05). `ci.yml` and `release.yml` pin
+  Bun 1.3.14. The real fix is for `make types` to emit a loadable module (a
+  `.ts` beside the declarations), which also means updating CLAUDE.md's rule
+  that names the `.d.ts`. Until then a contributor on Bun 1.4 sees the suite
+  fail to load.
+
 - **A "herdr is not running" screen for a service paddock.** After a reboot
   `paddock local`'s service crash-loops (on-failure, every 10s) until herdr is
   started, and the phone sees the tunnel's 502. Serving the UI with a plain
