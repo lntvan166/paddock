@@ -132,13 +132,16 @@ paddock --demo     # synthetic agents, no herdr
 
 It serves on `127.0.0.1` only, which is what the next section is for.
 
-To keep it up after the terminal closes:
+To keep it up after the terminal closes — and after a reboot:
 
 ```bash
-paddock start      # detached
+paddock local      # localhost, as a service — comes back after a reboot
 paddock status     # is it up?
-paddock stop
+paddock stop       # closes the tunnel, stops paddock, removes the service
 ```
+
+`paddock local` registers a systemd user unit (Linux) or a launchd agent
+(macOS); see [running locally](docs/running-locally.md#keeping-it-running).
 
 ## publish it
 
@@ -148,10 +151,13 @@ your phone, type the code once, and you are watching the same agents from the
 sofa.
 
 ```bash
-paddock tunnel
+paddock start      # phone access: a quick tunnel, in the background
 ```
 
-`--for` bounds how long it lives (`30m`, `2h`, `7d`); `ctrl+c` ends it.
+`--for` bounds how long it lives (`30m`, `2h`, `7d`). If a paddock is already
+running here — `paddock local`, say — `start` publishes that one instead of
+starting a second. `paddock tunnel` is the same thing in the foreground;
+`ctrl+c` ends it.
 
 Four forms, because a tunnel can either serve the dashboard itself or publish
 one that is already running, and either can hold the terminal or not:
@@ -161,8 +167,9 @@ one that is already running, and either can hold the terminal or not:
 | **foreground** | `paddock tunnel`          | `paddock tunnel --publish-running`          |
 | **background** | `paddock tunnel --detach` | `paddock tunnel --publish-running --detach` |
 
-The left column *is* a whole paddock, so it refuses to start beside a detached
-instance — `paddock stop` first, or use the right column instead.
+`paddock start` picks the background row's column for you. The left column *is*
+a whole paddock, so it refuses to start beside a running instance —
+`paddock stop` first, or use the right column instead.
 `--publish-running` serves no dashboard of its own: it opens the pairing gate and
 proxies to the paddock already listening, so there is no second herdr connection
 and no second notifier. It exits if nothing is listening rather than publishing a

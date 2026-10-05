@@ -158,7 +158,7 @@ export interface ScheduleHandle {
  * exits and wrong for a server. Measured consequence: a paddock started before
  * a release existed reported `latestKnown: null` forever — so the dashboard's
  * notice and the terminal's both faithfully displayed a value that could never
- * change. `paddock start` and a dashboard left open on a phone are the two
+ * change. `paddock local` and a dashboard left open on a phone are the two
  * documented ways to use this thing, and both were the case that never learned.
  *
  * `make` is a FACTORY, not a value: `CheckOpts.now` is a timestamp, and a

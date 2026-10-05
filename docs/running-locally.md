@@ -36,31 +36,44 @@ authenticate the request before paddock sees it.**
 ## Keeping it running
 
 A paddock your phone can reach has to outlive the terminal you started it
-from. Once a tunnel is in front of it, `paddock start` is the normal way to
-run it: it spawns a detached child, waits for the state file to appear and
-`/api/health` to answer, and reports success only once both are true.
+from — and the machine's next reboot. Once a named tunnel is in front of it,
+`paddock local` is the normal way to run it: it registers paddock as a user
+service — a systemd user unit on Linux, a launchd agent on macOS — so it comes
+back after a crash and after a reboot, and the tunnel finds it on the same
+port.
 
 ```bash
-paddock start     # detached; survives this terminal
-paddock status    # pid, port, uptime — or "not running"
-paddock stop      # SIGTERM, waits up to 10s; --force sends SIGKILL
+paddock local     # register, start, wait until it answers
+paddock status    # pid, port, uptime, and the service line
+paddock stop      # stops it AND removes it from boot
 ```
 
-The detached process's stdout and stderr go to
-`~/.config/paddock/paddock.log` (`PADDOCK_CONFIG_DIR` moves it, same as
-`settings.json`). That file is **truncated on every `paddock start`**, not
-appended — it holds one run's output, not a growing history.
+On Linux it starts at **boot**, before anyone logs in, if linger is on;
+`paddock local` turns linger on and tells you plainly when it could not (some
+distros need `sudo loginctl enable-linger $USER`). On macOS a LaunchAgent can
+only start at **login**, and `paddock local` says so.
 
-`paddock start`/`stop`/`status` do not give you restart-on-boot or
-restart-on-crash; nothing here loops or supervises. They are the interactive
-path, for a developer at a terminal, not a supervision mechanism — do not
-point a service unit at them. A service manager should instead run plain
-`paddock` (no verb) in the foreground and own restart itself: systemd's
-default `Type=simple` tracks the process it launched directly, which is
-exactly what a foreground paddock is. `paddock start`'s detached child would
-leave `ExecStart` exiting 0 immediately, and there is no pid file to hand a
-`Type=forking` unit either — paddock deliberately does not write one; see
-`docs/design/2026-08-19-lifecycle-commands-design.md`.
+The unit runs plain `paddock` in the foreground with a snapshot of `PATH`,
+`HOME`, `HERDR_*` and `PADDOCK_*` taken when you ran `paddock local`. Change
+one of those? Run `paddock local` again — it rewrites the unit and restarts
+the service. Output goes to `journalctl --user -u paddock` (Linux) or
+`~/.config/paddock/paddock.log` (macOS). It restarts on failure only: a
+paddock that exits cleanly stays down.
+
+After a reboot, herdr is usually not running until you start it. paddock
+exits while it cannot reach herdr and the service manager restarts it every
+ten seconds; your phone sees the tunnel's error page until herdr is up, then
+everything connects on its own.
+
+No named tunnel? `paddock start` publishes on a quick tunnel instead, in the
+background — and if `paddock local` is already serving, it publishes that one.
+Its output goes to `~/.config/paddock/paddock.log` (`PADDOCK_CONFIG_DIR` moves
+it), truncated on every start.
+
+Running paddock under a service manager of your own instead? Point it at plain
+`paddock` (no verb) in the foreground: systemd's default `Type=simple` tracks
+the process it launched directly, which is exactly what a foreground paddock
+is. See decision 33 in `docs/decisions.md`.
 
 ## Then add it to your Home Screen
 

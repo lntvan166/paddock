@@ -154,6 +154,13 @@ surprise.
   manifest answers it, and the answer only decides whether the optional path is
   available at all.
 
+- **A "herdr is not running" screen for a service paddock.** After a reboot
+  `paddock local`'s service crash-loops (on-failure, every 10s) until herdr is
+  started, and the phone sees the tunnel's 502. Serving the UI with a plain
+  "herdr is not running on this machine" state instead is a change to startup
+  (`herdr/await-start.ts` is bounded on purpose) and was kept out of the
+  2026-10-05 service work.
+
 - **Spawning an agent from paddock.** Feasible, measured against herdr
   protocol 19, and deliberately unbuilt — see
   `docs/design/2026-08-19-notifications-and-settings-design.md` §10 for the
@@ -408,7 +415,8 @@ surprise.
   one that dies later and never returns. Docker was already covered —
   `docker-compose.yml` sets `restart: unless-stopped` — and the bare binary
   ships no unit file, so a shipped systemd unit remains the honest answer for
-  that and is complementary to this, not replaced by it.
+  that and is complementary to this, not replaced by it — shipped as
+  `paddock local`, decision 33.
 
   Two things worth knowing for whoever touches it next. The retry is safe
   because `supervisor.start()` is `reconcile()` then `resubscribe()` then

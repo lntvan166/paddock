@@ -34,6 +34,8 @@ stable identity: if the port is occupied by **something that is not paddock**,
 a port-based `stop` sends a shutdown request to a stranger. A PID file cannot
 make that mistake — it reports that paddock is not running, and stops.
 
+> Reversed 2026-10-05 — see decision 33 and `2026-10-05-start-tunnel-local-service-design.md`.
+
 **Not systemd or launchd.** They do restart-on-boot and log rotation properly,
 and they would be the right answer for a server. They are the wrong answer for
 a tool a developer runs beside herdr on a laptop: two platform-specific unit

@@ -1032,3 +1032,19 @@ session does not silently re-litigate them.
     report are invented fixtures in `src/web/demo/backend.ts`, which makes it a
     strictly safer source for those two shots than the server demo could be.
     Everything else still comes from `paddock --demo`.
+
+33. **paddock manages its own user service, reversing "Not systemd or
+    launchd".** The lifecycle design (2026-08-19) declined service units for a
+    tool run beside herdr on a laptop, and ended "Revisit if anyone asks to run
+    paddock on an always-on box". That ask came: a named tunnel in front of
+    port 8787 is only as alive as the paddock behind it, and nothing brought
+    that paddock back after a reboot. The objection was vocabulary — `stop`
+    becoming `systemctl --user stop paddock` — so paddock keeps its own:
+    `paddock local` writes and enables the unit, `stop` removes it, `status`
+    reports it. `stop` UNINSTALLS rather than only stopping, so nothing
+    `stop` was told to stop comes back at boot. Restart is on-failure, not
+    always: paddock exits 1 while herdr is unreachable (the after-boot case)
+    and 0 on SIGTERM, which must stay down. At the same time `start` became
+    the detached quick tunnel — the verb people reach for first now gives
+    phone access — and the old localhost `start` moved to `local`. See
+    `docs/design/2026-10-05-start-tunnel-local-service-design.md`.

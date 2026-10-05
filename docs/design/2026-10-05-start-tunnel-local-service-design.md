@@ -95,7 +95,9 @@ snapshot.
 ### systemd (Linux)
 
 - File: `~/.config/systemd/user/paddock.service` (`$XDG_CONFIG_HOME` honoured).
-- `Type=simple`, `Restart=always`, `RestartSec=10`, `WantedBy=default.target`.
+- `Type=simple`, `Restart=on-failure`, `RestartSec=10`, `WantedBy=default.target`.
+  On-failure rather than always: paddock exits 1 while herdr is unreachable,
+  which is retried, and 0 on SIGTERM, which must stay down.
 - `systemctl --user daemon-reload`, then `systemctl --user enable --now paddock`.
 - `loginctl enable-linger` so the user manager starts at boot without a login.
   If that is refused (polkit/sudo on some distros), `local` still succeeds and
@@ -108,7 +110,8 @@ snapshot.
 ### launchd (macOS)
 
 - File: `~/Library/LaunchAgents/paddock.plist`, label `paddock`.
-- `RunAtLoad`, `KeepAlive`, `StandardOutPath`/`StandardErrorPath` to the
+- `RunAtLoad`, `KeepAlive = { SuccessfulExit = false }` (restart on failure
+  only, as above), `StandardOutPath`/`StandardErrorPath` to the
   existing `paddock.log` in the config dir.
 - `launchctl bootstrap gui/$UID <plist>`; removal `launchctl bootout
   gui/$UID/paddock`.
@@ -138,7 +141,9 @@ install time from `$HOME`/`$XDG_CONFIG_HOME`. Tests use invented values
 - **`start`.** If a paddock answers on the port (via the existing
   `httpListener`), run the detached tunnel with `publishRunning: true`.
   Otherwise run today's `runDetach`, which serves its own paddock — so `start`
-  is useful without `local`. An untracked paddock on the port is refused as
+  is useful without `local`. If the `local` service is registered but not
+  serving (herdr down), `start` refuses rather than serving a paddock that
+  would fight it for the port. An untracked paddock on the port is refused as
   today.
 - **`local` with a non-service paddock already running** (a foreground run, an
   old detached instance): refuse with "stop it first". Two paddocks contending

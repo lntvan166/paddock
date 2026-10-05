@@ -496,7 +496,7 @@ function currentBuildId(): string | null {
  * SCHEDULED, not fired once. A single check froze this value at boot, so a
  * paddock running when a release landed reported the state of the world at
  * startup for as long as it stayed up — which is precisely the long-lived case
- * `paddock start` and a dashboard open on a phone are both made of.
+ * `paddock local` and a dashboard open on a phone are both made of.
  */
 let latestKnown: string | null = null;
 
