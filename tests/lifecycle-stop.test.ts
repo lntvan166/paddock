@@ -467,20 +467,30 @@ function svc(status: "absent" | "registered" | "active", over: Partial<ServiceMa
 
 test("a registered service is uninstalled, and the supervised pid is never signalled", async () => {
   // SIGTERM to a supervised process is the race where it comes straight back.
+  // A LIVE managed record, alive until the manager stops it: a stop that
+  // signalled before (or instead of) uninstalling would show up in `events`.
   const d = await dir();
-  const { service, calls } = svc("active");
-  const sent: string[] = [];
+  await writeState(d, { ...s, managedBy: "systemd" });
+  const events: string[] = [];
+  let stopped = false;
+  const { service } = svc("active", {
+    uninstall: async () => {
+      events.push("uninstall");
+      stopped = true;
+      // What the real paddock does on its way out: remove its own record.
+      const { rm } = await import("node:fs/promises");
+      await rm(stateFile(d));
+    },
+  });
   const lines: string[] = [];
-  // After uninstall the process is gone and has removed its own record.
   const code = await runStop({
     dir: d, service,
-    probe: { isAlive: () => false, argsOf: () => null },
-    signal: (pid, sig) => sent.push(`${sig}->${pid}`),
+    probe: { isAlive: () => !stopped, argsOf: () => (stopped ? null : "paddock") },
+    signal: (pid, sig) => events.push(`${sig}->${pid}`),
     log: (l) => lines.push(l), waitMs: 300,
   });
   expect(code).toBe(0);
-  expect(calls).toEqual(["uninstall"]);
-  expect(sent).toEqual([]);
+  expect(events).toEqual(["uninstall"]);
   expect(lines.join("\n")).toContain("removed from systemd");
   // Not followed by a contradicting "not running" line.
   expect(lines.join("\n")).not.toContain("paddock — not running");
