@@ -33,7 +33,7 @@ export interface DetachOpts {
  * stay at it.
  *
  * SUCCESS IS NOT A SUCCESSFUL SPAWN. It is a child that published a URL, wrote
- * its record, and answers on its control socket — `runStart`'s rule, for the
+ * its record, and answers on its control socket — `runLocal`'s rule, for the
  * same reason: reporting success from the spawn alone and letting the operator
  * discover a dead tunnel later is exactly what this command exists to prevent.
  * A public URL nobody is serving is worse than a refusal at the terminal.
@@ -79,7 +79,7 @@ export async function runDetach(o: DetachOpts): Promise<number> {
           tunnel: { for: o.forSpec, publishRunning: o.publishRunning },
         });
   } catch (e) {
-    // Same narrow guard as `runStart`: only the log-file preparation becomes a
+    // A narrow guard: only the log-file preparation becomes a
     // refusal, so an unexpected failure inside Bun.spawn still surfaces loudly
     // rather than being reported as a permissions problem it is not.
     if (!(e instanceof ConfigDirUnusable)) throw e;
