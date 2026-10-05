@@ -92,7 +92,7 @@ export async function preflight(opts: {
 }
 
 /**
- * The one-line nudge printed by `paddock` and `paddock start`, or null.
+ * The one-line nudge printed by `paddock` and `paddock local`, or null.
  *
  * Silent when `publicUrl` names a real deployment: that operator is on the
  * named-tunnel path with Access in front of it, which is the RECOMMENDED
@@ -110,6 +110,6 @@ export async function preflight(opts: {
 export function tunnelHint(publicUrl: string | null, detached: boolean): string | null {
   if (isConfigured(publicUrl) && !isQuickTunnelUrl(publicUrl)) return null;
   return detached
-    ? "  for phone access, stop it and run `paddock tunnel`"
+    ? "  for phone access: `paddock start` — it publishes this one, no restart"
     : "  to reach this from your phone: `paddock tunnel`";
 }

@@ -740,7 +740,7 @@ export async function spawnDetached(
   }
 }
 
-async function defaultHealthCheck(port: number): Promise<boolean> {
+export async function defaultHealthCheck(port: number): Promise<boolean> {
   try {
     const r = await fetch(`http://127.0.0.1:${port}/api/health`);
     return r.ok;

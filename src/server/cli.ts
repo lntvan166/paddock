@@ -1,5 +1,5 @@
 /**
- * `serve`, `update`, `start`, `status`, `stop`, `tunnel` and `pair` are
+ * `serve`, `update`, `start`, `status`, `stop`, `tunnel`, `pair` and `local` are
  * implemented and act.
  * `help` is implemented and only prints — it is the one command that must
  * answer without touching a socket or a port, since asking what the tool does
@@ -12,7 +12,7 @@
  */
 export type Command =
   | "serve" | "update" | "start" | "stop" | "status" | "doctor" | "tunnel"
-  | "pair" | "help" | "agent" | "hub"
+  | "pair" | "local" | "help" | "agent" | "hub"
   | "unknown";
 
 export interface ParsedArgs {
@@ -32,13 +32,15 @@ const VALUE_FLAGS = new Set(["--for"]);
 
 export const USAGE = [
   "usage: paddock [--demo]          start the dashboard in the foreground",
-  "       paddock start             start it detached; survives this terminal",
-  "       paddock stop [--force]    stop the detached instance",
+  "       paddock start [--for D]   publish it on a quick tunnel, in the background",
+  "                                 (publishes the paddock already running here, if any)",
+  "       paddock local             run it on localhost as a service; survives reboots",
+  "       paddock stop [--force]    stop the tunnel and paddock; removes the service",
   "       paddock status            is it running?",
   "       paddock update [--check]  install the latest release",
   "       paddock doctor            can this paddock talk to your herdr?",
-  "       paddock tunnel [--for D]  publish it on a quick tunnel, gated by a code",
-  "       paddock tunnel --detach   publish it in the background, then return",
+  "       paddock tunnel [--for D]  publish it on a quick tunnel, in the foreground",
+  "       paddock tunnel --detach   the same, in the background (what `start` runs)",
   "       paddock tunnel --publish-running",
   "                                 publish the paddock already running here",
   "                                 D is 30m, 2h or 7d",
@@ -108,6 +110,7 @@ function commandFor(verb: string | null): Command {
   if (verb === "doctor") return "doctor";
   if (verb === "tunnel") return "tunnel";
   if (verb === "pair") return "pair";
+  if (verb === "local") return "local";
   if (verb === "help") return "help";
   if (RESERVED.has(verb)) return verb as Command;
   return "unknown";

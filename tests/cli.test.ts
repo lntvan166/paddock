@@ -58,6 +58,11 @@ test("the usage line names every implemented verb", () => {
   expect(USAGE).toContain("--version");
 });
 
+test("local is a command, and USAGE names it", () => {
+  expect(parseArgs(["local"]).command).toBe("local");
+  expect(USAGE).toContain("paddock local");
+});
+
 test("tunnel is a command", () => {
   expect(parseArgs(["tunnel"]).command).toBe("tunnel");
 });

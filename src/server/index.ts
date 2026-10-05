@@ -31,7 +31,10 @@ import { buildIdFrom } from "@server/build-id";
 import { EMBEDDED } from "@server/embedded";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { checkState, recordState, removeOwnState } from "@server/lifecycle/state";
-import { serviceKindOf } from "@server/lifecycle/service/env";
+import { serviceEnv, serviceKindOf } from "@server/lifecycle/service/env";
+import { serviceManager } from "@server/lifecycle/service";
+import { serviceArgv } from "@server/lifecycle/service/argv";
+import { runLocal } from "@server/lifecycle/local";
 import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, type NotifierOpts } from "@server/notify/notifier";
@@ -152,6 +155,21 @@ if (command === "update") {
 // question that only needs the state file and a signal-0 probe.
 if (command === "status") {
   process.exit(await runStatus({ dir: defaultConfigDir(), port: PORT }));
+}
+
+// Before any server setup, like `status`: `local` hands the serving to the
+// service manager and only waits for it. The paddock it registers is a plain
+// `paddock` with no verb, started by systemd/launchd, not by this process.
+if (command === "local") {
+  const dir = defaultConfigDir();
+  const service = serviceManager({ configDir: dir });
+  process.exit(await runLocal({
+    dir,
+    port: PORT,
+    service,
+    argv: serviceArgv(),
+    env: service.ok ? serviceEnv(process.env, service.manager.kind) : {},
+  }));
 }
 
 // Must run before any server setup below, same reasoning as `update` and

@@ -25,7 +25,7 @@ test("a SAVED quick-tunnel URL does not count as configured", () => {
   expect(tunnelHint("https://quiet-harbor-8f31.trycloudflare.com", false))
     .toContain("paddock tunnel");
   expect(tunnelHint("https://quiet-harbor-8f31.trycloudflare.com", true))
-    .toContain("paddock tunnel");
+    .toContain("paddock start");
 });
 
 test("a lookalike host is still a real deployment", () => {
@@ -34,7 +34,15 @@ test("a lookalike host is still a real deployment", () => {
   expect(tunnelHint("https://a.trycloudflare.com.example.net", false)).toBe(null);
 });
 
-test("the detached hint admits the stop, because the two are exclusive", () => {
-  expect(tunnelHint(null, true)).toContain("stop");
+test("neither hint asks for a stop — `paddock start` publishes the one running", () => {
+  // This used to assert the opposite: a detached paddock and a tunnel were
+  // exclusive, so the hint had to admit a stop. `start` now runs
+  // `tunnel --detach --publish-running` beside it, so the stop is gone.
+  expect(tunnelHint(null, true)).not.toContain("stop");
   expect(tunnelHint(null, false)).not.toContain("stop");
+});
+
+test("the detached hint points at `paddock start`, which publishes without a restart", () => {
+  expect(tunnelHint(null, true)).toContain("paddock start");
+  expect(tunnelHint(null, true)).not.toContain("stop it");
 });
