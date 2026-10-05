@@ -1,6 +1,5 @@
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import { logFile } from "@server/lifecycle/commands";
 import { launchdManager } from "@server/lifecycle/service/launchd";
 import { spawnRun } from "@server/lifecycle/service/run";
 import { systemdManager } from "@server/lifecycle/service/systemd";
@@ -50,7 +49,9 @@ export function serviceManager(o: {
         run,
         agentDir: join(home, "Library", "LaunchAgents"),
         uid: o.uid ?? process.getuid!(),
-        logFile: logFile(o.configDir),
+        // NOT paddock.log: `paddock start` truncates that on every run, and
+        // launchd holds this one open for the life of the agent.
+        logFile: join(o.configDir, "paddock-service.log"),
       }),
     };
   }

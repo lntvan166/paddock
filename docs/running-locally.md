@@ -57,7 +57,7 @@ The unit runs plain `paddock` in the foreground with a snapshot of `PATH`,
 `HOME`, `HERDR_*` and `PADDOCK_*` taken when you ran `paddock local`. Change
 one of those? Run `paddock local` again — it rewrites the unit and restarts
 the service. Output goes to `journalctl --user -u paddock` (Linux) or
-`~/.config/paddock/paddock.log` (macOS). It restarts on failure only: a
+`~/.config/paddock/paddock-service.log` (macOS). It restarts on failure only: a
 paddock that exits cleanly stays down.
 
 After a reboot, herdr is usually not running until you start it. paddock

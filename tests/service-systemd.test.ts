@@ -142,3 +142,33 @@ test("install creates a missing unit dir", async () => {
   await systemdManager({ run, unitDir: d, user: "operator" }).install(spec);
   expect(existsSync(join(d, "paddock.service"))).toBe(true);
 });
+
+test("the unit is 0600 — it can carry a PADDOCK_* token — even over an existing 0644 file", async () => {
+  const { stat } = await import("node:fs/promises");
+  const d = await unitDir();
+  await writeFile(join(d, "paddock.service"), "old", { mode: 0o644 });
+  await systemdManager({ run: fakeRun().run, unitDir: d, user: "operator" }).install(spec);
+  expect((await stat(join(d, "paddock.service"))).mode & 0o777).toBe(0o600);
+});
+
+test("inspect: a unit between restarts (activating) is present, not absent", async () => {
+  // During RestartSec, is-active prints `activating`. With the file deleted by
+  // hand, calling that "absent" would let stop skip the service — and systemd
+  // brings it back ten seconds later.
+  const d = await unitDir();
+  for (const state of ["activating", "deactivating", "reloading", "failed"]) {
+    const { run } = fakeRun({ [`${SC} is-active paddock.service`]: { code: 3, out: `${state}\n` } });
+    expect(await systemdManager({ run, unitDir: d, user: "operator" }).inspect()).toBe("registered");
+  }
+});
+
+test("uninstall of a hand-deleted unit also removes its dangling wants link", async () => {
+  const { mkdir: mk, symlink, lstat } = await import("node:fs/promises");
+  const d = await unitDir();
+  const wants = join(d, "default.target.wants");
+  await mk(wants, { recursive: true });
+  await symlink(join(d, "paddock.service"), join(wants, "paddock.service"));
+  const { run } = fakeRun({ [`${SC} is-active paddock.service`]: { code: 3, out: "activating\n" } });
+  await systemdManager({ run, unitDir: d, user: "operator" }).uninstall();
+  expect(await lstat(join(wants, "paddock.service")).then(() => true, () => false)).toBe(false);
+});

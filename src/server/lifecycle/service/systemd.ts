@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { must } from "@server/lifecycle/service/run";
 import {
@@ -57,8 +57,12 @@ export function systemdManager(o: { run: Run; unitDir: string; user: string }): 
     // loaded and running, and calling that "absent" would let `stop` SIGTERM a
     // supervised process instead of stopping it through systemd.
     // Non-zero here (3 = inactive) is an answer, read from stdout.
+    // `activating` (between restarts), `failed` and friends all mean systemd
+    // still has the unit loaded; only inactive/unknown mean it does not.
     const r = await o.run(sc("is-active", SYSTEMD_UNIT));
-    if (r.out.trim() === "active") return "active";
+    const state = r.out.trim();
+    if (state === "active") return "active";
+    if (state !== "" && state !== "inactive" && state !== "unknown") return "registered";
     return existsSync(unitPath) ? "registered" : "absent";
   }
 
@@ -77,7 +81,11 @@ export function systemdManager(o: { run: Run; unitDir: string; user: string }): 
         );
       }
       await mkdir(o.unitDir, { recursive: true });
-      await writeFile(unitPath, systemdUnit(spec));
+      // 0600: the env snapshot can hold a PADDOCK_* token, and settings.json is
+      // 0600 for the same reason. chmod too — `mode` does not touch a file
+      // that already exists, and a umask can widen it.
+      await writeFile(unitPath, systemdUnit(spec), { mode: 0o600 });
+      await chmod(unitPath, 0o600);
       await must(o.run, sc("daemon-reload"));
       await must(o.run, sc("enable", SYSTEMD_UNIT));
       await must(o.run, sc("restart", SYSTEMD_UNIT));
@@ -101,6 +109,9 @@ export function systemdManager(o: { run: Run; unitDir: string; user: string }): 
         await must(o.run, sc("disable", SYSTEMD_UNIT));
         await rm(unitPath);
       }
+      // A unit file deleted by hand leaves `disable` unable to run, and its
+      // enable link dangling — systemd would complain about it at every boot.
+      await rm(join(o.unitDir, "default.target.wants", SYSTEMD_UNIT), { force: true });
       await must(o.run, sc("daemon-reload"));
     },
 

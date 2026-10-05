@@ -12,11 +12,13 @@ test("linux picks systemd, honouring XDG_CONFIG_HOME", () => {
   expect(b.ok && b.manager.unitPath).toBe("/path/to/xdg/systemd/user/paddock.service");
 });
 
-test("darwin picks launchd, logging to the config dir's paddock.log", () => {
+test("darwin picks launchd, logging to its own file in the config dir", () => {
   const c = serviceManager({ ...base, platform: "darwin", env: {} });
   expect(c.ok && c.manager.kind).toBe("launchd");
   expect(c.ok && c.manager.unitPath).toBe("/path/to/userhome/Library/LaunchAgents/paddock.plist");
-  expect(c.ok && c.manager.logHint).toBe("/path/to/userhome/.config/paddock/paddock.log");
+  // Its OWN file: `paddock start` truncates paddock.log on every run, which
+  // would wipe the service's history (and write into a file launchd holds open).
+  expect(c.ok && c.manager.logHint).toBe("/path/to/userhome/.config/paddock/paddock-service.log");
 });
 
 test("anything else is a refusal naming the platform, never a fallback", () => {

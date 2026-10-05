@@ -112,7 +112,8 @@ snapshot.
 - File: `~/Library/LaunchAgents/paddock.plist`, label `paddock`.
 - `RunAtLoad`, `KeepAlive = { SuccessfulExit = false }` (restart on failure
   only, as above), `StandardOutPath`/`StandardErrorPath` to the
-  existing `paddock.log` in the config dir.
+  `paddock-service.log` in the config dir — its own file, because `paddock
+  start` truncates `paddock.log` on every run.
 - `launchctl bootstrap gui/$UID <plist>`; removal `launchctl bootout
   gui/$UID/paddock`.
 - `startsAt()` is always `"login"` — a LaunchAgent cannot start before login,

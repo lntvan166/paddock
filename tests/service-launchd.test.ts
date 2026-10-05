@@ -36,11 +36,25 @@ test("install on a fresh machine writes the plist and bootstraps it", async () =
   expect(r.warnings).toEqual([]);
 });
 
+/** A launchctl whose job is loaded until bootout, then gone — a real one that settles at once. */
+function loadedUntilBootout() {
+  const calls: string[] = [];
+  let gone = false;
+  const run = async (argv: string[]) => {
+    const k = argv.join(" ");
+    calls.push(k);
+    if (k === "launchctl bootout gui/501/paddock") gone = true;
+    if (k === PRINT) return gone ? { code: 113, out: "", err: "" } : { code: 0, out: "state = running", err: "" };
+    return { code: 0, out: "", err: "" };
+  };
+  return { run, calls };
+}
+
 test("install over a loaded agent boots it out first, so the new plist takes effect", async () => {
   const d = await agentDir();
-  const { run, calls } = fakeRun({ [PRINT]: { code: 0, out: "state = running" } });
-  await launchdManager({ run, agentDir: d, uid: 501, logFile: LOG }).install(spec);
-  expect(calls).toEqual([PRINT, "launchctl bootout gui/501/paddock", `launchctl bootstrap gui/501 ${join(d, "paddock.plist")}`]);
+  const { run, calls } = loadedUntilBootout();
+  await launchdManager({ run, agentDir: d, uid: 501, logFile: LOG, pollMs: 1 }).install(spec);
+  expect(calls).toEqual([PRINT, "launchctl bootout gui/501/paddock", PRINT, `launchctl bootstrap gui/501 ${join(d, "paddock.plist")}`]);
 });
 
 test("a failed bootstrap is a ServiceError", async () => {
@@ -73,9 +87,9 @@ test("inspect reads launchctl print, then the file", async () => {
 test("uninstall boots out a loaded agent and removes the plist", async () => {
   const d = await agentDir();
   await writeFile(join(d, "paddock.plist"), "x");
-  const { run, calls } = fakeRun({ [PRINT]: { code: 0, out: "state = running" } });
-  await launchdManager({ run, agentDir: d, uid: 501, logFile: LOG }).uninstall();
-  expect(calls).toEqual([PRINT, "launchctl bootout gui/501/paddock"]);
+  const { run, calls } = loadedUntilBootout();
+  await launchdManager({ run, agentDir: d, uid: 501, logFile: LOG, pollMs: 1 }).uninstall();
+  expect(calls).toEqual([PRINT, "launchctl bootout gui/501/paddock", PRINT]);
   expect(existsSync(join(d, "paddock.plist"))).toBe(false);
 });
 
@@ -86,4 +100,49 @@ test("uninstall of an unloaded plist just removes the file", async () => {
   await launchdManager({ run, agentDir: d, uid: 501, logFile: LOG }).uninstall();
   expect(calls).toEqual([PRINT]);
   expect(existsSync(join(d, "paddock.plist"))).toBe(false);
+});
+
+test("the plist is 0600 — it can carry a PADDOCK_* token — even over an existing 0644 file", async () => {
+  const { stat } = await import("node:fs/promises");
+  const d = await agentDir();
+  await writeFile(join(d, "paddock.plist"), "old", { mode: 0o644 });
+  await launchdManager({ run: fakeRun({ [PRINT]: { code: 113 } }).run, agentDir: d, uid: 501, logFile: LOG }).install(spec);
+  expect((await stat(join(d, "paddock.plist"))).mode & 0o777).toBe(0o600);
+});
+
+test("re-install waits for bootout to finish before bootstrapping", async () => {
+  // bootout can return while the job is still tearing down, and an immediate
+  // bootstrap then fails with error 5 — leaving NOTHING loaded until the next
+  // login. So print is polled until the job is gone.
+  const d = await agentDir();
+  const calls: string[] = [];
+  let printsAfterBootout = 0;
+  let bootedOut = false;
+  const run = async (argv: string[]) => {
+    const k = argv.join(" ");
+    calls.push(k);
+    if (k === PRINT) {
+      if (!bootedOut) return { code: 0, out: "state = running", err: "" };
+      printsAfterBootout++;
+      return printsAfterBootout < 3 ? { code: 0, out: "state = exiting", err: "" } : { code: 113, out: "", err: "" };
+    }
+    if (k.startsWith("launchctl bootout")) bootedOut = true;
+    if (k.startsWith("launchctl bootstrap") && printsAfterBootout < 3) {
+      return { code: 5, out: "", err: "Bootstrap failed: 5: Input/output error" };
+    }
+    return { code: 0, out: "", err: "" };
+  };
+  await launchdManager({ run, agentDir: d, uid: 501, logFile: LOG, pollMs: 1 }).install(spec);
+  expect(calls.at(-1)).toBe(`launchctl bootstrap gui/501 ${join(d, "paddock.plist")}`);
+  expect(printsAfterBootout).toBe(3);
+});
+
+test("a bootout that never finishes is a ServiceError, not a bootstrap into a race", async () => {
+  const d = await agentDir();
+  const { run, calls } = fakeRun({ [PRINT]: { code: 0, out: "state = running" } });
+  const e = await launchdManager({ run, agentDir: d, uid: 501, logFile: LOG, pollMs: 1, settleMs: 20 })
+    .install(spec).catch((x) => x);
+  expect(e.name).toBe("ServiceError");
+  expect(e.message).toContain("still loaded");
+  expect(calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
 });
