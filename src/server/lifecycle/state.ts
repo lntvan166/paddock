@@ -2,6 +2,7 @@ import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { warn as termWarn } from "@server/term";
+import type { ServiceKind } from "@server/lifecycle/service/types";
 
 export interface PaddockState {
   pid: number;
@@ -10,6 +11,13 @@ export interface PaddockState {
   port: number;
   version: string;
   startedAt: number;
+  /**
+   * Set when a service manager started this paddock (`paddock local`). `stop`
+   * and `local` read it: a supervised paddock is stopped through its manager,
+   * never signalled, and is the one instance `local` may replace.
+   * Optional: records written before it existed still parse.
+   */
+  managedBy?: ServiceKind;
 }
 
 export interface Probe {

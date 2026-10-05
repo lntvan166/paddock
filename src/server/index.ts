@@ -31,6 +31,7 @@ import { buildIdFrom } from "@server/build-id";
 import { EMBEDDED } from "@server/embedded";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
 import { checkState, recordState, removeOwnState } from "@server/lifecycle/state";
+import { serviceKindOf } from "@server/lifecycle/service/env";
 import { runStart, runStatus, runStop } from "@server/lifecycle/commands";
 import { sendTelegram } from "@server/notify/telegram";
 import { Notifier, type NotifierOpts } from "@server/notify/notifier";
@@ -1066,6 +1067,7 @@ await recordState(stateDir, {
   port: PORT,
   version: VERSION,
   startedAt: Date.now(),
+  managedBy: serviceKindOf(process.env),
 });
 
 /**

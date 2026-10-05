@@ -389,3 +389,14 @@ test("recordState survives a conflict check that THROWS, and still refuses", asy
   // became invisible in the first place.
   expect(said.join("\n")).toContain("ps: command not found");
 });
+
+test("managedBy survives a write and read, and an old record without it still parses", async () => {
+  const d = await mkdtemp(join(tmpdir(), "paddock-managed-"));
+  const base = { pid: process.pid, args: capturedArgs(process.pid)!, port: 8787, version: "0.9.0", startedAt: 1 };
+  await writeState(d, { ...base, managedBy: "systemd" });
+  const a = await checkState(d);
+  expect(a.kind === "running" && a.state.managedBy).toBe("systemd");
+  await writeState(d, base);
+  const b = await checkState(d);
+  expect(b.kind === "running" && b.state.managedBy).toBeUndefined();
+});
