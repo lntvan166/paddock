@@ -486,6 +486,7 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_HOST_ID` | `local` | The label for this machine in the header. |
 | `PADDOCK_HERDR_SOCKET` | `$HOME/.config/herdr/herdr.sock` | Where herdr's socket is. |
 | `PADDOCK_HERDR_WAIT_MS` | `60000` | How long a paddock started BEFORE herdr waits for the socket to appear, in ms. `0` refuses immediately, which is what paddock did before the wait existed. Only a missing or unserved socket is waited on — a wrong path, an unreadable one, or a protocol mismatch still fails at once. Anything unparseable falls back to the default rather than to `0`. |
+| `PADDOCK_SERVICE` | unset | Set by the unit `paddock local` writes — `systemd` or `launchd` — never by hand. Recorded as `managedBy` in `paddock.state.json`, so `stop` removes the service through its manager instead of signalling a supervised process, and `local` may replace its own instance. Any other value is ignored. |
 | `PADDOCK_CONFIG_DIR` | `$HOME/.config/paddock` | Where `settings.json` and `update-check.json` live. |
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
