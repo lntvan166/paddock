@@ -63,7 +63,7 @@ export function DeviceSection({ prefs, setPref }: DeviceSectionProps) {
           <span>Font size</span>
           {/* Empty means "automatic", and that is the DEFAULT, not a reset
               button: styles.css sizes the pane with
-              `clamp(0.62rem, 2.3vw, 0.78rem)` behind `var(--term-font-px, …)`,
+              `clamp(0.75rem, 3.1vw, 0.85rem)` behind `var(--term-font-px, …)`,
               so leaving this blank is what keeps the responsive sizing in
               charge. An empty string must therefore write `null` (which
               removes the key) rather than `Number("")`, i.e. 0. */}

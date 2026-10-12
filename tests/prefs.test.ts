@@ -24,7 +24,7 @@ test("defaults are returned when nothing is stored", () => {
   // owned here).
   // fontPx defaults to null — "no explicit preference" — NOT to a number.
   // styles.css sizes .term-pane with
-  // `clamp(0.62rem, 2.3vw, 0.78rem)` as the fallback behind
+  // `clamp(0.75rem, 3.1vw, 0.85rem)` as the fallback behind
   // `var(--term-font-px, …)`, and AgentTerminal only writes that property
   // when a real preference exists. A numeric default meant the property was
   // always written, so the responsive clamp never applied to anybody.

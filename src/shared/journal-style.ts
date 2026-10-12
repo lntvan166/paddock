@@ -22,7 +22,7 @@ const DIM = "\x1b[2m";
 /** paddock's accent as it reads on a dark ground. */
 const YOU = "\x1b[38;2;224;138;99m";
 /** Distinct from the accent, and from the periwinkle used for inline code. */
-const AGENT = "\x1b[38;2;95;215;196m";
+const AGENT = "\x1b[38;2;138;184;176m";
 
 /** `you · 13:04`: the speaker bold in its colour, the time dimmed. */
 export function speakerLine(who: "you" | "agent", time: string): string {

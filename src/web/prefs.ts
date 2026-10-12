@@ -72,7 +72,7 @@ export interface Prefs {
    * `null` means "no explicit preference" — NOT a number.
    *
    * `styles.css` sizes `.term-pane` by COLUMNS VISIBLE:
-   * `font-size: var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))`, and the
+   * `font-size: var(--term-font-px, clamp(0.75rem, 3.1vw, 0.85rem))`, and the
    * comment above that rule records that the metric was measured and the
    * floor corrected once already. The clamp is only ever reached when the
    * custom property is unset, so `AgentTerminal` must write the property only

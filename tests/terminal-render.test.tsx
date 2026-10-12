@@ -584,3 +584,37 @@ test("tapping Send does not blur the reply box first", async () => {
     "Send lets the pointerdown blur the input, which on iOS drops the first tap",
   ).toBe(true);
 });
+
+test("Send with nothing typed accepts the agent's suggestion: → then Enter", async () => {
+  // Asked for by the operator: Claude Code greys out a suggested next prompt,
+  // and taking it from a phone meant two trips to the keypad.
+  const { fn, calls } = stubFetch({
+    "/output": () => ({ lines: ["❯ "], source: "visible", digest: null }),
+    "/key": () => ({ ok: true, lines: ["❯ "], source: "visible" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(<AgentTerminal agent={agent({ state: "idle", harness: "claude" })} onBack={() => {}} />);
+  await settle();
+
+  const send = host.querySelector('button[aria-label="Send"]') as HTMLButtonElement;
+  expect(send.disabled, "an empty Send is live on an idle Claude pane").toBe(false);
+  await click(send);
+  await settle();
+
+  const keys = calls.filter((c) => c.url.endsWith("/key")).map((c) => (c.body as { key: string }).key);
+  expect(keys).toEqual(["right", "enter"]);
+});
+
+test("Send with nothing typed stays inert where → would mean something else", async () => {
+  // A blocked agent has a prompt on screen, where → moves a cursor or a tab.
+  // Guessing a keystroke there is what CLAUDE.md forbids.
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked", harness: "claude" })} onBack={() => {}} />);
+  await settle();
+  expect((host.querySelector('button[aria-label="Send"]') as HTMLButtonElement).disabled).toBe(true);
+
+  await unmount();
+  const other = await render(<AgentTerminal agent={agent({ state: "idle", harness: "codex" })} onBack={() => {}} />);
+  await settle();
+  expect((other.querySelector('button[aria-label="Send"]') as HTMLButtonElement).disabled).toBe(true);
+});

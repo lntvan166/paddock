@@ -134,7 +134,7 @@ test("choosing a theme in Settings applies it immediately, with no remount", asy
 
 /**
  * `styles.css` sizes the terminal by COLUMNS VISIBLE:
- * `font-size: var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))`, with a
+ * `font-size: var(--term-font-px, clamp(0.75rem, 3.1vw, 0.85rem))`, with a
  * comment recording that the metric was measured and the floor fixed once
  * already. The clamp is only ever reached when the custom property is UNSET.
  *

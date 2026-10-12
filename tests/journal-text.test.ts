@@ -359,8 +359,8 @@ test("speakers are told apart by colour, and tool lines step back", () => {
   const you = speakerLine("you", "13:04");
   const agent = speakerLine("agent", "13:05");
   expect(you).toBe("\x1b[1m\x1b[38;2;224;138;99myou\x1b[0m\x1b[2m · 13:04\x1b[0m");
-  expect(agent).toContain("\x1b[38;2;95;215;196magent");
-  expect(speakerLine("agent", "")).toBe("\x1b[1m\x1b[38;2;95;215;196magent\x1b[0m");
+  expect(agent).toContain("\x1b[38;2;138;184;176magent");
+  expect(speakerLine("agent", "")).toBe("\x1b[1m\x1b[38;2;138;184;176magent\x1b[0m");
   expect(toolLine("Bash · commit")).toBe("\x1b[2m▸ Bash · commit\x1b[0m");
 
   const lines = toLines([

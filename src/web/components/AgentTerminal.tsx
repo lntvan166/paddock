@@ -414,6 +414,36 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
   };
 
   /**
+   * Send with nothing typed: take the agent's own suggestion and submit it.
+   *
+   * Claude Code greys out a suggested next prompt in its empty input; → accepts
+   * it and Enter sends it. On a phone that pair was two trips to the keypad for
+   * the most common reply there is — "yes, carry on". Asked for by the
+   * operator, as "Enter with nothing typed is → then Enter".
+   *
+   * Only where those keys MEAN that: a Claude pane with no prompt on screen and
+   * the agent not blocked. Anywhere else → would move a cursor or a dialog tab,
+   * and a key whose effect is guessed is exactly what CLAUDE.md forbids.
+   *
+   * Sequential, each key awaiting its screen, for the reason `press` gives:
+   * two keys in flight against one TUI can land out of order.
+   */
+  const canAcceptSuggestion = agent.harness === "claude" && agent.state !== "blocked" && prompt === null;
+  const acceptSuggestion = async () => {
+    setBusy(true);
+    setFeedback(null);
+    for (const key of ["right", "enter"] as const) {
+      const res = await sendKey(agent.agentId, key);
+      if (!res.ok) {
+        setFeedback({ ok: false, detail: res.detail ?? "Key failed." });
+        break;
+      }
+      pane.current?.apply(res.lines);
+    }
+    setBusy(false);
+  };
+
+  /**
    * Upload what the picker returned, and show it as a chip.
    *
    * Uploaded on CHOICE rather than on send, so a refusal — the wrong type, or
@@ -1233,6 +1263,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               // an image with no words silently unsendable.
               if (uploading) return;
               if (reply.trim() || attached.length > 0) void submitReply(reply.trim());
+              else if (canAcceptSuggestion) void acceptSuggestion();
             }}
           >
             <label className="sr-only" htmlFor="term-attach-input">Attach an image</label>
@@ -1297,6 +1328,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                 e.preventDefault();
                 if (uploading) return;
                 if (reply.trim() || attached.length > 0) void submitReply(reply.trim());
+                else if (canAcceptSuggestion) void acceptSuggestion();
               }}
               onPaste={pasted}
               // The caret also moves without the value changing — a tap into
@@ -1316,7 +1348,12 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               type="submit"
               className="term-send"
               aria-label="Send"
-              disabled={busy || uploading || (!reply.trim() && attached.length === 0)}
+              // Named the same either way — it sends — and described when what
+              // it sends is the agent's suggestion rather than typed text.
+              title={!reply.trim() && attached.length === 0 && canAcceptSuggestion
+                ? "Send the agent's suggestion (→ then Enter)"
+                : undefined}
+              disabled={busy || uploading || (!reply.trim() && attached.length === 0 && !canAcceptSuggestion)}
               // Keeps focus in the input for the length of the tap.
               //
               // Reported from a phone: "type something but cannot send, i must

@@ -88,7 +88,7 @@ test("the terminal font size still falls back to the responsive clamp", () => {
   // size, or dropped the second argument to `var()`, would make the whole
   // fix inert without failing any DOM test.
   expect(declaration(".term-pane", "font-size"))
-    .toBe("var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))");
+    .toBe("var(--term-font-px, clamp(0.75rem, 3.1vw, 0.85rem))");
 });
 
 test("the bottom-most chrome clears the home indicator", () => {

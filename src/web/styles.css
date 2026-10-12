@@ -1592,14 +1592,16 @@ body {
   white-space: pre;
   tab-size: 4;
   font-family: var(--mono);
-  /* Sized by COLUMNS VISIBLE, not by points. The previous floor of 0.7rem
-     showed ~46 columns on a 390px phone, so an 80-column TUI was clipped
-     mid-word on every line and had to be scrolled sideways to be read at all.
-     ~0.62rem fits low 50s, which covers most of what an agent draws.
-     `--term-font-px` is set inline by AgentTerminal.tsx from the operator's
-     stored preference; the clamp() is the fallback for whenever it is unset. */
-  font-size: var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem));
-  line-height: 1.35;
+  /* Sized for READING, not for columns. A 0.62rem floor once fitted ~55
+     columns so an 80-column TUI clipped less — but lines wrap by default now
+     (`prefs.wrap`), and what an operator reads here every day is an agent's
+     prose. At 390px that floor rendered 9.92px, the smallest text on the
+     screen, on exactly the text being approved. 0.75rem (12px) reads without
+     zooming; an operator who wants columns back sets a smaller size in
+     Settings → Terminal, which writes `--term-font-px` inline (PaneTerminal),
+     and turns off wrapping. */
+  font-size: var(--term-font-px, clamp(0.75rem, 3.1vw, 0.85rem));
+  line-height: 1.45;
   background: var(--term-bg);
   color: var(--term-fg);
   /* Own scrollbars, because the pane is dark in BOTH themes. The platform

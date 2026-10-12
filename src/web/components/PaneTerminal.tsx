@@ -1106,7 +1106,7 @@ export function PaneTerminal({
           // without a second place to apply it.
           //
           // Written ONLY when the operator has chosen a size. That rule reads
-          // `var(--term-font-px, clamp(0.62rem, 2.3vw, 0.78rem))`, so writing
+          // `var(--term-font-px, clamp(0.75rem, 3.1vw, 0.85rem))`, so writing
           // the property unconditionally — which is what a numeric default
           // for `fontPx` made this do — means the clamp never applies to
           // anybody and the pane loses roughly a quarter of its columns on a
