@@ -1,3 +1,5 @@
+import { speakerLine, toolLine } from "@shared/journal-style";
+
 /**
  * The one invented "Show earlier" transcript both demo hosts show.
  *
@@ -24,19 +26,19 @@ export const DEMO_JOURNAL_AGENT_ID = "d6:p1";
  * prose, then a blank line between turns.
  */
 export const DEMO_JOURNAL_LINES: string[] = [
-  "you · 13:04",
+  speakerLine("you", "13:04"),
   "the flaky-test-fix suite times out about one run in five — can you dig in?",
   "",
-  "agent · 13:05",
-  "▸ Bash · run the suite three times",
+  speakerLine("agent", "13:05"),
+  toolLine("Bash · run the suite three times"),
   "Reproduced it on the second run: the retry budget is exhausted before the " +
     "first assertion fires, so the harness treats a slow fixture boot as a failure.",
   "",
-  "you · 13:08",
+  speakerLine("you", "13:08"),
   "is it the fixture or the assertion timeout?",
   "",
-  "agent · 13:09",
-  "▸ Read · tests/fixtures/upload.ts",
+  speakerLine("agent", "13:09"),
+  toolLine("Read · tests/fixtures/upload.ts"),
   "The fixture waits on a fake clock that only advances on tick(); the suite's " +
     "timeout is real wall time. Bumping the tick interval should fix it without " +
     "touching the assertion.",

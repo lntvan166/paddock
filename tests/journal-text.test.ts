@@ -3,6 +3,10 @@ import {
   clamp, MAX_TEXT_CHARS, stripAnsi, stripInjected, stripMenu, summariseTool,
   summariseTools, toLines,
 } from "@server/journal/text";
+import { speakerLine, toolLine } from "@shared/journal-style";
+
+/** Structure, not paint: speaker and tool lines carry colour, asserted below. */
+const plain = (lines: string[]) => lines.map(stripAnsi);
 
 test("ansi escapes are removed", () => {
   expect(stripAnsi("[1;36mhello[0m")).toBe("hello");
@@ -98,10 +102,10 @@ test("clamp truncates to AT MOST max characters, ellipsis included", () => {
 });
 
 test("toLines renders a turn with a speaker and folds its tools", () => {
-  const lines = toLines([
+  const lines = plain(toLines([
     { role: "user", at: "2026-08-20T13:04:00Z", text: "fix the flaky test", tools: [] },
     { role: "assistant", at: "2026-08-20T13:05:00Z", text: "Found it: the timer resets.", tools: ["Bash ×3", "Read timer.ts"] },
-  ]);
+  ]));
   expect(lines).toEqual([
     "you · 13:04",
     "fix the flaky test",
@@ -171,9 +175,9 @@ test("journal times are the host's local clock, not UTC", () => {
   const saved = process.env.TZ;
   try {
     process.env.TZ = "Asia/Tokyo"; // UTC+9, no DST, so the arithmetic is fixed
-    expect(toLines([
+    expect(plain(toLines([
       { role: "user", at: "2026-08-20T13:04:00Z", text: "hello", tools: [] },
-    ])[0]).toBe("you · 22:04");
+    ]))[0]).toBe("you · 22:04");
   } finally {
     // The env var is restored. THE ZONE IS NOT, and cannot be: measured, Bun
     // applies the FIRST assignment to `process.env.TZ` and caches it, so
@@ -291,11 +295,11 @@ test("a run of turns from the same speaker in the same minute gets ONE header", 
   // `at: null` deliberately — see the timezone test above, which permanently
   // moves this process's clock. A stampless entry renders a bare speaker, so
   // this can assert exact lines whatever ran first.
-  const lines = toLines([
+  const lines = plain(toLines([
     { role: "assistant", at: null, text: "", tools: ["Bash · start the demo"] },
     { role: "assistant", at: null, text: "", tools: ["ToolSearch"] },
     { role: "assistant", at: null, text: "", tools: ["Bash · check the push"] },
-  ]);
+  ]));
 
   expect(lines).toEqual([
     "agent",
@@ -313,12 +317,12 @@ test("the header comes back when the minute or the speaker changes", () => {
   // FOUR entries and three headers: the run of two at 13:05 has to collapse
   // for the count to come out, so this fails on a formatter that prints one
   // header per entry as well as on one that never prints a second.
-  const lines = toLines([
+  const lines = plain(toLines([
     { role: "assistant", at: "2026-08-20T13:05:00Z", text: "", tools: ["Read"] },
     { role: "assistant", at: "2026-08-20T13:05:00Z", text: "", tools: ["Grep"] },
     { role: "assistant", at: "2026-08-20T13:06:00Z", text: "", tools: ["Read"] },
     { role: "user", at: "2026-08-20T13:06:00Z", text: "go ahead", tools: [] },
-  ]);
+  ]));
 
   // By SHAPE, not by value: the zone this process renders in depends on which
   // file ran first, and every real UTC offset preserves the difference between
@@ -333,11 +337,11 @@ test("the header comes back when the minute or the speaker changes", () => {
 test("prose inside a run keeps its own blank line; a tool list stays tight", () => {
   // Density is for the `▸` lines, which are scanned. Prose is READ, and a
   // paragraph butting straight onto a tool line reads as part of it.
-  const lines = toLines([
+  const lines = plain(toLines([
     { role: "assistant", at: null, text: "", tools: ["TaskStop"] },
     { role: "assistant", at: null, text: "Let me commit first:", tools: [] },
     { role: "assistant", at: null, text: "", tools: ["Bash · commit"] },
-  ]);
+  ]));
 
   expect(lines).toEqual([
     "agent",
@@ -347,4 +351,21 @@ test("prose inside a run keeps its own blank line; a tool list stays tight", () 
     "▸ Bash · commit",
     "",
   ]);
+});
+
+test("speakers are told apart by colour, and tool lines step back", () => {
+  // Reported from a phone: headers, tool lines and prose were one grey, so
+  // finding where the operator's own message began meant reading everything.
+  const you = speakerLine("you", "13:04");
+  const agent = speakerLine("agent", "13:05");
+  expect(you).toBe("\x1b[1m\x1b[38;2;224;138;99myou\x1b[0m\x1b[2m · 13:04\x1b[0m");
+  expect(agent).toContain("\x1b[38;2;95;215;196magent");
+  expect(speakerLine("agent", "")).toBe("\x1b[1m\x1b[38;2;95;215;196magent\x1b[0m");
+  expect(toolLine("Bash · commit")).toBe("\x1b[2m▸ Bash · commit\x1b[0m");
+
+  const lines = toLines([
+    { role: "user", at: null, text: "go", tools: [] },
+    { role: "assistant", at: null, text: "", tools: ["Bash · commit"] },
+  ]);
+  expect(lines).toEqual([speakerLine("you", ""), "go", "", speakerLine("agent", ""), toolLine("Bash · commit"), ""]);
 });

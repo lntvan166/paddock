@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { claudeAdapter } from "@server/journal/claude";
 import { MAX_TAIL_BYTES } from "@server/journal/files";
-import { toLines } from "@server/journal/text";
+import { stripAnsi, toLines } from "@server/journal/text";
 import { createJournalReader } from "@server/journal/read";
 import type { JournalRoots } from "@server/journal/types";
 import type { HerdrAgentSession } from "@shared/herdr-api";
@@ -252,7 +252,7 @@ test("every cursor is a real record boundary, even with multi-byte text", async 
   // because their fixtures alternate speaker, and alternating renders the same
   // either way.
   const contentOf = (lines: string[]) =>
-    lines.filter((l) => l !== "" && !/^(?:you|agent)(?: · \d\d:\d\d)?$/.test(l));
+    lines.filter((l) => l !== "" && !/^(?:you|agent)(?: · \d\d:\d\d)?$/.test(stripAnsi(l)));
 
   expect(contentOf((await pageAll(reader, 40)).pages.flat()))
     .toEqual(contentOf(toLines(claudeAdapter.parse(readFileSync(file, "utf8")))));

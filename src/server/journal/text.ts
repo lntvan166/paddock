@@ -1,4 +1,5 @@
 import type { JournalEntry } from "@server/journal/types";
+import { speakerLine, toolLine } from "@shared/journal-style";
 
 /** Ceiling on one turn's prose. Generous for a message, bounded on the wire. */
 export const MAX_TEXT_CHARS = 4_000;
@@ -478,9 +479,7 @@ export function toLines(entries: readonly JournalEntry[]): string[] {
   for (const e of entries) {
     const body = renderMarkdown(clamp(stripMenu(stripAnsi(e.text)).trim(), MAX_TEXT_CHARS));
     if (body === "" && e.tools.length === 0) continue;
-    const who = e.role === "user" ? "you" : "agent";
-    const time = hhmm(e.at);
-    const header = time === "" ? who : `${who} · ${time}`;
+    const header = speakerLine(e.role === "user" ? "you" : "agent", hhmm(e.at));
 
     if (header !== group) {
       // Between groups, never before the first one — a transcript that opens
@@ -492,7 +491,7 @@ export function toLines(entries: readonly JournalEntry[]): string[] {
       out.push("");
     }
 
-    if (e.tools.length > 0) out.push(`▸ ${e.tools.join(" · ")}`);
+    if (e.tools.length > 0) out.push(toolLine(e.tools.join(" · ")));
     if (body !== "") out.push(...body.split("\n"));
   }
 

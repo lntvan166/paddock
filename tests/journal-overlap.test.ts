@@ -197,3 +197,8 @@ test("a tool line alone is not something to read", () => {
 test("an empty page carries nothing", () => {
   expect(hasProse([])).toBe(false);
 });
+
+test("a painted tool line is still not prose", () => {
+  // Tool lines arrive dimmed, so they open with an escape rather than the glyph.
+  expect(hasProse(["\x1b[2m▸ Bash · find the routine scoped logic in the engine\x1b[0m"])).toBe(false);
+});

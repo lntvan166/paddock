@@ -144,7 +144,8 @@ const TOOL_LINE_RE = /^\s*▸/;
  */
 export function hasProse(lines: readonly string[]): boolean {
   return lines.some((line) => {
-    if (TOOL_LINE_RE.test(line)) return false;
+    // Painted lines open with an escape, so the glyph is tested without it.
+    if (TOOL_LINE_RE.test(line.replace(ANSI_RE, ""))) return false;
     const flat = flatten(line);
     return flat !== "" && flat.split(" ").length >= MIN_WORDS;
   });
