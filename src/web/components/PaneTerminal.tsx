@@ -274,7 +274,8 @@ export interface EarlierContext {
   /** Reconstructed lines still held back. 0 once all of them are on screen. */
   remaining: number;
   /**
-   * The live viewport, as currently rendered.
+   * Everything below the revealed block: lines settled since the pane opened,
+   * then the live viewport as currently rendered.
    *
    * Passed so a journal-backed owner can tell which of the turns it just
    * fetched are already down there. Its first page has no cursor, so the
@@ -457,6 +458,25 @@ export function PaneTerminal({
    * which, in a transcript full of prompts and spinners, is often.
    */
   const [revealFrom, setRevealFrom] = useState<number | null>(null);
+  /**
+   * Where `history.settled` stood when this pane opened. Everything settled
+   * AFTER it is shown without asking, between whatever is revealed above and
+   * the live screen below.
+   *
+   * Without it, a line that scrolled off the live screen simply vanished from
+   * the page. An operator scrolled up to read the agent's answer while it kept
+   * working watched the passage under their eyes be replaced by newer output —
+   * reported from a phone as "it rewrites the screen I am reading instead of
+   * appending below". Kept on the page, the lines that leave the viewport take
+   * up exactly the room they had, so a held scroll position keeps pointing at
+   * the same text. A journal agent needed this most: its revealed block is the
+   * journal, which ends where the page was opened, so nothing filled the gap.
+   *
+   * Only lines settled while the pane is open — they are what the operator was
+   * already watching, so this costs nothing they did not ask for; older ones
+   * still wait for "Show earlier".
+   */
+  const [liveFrom] = useState(() => historyFor(paneId)?.settled.length ?? 0);
   const paneRef = useRef<HTMLDivElement>(null);
   // Whether the operator is following the tail. Read BEFORE the DOM updates
   // and applied after, so replacing the screen does not yank someone who has
@@ -831,19 +851,20 @@ export function PaneTerminal({
     setAtTop(el.scrollTop <= TOP_THRESHOLD_PX);
   };
 
-  // Reconstructed scrollback, revealed only as far as the operator asked.
-  // Nothing of it renders by default: the pane costs exactly what it did
-  // before until "show earlier" is tapped, which is what keeps a 2000-line
-  // history from becoming 36,000 DOM nodes nobody asked for.
+  // Reconstructed scrollback from before the pane opened, revealed only as far
+  // as the operator asked: a 2000-line history must not become 36,000 DOM
+  // nodes nobody asked for. Lines settled since it opened are always shown —
+  // see `liveFrom`.
   const history = historyFor(paneId) ?? { settled: [], gaps: 0 };
-  const reconstructed = revealFrom === null
-    ? []
-    : history.settled.slice(Math.min(revealFrom, history.settled.length));
+  const from = Math.min(revealFrom ?? liveFrom, history.settled.length);
+  const sinceOpen = history.settled.slice(Math.min(liveFrom, history.settled.length));
   // "How much reconstruction is still held back" is what the button reports,
   // which is the boundary itself — and it stays the right number when an
   // override is on screen, the moment a journal pane falls back.
-  const remaining = Math.min(revealFrom ?? history.settled.length, history.settled.length);
-  const revealed = revealedOverride ?? reconstructed;
+  const remaining = from;
+  const revealed = revealedOverride
+    ? [...revealedOverride, ...sinceOpen]
+    : history.settled.slice(from);
 
   const pinScroll = () => {
     const el = paneRef.current;
@@ -855,7 +876,7 @@ export function PaneTerminal({
 
   const revealMore = () => {
     const restore = pinScroll();
-    setRevealFrom((from) => Math.max(0, (from ?? history.settled.length) - HISTORY_PAGE));
+    setRevealFrom((at) => Math.max(0, Math.min(at ?? liveFrom, history.settled.length) - HISTORY_PAGE));
     restore();
   };
 
@@ -981,7 +1002,7 @@ export function PaneTerminal({
   // `undefined` means the slot declined to decide; `null` means it decided
   // there is nothing to offer. Only the first falls through to the built-in.
   const slot = earlier
-    ? earlier({ remaining, gaps: history.gaps, revealMore, pinScroll, onScreen: output })
+    ? earlier({ remaining, gaps: history.gaps, revealMore, pinScroll, onScreen: [...sinceOpen, ...output] })
     : undefined;
   const earlierNode = slot !== undefined ? slot : (remaining > 0 && (
     <button type="button" className="term-earlier" onClick={revealMore}>

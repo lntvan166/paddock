@@ -71,7 +71,7 @@ One process. No relay hop, no plugin, no polling loop.
 | `server/files/store.ts` | The path↔id map behind the file routes, and it exists for one reason: `CLAUDE.md` forbids payloads in GET URLs because they land in edge access logs, while an `<iframe src>` and a download link both need a plain GET. NOT a capability or a secret — anything reaching paddock can POST a path and get an id, which is decision 28's stated scope; the id is merely shorter than the path and says less in a log. In memory, capped, evicting oldest-first, and it dies with the process. |
 | `server/journal/registry.ts` | `adapterFor` / `hasAdapter`: the single decision site for "does this agent have a readable history." Adding a harness is one entry here plus its adapter module, never a new branch in the route or a condition in the client. |
 | `server/journal/claude.ts` | The one adapter in v1: Claude Code's own `.jsonl` transcript format, turned into turns. |
-| `server/journal/text.ts` | Truncation, ANSI stripping, tool-call summarising, and `stripMenu` — the same menu-marker strip `prompt-parse.ts` needs, applied here so a stale option row from an old turn can never blend into the live screen (decision 18). |
+| `server/journal/text.ts` | Truncation, ANSI stripping, tool-call summarising, markdown rendering (emphasis, headings, tables flattened to one line per row), and `stripMenu` — the same menu-marker strip `prompt-parse.ts` needs, applied here so a stale option row from an old turn can never blend into the live screen (decision 18). |
 | `web/` | React + Tailwind, single screen. |
 
 ## The dependency rule

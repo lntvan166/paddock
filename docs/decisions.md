@@ -437,9 +437,12 @@ session does not silently re-litigate them.
     directly above the live screen with no divider, reads as the question
     being asked NOW. `prompt-parse.ts` already records this exact failure
     mode in its own scoping comment (a marker left on an already-answered
-    question reappearing as the live menu's selection), so cursor markers and
-    option rows are stripped from journal-derived lines before they ever
-    leave the server (`stripMenu` in `src/server/journal/text.ts`). Only the
+    question reappearing as the live menu's selection), so menus — runs of
+    option rows of which at least one carries a cursor — are stripped from
+    journal-derived lines before they ever leave the server (`stripMenu` in
+    `src/server/journal/text.ts`). An uncursored `1. …` run is a numbered
+    list and is kept: stripping on shape alone deleted whole sections of
+    agents' replies. Only the
     live screen may ever render a selectable menu; the client additionally
     never treats a journal line as a source of option buttons — those come
     from `/prompt` alone.

@@ -37,8 +37,8 @@ function isOptionRow(line: string): boolean {
 }
 
 /**
- * Remove option rows from journal text, dropped line by line, leaving "" if
- * every line was one.
+ * Remove menus from journal text — runs of option rows of which at least one
+ * carries a cursor — leaving "" if the text was nothing else.
  *
  * WHY LINE BY LINE: a real prompt is a question plus two or more option
  * lines, not one bare option line on its own. Matching the anchored pattern
@@ -56,10 +56,22 @@ function isOptionRow(line: string): boolean {
  * content, which is the worse failure this function exists to avoid.
  */
 export function stripMenu(text: string): string {
-  return text
-    .split("\n")
-    .filter((line) => !isOptionRow(line))
-    .join("\n");
+  const lines = text.split("\n");
+  const drop = new Set<number>();
+  for (let i = 0; i < lines.length; ) {
+    if (!isOptionRow(lines[i]!)) { i++; continue; }
+    let end = i;
+    while (end < lines.length && isOptionRow(lines[end]!)) end++;
+    // A RUN of option rows is a menu only when a cursor marks one of them.
+    // Without that, "1. … / 2. …" is a numbered list — the most ordinary shape
+    // in an agent's reply — and dropping it deleted whole sections of prose: a
+    // review's "Needs fixing" heading reached the phone with nothing under it.
+    if (lines.slice(i, end).some((l) => /^\s*[❯>]/.test(l))) {
+      for (let j = i; j < end; j++) drop.add(j);
+    }
+    i = end;
+  }
+  return lines.filter((_l, i) => !drop.has(i)).join("\n");
 }
 
 /**
@@ -226,6 +238,7 @@ function stripMachineElements(text: string): string {
 const MD_BOLD = "\x1b[1m";
 const MD_ITALIC = "\x1b[3m";
 const MD_CODE = "\x1b[38;2;177;185;249m";
+const MD_DIM = "\x1b[2m";
 const MD_OFF = "\x1b[0m";
 
 /**
@@ -285,22 +298,69 @@ function renderInline(line: string): string {
  * escape cut in half by the ceiling would paint the rest of the transcript.
  *
  * Fenced blocks are returned untouched. They quote code, where every marker is
- * literal and styling one would corrupt what it quotes. Headings and list
- * markers are left alone too, because the viewport leaves them alone — a dash
- * stays a dash there, measured.
+ * literal and styling one would corrupt what it quotes. List markers are left
+ * alone, because the viewport leaves them alone — a dash stays a dash there,
+ * measured. Headings lose their hashes and turn bold, which is how the viewport
+ * draws them; tables and rules are below.
  */
 export function renderMarkdown(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
   let fenced = false;
-  return text
-    .split("\n")
-    .map((line) => {
-      if (/^\s*```/.test(line)) {
-        fenced = !fenced;
-        return line;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      out.push(line);
+      continue;
+    }
+    if (fenced) {
+      out.push(line);
+      continue;
+    }
+    if (isTableRow(line) && i + 1 < lines.length && TABLE_RULE_RE.test(lines[i + 1]!)) {
+      out.push(`${MD_DIM}${cells(line).join(" · ")}${MD_OFF}`);
+      i += 2;
+      for (; i < lines.length && isTableRow(lines[i]!); i++) {
+        out.push(`• ${cells(lines[i]!).filter((c) => c !== "").map(renderInline).join(" · ")}`);
       }
-      return fenced ? line : renderInline(line);
-    })
-    .join("\n");
+      i--;
+      continue;
+    }
+    const heading = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+    if (heading) {
+      // Re-opened after every reset inside, or a code span would end the bold.
+      out.push(`${MD_BOLD}${renderInline(heading[1]!).replaceAll(MD_OFF, MD_OFF + MD_BOLD)}${MD_OFF}`);
+      continue;
+    }
+    if (HR_RE.test(line)) {
+      out.push(`${MD_DIM}────────${MD_OFF}`);
+      continue;
+    }
+    out.push(renderInline(line));
+  }
+  return out.join("\n");
+}
+
+/**
+ * Tables, flattened to one line per row rather than drawn as boxes.
+ *
+ * The viewport draws a table with box drawing at the terminal's width. The
+ * journal has no width to draw at, and a box wrapped onto a 390px screen is
+ * noise — while raw `| a | b |` source was the original complaint. A dim header
+ * and `• cell · cell` rows keep every value and its order, and wrap like prose.
+ */
+const TABLE_RULE_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+const HR_RE = /^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/;
+
+function isTableRow(line: string): boolean {
+  return /^\s*\|.*\|\s*$/.test(line);
+}
+
+/** A row's cells, split on unescaped pipes, `\|` kept as a literal pipe. */
+function cells(line: string): string[] {
+  const inner = line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
+  return inner.split(/(?<!\\)\|/).map((c) => c.trim().replaceAll("\\|", "|"));
 }
 
 export function clamp(text: string, max: number): string {

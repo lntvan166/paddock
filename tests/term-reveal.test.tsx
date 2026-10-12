@@ -108,3 +108,33 @@ test("revealing history does not recolour the live screen", async () => {
   expect(host.textContent, "history really was revealed").toContain("red, and never closed");
   expect(colourOf(), "same line, same colour").toEqual(before);
 });
+
+test("output that scrolls off while the pane is open stays on the page", async () => {
+  // THE BUG: with nothing revealed — and on a journal agent, whose revealed
+  // block is the journal — a line leaving the live screen left the page too.
+  // Scrolled up to read the agent's answer while it kept working, the operator
+  // watched the passage they were reading be replaced by newer output instead
+  // of the new output arriving below it.
+  rememberHistory("r3:p1", { settled: ["before open"], gaps: 0, last: screenA });
+
+  const { fn } = stubFetch({
+    "/output": () => screenOf(screenA),
+    "/text": () => ({ ok: true, lines: screenB, source: "visible" }),
+  });
+  globalThis.fetch = fn as typeof fetch;
+
+  const host = await render(
+    <AgentTerminal agent={agent({ agentId: "r3:p1", hasJournal: true })} onBack={() => {}} />,
+  );
+  await settle();
+
+  await typeInto(host.querySelector(".term-reply-field") as HTMLTextAreaElement, "go ahead");
+  await click(host.querySelector('button[aria-label="Send"]'));
+  await settle();
+
+  const pane = host.querySelector(".term-pane") as HTMLElement;
+  expect(pane.textContent, "the line that scrolled off is still there").toContain("screen line 0");
+  expect(pane.textContent).toContain("fresh 4");
+  // History from BEFORE the pane opened still waits for Show earlier.
+  expect(pane.textContent).not.toContain("before open");
+});

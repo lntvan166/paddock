@@ -17,9 +17,18 @@ test("a cursor marker is stripped from journal text", () => {
   expect(stripMenu("  ❯ 2. No, keep it")).toBe("");
 });
 
-test("a numbered option row is stripped even without a cursor", () => {
-  expect(stripMenu("  2. No")).toBe("");
-  expect(stripMenu("1. Approve this change")).toBe("");
+test("a numbered list in prose is kept — only a run with a cursor is a menu", () => {
+  // An uncursored "1. …" is how every agent writes a numbered list. Stripping
+  // it on shape alone deleted whole sections of a reply: a review's "Needs
+  // fixing" heading reached the phone with nothing under it.
+  expect(stripMenu("1. Approve this change")).toBe("1. Approve this change");
+  expect(stripMenu("### Fix\n1. Lower the squat\n2. Swap the plank")).toBe(
+    "### Fix\n1. Lower the squat\n2. Swap the plank",
+  );
+});
+
+test("an option row with no cursor goes when its run carries one", () => {
+  expect(stripMenu("  1. Yes\n❯ 2. No")).toBe("");
 });
 
 test("a real multi-line menu is stripped down to its question", () => {
@@ -36,7 +45,7 @@ test("an ASCII > cursor is treated like ❯", () => {
 });
 
 test("a ) separator is accepted alongside .", () => {
-  expect(stripMenu("2) No")).toBe("");
+  expect(stripMenu("❯ 1) Yes\n  2) No")).toBe("");
 });
 
 test("an option row survives no matter how long its label is", () => {

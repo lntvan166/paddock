@@ -100,3 +100,50 @@ test("a code span inside bold still keeps its own markers literal", () => {
   const out = renderMarkdown("**run `echo **hi**` now**");
   expect(out).toContain("echo **hi**");
 });
+
+const DIM = "\x1b[2m";
+
+test("a heading loses its hashes and becomes bold, as the viewport draws it", () => {
+  expect(renderMarkdown("### Needs fixing")).toBe(`${BOLD}Needs fixing${OFF}`);
+  expect(renderMarkdown("# Title")).toBe(`${BOLD}Title${OFF}`);
+});
+
+test("styling inside a heading does not end the heading's bold", () => {
+  expect(renderMarkdown("## Use `x` here")).toBe(
+    `${BOLD}Use ${CODE}x${OFF}${BOLD} here${OFF}`,
+  );
+});
+
+test("a table becomes a dim header and one line per row, readable at phone width", () => {
+  // Box drawing at the source's natural width wraps into noise on a 390px
+  // screen, and raw pipes read as source. One row per line, cells joined.
+  const table = "| Exercise | Dose |\n|---|---|\n| cat cow | 1×10 |\n| `couch stretch` | 1×8 each |";
+  expect(renderMarkdown(table)).toBe(
+    [
+      `${DIM}Exercise · Dose${OFF}`,
+      "• cat cow · 1×10",
+      `• ${CODE}couch stretch${OFF} · 1×8 each`,
+    ].join("\n"),
+  );
+});
+
+test("an escaped pipe inside a cell is part of the cell", () => {
+  expect(renderMarkdown("| a | b |\n|:-|-:|\n| x \\| y | z |")).toBe(
+    `${DIM}a · b${OFF}\n• x | y · z`,
+  );
+});
+
+test("pipes without a separator row are not a table", () => {
+  expect(renderMarkdown("| just a line |")).toBe("| just a line |");
+});
+
+test("a table inside a fence stays literal", () => {
+  const src = "```\n| a | b |\n|---|---|\n| 1 | 2 |\n```";
+  expect(renderMarkdown(src)).toBe(src);
+});
+
+test("a horizontal rule becomes a dim line", () => {
+  expect(renderMarkdown("above\n\n---\n\nbelow")).toBe(
+    `above\n\n${DIM}────────${OFF}\n\nbelow`,
+  );
+});
