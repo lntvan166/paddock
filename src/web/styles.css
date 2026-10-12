@@ -2640,12 +2640,13 @@ body {
   cursor: pointer;
 }
 
-/* What Enter would commit, said on the option ITSELF and not only in the line
-   below it. A border-colour change alone was the entire signal, which on a
-   phone at arm's length is a hairline: three options of identical weight, one
-   of them a slightly different shade of grey at the edge. The fill is what
-   makes it findable without reading. */
-.term-option[aria-pressed="true"],
+/* The operator's CHOICE in a question dialog, said on the option itself. A
+   border-colour change alone was the entire signal, which on a phone at arm's
+   length is a hairline; the fill makes it findable without reading.
+
+   Not on a one-tap permission prompt (`aria-pressed`): there the highlighted
+   row is only where the agent's cursor sits, and filling it made "1. Yes" read
+   as the recommended answer. That cursor is `.term-option-cursor` instead. */
 .term-option[aria-checked="true"] {
   border-color: var(--accent);
   background: var(--accent-wash);
@@ -3521,6 +3522,25 @@ body {
 }
 
 .term-option[aria-checked="true"] .term-option-mark { color: var(--accent); }
+
+/* Fixed width whether or not it holds the glyph, so every label still starts
+   on the same column. */
+.term-option-cursor {
+  flex: none;
+  width: 1ch;
+  margin-right: -0.3rem;
+  color: var(--fg-dim);
+}
+
+.term-option-note {
+  flex: none;
+  margin-left: auto;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: var(--t-xs);
+  color: var(--fg-dim);
+}
 
 /* ── Spaces screen ──────────────────────────────────────────────────────────
    No new colour tokens: every value below is one already defined on bare

@@ -1032,8 +1032,25 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                       {isSelected(o) ? "●" : "○"}
                     </span>
                   )}
+                  {/* On a prompt that answers on one tap, the agent's cursor is
+                      only where ⏎ Enter would land — information, not advice.
+                      It used to be drawn with the accent fill, which made "1.
+                      Yes" look like the recommended answer, directly above the
+                      option that grants a permission for good. A quiet `❯`
+                      says where the cursor is without choosing for anyone. */}
+                  {prompt.commit !== "cursor" && (
+                    <span aria-hidden="true" className="term-option-cursor">
+                      {isSelected(o) ? "❯" : ""}
+                    </span>
+                  )}
                   <span aria-hidden="true" className="term-option-key">{o.key}</span>
                   <span className="term-option-label">{o.label}</span>
+                  {/* The one option on the screen whose effect outlives the
+                      answer. Matched on the harness's own wording, so a label
+                      that does not say it is never tagged as saying it. */}
+                  {/don['’]t ask again/i.test(o.label) && (
+                    <span className="term-option-note">remembered</span>
+                  )}
                 </Button>
               ))}
             </div>

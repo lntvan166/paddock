@@ -139,3 +139,10 @@ test("the empty toast region takes up no space", () => {
 test("the mute buttons are full touch targets", () => {
   expect(declaration(".settings-mute button", "min-height")).toBe(TOUCH_TARGET);
 });
+
+test("a one-tap prompt's cursor row is not filled like a recommendation", () => {
+  // Only a question dialog's CHOICE (aria-checked) is filled. A permission
+  // prompt's cursor (aria-pressed) is marked by `.term-option-cursor` instead.
+  expect(declaration('.term-option[aria-checked="true"]', "background")).toBe("var(--accent-wash)");
+  expect(() => ruleBody('.term-option[aria-pressed="true"]')).toThrow();
+});

@@ -618,3 +618,30 @@ test("Send with nothing typed stays inert where → would mean something else", 
   await settle();
   expect((other.querySelector('button[aria-label="Send"]') as HTMLButtonElement).disabled).toBe(true);
 });
+
+test("a permission prompt marks the agent's cursor quietly and tags the lasting grant", async () => {
+  // The cursor row used to wear the accent fill, so "1. Yes" read as the
+  // recommended answer — directly above the option that grants a permission
+  // for good. The cursor is a glyph now, and that option says what it does.
+  const { fn } = stubFetch({
+    "/output": () => screenOf(["Do you want to proceed?"]),
+    "/prompt": () => ({
+      question: "Do you want to proceed?",
+      options: [
+        { key: "1", label: "Yes", selected: true },
+        { key: "2", label: "Yes, and don't ask again for bun test", selected: false },
+        { key: "3", label: "No", selected: false },
+      ],
+      selected: "1. Yes",
+      raw: "",
+    }),
+  });
+  globalThis.fetch = fn as unknown as typeof fetch;
+  const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
+  await settle();
+  await settle();
+
+  expect(textsOf(host, ".term-option-cursor")).toEqual(["❯", "", ""]);
+  expect(textsOf(host, ".term-option-note")).toEqual(["remembered"]);
+  expect(host.querySelector(".term-option-note")?.closest(".term-option")?.textContent).toContain("don't ask again");
+});
