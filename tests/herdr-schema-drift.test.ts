@@ -61,9 +61,12 @@ const DECLARED_FIELD_FLAGS = {
 const DECLARED_FIELDS = Object.keys(DECLARED_FIELD_FLAGS) as (keyof HerdrAgentRaw)[];
 
 // Fields the installed herdr's `AgentInfo` carries that paddock deliberately
-// does not model (as of protocol 19). Named explicitly so a new upstream
+// does not model (as of protocol 22). Named explicitly so a new upstream
 // field shows up here as a decision to make, not a silently ignored column.
+// `completion_seq` (protocol 22) marks an idle transition that finished
+// work; paddock's done/idle split comes from `agent_status`, so it is unread.
 const IGNORED_FIELDS = [
+  "completion_seq",
   "display_agent",
   "interactive_ready",
   "launch_pending",
@@ -306,10 +309,13 @@ const DECLARED_PANE_FIELDS = Object.keys(DECLARED_PANE_FLAGS) as (keyof HerdrPan
 // missing from paddock's vocabulary, just not read off this particular
 // object. `display_agent`, `state_labels`, `title` and `tokens` mirror the
 // same fields already ignored on `HerdrAgentRaw` above. `scroll` is new.
+// `restore_error` (protocol 22) is herdr's note on a pane it failed to
+// restore after a restart; `tree.ts` does not surface it yet.
 const IGNORED_PANE_FIELDS = [
   "agent_session",
   "display_agent",
   "foreground_cwd",
+  "restore_error",
   "scroll",
   "state_labels",
   "terminal_id",
