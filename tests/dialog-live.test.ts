@@ -100,7 +100,11 @@ test.skipIf(!ready)("a key is ONE character, and non-ASCII is one of them", asyn
   // this. A word is refused outright, and an ASCII-only route would have
   // silently dropped half of what the operator types.
   await expect(actions.sendChars(PROBE, ["chào"])).rejects.toThrow(/invalid_key/i);
-  await expect(actions.sendChars(PROBE, [" "])).rejects.toThrow(/invalid_key/i);
+  // Straight down the socket: `sendChars` maps the space through `keyForChar`
+  // before herdr sees it, so asking IT would only ever measure paddock.
+  await expect(
+    request(SOCKET, "agent.send_keys", { target: PROBE, keys: [" "] }),
+  ).rejects.toThrow(/invalid_key/i);
 
   // These land, so they must not throw.
   await actions.sendChars(PROBE, ["space"]);
