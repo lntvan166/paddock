@@ -15,6 +15,8 @@ import {
   type SettingsStore,
 } from "@server/settings/store";
 import { MAX_TEXT_LEN, MAX_TYPE_CHARS } from "@server/limits";
+import { handleRpc } from "@server/mcp/protocol";
+import { bridgeTools } from "@server/mcp/tools";
 import type { AgentWatch } from "@server/mcp/watch";
 import type { PushStore } from "@server/push/store";
 import { b64urlDecode } from "@server/push/vapid";
@@ -1180,6 +1182,48 @@ export function createApp(deps: AppDeps) {
 
   if (deps.actions) {
     const actions = deps.actions;
+
+    /**
+     * The MCP bridge — see docs/design/2026-10-24-mcp-bridge-design.md.
+     *
+     * NEVER on the gated quick-tunnel app (`deps.pairing`): that listener has
+     * no Access in front of it, and Access path scoping is the bridge's whole
+     * authentication. No token is read here, by decision 3 and decision 34.
+     *
+     * The kill switch is read per request, so `PUT /api/settings` turns it on
+     * or off without a restart. Off, the route 404s like any absent feature.
+     */
+    if (deps.watch && !deps.pairing) {
+      const tools = bridgeTools({
+        store: deps.store, actions, watch: deps.watch, journal: deps.journal,
+        sessionFor: deps.sessionFor, dialogIo: { ...actions, settle },
+      });
+      let offLogged = false;
+      const bridgeOff = (c: Context) => {
+        if (deps.settings?.current().bridge.enabled === true) return null;
+        if (!offLogged) {
+          console.info("mcp: a request reached /mcp while bridge.enabled is off (logged once)");
+          offLogged = true;
+        }
+        return c.json({ ok: false, detail: "the MCP bridge is off" }, 404);
+      };
+
+      app.post("/mcp", async (c) => {
+        const off = bridgeOff(c);
+        if (off) return off;
+        let msg: unknown;
+        try {
+          msg = await c.req.json();
+        } catch {
+          // A protocol error the client can read, not an HTTP one.
+          return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });
+        }
+        const res = await handleRpc(msg, tools);
+        return res === null ? c.body(null, 202) : c.json(res);
+      });
+      // Stateless: no SSE stream to open and no session to delete.
+      app.on(["GET", "DELETE"], "/mcp", (c) => bridgeOff(c) ?? c.json({ ok: false, detail: "method not allowed" }, 405));
+    }
 
     // POST, never GET: a payload in a query string lands in edge access logs.
     app.post("/api/agents/:id/output", async (c) => {
