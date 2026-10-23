@@ -14,6 +14,7 @@ import {
   TOKEN_SHAPE_DETAIL,
   type SettingsStore,
 } from "@server/settings/store";
+import { MAX_TEXT_LEN, MAX_TYPE_CHARS } from "@server/limits";
 import type { AgentWatch } from "@server/mcp/watch";
 import type { PushStore } from "@server/push/store";
 import { b64urlDecode } from "@server/push/vapid";
@@ -78,14 +79,6 @@ export const IMMUTABLE_ASSET_RE = /^\/assets\/.*-[A-Za-z0-9_-]{8,}\.(js|css|woff
  */
 const OPTION_KEY_RE = /^[1-9][0-9]?$/;
 
-/**
- * Characters one `/type` call may send.
- *
- * A free-text ANSWER, not a message: the reply box already exists for prose and
- * goes through `agent.prompt`. Sized so a sentence fits and a pasted file does
- * not, because every character here becomes one entry in a `send_keys` array.
- */
-const MAX_TYPE_CHARS = 200;
 
 /**
  * Wait for a TUI to repaint after a write.
@@ -107,11 +100,6 @@ const settle = () => new Promise<void>((r) => setTimeout(r, KEY_SETTLE_MS));
  */
 const KEY_SETTLE_MS = 120;
 
-/**
- * Ceiling on typed text. Generous for a phone reply, small enough that a
- * runaway paste cannot be forwarded into an agent's prompt wholesale.
- */
-const MAX_TEXT_LEN = 10_000;
 
 /**
  * Ceiling on a rename label — an agent's name, a tab's label, a space's
@@ -766,6 +754,9 @@ function renameDetail(err: unknown): string {
     ? "That name is already used by another agent."
     : `Another agent is already called \`${taken}\`. Names have to be unique.`;
 }
+
+// Re-exported so a test can bound against exactly what the routes enforce.
+export { MAX_TEXT_LEN, MAX_TYPE_CHARS };
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
