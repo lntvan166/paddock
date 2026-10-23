@@ -115,8 +115,10 @@ error, never a guess.
 ### Sending
 
 - The text is sent through the same action `/api/agents/:id/text` uses
-  (`actions.sendReply`), **prefixed with `[from remote] `** so both the agent
-  and the operator see it is not the operator.
+  (`actions.sendReply`), **prefixed with `[from remote #<id>] `**, where
+  `<id>` is a short random tag generated per message. Both the agent and the
+  operator see it is not the operator, and the tag is how a wait finds this
+  message in the journal (below).
 - **Refused while the agent is `blocked`.** `/text` deliberately works in
   every state, because it is the operator typing into a terminal they can
   see. For the bridge, typing into a prompt dialog *is* answering it, so a
@@ -162,8 +164,13 @@ Rules:
   (`selectByCursor`, `typeIntoFreeText`, `moveDialogTab`) rather than new key
   sequences. Those helpers carry the eleven used-screen fixes. Multi-question
   dialogs are answered one question per call, the current tab first.
-  Multi-select is left to the builder: support it via `toggleDialogOption`,
-  or refuse it in v1 with a clear message.
+  Multi-select is **refused in v1** with a message pointing at the UI. The
+  call is YAGNI until a real multi-select question needs answering remotely.
+- **Every screen read inside the helpers is re-classified.** `selectByCursor`
+  also answers *permission* prompts, and it reads the screen itself. So the
+  helpers get a wrapped `DialogIo` whose `readPromptScreen` throws unless
+  `parseAskDialog` recognises the screen. A prompt that replaces the dialog
+  mid-call then stops the call before any further key is sent.
 - `read_agent` and the `blocked` wait outcome say **which kind** of blocked
   screen it is (`permission` or `question`), so the client knows whether
   `answer_question` is even possible.
@@ -182,7 +189,7 @@ work.
 
 **A wait is anchored to the message, not to the clock** (my call, settling
 two gaps the builder check found). `send_message` returns a `cursor`, an
-opaque marker of where the journal stood just before the send.
+opaque marker that is the message's `#<id>` tag.
 `wait_for_agent` takes that cursor. Without anchoring, a client that comes
 back after the agent has already finished would wait 90 s on an idle agent
 and lose the reply. And a message queued behind a running task would
@@ -202,8 +209,10 @@ A wait returns one of:
 
 - `finished`: as defined above. Includes the journal entries after the
   cursor, falling back to the screen.
-- `blocked`: the agent is on a permission prompt. Includes the question and
-  options, plus the plain statement that only the operator can answer it.
+- `blocked`: the agent is on a prompt. Includes `kind` (`permission` or
+  `question`), the question and its options. For `permission`, it also says
+  plainly that only the operator can answer. For `question`, it says that
+  `answer_question` can.
 - `still_working`: the cap was hit. Includes nothing else, so the client
   knows to call again.
 - `never_started`: after `send_message`, the agent was not seen `working`
@@ -228,8 +237,10 @@ session, and Access fronts it.
 
 - The MCP handler lives in a new server module (e.g. `src/server/mcp/`) and
   is mounted from `routes.ts` when `deps.actions` exists. The kill switch is
-  checked **per request** against the settings store, so toggling it in
-  `settings.json` needs no restart (my call). There is no UI control in v1.
+  checked **per request** against the settings store, so toggling it through
+  `PUT /api/settings` (`{"bridge":{"enabled":true}}`, e.g. curl on the box)
+  takes effect without a restart (my call). The store is in memory, so a hand
+  edit of `settings.json` needs a restart. There is no UI control in v1.
   The module depends on the store, the journal reader, `HerdrActions` and
   `herdr/prompt-parse.ts` (the server-side parser `/api/agents/:id/prompt`
   uses). That import matches what `routes.ts` already does.
