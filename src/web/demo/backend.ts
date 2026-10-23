@@ -83,6 +83,7 @@ function demoSettings(mutedUntil: number | null = null): SettingsView {
     // answer and renders as "this server has push turned off" rather than an
     // enable button that could only fail.
     push: { enabled: false, devices: 0, vapidPublicKey: null, error: null },
+    bridge: { enabled: false },
     publicUrl: null,
     // No tunnel: a paddock served the ordinary way has none, and the demo must
     // not offer to pair a device it cannot pair.

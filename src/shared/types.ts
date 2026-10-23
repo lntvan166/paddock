@@ -49,6 +49,8 @@ export interface SettingsView {
     error: string | null;
   };
   publicUrl: string | null;
+  /** The MCP bridge at `/mcp`; see docs/settings.md. */
+  bridge: { enabled: boolean };
   /**
    * Non-null only while `paddock tunnel` is running. The UI renders its
    * "add a device" control from this, so `null` means the section is absent
@@ -75,6 +77,7 @@ export interface SettingsPatch {
    *  writing a settings field. */
   push?: { enabled?: boolean };
   publicUrl?: string | null;
+  bridge?: { enabled?: boolean };
 }
 
 /** A Telegram inline keyboard. Declared in the shared contract because the

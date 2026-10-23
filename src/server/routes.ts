@@ -545,6 +545,23 @@ function validateSettingsPatch(
     patch.push = out;
   }
 
+  // Same shape and the same refusal of a wrong type as `push` above.
+  if ("bridge" in body) {
+    const raw = body.bridge;
+    if (typeof raw !== "object" || raw === null) {
+      return { ok: false, detail: "bridge must be an object" };
+    }
+    const bb = raw as Record<string, unknown>;
+    const out: NonNullable<SettingsPatch["bridge"]> = {};
+    if ("enabled" in bb) {
+      if (typeof bb.enabled !== "boolean") {
+        return { ok: false, detail: "bridge.enabled must be a boolean" };
+      }
+      out.enabled = bb.enabled;
+    }
+    patch.bridge = out;
+  }
+
   return { ok: true, patch };
 }
 

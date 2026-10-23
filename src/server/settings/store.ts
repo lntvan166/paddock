@@ -20,6 +20,9 @@ export interface Settings {
    *  list are NOT here — they are state, and they live in push.json. */
   push: { enabled: boolean };
   publicUrl: string | null;
+  /** The MCP bridge at `/mcp`. Off until the operator turns it on: it is a
+   *  door for another machine, and a door should not ship open. */
+  bridge: { enabled: boolean };
 }
 
 /** 60s, not minutes: working → blocked → working → blocked is a real sequence
@@ -74,6 +77,7 @@ const defaults = (): Settings => ({
   },
   push: { enabled: false },
   publicUrl: null,
+  bridge: { enabled: false },
 });
 
 export function defaultConfigDir(): string {
@@ -209,6 +213,15 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
     );
   }
 
+  // Named, not dropped silently, same as skipWhileViewing above.
+  const b = obj(p.bridge);
+  if ("enabled" in b && typeof b.enabled !== "boolean") {
+    log(
+      `[settings] bridge.enabled was ${JSON.stringify(b.enabled)}, not a boolean, ` +
+        `and has been reset to ${d.bridge.enabled}.`,
+    );
+  }
+
   return {
     version: 2,
     telegram: {
@@ -240,6 +253,7 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
     // v1 file load with no settleMs and silently restore the edge-firing bug.
     push: { enabled: typeof obj(p.push).enabled === "boolean" ? obj(p.push).enabled as boolean : d.push.enabled },
     publicUrl: typeof p.publicUrl === "string" ? p.publicUrl : null,
+    bridge: { enabled: typeof b.enabled === "boolean" ? b.enabled : d.bridge.enabled },
   };
 }
 
@@ -325,6 +339,7 @@ export class SettingsStore {
       },
       push: { enabled: this.#s.push.enabled, ...push },
       publicUrl: this.#s.publicUrl,
+      bridge: { ...this.#s.bridge },
       // The store knows nothing about tunnels and must not learn — routes.ts
       // composes the real value in when `paddock tunnel` supplies deps.pairing.
       tunnel: null,
@@ -338,6 +353,7 @@ export class SettingsStore {
     if (p.notify) this.#s.notify = { ...this.#s.notify, ...p.notify };
     if (p.push) this.#s.push = { ...this.#s.push, ...p.push };
     if (p.publicUrl !== undefined) this.#s.publicUrl = p.publicUrl;
+    if (p.bridge) this.#s.bridge = { ...this.#s.bridge, ...p.bridge };
     // An explicit save clears a load fault: the operator has chosen to replace
     // whatever was unparseable.
     this.error = null;

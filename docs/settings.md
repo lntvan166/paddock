@@ -59,6 +59,25 @@ button to mint a code for another device — appears in Settings only while
 ordinary way, or a named-tunnel deployment behind it, has no tunnel to pair
 and does not show the section at all.
 
+## The MCP bridge
+
+`bridge.enabled` (default `false`) turns on the MCP endpoint at `/mcp`, through
+which another Claude Code session can list, read, message and wait on agents,
+and answer their question dialogs, but never their permission prompts. See
+`docs/design/2026-10-24-mcp-bridge-design.md`, and
+`docs/deploy-cloudflare.md` for the Access setup it relies on.
+
+There is no switch in the UI. It is read on every request, so this takes effect
+without a restart (run it on the paddock host):
+
+```bash
+curl -X PUT http://127.0.0.1:8787/api/settings \
+  -H 'content-type: application/json' -d '{"bridge":{"enabled":true}}'
+```
+
+Hand-editing `settings.json` also works, but only after a restart, because the
+store is held in memory.
+
 ## Push notifications
 
 Per **device**, not per account: a subscription belongs to the browser it was
