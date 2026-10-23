@@ -3,6 +3,7 @@ import type { DialogIo } from "@server/herdr/dialog-type";
 import type { JournalReader } from "@server/journal/read";
 import { stripAnsi } from "@server/journal/text";
 import { MAX_TEXT_LEN } from "@server/limits";
+import { answerQuestion } from "@server/mcp/answer";
 import { describeBlocked, type BlockedInfo } from "@server/mcp/blocked";
 import { hasTag, newTag as randomTag, REMOTE_PREFIX, replyAfter } from "@server/mcp/reply";
 import type { ToolDef, ToolResult } from "@server/mcp/protocol";
@@ -284,6 +285,23 @@ function toolList(deps: BridgeDeps): ToolDef[] {
         const wait = waitSeconds(args.wait_seconds, 1);
         if (wait === null) return refuse(`wait_seconds must be an integer from 1 to ${MAX_WAIT_S}`);
         return waitFor(deps, a.agentId, args.cursor, wait * 1000, null);
+      },
+    },
+    {
+      name: "answer_question",
+      description:
+        "Answer a question the agent asked (its AskUserQuestion dialog), by the option's exact label from " +
+        "read_agent, or with text when the question has a free-text answer. Refuses permission prompts: only " +
+        "the operator answers those. Multi-question dialogs are answered one question per call; the result's " +
+        "next field shows the next question, or the Submit tab, which is answered the same way.",
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" }, option: { type: "string" }, text: { type: "string" } },
+        required: ["id"], additionalProperties: false,
+      },
+      call: async (args) => {
+        if (typeof args.id !== "string") return refuse("id must be a string");
+        return answerQuestion(deps.store, args.id, { option: args.option, text: args.text }, deps.dialogIo);
       },
     },
   ];

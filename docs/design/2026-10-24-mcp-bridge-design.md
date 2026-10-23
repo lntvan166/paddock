@@ -161,13 +161,14 @@ Rules:
   no option, or matches more than one, is refused. The server picks the key.
   The client never sends a keystroke ("never guess a keystroke").
 - **Drive the dialog with the existing helpers** in `herdr/dialog-type.ts`
-  (`selectByCursor`, `typeIntoFreeText`, `moveDialogTab`) rather than new key
+  (`toggleDialogOption`, which is what `/dialog-key` uses, and `typeIntoFreeText`; `selectByCursor` cannot see these options, because `parsePrompt` refuses the dialog) rather than new key
   sequences. Those helpers carry the eleven used-screen fixes. Multi-question
   dialogs are answered one question per call, the current tab first.
   Multi-select is **refused in v1** with a message pointing at the UI. The
   call is YAGNI until a real multi-select question needs answering remotely.
-- **Every screen read inside the helpers is re-classified.** `selectByCursor`
-  also answers *permission* prompts, and it reads the screen itself. So the
+- **Every screen read inside the helpers is re-classified.** A digit or an
+  Enter answers a *permission* prompt as readily as a question, and the
+  helpers read the screen themselves. So the
   helpers get a wrapped `DialogIo` whose `readPromptScreen` throws unless
   `parseAskDialog` recognises the screen. A prompt that replaces the dialog
   mid-call then stops the call before any further key is sent.
