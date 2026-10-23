@@ -42,6 +42,7 @@ import { Notifier, type NotifierOpts } from "@server/notify/notifier";
 import { PushStore } from "@server/push/store";
 import { sendPush } from "@server/push/send";
 import { buildPushSender, deltaSink } from "@server/index-wiring";
+import { AgentWatch } from "@server/mcp/watch";
 import { parseArgs, parseDuration, USAGE } from "@server/cli";
 import { HERDR_PROTOCOL, type HerdrSessionSnapshot } from "@shared/herdr-api";
 import type { SpaceTree } from "@shared/types";
@@ -673,6 +674,9 @@ let readTree: (() => Promise<SpaceTree>) | undefined;
 // stale (and did — a failed reopen left it saying `true` with no stream at
 // all), whereas `stream.connected` cannot disagree with reality.
 let stream: HerdrStream | null = null;
+// One watch for both wirings below, so a bridge wait sees demo and herdr
+// deltas through the same tap.
+const watch = new AgentWatch();
 
 if (DEMO) {
   // Every tick goes through the store, so `/api/agents` and a browser that
@@ -683,7 +687,7 @@ if (DEMO) {
   // ARGUMENT rather than by quietly omitting the notifier. The two modes are now
   // one call, so an edit cannot make the herdr branch look like this one by
   // accident; see `index-wiring.ts`.
-  demo = createDemoSource({ store, onDelta: deltaSink(hub, null) });
+  demo = createDemoSource({ store, onDelta: deltaSink(hub, null, watch) });
   store.replaceAll(demo.snapshot(), Date.now());
   // Reads answer, writes refuse. `demoTree` is read fresh on every call so its
   // `readAt` is the moment it was asked — the Spaces screen renders "as of 3s
@@ -728,7 +732,7 @@ if (DEMO) {
     // Fan out, do not replace: the hub keeps every browser current, and the
     // notifier is a leaf hanging off the composition root so that neither
     // store.ts nor hub.ts has to learn that Telegram exists.
-    onDelta: deltaSink(hub, notifier),
+    onDelta: deltaSink(hub, notifier, watch),
     // The event-driven refreshes and the 30s healing reconcile are awaited by
     // nobody, so a rejection there used to be a log line and nothing more.
     // Arming the keeper makes a background failure self-heal instead.
@@ -914,6 +918,7 @@ const demoJournal: JournalReader = {
 
 const appDeps = {
   store,
+  watch,
   publicHosts,
   hub,
   actions,

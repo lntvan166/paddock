@@ -14,6 +14,7 @@ import {
   TOKEN_SHAPE_DETAIL,
   type SettingsStore,
 } from "@server/settings/store";
+import type { AgentWatch } from "@server/mcp/watch";
 import type { PushStore } from "@server/push/store";
 import { b64urlDecode } from "@server/push/vapid";
 import type { AgentStore } from "@server/state/store";
@@ -712,6 +713,8 @@ export interface AppDeps {
    * `tildeise` does.
    */
   home?: string;
+  /** The delta tap bridge waits sleep on. Absent → `/mcp` is not served. */
+  watch?: AgentWatch;
 }
 
 /**

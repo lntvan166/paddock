@@ -84,9 +84,12 @@ export function buildPushSender(
 export function deltaSink(
   hub: { queue: (d: Delta) => void },
   notifier: { observe: (d: Delta) => void } | null,
+  watch: { observe: (d: Delta) => void } | null = null,
 ): (d: Delta) => void {
   return (d) => {
     hub.queue(d);
     notifier?.observe(d);
+    // Last: a bridge wait resolving is never more urgent than the screen.
+    watch?.observe(d);
   };
 }
