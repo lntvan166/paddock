@@ -36,7 +36,9 @@ function world(start: Partial<Agent> = {}, actionsOver: Partial<HerdrActions> = 
   };
   const actions = {
     async readOutput() { return { lines: ["screen line"], source: "visible" as const }; },
-    async readPromptScreen() { return PERMISSION; },
+    // A prompt is on screen only while blocked — the screen check before a
+    // send reads this too, and must see an ordinary screen otherwise.
+    async readPromptScreen() { return store.snapshot()[0]?.state === "blocked" ? PERMISSION : "$ make test\nok\n"; },
     async sendReply(_t: string, text: string) { sent.push(text); },
     ...actionsOver,
   } as unknown as HerdrActions;

@@ -4,7 +4,7 @@ import type { JournalReader } from "@server/journal/read";
 import { stripAnsi } from "@server/journal/text";
 import { MAX_TEXT_LEN } from "@server/limits";
 import { answerQuestion } from "@server/mcp/answer";
-import { describeBlocked, type BlockedInfo } from "@server/mcp/blocked";
+import { describeBlocked, promptOnScreen, type BlockedInfo } from "@server/mcp/blocked";
 import { hasTag, newTag as randomTag, REMOTE_PREFIX, replyAfter } from "@server/mcp/reply";
 import type { ToolDef, ToolResult } from "@server/mcp/protocol";
 import type { AgentWatch } from "@server/mcp/watch";
@@ -106,9 +106,8 @@ async function waitFor(
     if (a.state === "working") seenWorking = true;
     if (a.state === "blocked") return { ok: true, data: await blockedOutcome(deps, id) };
 
-    if (a.hasJournal && deps.journal) {
-      const page = await deps.journal.read(deps.sessionFor?.(id) ?? null, null, 200);
-      const lines = page.source === "journal" ? page.lines : [];
+    const lines = a.hasJournal && deps.journal ? await journalWithTag(deps, id, tag) : null;
+    if (lines !== null) {
       // The agent took the message in, even if the state edge was missed.
       if (hasTag(lines, tag)) seenWorking = true;
       const reply = replyAfter(lines, tag);
@@ -130,6 +129,28 @@ async function waitFor(
     if (next === "gone") return refuse("agent is gone");
     if (next !== "timeout" && next.state === "working") seenWorking = true;
   }
+}
+
+/** Pages read back looking for a tag: 5 × 200 turns, then the agent has moved on. */
+const MAX_PAGES = 5;
+
+/**
+ * The journal lines from the newest back to the page holding `tag`, or the
+ * last `MAX_PAGES` pages if it is not found. Null when there is no journal
+ * for this session at all, which sends the caller to the state-edge fallback
+ * rather than waiting on a tag that can never appear.
+ */
+async function journalWithTag(deps: BridgeDeps, id: string, tag: string): Promise<string[] | null> {
+  const session = deps.sessionFor?.(id) ?? null;
+  let page = await deps.journal!.read(session, null, 200);
+  if (page.source !== "journal") return null;
+  let lines = page.lines;
+  for (let i = 1; i < MAX_PAGES && !hasTag(lines, tag) && page.hasMore && page.cursor !== null; i++) {
+    page = await deps.journal!.read(session, Number(page.cursor), 200);
+    if (page.source !== "journal") break;
+    lines = [...page.lines, ...lines];
+  }
+  return lines;
 }
 
 function waitSeconds(v: unknown, min: number): number | null {
@@ -250,6 +271,16 @@ function toolList(deps: BridgeDeps): ToolDef[] {
           );
         }
 
+        // The store lags herdr: read the screen itself, last, and refuse if
+        // any prompt is up. Typing ends in Enter, and Enter on a prompt is an
+        // answer.
+        if (promptOnScreen(await deps.actions.readPromptScreen(a.agentId))) {
+          return refuse(
+            "a prompt appeared on the agent's screen, so nothing was sent; call read_agent to see it. " +
+            "Permission prompts are the operator's; questions go through answer_question.",
+          );
+        }
+
         const sentAt = (deps.now ?? Date.now)();
         try {
           await deps.actions.sendReply(a.agentId, REMOTE_PREFIX(tag) + text);
@@ -257,8 +288,17 @@ function toolList(deps: BridgeDeps): ToolDef[] {
           return refuse(err instanceof Error ? err.message : String(err));
         }
         if (wait === 0) return { ok: true, data: { sent: true, cursor: tag } };
-        const r = await waitFor(deps, a.agentId, tag, wait * 1000, sentAt);
-        return r.ok ? { ok: true, data: { sent: true, cursor: tag, ...(r.data as object) } } : r;
+        // The message IS sent from here on, so no failure may lose its cursor:
+        // a client told "error" with no cursor would resend, and the agent
+        // would get the message twice.
+        try {
+          const r = await waitFor(deps, a.agentId, tag, wait * 1000, sentAt);
+          return { ok: true, data: { sent: true, cursor: tag, ...(r.ok ? (r.data as object) : { status: "wait_failed", error: r.error }) } };
+        } catch (err) {
+          const error = err instanceof Error ? err.message : String(err);
+          console.warn(`mcp: send_message ${a.agentId}: the wait failed after sending: ${error}`);
+          return { ok: true, data: { sent: true, cursor: tag, status: "wait_failed", error } };
+        }
       },
     },
     {

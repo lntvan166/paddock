@@ -1,7 +1,7 @@
 import { parseAskDialog } from "@server/herdr/ask-dialog";
 import { toggleDialogOption, typeIntoFreeText, type DialogIo } from "@server/herdr/dialog-type";
 import { MAX_TYPE_CHARS } from "@server/limits";
-import { describeBlocked } from "@server/mcp/blocked";
+import { describeBlocked, isQuestionDialog } from "@server/mcp/blocked";
 import type { ToolResult } from "@server/mcp/protocol";
 import type { AgentStore } from "@server/state/store";
 
@@ -21,7 +21,7 @@ export function questionOnlyIo(io: DialogIo): DialogIo {
     ...io,
     async readPromptScreen(target) {
       const screen = await io.readPromptScreen(target);
-      if (parseAskDialog(screen) === null) throw new QuestionOnlyError("not a question dialog");
+      if (!isQuestionDialog(screen)) throw new QuestionOnlyError("not a question dialog");
       return screen;
     },
   };
@@ -49,7 +49,7 @@ export async function answerQuestion(
   const guarded = questionOnlyIo(io);
   try {
     const screen = await io.readPromptScreen(id);
-    const dialog = parseAskDialog(screen);
+    const dialog = isQuestionDialog(screen) ? parseAskDialog(screen) : null;
     if (dialog === null) {
       return refuse("not a question dialog: only the operator can answer this prompt, in the paddock UI");
     }
@@ -102,6 +102,6 @@ export async function answerQuestion(
   await io.settle?.();
   const after = await io.readPromptScreen(id);
   // Null: the dialog closed, or became something else. read_agent says which.
-  const next = parseAskDialog(after) === null ? null : describeBlocked(after);
+  const next = isQuestionDialog(after) ? describeBlocked(after) : null;
   return { ok: true, data: { answered: true, next } };
 }

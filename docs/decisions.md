@@ -1065,15 +1065,20 @@ session does not silently re-litigate them.
     Access picks the most specific path, so the token is refused everywhere
     else, and `docs/deploy-cloudflare.md` has the curl that proves it. That
     keeps decision 3 intact: no token is read anywhere, and `/sw.js` is
-    untouched. `/mcp` is never registered on the quick-tunnel listener,
-    which has no Access at all.
+    untouched. `/mcp` is never served through a quick tunnel, which has no
+    Access at all. The gated app never mounts it, and the publishing proxy
+    behind `paddock start` refuses the path.
 
     Two refusals carry the safety, not the absence of a tool.
     `send_message` is refused in EVERY blocked state, because typing into a
     dialog is answering it. `answer_question` answers only a screen
     `parseAskDialog` recognises, re-checked on every read inside the call,
     because the helpers' own reads would otherwise let a permission prompt
-    that replaced the dialog be answered by the next key. The operator chose
+    that replaced the dialog be answered by the next key. A permission marker
+    anywhere on screen vetoes the "question" verdict, because `parseAskDialog`
+    alone was shown to accept a permission prompt whose command contained a
+    tab-bar line. And `send_message` reads the screen itself before typing,
+    because the store's `working` can lag a prompt that is already up. The operator chose
     to let the remote session answer the agent's own questions. Permission
     prompts stay theirs. The bridge is off by default (`bridge.enabled`),
     read per request, so it is switched without a restart. See

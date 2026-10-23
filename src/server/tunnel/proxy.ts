@@ -8,6 +8,12 @@ export interface Upstream {
   port: number;
 }
 
+/** `/mcp` and anything under it, case-folded: never forwarded. */
+export function isBridgePath(pathname: string): boolean {
+  const p = pathname.toLowerCase();
+  return p === "/mcp" || p.startsWith("/mcp/");
+}
+
 /** The origin an upstream paddock believes is its own. */
 export function upstreamOrigin(u: Upstream): string {
   return `http://${u.host}:${u.port}`;
@@ -34,6 +40,15 @@ export function upstreamOrigin(u: Upstream): string {
  */
 export async function proxyHttp(req: Request, u: Upstream): Promise<Response> {
   const from = new URL(req.url);
+  // The MCP bridge is never published through a quick tunnel. Its only
+  // authentication is Cloudflare Access path scoping, and a quick tunnel has
+  // no Access in front of it — a pairing cookie must not reach `/mcp`
+  // (decision 34). Refused here, at the one place a publishing tunnel forwards.
+  if (isBridgePath(from.pathname)) {
+    return new Response(JSON.stringify({ ok: false, detail: "the MCP bridge is not served through a quick tunnel" }), {
+      status: 404, headers: { "content-type": "application/json" },
+    });
+  }
   const to = new URL(from.pathname + from.search, upstreamOrigin(u));
 
   const headers = new Headers(req.headers);

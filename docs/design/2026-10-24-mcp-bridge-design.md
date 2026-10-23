@@ -88,7 +88,8 @@ replaces the "revocable paddock token" the original proposal wanted.
 
 **Quick tunnels.** `paddock tunnel` / `paddock start` publish a listener with
 no Access in front of it (decision 13's cookie gate). `/mcp` must **not** be
-served on that listener, only on the default loopback listener that the named
+served on that listener. That covers both the in-process gated app and the
+publishing proxy that `start` uses, which refuses the path itself. It is served, only on the default loopback listener that the named
 tunnel points at.
 
 Registering on the laptop (documented with placeholders only):
@@ -127,6 +128,10 @@ error, never a guess.
   blocked between the check and the send) is possible. The builder should
   re-check state immediately before sending and document the remaining
   window. It cannot be made zero without herdr support.
+- **The screen is checked, not just the store.** The store lags herdr's
+  detection, so right before typing the bridge reads the screen. It refuses if
+  any prompt is up: a question dialog, a permission marker, or a numbered menu
+  under a question line. Added after the final review.
 - No other state is refused. Sending to a `working` agent queues the message
   the way typing would.
 
@@ -157,6 +162,11 @@ Rules:
   the one check that keeps (b) from turning into "the bridge can approve
   prompts", so it must never be loosened to "blocked and not obviously a
   permission prompt".
+- **"Question dialog" means more than `parseAskDialog` succeeding.** That
+  parser takes the last tab-bar-shaped line anywhere on screen. A permission
+  prompt whose command contains one would parse as a question, so any
+  permission marker on screen ("Do you want to", "don't ask again") vetoes it
+  (`isQuestionDialog` in `mcp/blocked.ts`). This was found in the final review.
 - **Options are matched by label, never by position.** A label that matches
   no option, or matches more than one, is refused. The server picks the key.
   The client never sends a keystroke ("never guess a keystroke").
@@ -216,6 +226,8 @@ A wait returns one of:
   `answer_question` can.
 - `still_working`: the cap was hit. Includes nothing else, so the client
   knows to call again.
+- `wait_failed` (only from `send_message`): the message WAS sent, but the
+  wait errored. The cursor is still returned, so the client never resends.
 - `never_started`: after `send_message`, the agent was not seen `working`
   within a short grace period (builder's choice, around 10 s). This is
   distinct from `finished` on purpose (see anti-goals).
