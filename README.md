@@ -257,6 +257,18 @@ chrome, and it opens where you left off.
 
 [running locally →](docs/running-locally.md)
 
+## from another Claude Code session
+
+paddock can also be an MCP server, so a Claude Code session on another machine
+can hand work to the agents running here and read their replies. It can list
+agents, read one, send it a message, wait for the answer, and answer a question
+the agent asked. It can **never** answer a permission prompt; those stay on your
+phone.
+
+It is off by default. It needs the named-tunnel setup and a second Access
+application scoped to `/mcp`, so a service token reaches the bridge and nothing
+else. [Set it up →](docs/deploy-cloudflare.md#mcp-bridge-a-second-access-application)
+
 ## docs
 
 [running locally](docs/running-locally.md) ·

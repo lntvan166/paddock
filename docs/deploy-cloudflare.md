@@ -92,6 +92,78 @@ Check this from a context that carries no Access session — a private window, o
 dashboard whether or not the policy is correct, so it cannot distinguish the
 two outcomes.
 
+## MCP bridge: a second Access application
+
+The MCP bridge (`/mcp`, off until `bridge.enabled` is set; see
+`docs/settings.md`) lets a Claude Code session on another machine list, read,
+message and wait on paddock's agents. That client is a program, not a person
+in a browser, so it signs in with an Access **service token**. Access is still
+the only authentication. paddock reads no token of its own (decisions 3
+and 34).
+
+**The token must reach `/mcp` and nothing else.** paddock trusts Access for
+every route, so if the service token were simply added to the application in
+§1, it could also call `/api/agents/:id/key` and approve a permission prompt.
+That is exactly what the bridge is built never to do. Access chooses the
+application with the most specific path, so a separate application scoped to
+`/mcp` is what keeps the two apart:
+
+1. **Zero Trust → Access → Service Auth → Create service token.** Copy the
+   client ID and secret; the secret is shown once.
+2. **Add a second Self-hosted application:**
+   - **Application domain:** `paddock.example.com`, **path** `mcp`
+   - **Policy:** action *Service Auth*, include *Service Token* → the token
+     from step 1. Nothing else.
+3. **Leave the application from §1 exactly as it is**: hostname-wide,
+   human identities only. Do not add the service token to it.
+4. Turn the bridge on, on the paddock host:
+
+   ```bash
+   curl -X PUT http://127.0.0.1:8787/api/settings \
+     -H 'content-type: application/json' -d '{"bridge":{"enabled":true}}'
+   ```
+
+### Verify both halves
+
+Run both from a machine with no Access session, using the token:
+
+```bash
+H=(-H "CF-Access-Client-Id: <id>" -H "CF-Access-Client-Secret: <secret>")
+
+# 1. The bridge answers.
+curl -s "${H[@]}" -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
+  https://paddock.example.com/mcp
+# Expected: a JSON-RPC result naming serverInfo "paddock".
+
+# 2. Everything else refuses the token, and Access is what refuses it.
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "${H[@]}" \
+  -H 'content-type: application/json' -d '{"key":"1"}' \
+  https://paddock.example.com/api/agents/x/key
+# Expected: a 302 to cloudflareaccess.com, or a 403. NEVER a 404 — a 404
+# is paddock's own "unknown agent", which means the request got through
+# Access and the token can reach the action routes.
+```
+
+**If check 2 shows a 404, stop and fix the Access setup** before leaving the
+bridge on. The token can then reach every action route.
+
+### Registering the client
+
+On the machine running Claude Code:
+
+```bash
+claude mcp add --transport http paddock https://paddock.example.com/mcp \
+  --header "CF-Access-Client-Id: <id>" \
+  --header "CF-Access-Client-Secret: <secret>"
+```
+
+That writes the secret into Claude Code's own config. If you sync dotfiles,
+store it in your dotfiles manager's encrypted store, not in plain text.
+
+Revoking is deleting or rotating the service token in the dashboard. Switching
+`bridge.enabled` off makes `/mcp` 404 at once, without touching Cloudflare.
+
 ## Quick tunnels: `paddock tunnel`
 
 `paddock tunnel` publishes the dashboard on a Cloudflare **quick tunnel** — an

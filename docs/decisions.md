@@ -1051,3 +1051,30 @@ session does not silently re-litigate them.
     the detached quick tunnel — the verb people reach for first now gives
     phone access — and the old localhost `start` moved to `local`. See
     `docs/design/2026-10-05-start-tunnel-local-service-design.md`.
+
+34. **The MCP bridge authenticates only through Access path scoping, and holds
+    no permission prompt.** A Claude Code session on another machine can list,
+    read, message and wait on agents through `/mcp`, so handing an agent work
+    no longer goes through a shared git repo and a "please pull". The client
+    is a program, so it signs in with an Access service token. A paddock-side
+    bearer token was considered and rejected. It would gate only `/mcp`, and
+    the danger is the OTHER routes: paddock trusts Access everywhere, so a
+    service token added to the hostname-wide application could call `/key`
+    and approve a prompt. The fix is a second Access application scoped to
+    the `/mcp` path, Service Auth only, with the first left human-only.
+    Access picks the most specific path, so the token is refused everywhere
+    else, and `docs/deploy-cloudflare.md` has the curl that proves it. That
+    keeps decision 3 intact: no token is read anywhere, and `/sw.js` is
+    untouched. `/mcp` is never registered on the quick-tunnel listener,
+    which has no Access at all.
+
+    Two refusals carry the safety, not the absence of a tool.
+    `send_message` is refused in EVERY blocked state, because typing into a
+    dialog is answering it. `answer_question` answers only a screen
+    `parseAskDialog` recognises, re-checked on every read inside the call,
+    because the helpers' own reads would otherwise let a permission prompt
+    that replaced the dialog be answered by the next key. The operator chose
+    to let the remote session answer the agent's own questions. Permission
+    prompts stay theirs. The bridge is off by default (`bridge.enabled`),
+    read per request, so it is switched without a restart. See
+    `docs/design/2026-10-24-mcp-bridge-design.md`.
