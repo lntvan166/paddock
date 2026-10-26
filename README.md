@@ -44,6 +44,8 @@ walk back and look.
   [decisions](docs/decisions.md) 28
 - **notify** — a Telegram message when an agent needs you, sent only once the
   state has held, with mute and a per-agent cooldown. [settings →](docs/settings.md)
+- **on your tailnet** — `paddock tailscale` serves it at your Tailscale HTTPS
+  name for your own login only ([details](docs/running-locally.md#tailscale))
 - **reach it in one command** — `paddock tunnel` publishes a temporary URL
   gated by a short-lived pairing code. No DNS, no inbound port, nothing to configure
 - **install as an app** — Add to Home Screen gives it an icon and no browser chrome

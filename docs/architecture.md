@@ -24,6 +24,13 @@ One process. No relay hop, no plugin, no polling loop.
               Cloudflare Tunnel ── Access ── browser / phone
 ```
 
+With `paddock tailscale`, the `paddock local` service also binds a second
+listener, `127.0.0.1:8789`. `tailscale serve` forwards the node's ts.net HTTPS
+name to it, and it refuses any request whose `Tailscale-User-Login` is not the
+one allowed login. It has its own same-origin allowlist (the shared list plus
+the ts.net host). The `:8787` listener never reads that header.
+See decision 35.
+
 ## Modules
 
 | Module | Responsibility |

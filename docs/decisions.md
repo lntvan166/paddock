@@ -1083,3 +1083,47 @@ session does not silently re-litigate them.
     prompts stay theirs. The bridge is off by default (`bridge.enabled`),
     read per request, so it is switched without a restart. See
     `docs/design/2026-10-24-mcp-bridge-design.md`.
+
+35. **Tailscale identity is an authenticating front on its own loopback
+    listener, and it allows one user.** `paddock tailscale` publishes the
+    dashboard at the machine's `https://<host>.<tailnet>.ts.net` name through
+    `tailscale serve`, which forwards to a SECOND listener,
+    `127.0.0.1:${PADDOCK_TAILNET_PORT ?? 8789}`. Every request on it must carry
+    a `Tailscale-User-Login` (matched case-insensitively) equal to the one
+    login in `tailscale.json`, checked before any route. Tailscale writes that
+    header, and strips a client's copy, only for traffic that came through
+    `serve`. That is why the default `8787` listener never reads it: anyone
+    local could send the header there. Decision 3 stands. This is another
+    authenticating front, with the check done by the node's own identity
+    instead of an Access policy, and still no application token.
+
+    The listener is bound only by the `paddock local` service, always on
+    `127.0.0.1` whatever `PADDOCK_HOST` says. Funnel is never used and no code
+    path spawns it: Funnel puts the name on the public internet, where the
+    header is the only gate and a mistake is world-readable terminals.
+
+    **Amendment to 17: the same-origin allowlist is per listener.** The shared
+    list (loopback and the configured public URL) is unchanged. The tailnet
+    listener's own list is that list plus the ts.net host, so writes and `/ws`
+    from the tailnet name pass `hostAllowed` there and nowhere else. Adding the
+    host to the shared list would have let the ts.net name through on `8787`
+    too.
+
+    **The trust decision is the operator's: every device signed in as the
+    allowed Tailscale user is trusted like the phone in hand, including for
+    answering permission prompts.** So decision 34's "the bridge never answers
+    a permission prompt" holds on the Cloudflare path only, where a service
+    token is confined to `/mcp` by path scoping. A tailnet client is a person's
+    device with the whole dashboard, `/key` included. `docs/deploy-cloudflare.md`
+    says so next to the tailnet variant of the MCP setup.
+
+    **`tailscale.json` is its own file, not a settings group.** The service
+    keeps `settings.json` in memory and rewrites the whole file on every UI
+    save, so a CLI write into a group inside it would be silently lost on the
+    next save. A separate file avoids that, and makes "the API cannot change
+    it" structural: no route knows the file exists, so `PUT /api/settings`
+    cannot widen who is allowed. The service reads it at startup only and the
+    CLI restarts the service after writing it. `stop` removes paddock's own
+    serve config but keeps the file, and `local` re-applies it. Only
+    `paddock tailscale off` deletes it. See
+    `docs/design/2026-10-26-tailscale-design.md`.

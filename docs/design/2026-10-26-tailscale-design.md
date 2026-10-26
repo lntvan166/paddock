@@ -139,6 +139,13 @@ user service), not to the one-shot CLI. A new settings group records it, e.g.:
 "tailscale": { "enabled": true, "login": "operator@github", "host": "dev-box.example-tailnet.ts.net" }
 ```
 
+**As built:** the group became its own file, `<configDir>/tailscale.json`,
+not a group in `settings.json`. The service keeps `settings.json` in memory and
+rewrites it whole on every UI save, so a CLI write inside it would be silently
+lost. A separate file also makes "the API cannot change it" structural, since
+no route knows it. The service reads it at startup and the CLI restarts the
+service after writing it, which is the "via restart" choice below.
+
 **Only the `paddock local` service binds the tailnet listener** (designer's
 call). A foreground `paddock`, `paddock tunnel`, or a second build reading the
 same `settings.json` does not, even with the setting on. Otherwise every extra

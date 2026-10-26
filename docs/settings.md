@@ -59,6 +59,15 @@ button to mint a code for another device — appears in Settings only while
 ordinary way, or a named-tunnel deployment behind it, has no tunnel to pair
 and does not show the section at all.
 
+## Not a setting: `tailscale.json`
+
+Who may reach paddock over Tailscale is not in `settings.json` and has no
+control on this page. It lives in `tailscale.json` beside it (`enabled`,
+`login`, `host`), written only by `paddock tailscale` and read by the service
+at startup. The service rewrites `settings.json` on every save, which would
+silently drop a CLI edit inside it, and `PUT /api/settings` must not be able to
+change who is allowed. See decision 35.
+
 ## The MCP bridge
 
 `bridge.enabled` (default `false`) turns on the MCP endpoint at `/mcp`, through

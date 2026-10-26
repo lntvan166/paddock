@@ -26,12 +26,51 @@ machine, and the identity check happens before any request reaches paddock:
   — what this was designed against. `cloudflared` dials out, so no inbound port
   is opened, and an Access policy gates the hostname on your identity provider.
   Step by step in [`deploy-cloudflare.md`](deploy-cloudflare.md).
-- **[Tailscale](https://tailscale.com/)** or any WireGuard mesh — your phone
-  joins the private network and reaches `127.0.0.1:8787` on the host directly.
+- **[Tailscale](https://tailscale.com/)** — `paddock tailscale` publishes the
+  dashboard on your tailnet's HTTPS name, for you only. See
+  [Tailscale](#tailscale) below.
 - **An SSH tunnel** — fine for a laptop, awkward on a phone.
 
 Whichever you choose, the requirement is the same: **something must
 authenticate the request before paddock sees it.**
+
+## Tailscale
+
+```bash
+paddock local        # paddock must be running as the user service
+paddock tailscale    # publish it at https://dev-box.example-tailnet.ts.net
+```
+
+Needs the `tailscale` CLI (the macOS app's bundled one counts), this machine
+signed in to a tailnet, and **HTTPS Certificates** enabled (admin console →
+DNS). It refuses, with the fix, inside a container, when paddock is not
+running as the service, when the node has no Tailscale user (use
+`--login <name>`), and when HTTPS 443 already serves something else. It never
+overwrites that.
+
+What it does: records the allowed login (this machine's Tailscale user, or
+`--login`) in `tailscale.json` in the config directory, restarts the service,
+runs `tailscale serve --bg --https=443 http://127.0.0.1:8789`, checks that the
+name reaches paddock, then prints the URL and a QR code. `PADDOCK_TAILNET_PORT`
+changes the 8789.
+
+On the phone: join the same tailnet, open the URL, Share → Add to Home Screen,
+then enable push in Settings. The ts.net URL is its own origin, so on iOS it is
+its own installed app with its own push subscription: an icon and a
+subscription made for another URL do not carry over.
+
+Trust: every device signed in as the allowed Tailscale user is treated like the
+phone in your hand, **including answering permission prompts**. Only that user
+gets in; anyone else, and anything not arriving through `tailscale serve`, is
+refused. Funnel is never used.
+
+```bash
+paddock tailscale off   # remove paddock's serve config and the allowed login
+paddock status          # shows the tailnet URL and who is allowed
+```
+
+`paddock stop` removes the serve config but keeps the login, and `paddock
+local` puts it back. The Docker setup (`make up`) is not supported.
 
 ## Keeping it running
 

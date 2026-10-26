@@ -123,6 +123,16 @@ application with the most specific path, so a separate application scoped to
      -H 'content-type: application/json' -d '{"bridge":{"enabled":true}}'
    ```
 
+### The tailnet variant, and what it gives up
+
+A client on your tailnet can reach `/mcp` through `paddock tailscale` instead
+(see `docs/running-locally.md`). There is no service token and no path scoping
+there: the client is a device signed in as the allowed Tailscale user, and
+that user is trusted with the whole dashboard, `/key` included. So decision
+34's guarantee that the bridge never answers a permission prompt holds **only
+on the Cloudflare path**. Use the tailnet only for a machine you would trust
+with your own phone.
+
 ### Verify both halves
 
 Run both from a machine with no Access session, using the token:

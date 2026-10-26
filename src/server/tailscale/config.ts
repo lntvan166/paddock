@@ -36,7 +36,7 @@ export async function readTailscaleConfig(
     return null;
   }
   const reject = (why: string): null => {
-    log(`[tailscale] ${file} ignored: ${why}. The tailnet listener stays off; re-run \`paddock tailscale enable\`.`);
+    log(`[tailscale] ${file} ignored: ${why}. The tailnet listener stays off; re-run \`paddock tailscale\`.`);
     return null;
   };
   let raw: unknown;
