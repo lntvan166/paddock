@@ -230,7 +230,6 @@ if (command === "tailscale") {
   const dir = defaultConfigDir();
   const opts = {
     dir,
-    port: PORT,
     tailnetPort: TAILNET_PORT,
     loginOverride: values.get("--login"),
     service: serviceManager({ configDir: dir }),
@@ -1034,6 +1033,10 @@ const appDeps = {
 
 const app = createApp(appDeps);
 
+// One set of socket handlers for every listener in this process, so a socket
+// behaviour cannot land on one door and not the other (see ws/serve.ts).
+const hubSocket = hubWebSocket({ hub, hostId, store, presence });
+
 try {
   Bun.serve<WsData>({
     port: PORT,
@@ -1051,7 +1054,7 @@ try {
       if (ws !== null) return ws;
       return app.fetch(req);
     },
-    websocket: hubWebSocket({ hub, hostId, store, presence }),
+    websocket: hubSocket,
   });
 } catch (err) {
   // EADDRINUSE only. Everything else rethrows with its stack intact — a
@@ -1079,17 +1082,17 @@ try {
 if (command === "serve" && serviceKindOf(process.env) !== undefined) {
   const cfg = await readTailscaleConfig(defaultConfigDir());
   if (cfg !== null) {
-    const tailnetApp = createApp({
-      ...appDeps,
-      publicHosts: () => tailnetHosts(publicHosts(), cfg.host),
-    });
+    // ONE thunk for the app's write gate and the listener's `/ws` upgrade:
+    // decision 17's "a gate with a seam in it", which two copies would invite.
+    const tailnetAllowed = () => tailnetHosts(publicHosts(), cfg.host);
+    const tailnetApp = createApp({ ...appDeps, publicHosts: tailnetAllowed });
     const tailnetPort = TAILNET_PORT;
     const tailnet = startTailnetListener({
       app: tailnetApp,
-      websocket: hubWebSocket({ hub, hostId, store, presence }),
+      websocket: hubSocket,
       port: tailnetPort,
       login: cfg.login,
-      publicHosts: () => tailnetHosts(publicHosts(), cfg.host),
+      publicHosts: tailnetAllowed,
     });
     if (tailnet.ok) {
       console.info(`tailscale: listening on 127.0.0.1:${tailnet.port} for https://${cfg.host} (allows ${cfg.login})`);

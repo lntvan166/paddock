@@ -157,10 +157,14 @@ export async function stopTailscaleServe(
  * `paddock local`'s share: put back the serve `stop` removed, when the
  * setting is on. Refuses to overwrite another app's 443, as `paddock
  * tailscale` does. Only ever warns.
+ *
+ * `serviceUp` false (the service is not answering yet) keeps the ✓ off the
+ * line: the serve is in place, but nothing behind it answers yet.
  */
 export async function reapplyTailscaleServe(
   o: { dir: string } & TailscaleHooks,
   log: (line: string) => void,
+  serviceUp = true,
 ): Promise<void> {
   const cfg = await readTailscaleConfig(o.dir, log);
   if (cfg === null) return;
@@ -195,6 +199,8 @@ export async function reapplyTailscaleServe(
       return;
     }
   }
-  log(`${glyph("yes")} tailscale — https://${cfg.host}`);
+  log(serviceUp
+    ? `${glyph("yes")} tailscale — https://${cfg.host}`
+    : `${glyph("unknown")} tailscale — serve re-applied; it answers once the service is up: https://${cfg.host}`);
   log(`    allows ${cfg.login} · listener 127.0.0.1:${port}`);
 }

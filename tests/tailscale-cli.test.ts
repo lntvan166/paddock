@@ -113,3 +113,25 @@ test("never funnel", () => {
     expect(readFileSync(`${dir}/${f}`, "utf8")).not.toContain('"funnel"');
   }
 });
+
+describe("Access denied on Linux names the operator fix", () => {
+  const denied = { code: 1, err: "Access denied: serve config denied\nmore detail" };
+  const HINT = "sudo tailscale set --operator=$USER";
+
+  test("serveOn on linux adds the hint", async () => {
+    await expect(serveOn(fake(denied).run, "ts", 8789, "linux")).rejects.toThrow(HINT);
+    await expect(serveOn(fake(denied).run, "ts", 8789, "linux")).rejects.toThrow("Access denied: serve config denied");
+  });
+  test("serveOff and servedTarget on linux add the hint too", async () => {
+    await expect(serveOff(fake(denied).run, "ts", "linux")).rejects.toThrow(HINT);
+    await expect(servedTarget(fake(denied).run, "ts", "linux")).rejects.toThrow(HINT);
+  });
+  test("not on darwin, and not for another failure", async () => {
+    let e = await serveOn(fake(denied).run, "ts", 8789, "darwin").catch((x: Error) => x);
+    expect(String(e)).toContain("Access denied");
+    expect(String(e)).not.toContain(HINT);
+    e = await serveOn(fake({ code: 1, err: "boom" }).run, "ts", 8789, "linux").catch((x: Error) => x);
+    expect(String(e)).toContain("boom");
+    expect(String(e)).not.toContain(HINT);
+  });
+});

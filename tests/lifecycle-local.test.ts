@@ -247,3 +247,18 @@ test("tailscale: serve is re-applied even while the service is still coming up; 
   expect(r.code).toBe(1);
   expect(ran).toEqual([TS_SERVE_STATUS, TS_SERVE_ON]);
 });
+
+test("tailscale: with the service not answering, the line says so — no ✓", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "paddock-local-"));
+  await writeFile(join(dir, "tailscale.json"), JSON.stringify({
+    enabled: true, login: "operator@github", host: TS_HOST,
+  }));
+  const r = await go({
+    dir, healthCheck: async () => false, tailnetPort: 8789,
+    find: () => TS_BIN,
+    run: async () => ({ code: 0, out: "", err: "" }),
+  });
+  expect(r.code).toBe(1);
+  expect(r.out).toContain(`⚠ tailscale — serve re-applied; it answers once the service is up: https://${TS_HOST}`);
+  expect(r.out).not.toContain("✓ tailscale");
+});

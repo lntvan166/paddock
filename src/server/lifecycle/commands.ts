@@ -670,9 +670,15 @@ export async function spawnDetached(
   }
 }
 
-export async function defaultHealthCheck(port: number): Promise<boolean> {
+export async function defaultHealthCheck(
+  port: number,
+  f: typeof fetch = fetch,
+  timeoutMs = 1_000,
+): Promise<boolean> {
   try {
-    const r = await fetch(`http://127.0.0.1:${port}/api/health`);
+    // Bounded: a port that accepts and never answers must read as "not up",
+    // not stall the polling loop that called this past its own deadline.
+    const r = await f(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(timeoutMs) });
     return r.ok;
   } catch {
     // Not up yet is the ordinary case while polling, not an error to report.

@@ -6,8 +6,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { must } from "@server/lifecycle/service/run";
-import type { Run } from "@server/lifecycle/service/types";
+import { ServiceError, type Run } from "@server/lifecycle/service/types";
 
 const MAC_APP = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
 
@@ -69,6 +68,24 @@ export async function readNode(
   };
 }
 
+/** Said after a Linux `Access denied`: the fix is one command, run once. */
+export const OPERATOR_HINT =
+  "on Linux, tailscale serve needs root or tailscaled's operator: " +
+  "run `sudo tailscale set --operator=$USER` once, then `paddock tailscale` again";
+
+/**
+ * Run a `tailscale serve` command; throw a `ServiceError` naming it when it
+ * fails. On Linux, tailscaled refuses serve changes from a user who is not its
+ * operator with `Access denied`, and that error names no fix, so this adds it.
+ */
+async function mustServe(run: Run, argv: string[], platform: NodeJS.Platform): Promise<string> {
+  const r = await run(argv);
+  if (r.code === 0) return r.out;
+  const why = r.err.trim().split("\n")[0] || `exit ${r.code}`;
+  const hint = platform === "linux" && /access denied/i.test(r.err) ? ` — ${OPERATOR_HINT}` : "";
+  throw new ServiceError(`\`${argv.join(" ")}\` failed: ${why}${hint}`);
+}
+
 interface ServeJson {
   Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }>;
 }
@@ -77,8 +94,12 @@ interface ServeJson {
  * The proxy target of the HTTPS 443 `/` handler, or null when 443 is not
  * served. A failing command throws: "could not ask" must not read as "free".
  */
-export async function servedTarget(run: Run, bin: string): Promise<string | null> {
-  const out = (await must(run, [bin, "serve", "status", "--json"])).trim();
+export async function servedTarget(
+  run: Run,
+  bin: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | null> {
+  const out = (await mustServe(run, [bin, "serve", "status", "--json"], platform)).trim();
   if (out === "") return null;
   const j = JSON.parse(out) as ServeJson;
   for (const [key, site] of Object.entries(j.Web ?? {})) {
@@ -88,12 +109,21 @@ export async function servedTarget(run: Run, bin: string): Promise<string | null
   return null;
 }
 
-export async function serveOn(run: Run, bin: string, port: number): Promise<void> {
-  await must(run, [bin, "serve", "--bg", "--https=443", `http://127.0.0.1:${port}`]);
+export async function serveOn(
+  run: Run,
+  bin: string,
+  port: number,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  await mustServe(run, [bin, "serve", "--bg", "--https=443", `http://127.0.0.1:${port}`], platform);
 }
 
-export async function serveOff(run: Run, bin: string): Promise<void> {
-  await must(run, [bin, "serve", "--https=443", "off"]);
+export async function serveOff(
+  run: Run,
+  bin: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  await mustServe(run, [bin, "serve", "--https=443", "off"], platform);
 }
 
 /** True only for our own listener, so another app's 443 serve is never touched. */

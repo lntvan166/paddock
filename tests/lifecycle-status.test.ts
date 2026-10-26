@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "@server/cli";
-import { runStatus } from "@server/lifecycle/commands";
+import { defaultHealthCheck, runStatus } from "@server/lifecycle/commands";
 import { writeState, type Probe } from "@server/lifecycle/state";
 import { glyph } from "@server/term";
 import type { ServiceManager } from "@server/lifecycle/service/types";
@@ -303,4 +303,13 @@ test("tailscale: malformed `serve status` JSON is ⚠ too", async () => {
   const r = await tsStatus({ serve: { out: "{not json" } });
   expect(r.out).toContain(`${glyph("unknown")} tailscale`);
   expect(r.out).not.toContain("no longer points");
+});
+
+test("defaultHealthCheck is bounded: a port that accepts and never answers reads as not up", async () => {
+  const hang = ((_u: string, init?: RequestInit) => new Promise<Response>((_res, rej) => {
+    init?.signal?.addEventListener("abort", () => rej(new Error("timed out")));
+  })) as unknown as typeof fetch;
+  const t0 = Date.now();
+  expect(await defaultHealthCheck(8787, hang, 50)).toBe(false);
+  expect(Date.now() - t0).toBeLessThan(1_000);
 });

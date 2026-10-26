@@ -29,12 +29,13 @@ function world(o: {
   serviceOk?: boolean;
   found?: string | null;
   container?: boolean;
-  health?: string;
-  localUp?: boolean;
+  health?: string | string[];
+  tailnetUp?: boolean;
   restartFails?: boolean;
 } = {}) {
   const events: string[] = [];
   const lines: string[] = [];
+  const timeouts: number[] = [];
   const answers: Record<string, Answer> = {
     [STATUS_ARGV]: { out: STATUS },
     [SERVE_STATUS_ARGV]: { out: "" },
@@ -59,7 +60,6 @@ function world(o: {
   };
   const opts = (dir: string, over: Partial<TailscaleOpts> = {}): TailscaleOpts => ({
     dir,
-    port: 8787,
     tailnetPort: 8789,
     service: o.serviceOk === false
       ? { ok: false, reason: "service management is off here (PADDOCK_NO_SERVICE=1)" }
@@ -67,14 +67,18 @@ function world(o: {
     run,
     find: () => (o.found === undefined ? BIN : o.found),
     inContainer: () => o.container ?? false,
-    fetchHealth: async (url) => {
+    fetchHealth: async (url, timeoutMs) => {
       events.push(`health ${url}`);
-      return o.health ?? "paddock";
+      timeouts.push(timeoutMs);
+      const h = o.health ?? "paddock";
+      return Array.isArray(h) ? (h.shift() ?? "no answer (script ran out)") : h;
     },
-    localHealth: async (port) => {
-      events.push(`local ${port}`);
-      return o.localUp ?? true;
+    tailnetHealth: async (port) => {
+      events.push(`tailnet ${port}`);
+      return (o.tailnetUp ?? true) ? true : `nothing answers on 127.0.0.1:${port}: connection refused`;
     },
+    sleep: async () => {},
+    platform: "linux",
     waitMs: 50,
     log: (l) => lines.push(l),
     colour: false,
@@ -82,7 +86,7 @@ function world(o: {
     rows: 0,
     ...over,
   });
-  return { events, lines, opts, out: () => lines.join("\n") };
+  return { events, lines, timeouts, opts, out: () => lines.join("\n") };
 }
 
 const tmp = () => mkdtemp(join(tmpdir(), "paddock-ts-cmd-"));
@@ -222,8 +226,8 @@ describe("runTailscale", () => {
     expect(await configOf(d)).toEqual({ enabled: true, login: "operator@github", host: HOST });
     const i = (e: string) => w.events.indexOf(e);
     expect(i("restart")).toBeGreaterThan(i(`run ${SERVE_STATUS_ARGV}`));
-    expect(i("local 8787")).toBeGreaterThan(i("restart"));
-    expect(i(`run ${SERVE_ON_ARGV}`)).toBeGreaterThan(i("local 8787"));
+    expect(i("tailnet 8789")).toBeGreaterThan(i("restart"));
+    expect(i(`run ${SERVE_ON_ARGV}`)).toBeGreaterThan(i("tailnet 8789"));
     expect(i(`health https://${HOST}/api/health`)).toBeGreaterThan(i(`run ${SERVE_ON_ARGV}`));
     expect(w.out()).toContain(`✓ tailscale — https://${HOST}`);
     expect(w.out()).toContain(
@@ -263,12 +267,23 @@ describe("runTailscale", () => {
     expect(existsSync(tailscaleConfigFile(d))).toBe(true);
   });
 
-  test("a service that never answers after restart → exit 1, no serve", async () => {
+  test("a tailnet listener that never answers after restart → exit 1, last reason, no serve", async () => {
     const d = await tmp();
-    const w = world({ localUp: false });
+    const w = world({ tailnetUp: false });
     expect(await runTailscale(w.opts(d))).toBe(1);
+    expect(w.out()).toContain("127.0.0.1:8789");
+    expect(w.out()).toContain("connection refused");
     expect(w.out()).toContain("journalctl --user -u paddock");
+    expect(w.out()).toContain("`paddock tailscale off` undoes this");
     expect(w.events).not.toContain(`run ${SERVE_ON_ARGV}`);
+  });
+
+  test("waits on the tailnet listener, not the default port", async () => {
+    const d = await tmp();
+    const w = world();
+    expect(await runTailscale(w.opts(d))).toBe(0);
+    expect(w.events).toContain("tailnet 8789");
+    expect(w.events.some((e) => e.includes("8787"))).toBe(false);
   });
 
   test("a failed restart is reported, exit 1, no serve", async () => {
@@ -276,6 +291,7 @@ describe("runTailscale", () => {
     const w = world({ restartFails: true });
     expect(await runTailscale(w.opts(d))).toBe(1);
     expect(w.out()).toContain("boom");
+    expect(w.out()).toContain("fix that and run `paddock tailscale` again, or `paddock tailscale off`");
     expect(w.events).not.toContain(`run ${SERVE_ON_ARGV}`);
   });
 
@@ -284,7 +300,54 @@ describe("runTailscale", () => {
     const w = world({ answers: { [SERVE_ON_ARGV]: { code: 1, err: "serve config denied" } } });
     expect(await runTailscale(w.opts(d))).toBe(1);
     expect(w.out()).toContain("serve config denied");
+    expect(w.out()).toContain("fix that and run `paddock tailscale` again, or `paddock tailscale off`");
     expect(w.events.some((e) => e.startsWith("health "))).toBe(false);
+  });
+
+  test("Linux `Access denied` from serve names the operator fix and the way out", async () => {
+    const d = await tmp();
+    const w = world({ answers: { [SERVE_ON_ARGV]: { code: 1, err: "Access denied: serve config denied" } } });
+    expect(await runTailscale(w.opts(d))).toBe(1);
+    expect(w.out()).toContain("Access denied: serve config denied");
+    expect(w.out()).toContain("sudo tailscale set --operator=$USER");
+    expect(w.out()).toContain("`paddock tailscale off` undoes this");
+  });
+
+  test("the first-run certificate wait: no answer twice, then the gate → exit 0", async () => {
+    const d = await tmp();
+    const w = world({ health: ["no answer from x (timed out)", "no answer from x (timed out)", "gate"] });
+    expect(await runTailscale(w.opts(d))).toBe(0);
+    expect(w.out()).toContain(
+      `checking https://${HOST} — the first time, Tailscale issues its certificate; this can take a minute`,
+    );
+    expect(w.events.filter((e) => e.startsWith("health ")).length).toBe(3);
+    expect(w.timeouts.every((t) => t > 0 && t <= 30_000)).toBe(true);
+  });
+
+  test("an HTTP answer is final: no retry on a 502", async () => {
+    const d = await tmp();
+    const w = world({ health: ["HTTP 502", "paddock"] });
+    expect(await runTailscale(w.opts(d))).toBe(1);
+    expect(w.events.filter((e) => e.startsWith("health ")).length).toBe(1);
+  });
+
+  test("never an answer → exit 1 within the verify deadline", async () => {
+    const d = await tmp();
+    const w = world({ health: "no answer from x (refused)" });
+    const t0 = Date.now();
+    expect(await runTailscale(w.opts(d, { verifyMs: 50, sleep: undefined }))).toBe(1);
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(w.out()).toContain("no answer from x (refused)");
+    expect(w.out()).toContain("`paddock tailscale off` undoes this");
+  });
+
+  test("a login with no @ warns but carries on", async () => {
+    const d = await tmp();
+    const w = world();
+    expect(await runTailscale(w.opts(d, { loginOverride: "operator" }))).toBe(0);
+    expect(w.out()).toContain("⚠");
+    expect(w.out()).toContain("no @");
+    expect((await configOf(d)).login).toBe("operator");
   });
 
   test("second run is idempotent", async () => {
@@ -305,6 +368,17 @@ describe("runTailscale", () => {
 });
 
 describe("runTailscaleOff", () => {
+  test("--login with off is refused before anything is touched", async () => {
+    const d = await tmp();
+    await writeTailscaleConfig(d, { enabled: true, login: "operator@github", host: HOST });
+    const w = world();
+    expect(await runTailscaleOff(w.opts(d, { loginOverride: "operator@github" }))).toBe(1);
+    expect(w.lines.length).toBe(1);
+    expect(w.out()).toContain("--login");
+    expect(w.events).toEqual([]);
+    expect(existsSync(tailscaleConfigFile(d))).toBe(true);
+  });
+
   test("removes our serve, the config, and restarts the service", async () => {
     const d = await tmp();
     await writeTailscaleConfig(d, { enabled: true, login: "operator@github", host: HOST });

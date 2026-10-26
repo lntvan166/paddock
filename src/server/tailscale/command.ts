@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { defaultHealthCheck } from "@server/lifecycle/commands";
 import type { ServiceChoice } from "@server/lifecycle/service";
 import { spawnRun } from "@server/lifecycle/service/run";
 import type { Run, ServiceManager } from "@server/lifecycle/service/types";
@@ -9,15 +8,14 @@ import {
 } from "@server/tailscale/cli";
 import { removeTailscaleConfig, writeTailscaleConfig } from "@server/tailscale/config";
 import { isTailnetRefusal } from "@server/tailscale/gate";
+import { tailnetHealth } from "@server/tailscale/lifecycle";
 import { glyph, say } from "@server/term";
 import { qrLines } from "@server/tunnel/display";
 import { wantsQr } from "@server/tunnel/run";
 
 export interface TailscaleOpts {
   dir: string;
-  /** The default listener, polled after the restart. */
-  port: number;
-  /** The tailnet listener `tailscale serve` forwards to. */
+  /** The tailnet listener `tailscale serve` forwards to, polled after the restart. */
   tailnetPort: number;
   /** `--login`: the Tailscale user to allow instead of the machine's owner. */
   loginOverride?: string;
@@ -26,11 +24,19 @@ export interface TailscaleOpts {
   find?: () => string | null;
   inContainer?: () => boolean;
   /** `"paddock"`, `"gate"`, or a description of what came back instead. */
-  fetchHealth?: (url: string) => Promise<"paddock" | "gate" | string>;
-  /** Whether 127.0.0.1:<port>/api/health answers. Injected for tests. */
-  localHealth?: (port: number) => Promise<boolean>;
-  /** How long to wait for the restarted service to answer. */
+  fetchHealth?: (url: string, timeoutMs: number) => Promise<"paddock" | "gate" | string>;
+  /** Whether the tailnet listener's gate answers: `true`, or why not. Injected for tests. */
+  tailnetHealth?: (port: number) => Promise<true | string>;
+  /** How long to wait for the restarted service's tailnet listener. */
   waitMs?: number;
+  /**
+   * How long the ts.net check may take in all. The first HTTPS request on a
+   * node waits while Tailscale issues its certificate: about 27s, measured.
+   */
+  verifyMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  /** Picks the Linux `Access denied` hint. Injected for tests. */
+  platform?: NodeJS.Platform;
   log?: (line: string) => void;
   colour?: boolean;
   columns?: number;
@@ -40,6 +46,9 @@ export interface TailscaleOpts {
 const PHONE = "open it on your phone, Share → Add to Home Screen, then enable push in Settings";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Every failure after something was written or served points at both ways on. */
+const WAY_OUT = "    fix that and run `paddock tailscale` again, or `paddock tailscale off` undoes this";
 
 function defaultInContainer(): boolean {
   return existsSync("/.dockerenv") || existsSync("/run/.containerenv");
@@ -99,6 +108,8 @@ async function activeService(
 export async function runTailscale(o: TailscaleOpts): Promise<number> {
   const log = o.log ?? say;
   const run = o.run ?? spawnRun;
+  const platform = o.platform ?? process.platform;
+  const sleep = o.sleep ?? ((ms: number) => Bun.sleep(ms));
   const fail = (...lines: string[]) => {
     for (const l of lines) log(l);
     return 1;
@@ -155,6 +166,12 @@ export async function runTailscale(o: TailscaleOpts): Promise<number> {
       "    say who may use it: paddock tailscale --login <name>",
     );
   }
+  // Tailscale logins carry a domain (`operator@github`); a bare name is
+  // probably a typo that would lock everyone out. Said, not refused.
+  if (!login.includes("@")) {
+    log(`${glyph("unknown")} tailscale — the login "${login}" has no @; Tailscale logins look like operator@github`);
+    log("    `tailscale status` shows this node's; nobody else can get in until it matches");
+  }
 
   // 4.
   const svc = await activeService(o.service);
@@ -168,7 +185,7 @@ export async function runTailscale(o: TailscaleOpts): Promise<number> {
   // 5. "Could not ask" is a refusal, never "free".
   let target: string | null;
   try {
-    target = await servedTarget(run, bin);
+    target = await servedTarget(run, bin, platform);
   } catch (e) {
     return fail(`${glyph("no")} tailscale — could not read the serve config: ${message(e)}`);
   }
@@ -183,36 +200,50 @@ export async function runTailscale(o: TailscaleOpts): Promise<number> {
   // 6. The service reads this file at startup only, hence the restart.
   await writeTailscaleConfig(o.dir, { enabled: true, login, host: node.host });
 
-  // 7.
+  // 7. Wait on the listener `serve` will forward to, not on 8787: the default
+  // port answering says nothing about whether the tailnet one was bound.
   try {
     await svc.manager.restart();
   } catch (e) {
-    return fail(`${glyph("no")} tailscale — could not restart the service: ${message(e)}`);
+    return fail(`${glyph("no")} tailscale — could not restart the service: ${message(e)}`, WAY_OUT);
   }
-  const health = o.localHealth ?? defaultHealthCheck;
+  const health = o.tailnetHealth ?? ((p: number) => tailnetHealth(p));
   const deadline = Date.now() + (o.waitMs ?? 10_000);
-  let up = await health(o.port);
-  while (!up && Date.now() < deadline) {
-    await Bun.sleep(200);
-    up = await health(o.port);
+  let up = await health(o.tailnetPort);
+  while (up !== true && Date.now() < deadline) {
+    await sleep(200);
+    up = await health(o.tailnetPort);
   }
-  if (!up) {
+  if (up !== true) {
     return fail(
-      `${glyph("no")} tailscale — the restarted service is not answering on port ${o.port}`,
+      `${glyph("no")} tailscale — the restarted service's tailnet listener is not answering on 127.0.0.1:${o.tailnetPort}`,
+      `    last: ${up}`,
       `    its output: ${svc.manager.logHint}`,
+      WAY_OUT,
     );
   }
 
   // 8.
   try {
-    await serveOn(run, bin, o.tailnetPort);
+    await serveOn(run, bin, o.tailnetPort, platform);
   } catch (e) {
-    return fail(`${glyph("no")} tailscale — ${message(e)}`);
+    return fail(`${glyph("no")} tailscale — ${message(e)}`, WAY_OUT);
   }
 
-  // 9.
+  // 9. Retried only while nothing answers at all, which is what certificate
+  // issuance looks like; any HTTP answer is final.
   const url = `https://${node.host}`;
-  const verdict = await (o.fetchHealth ?? ((u: string) => fetchHealth(u)))(`${url}/api/health`);
+  log(`    checking ${url} — the first time, Tailscale issues its certificate; this can take a minute`);
+  const check = o.fetchHealth ?? ((u: string, ms: number) => fetchHealth(u, fetch, ms));
+  const verifyDeadline = Date.now() + (o.verifyMs ?? 90_000);
+  const attempt = () =>
+    check(`${url}/api/health`, Math.min(30_000, Math.max(1, verifyDeadline - Date.now())));
+  let verdict = await attempt();
+  while (verdict.startsWith("no answer") && Date.now() < verifyDeadline) {
+    await sleep(Math.min(1_000, verifyDeadline - Date.now()));
+    if (Date.now() >= verifyDeadline) break;
+    verdict = await attempt();
+  }
   if (verdict !== "paddock" && verdict !== "gate") {
     return fail(
       `${glyph("no")} tailscale — ${url} did not reach paddock's tailnet listener`,
@@ -243,7 +274,14 @@ export async function runTailscale(o: TailscaleOpts): Promise<number> {
 export async function runTailscaleOff(o: TailscaleOpts): Promise<number> {
   const log = o.log ?? say;
   const run = o.run ?? spawnRun;
+  const platform = o.platform ?? process.platform;
   let code = 0;
+
+  // `off` removes whoever is allowed; a login there means a mistyped command.
+  if (o.loginOverride !== undefined) {
+    log(`${glyph("no")} tailscale off — takes no --login; \`paddock tailscale off\` removes the allowed login, whoever it is`);
+    return 1;
+  }
 
   const bin = (o.find ?? (() => findTailscale()))();
   if (bin === null) {
@@ -251,9 +289,9 @@ export async function runTailscaleOff(o: TailscaleOpts): Promise<number> {
     code = 1;
   } else {
     try {
-      const target = await servedTarget(run, bin);
+      const target = await servedTarget(run, bin, platform);
       if (ownsServe(target, o.tailnetPort)) {
-        await serveOff(run, bin);
+        await serveOff(run, bin, platform);
       } else if (target !== null) {
         log(`    HTTPS 443 serves ${target}, not paddock — left alone`);
       }

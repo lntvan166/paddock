@@ -85,7 +85,7 @@ export async function runLocal(o: LocalOpts): Promise<number> {
   // runs for a refused one; only warns, so `local`'s exit code stays its own.
   // Run whether or not health answered yet: the service keeps retrying, and
   // the serve is ready for it when it does.
-  const tailscale = () => reapplyTailscaleServe(o, log);
+  const tailscale = () => reapplyTailscaleServe(o, log, up);
 
   if (!up) {
     log(`${glyph("no")} paddock — registered as a ${m.kind} service, but not answering on port ${o.port} yet`);
