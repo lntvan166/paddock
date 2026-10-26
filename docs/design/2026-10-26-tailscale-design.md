@@ -279,3 +279,28 @@ next to it with the trust caveat above.
 - Command output wording, within the existing CLI style.
 - Whether `--login` also accepts a list (one login is enough for the
   operator's case; do not build a list unless it is free).
+
+## Live verification (2026-10-26)
+
+On a Linux node and the operator's phone, both on one tailnet:
+
+- **A forged identity header does not get through.** A request through
+  `tailscale serve` carrying `Tailscale-User-Login: intruder@github` got `200`.
+  If paddock had seen the forged login, the gate would have answered `403`
+  naming it, so serve overwrote the header with the caller's real login. This
+  was tested from the operator's own devices only; no device of another user
+  was online. Direct requests to `127.0.0.1:8789` with no header, or with
+  another login, get `403`. Both listeners bind `127.0.0.1` only.
+- **Phone:** the dashboard loads with no login, the WebSocket connects, and
+  writes succeed. That confirms `Host` is preserved: no `cross-origin` refusals.
+- **Lifecycle:** `paddock stop` removed paddock's serve config and kept
+  `tailscale.json`. `paddock local` re-applied it, and the same URL answered.
+  `status` showed the ✓ block.
+- **Push over the ts.net origin: not verified.** The operator skipped it.
+- **Found in the live run:**
+  - On Linux, `tailscale serve` needs root or the tailscaled operator user. Its
+    `Access denied: serve config denied` needs a hint naming
+    `tailscale set --operator=$USER`.
+  - The first HTTPS request on a node with a new certificate took about 27s
+    while the certificate was issued, so a 5s verify timeout fails the first
+    run.
