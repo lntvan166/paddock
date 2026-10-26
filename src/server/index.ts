@@ -27,7 +27,7 @@ import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import { publicHostsFrom } from "@server/origin";
-import { readTailscaleConfig } from "@server/tailscale/config";
+import { readTailscaleConfig, tailnetPortFrom } from "@server/tailscale/config";
 import { startTailnetListener, tailnetHosts } from "@server/tailscale/listener";
 import { runTailscale, runTailscaleOff } from "@server/tailscale/command";
 import { buildIdFrom } from "@server/build-id";
@@ -79,7 +79,7 @@ const { command, flags, values, verb, args } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
 const PORT = Number(process.env.PADDOCK_PORT ?? 8787);
 // The tailnet listener `tailscale serve` forwards to. Bound by the service only.
-const TAILNET_PORT = Number(process.env.PADDOCK_TAILNET_PORT ?? 8789);
+const TAILNET_PORT = tailnetPortFrom(process.env);
 // Loopback by default; exposure is normally the tunnel's job. `PADDOCK_HOST`
 // exists for the one case that cannot use loopback: in a container, a published
 // port arrives on the container's own interface, so a loopback listener refuses
@@ -166,6 +166,7 @@ if (command === "update") {
 if (command === "status") {
   process.exit(await runStatus({
     dir: defaultConfigDir(), port: PORT, service: serviceManager({ configDir: defaultConfigDir() }),
+    tailnetPort: TAILNET_PORT,
   }));
 }
 
@@ -178,6 +179,7 @@ if (command === "local") {
   process.exit(await runLocal({
     dir,
     port: PORT,
+    tailnetPort: TAILNET_PORT,
     service,
     argv: serviceArgv(),
     env: service.ok ? serviceEnv(process.env, service.manager.kind) : {},
@@ -191,6 +193,7 @@ if (command === "stop") {
   process.exit(await runStop({
     dir: defaultConfigDir(), port: PORT, force: flags.has("--force"),
     service: serviceManager({ configDir: defaultConfigDir() }),
+    tailnetPort: TAILNET_PORT,
   }));
 }
 

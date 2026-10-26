@@ -198,3 +198,109 @@ test("no service: status prints no service line", async () => {
   await runStatus({ dir: d, service, log: (l) => lines.push(l) });
   expect(lines.join("\n")).not.toContain("service");
 });
+
+// ---- tailscale: one block, silent when the feature is off -----------------
+
+const TS_BIN = "/usr/bin/tailscale";
+const TS_HOST = "dev-box.example-tailnet.ts.net";
+const TS_SERVE_STATUS = `${TS_BIN} serve status --json`;
+const servedTo = (proxy: string) =>
+  JSON.stringify({ Web: { [`${TS_HOST}:443`]: { Handlers: { "/": { Proxy: proxy } } } } });
+
+async function tsStatus(o: {
+  config?: boolean;
+  found?: string | null;
+  serve?: { code?: number; out?: string; err?: string };
+  health?: true | string;
+  running?: boolean;
+}) {
+  const d = await dir();
+  if (o.running !== false) await writeState(d, s);
+  if (o.config !== false) {
+    await writeFile(join(d, "tailscale.json"), JSON.stringify({
+      enabled: true, login: "operator@github", host: TS_HOST,
+    }));
+  }
+  const ran: string[] = [];
+  const probed: number[] = [];
+  const out: string[] = [];
+  const code = await runStatus({
+    dir: d,
+    probe: probe(o.running !== false, "paddock"),
+    log: (l) => out.push(l),
+    tailnetPort: 8789,
+    find: () => (o.found === undefined ? TS_BIN : o.found),
+    run: async (argv) => {
+      ran.push(argv.join(" "));
+      const a = o.serve ?? { out: servedTo("http://127.0.0.1:8789") };
+      return { code: a.code ?? 0, out: a.out ?? "", err: a.err ?? "" };
+    },
+    tailnetHealth: async (port) => { probed.push(port); return o.health ?? true; },
+  });
+  return { code, out: out.join("\n"), ran, probed };
+}
+
+test("tailscale: silent when there is no tailscale.json, and asks tailscale nothing", async () => {
+  const r = await tsStatus({ config: false });
+  expect(r.code).toBe(0);
+  expect(r.out).not.toContain("tailscale");
+  expect(r.ran).toEqual([]);
+  expect(r.probed).toEqual([]);
+});
+
+test("tailscale: ✓ block when the listener answers with the gate and serve points at it", async () => {
+  const r = await tsStatus({});
+  expect(r.code).toBe(0);
+  expect(r.out).toContain(`${glyph("yes")} tailscale — https://${TS_HOST}`);
+  expect(r.out).toContain("    allows operator@github · listener 127.0.0.1:8789");
+  expect(r.probed).toEqual([8789]);
+  expect(r.ran).toEqual([TS_SERVE_STATUS]);
+});
+
+test("tailscale: ✗ when the listener is not up, with why; exit code unchanged", async () => {
+  const r = await tsStatus({ health: "nothing answers on 127.0.0.1:8789" });
+  expect(r.code).toBe(0);
+  expect(r.out).toContain(
+    `${glyph("no")} tailscale — enabled but the listener is not up (nothing answers on 127.0.0.1:8789)`,
+  );
+  expect(r.out).not.toContain(`${glyph("yes")} tailscale`);
+});
+
+test("tailscale: ✗ when serve no longer points at the listener; exit code unchanged", async () => {
+  for (const serve of [{ out: "" }, { out: servedTo("http://127.0.0.1:3000") }]) {
+    const r = await tsStatus({ serve });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(
+      `${glyph("no")} tailscale — enabled but tailscale serve no longer points at it; run paddock tailscale`,
+    );
+  }
+});
+
+test("tailscale: the exit code follows paddock, not tailscale, when paddock is down", async () => {
+  const r = await tsStatus({ running: false, health: "nothing answers on 127.0.0.1:8789" });
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("enabled but the listener is not up");
+});
+
+test("tailscale: the binary missing is a ⚠ line, not ✓ and not ✗", async () => {
+  const r = await tsStatus({ found: null });
+  expect(r.code).toBe(0);
+  expect(r.out).toContain(`${glyph("unknown")} tailscale`);
+  expect(r.out).toContain("not found");
+  expect(r.ran).toEqual([]);
+});
+
+test("tailscale: a failing `serve status` is ⚠ naming the error — never ✓, never 'serve gone'", async () => {
+  const r = await tsStatus({ serve: { code: 1, err: "failed to connect to local tailscaled" } });
+  expect(r.code).toBe(0);
+  expect(r.out).toContain(`${glyph("unknown")} tailscale`);
+  expect(r.out).toContain("failed to connect to local tailscaled");
+  expect(r.out).not.toContain("no longer points");
+  expect(r.out).not.toContain(`${glyph("yes")} tailscale`);
+});
+
+test("tailscale: malformed `serve status` JSON is ⚠ too", async () => {
+  const r = await tsStatus({ serve: { out: "{not json" } });
+  expect(r.out).toContain(`${glyph("unknown")} tailscale`);
+  expect(r.out).not.toContain("no longer points");
+});

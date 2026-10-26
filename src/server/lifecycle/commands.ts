@@ -12,6 +12,9 @@ import { stopTunnel } from "@server/tunnel/stop";
 import { duration, glyph, say } from "@server/term";
 import type { ServiceChoice } from "@server/lifecycle/service";
 import { ServiceError } from "@server/lifecycle/service/types";
+import {
+  reportTailscale, stopTailscaleServe, type TailscaleHooks,
+} from "@server/tailscale/lifecycle";
 
 /**
  * What answers on a port, if anything paddock-shaped does.
@@ -71,8 +74,10 @@ async function reportUntracked(
   return true;
 }
 
-export interface StatusOpts {
+export interface StatusOpts extends TailscaleHooks {
   dir: string;
+  /** Whether the tailnet listener answers: `true`, or why not. Injected for tests. */
+  tailnetHealth?: (port: number) => Promise<true | string>;
   /** The port an untracked instance would be holding. */
   port?: number;
   /** The `paddock local` service, if this platform has one. Injected for tests. */
@@ -117,6 +122,8 @@ export async function runStatus(o: StatusOpts): Promise<number> {
   const paddock = await reportPaddock(o, log, now);
   await reportService(o.service, log);
   const tunnel = await reportTunnel(o, log, now);
+  // Reports only; it never changes the exit code. See tailscale/lifecycle.ts.
+  await reportTailscale(o, log);
 
   /**
    * WHY A TUNNEL CAN MAKE THIS ZERO.
@@ -265,7 +272,7 @@ async function clearTunnel(dir: string, log: (line: string) => void): Promise<vo
   }
 }
 
-export interface StopOpts {
+export interface StopOpts extends TailscaleHooks {
   dir: string;
   /** The port an untracked instance would be holding. */
   port?: number;
@@ -334,6 +341,14 @@ export async function runStop(o: StopOpts): Promise<number> {
    * `tunnel/stop.ts`.
    */
   const tunnel = await stopTunnel({ dir: o.dir, probe, log, signal: o.signal, waitMs });
+
+  /**
+   * The tailnet face next, for the same reason. It removes only paddock's own
+   * `tailscale serve`, keeps `tailscale.json` so `paddock local` restores the
+   * same URL, and never changes the exit code: a Tailscale problem is logged,
+   * and the service and process below are still stopped.
+   */
+  await stopTailscaleServe(o, log);
 
   /**
    * THE SERVICE GOES BEFORE ANY SIGNAL. A supervised paddock that is merely

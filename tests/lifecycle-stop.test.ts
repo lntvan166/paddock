@@ -531,3 +531,114 @@ test("no service registered: stop behaves exactly as before", async () => {
   expect(calls).toEqual([]);
   expect(sent).toEqual(["SIGTERM->4242"]);
 });
+
+// ---- tailscale: stop removes paddock's serve, keeps the setting -----------
+
+const TS_BIN = "/usr/bin/tailscale";
+const TS_SERVE_STATUS = `${TS_BIN} serve status --json`;
+const TS_SERVE_OFF = `${TS_BIN} serve --https=443 off`;
+const servedTo = (proxy: string) => JSON.stringify({
+  Web: { "dev-box.example-tailnet.ts.net:443": { Handlers: { "/": { Proxy: proxy } } } },
+});
+
+async function tsStop(o: {
+  config?: boolean;
+  found?: string | null;
+  serve?: { code?: number; out?: string; err?: string };
+  offFails?: boolean;
+}) {
+  const d = await dir();
+  const cfg = join(d, "tailscale.json");
+  if (o.config !== false) {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(cfg, JSON.stringify({
+      enabled: true, login: "operator@github", host: "dev-box.example-tailnet.ts.net",
+    }));
+  }
+  const ran: string[] = [];
+  const lines: string[] = [];
+  const code = await runStop({
+    dir: d, port: 8787, listener: async () => null,
+    log: (l) => lines.push(l), waitMs: 300,
+    tailnetPort: 8789,
+    find: () => (o.found === undefined ? TS_BIN : o.found),
+    run: async (argv) => {
+      const k = argv.join(" ");
+      ran.push(k);
+      if (k === TS_SERVE_OFF && o.offFails) return { code: 1, out: "", err: "permission denied" };
+      if (k === TS_SERVE_STATUS) {
+        const a = o.serve ?? { out: servedTo("http://127.0.0.1:8789") };
+        return { code: a.code ?? 0, out: a.out ?? "", err: a.err ?? "" };
+      }
+      return { code: 0, out: "", err: "" };
+    },
+  });
+  return { code, ran, out: lines.join("\n"), kept: existsSync(cfg) };
+}
+
+test("tailscale: stop removes the serve when it is ours, and keeps tailscale.json", async () => {
+  const r = await tsStop({});
+  expect(r.code).toBe(0);
+  expect(r.ran).toEqual([TS_SERVE_STATUS, TS_SERVE_OFF]);
+  expect(r.kept).toBe(true);
+  expect(r.out).toContain("paddock local");
+});
+
+test("tailscale: stop leaves another app's serve alone, and keeps tailscale.json", async () => {
+  const r = await tsStop({ serve: { out: servedTo("http://127.0.0.1:3000") } });
+  expect(r.code).toBe(0);
+  expect(r.ran).toEqual([TS_SERVE_STATUS]);
+  expect(r.kept).toBe(true);
+});
+
+test("tailscale: stop does nothing when 443 is not served at all", async () => {
+  const r = await tsStop({ serve: { out: "" } });
+  expect(r.code).toBe(0);
+  expect(r.ran).toEqual([TS_SERVE_STATUS]);
+  expect(r.kept).toBe(true);
+});
+
+test("tailscale: no tailscale.json → stop asks tailscale nothing and says nothing about it", async () => {
+  const r = await tsStop({ config: false, found: null });
+  expect(r.code).toBe(0);
+  expect(r.ran).toEqual([]);
+  expect(r.out).not.toContain("tailscale");
+});
+
+test("tailscale: a failing `serve status` is logged and serve is left alone — never removed blind", async () => {
+  const r = await tsStop({ serve: { code: 1, err: "failed to connect to local tailscaled" } });
+  expect(r.code).toBe(0);
+  expect(r.ran).toEqual([TS_SERVE_STATUS]);
+  expect(r.out).toContain("failed to connect to local tailscaled");
+  expect(r.kept).toBe(true);
+});
+
+test("tailscale: the binary missing with a config present is one logged line; exit unchanged", async () => {
+  const r = await tsStop({ found: null });
+  expect(r.code).toBe(0);
+  expect(r.ran).toEqual([]);
+  expect(r.out).toContain("serve config could not be checked");
+  expect(r.kept).toBe(true);
+});
+
+test("tailscale: a failing `serve off` is logged; stop still finishes its own work", async () => {
+  const r = await tsStop({ offFails: true });
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("permission denied");
+});
+
+test("tailscale: the service is still stopped when tailscale cannot be asked", async () => {
+  const d = await dir();
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(join(d, "tailscale.json"), JSON.stringify({
+    enabled: true, login: "operator@github", host: "dev-box.example-tailnet.ts.net",
+  }));
+  const { service, calls } = svc("active");
+  const code = await runStop({
+    dir: d, service, log: () => {}, waitMs: 300, tailnetPort: 8789,
+    find: () => TS_BIN,
+    run: async () => ({ code: 1, out: "", err: "tailscaled is down" }),
+  });
+  expect(code).toBe(0);
+  expect(calls).toEqual(["uninstall"]);
+});

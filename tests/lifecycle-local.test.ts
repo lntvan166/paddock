@@ -130,3 +130,120 @@ test("unreadable state is a refusal, not a guess", async () => {
   expect(installed).toEqual([]);
   expect(r.out).toContain("refusing to guess");
 });
+
+// ---- tailscale: local re-applies the serve that stop removed ---------------
+
+const TS_BIN = "/usr/bin/tailscale";
+const TS_HOST = "dev-box.example-tailnet.ts.net";
+const TS_SERVE_STATUS = `${TS_BIN} serve status --json`;
+const TS_SERVE_ON = `${TS_BIN} serve --bg --https=443 http://127.0.0.1:8789`;
+const servedTo = (proxy: string) =>
+  JSON.stringify({ Web: { [`${TS_HOST}:443`]: { Handlers: { "/": { Proxy: proxy } } } } });
+
+async function tsLocal(o: {
+  config?: boolean;
+  found?: string | null;
+  serve?: { code?: number; out?: string; err?: string };
+  onFails?: boolean;
+  installFails?: boolean;
+}) {
+  const dir = await mkdtemp(join(tmpdir(), "paddock-local-"));
+  if (o.config !== false) {
+    await writeFile(join(dir, "tailscale.json"), JSON.stringify({
+      enabled: true, login: "operator@github", host: TS_HOST,
+    }));
+  }
+  const events: string[] = [];
+  const { m } = fakeManager({
+    install: async () => {
+      events.push("install");
+      if (o.installFails) throw new ServiceError("`systemctl --user enable paddock.service` failed: no bus");
+      return { warnings: [] };
+    },
+  });
+  const r = await go({
+    dir, manager: m, tailnetPort: 8789,
+    find: () => (o.found === undefined ? TS_BIN : o.found),
+    run: async (argv) => {
+      const k = argv.join(" ");
+      events.push(`run ${k}`);
+      if (k === TS_SERVE_ON && o.onFails) return { code: 1, out: "", err: "serve config denied" };
+      if (k === TS_SERVE_STATUS) {
+        const a = o.serve ?? { out: "" };
+        return { code: a.code ?? 0, out: a.out ?? "", err: a.err ?? "" };
+      }
+      return { code: 0, out: "", err: "" };
+    },
+  });
+  return { ...r, events };
+}
+
+test("tailscale: config enabled → serve is re-applied after the install", async () => {
+  const r = await tsLocal({});
+  expect(r.code).toBe(0);
+  expect(r.events).toEqual(["install", `run ${TS_SERVE_STATUS}`, `run ${TS_SERVE_ON}`]);
+  expect(r.out).toContain(`tailscale — https://${TS_HOST}`);
+});
+
+test("tailscale: no config → no tailscale calls at all", async () => {
+  const r = await tsLocal({ config: false });
+  expect(r.code).toBe(0);
+  expect(r.events).toEqual(["install"]);
+  expect(r.out).not.toContain("tailscale");
+});
+
+test("tailscale: a `serveOn` failure warns, and local still exits 0", async () => {
+  const r = await tsLocal({ onFails: true });
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("serve config denied");
+  expect(r.out).toContain("paddock tailscale");
+});
+
+test("tailscale: another app's 443 serve is not overwritten; warns, exits 0", async () => {
+  const r = await tsLocal({ serve: { out: servedTo("http://127.0.0.1:3000") } });
+  expect(r.code).toBe(0);
+  expect(r.events).toEqual(["install", `run ${TS_SERVE_STATUS}`]);
+  expect(r.out).toContain("http://127.0.0.1:3000");
+});
+
+test("tailscale: serve already ours is left as is, not re-run", async () => {
+  const r = await tsLocal({ serve: { out: servedTo("http://127.0.0.1:8789") } });
+  expect(r.code).toBe(0);
+  expect(r.events).toEqual(["install", `run ${TS_SERVE_STATUS}`]);
+  expect(r.out).toContain(`tailscale — https://${TS_HOST}`);
+});
+
+test("tailscale: a failing `serve status` warns and does not serve blind; exits 0", async () => {
+  const r = await tsLocal({ serve: { code: 1, err: "failed to connect to local tailscaled" } });
+  expect(r.code).toBe(0);
+  expect(r.events).toEqual(["install", `run ${TS_SERVE_STATUS}`]);
+  expect(r.out).toContain("failed to connect to local tailscaled");
+});
+
+test("tailscale: the binary missing with a config present warns; exits 0", async () => {
+  const r = await tsLocal({ found: null });
+  expect(r.code).toBe(0);
+  expect(r.events).toEqual(["install"]);
+  expect(r.out).toContain("not found");
+});
+
+test("tailscale: a failed install touches no tailscale serve", async () => {
+  const r = await tsLocal({ installFails: true });
+  expect(r.code).toBe(1);
+  expect(r.events).toEqual(["install"]);
+});
+
+test("tailscale: serve is re-applied even while the service is still coming up; exit stays local's", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "paddock-local-"));
+  await writeFile(join(dir, "tailscale.json"), JSON.stringify({
+    enabled: true, login: "operator@github", host: TS_HOST,
+  }));
+  const ran: string[] = [];
+  const r = await go({
+    dir, healthCheck: async () => false, tailnetPort: 8789,
+    find: () => TS_BIN,
+    run: async (argv) => { ran.push(argv.join(" ")); return { code: 0, out: "", err: "" }; },
+  });
+  expect(r.code).toBe(1);
+  expect(ran).toEqual([TS_SERVE_STATUS, TS_SERVE_ON]);
+});

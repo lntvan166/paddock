@@ -5,10 +5,11 @@ import type { ServiceChoice } from "@server/lifecycle/service";
 import { ServiceError } from "@server/lifecycle/service/types";
 import { checkState, type Probe } from "@server/lifecycle/state";
 import { SettingsStore } from "@server/settings/store";
+import { reapplyTailscaleServe, type TailscaleHooks } from "@server/tailscale/lifecycle";
 import { glyph, say } from "@server/term";
 import { tunnelHint } from "@server/tunnel/preflight";
 
-export interface LocalOpts {
+export interface LocalOpts extends TailscaleHooks {
   dir: string;
   port: number;
   service: ServiceChoice;
@@ -80,11 +81,18 @@ export async function runLocal(o: LocalOpts): Promise<number> {
     if (!up) await Bun.sleep(200);
   }
 
+  // Put back the serve `paddock stop` removed. After the install, so it never
+  // runs for a refused one; only warns, so `local`'s exit code stays its own.
+  // Run whether or not health answered yet: the service keeps retrying, and
+  // the serve is ready for it when it does.
+  const tailscale = () => reapplyTailscaleServe(o, log);
+
   if (!up) {
     log(`${glyph("no")} paddock — registered as a ${m.kind} service, but not answering on port ${o.port} yet`);
     log("  it keeps retrying on its own; the usual cause is herdr not running yet");
     log(`  its output: ${m.logHint}`);
     log(`  unit: ${m.unitPath}`);
+    await tailscale();
     return 1;
   }
 
@@ -93,6 +101,7 @@ export async function runLocal(o: LocalOpts): Promise<number> {
   log(`    starts at ${when} · output: ${m.logHint}`);
   log(`    unit: ${m.unitPath}`);
   log(`    captured: ${Object.keys(o.env).sort().join(" ")}`);
+  await tailscale();
   const url = o.publicUrl ? await o.publicUrl() : await savedPublicUrl(o.dir);
   const hint = tunnelHint(url, true);
   if (hint !== null) log(hint);

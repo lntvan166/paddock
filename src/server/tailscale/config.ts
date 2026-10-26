@@ -65,3 +65,8 @@ export async function writeTailscaleConfig(dir: string, c: TailscaleConfig): Pro
 export async function removeTailscaleConfig(dir: string): Promise<void> {
   await rm(tailscaleConfigFile(dir), { force: true });
 }
+
+/** The tailnet listener's port: `PADDOCK_TAILNET_PORT`, default 8789. The one place the default lives. */
+export function tailnetPortFrom(env: Record<string, string | undefined>): number {
+  return Number(env.PADDOCK_TAILNET_PORT ?? 8789);
+}
