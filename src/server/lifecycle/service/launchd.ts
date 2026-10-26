@@ -117,6 +117,12 @@ export function launchdManager(
       if (existsSync(unitPath)) await rm(unitPath);
     },
 
+    async restart(): Promise<void> {
+      // -k kills the running instance first; without it kickstart is a no-op
+      // on a job that is already running.
+      await must(o.run, ["launchctl", "kickstart", "-k", target]);
+    },
+
     async startsAt() {
       return "login";
     },

@@ -146,3 +146,14 @@ test("a bootout that never finishes is a ServiceError, not a bootstrap into a ra
   expect(e.message).toContain("still loaded");
   expect(calls.some((c) => c.startsWith("launchctl bootstrap"))).toBe(false);
 });
+
+test("restart is launchctl kickstart -k, and a failure is a ServiceError", async () => {
+  const d = await agentDir();
+  const { run, calls } = fakeRun();
+  await launchdManager({ run, agentDir: d, uid: 501, logFile: LOG }).restart();
+  expect(calls).toEqual(["launchctl kickstart -k gui/501/paddock"]);
+  const bad = fakeRun({ "launchctl kickstart -k gui/501/paddock": { code: 113, err: "Could not find service" } });
+  const e = await launchdManager({ run: bad.run, agentDir: d, uid: 501, logFile: LOG }).restart().catch((x) => x);
+  expect(e.name).toBe("ServiceError");
+  expect(e.message).toContain("Could not find service");
+});

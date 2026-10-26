@@ -36,6 +36,11 @@ export interface ServiceManager {
   /** Stop, disable, remove. A no-op when absent. */
   uninstall(): Promise<void>;
   inspect(): Promise<ServiceStatus>;
+  /**
+   * Stop and start the running service, so it re-reads files it reads only at
+   * startup (`tailscale.json`). Throws a `ServiceError` when the manager refuses.
+   */
+  restart(): Promise<void>;
 }
 
 /** A service-manager command failed. The message names the command and its stderr. */

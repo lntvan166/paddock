@@ -6,29 +6,29 @@ import { freePort } from "./support/port";
 import { parseArgs, parseDuration, USAGE } from "@server/cli";
 
 test("bare invocation serves — the Docker CMD and every doc depend on it", () => {
-  expect(parseArgs([])).toEqual({ command: "serve", flags: new Set(), values: new Map(), verb: null });
+  expect(parseArgs([])).toEqual({ command: "serve", flags: new Set(), values: new Map(), verb: null, args: [] });
 });
 
 test("--demo still serves", () => {
   expect(parseArgs(["--demo"]))
-    .toEqual({ command: "serve", flags: new Set(["--demo"]), values: new Map(), verb: null });
+    .toEqual({ command: "serve", flags: new Set(["--demo"]), values: new Map(), verb: null, args: [] });
 });
 
 test("an explicit `serve` verb serves too — CLAUDE.md documents `paddock serve --demo`", () => {
   expect(parseArgs(["serve", "--demo"]))
-    .toEqual({ command: "serve", flags: new Set(["--demo"]), values: new Map(), verb: "serve" });
+    .toEqual({ command: "serve", flags: new Set(["--demo"]), values: new Map(), verb: "serve", args: [] });
 });
 
 test("update is a command, and carries its own flag", () => {
   expect(parseArgs(["update"]))
-    .toEqual({ command: "update", flags: new Set(), values: new Map(), verb: "update" });
+    .toEqual({ command: "update", flags: new Set(), values: new Map(), verb: "update", args: [] });
   expect(parseArgs(["update", "--check"]))
-    .toEqual({ command: "update", flags: new Set(["--check"]), values: new Map(), verb: "update" });
+    .toEqual({ command: "update", flags: new Set(["--check"]), values: new Map(), verb: "update", args: [] });
 });
 
 test("flags may precede the command", () => {
   expect(parseArgs(["--check", "update"]))
-    .toEqual({ command: "update", flags: new Set(["--check"]), values: new Map(), verb: "update" });
+    .toEqual({ command: "update", flags: new Set(["--check"]), values: new Map(), verb: "update", args: [] });
 });
 
 test("an unrecognised verb is `unknown`, never `serve`", () => {
@@ -36,9 +36,9 @@ test("an unrecognised verb is `unknown`, never `serve`", () => {
   // `paddock updte` launched a dashboard instead of saying the verb does not
   // exist. The verb is carried through so the error can quote it back.
   expect(parseArgs(["updte"]))
-    .toEqual({ command: "unknown", flags: new Set(), values: new Map(), verb: "updte" });
+    .toEqual({ command: "unknown", flags: new Set(), values: new Map(), verb: "updte", args: [] });
   expect(parseArgs(["--demo", "nonsense"]))
-    .toEqual({ command: "unknown", flags: new Set(["--demo"]), values: new Map(), verb: "nonsense" });
+    .toEqual({ command: "unknown", flags: new Set(["--demo"]), values: new Map(), verb: "nonsense", args: [] });
 });
 
 test("the reserved verbs come through the parser, not a second argv scan", () => {
@@ -380,4 +380,15 @@ test("an ambient PADDOCK_VERSION does not leak into the unstamped assertions", (
     if (saved === undefined) delete process.env.PADDOCK_VERSION;
     else process.env.PADDOCK_VERSION = saved;
   }
+});
+
+test("tailscale is a command; its positionals and --login are captured", () => {
+  const p = parseArgs(["tailscale", "off"]);
+  expect(p.command).toBe("tailscale");
+  expect(p.args).toEqual(["off"]);
+  const q = parseArgs(["tailscale", "--login", "operator@github"]);
+  expect(q.command).toBe("tailscale");
+  expect(q.args).toEqual([]);
+  expect(q.values.get("--login")).toBe("operator@github");
+  expect(USAGE).toContain("paddock tailscale [off]   publish on your tailnet (Tailscale)");
 });

@@ -172,3 +172,14 @@ test("uninstall of a hand-deleted unit also removes its dangling wants link", as
   await systemdManager({ run, unitDir: d, user: "operator" }).uninstall();
   expect(await lstat(join(wants, "paddock.service")).then(() => true, () => false)).toBe(false);
 });
+
+test("restart is systemctl --user restart, and a failure is a ServiceError", async () => {
+  const d = await unitDir();
+  const { run, calls } = fakeRun();
+  await systemdManager({ run, unitDir: d, user: "operator" }).restart();
+  expect(calls).toEqual([`${SC} restart paddock.service`]);
+  const bad = fakeRun({ [`${SC} restart paddock.service`]: { code: 1, err: "Unit not found" } });
+  const e = await systemdManager({ run: bad.run, unitDir: d, user: "operator" }).restart().catch((x) => x);
+  expect(e).toBeInstanceOf(ServiceError);
+  expect(e.message).toContain("Unit not found");
+});

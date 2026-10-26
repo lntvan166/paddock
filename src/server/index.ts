@@ -29,6 +29,7 @@ import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import { publicHostsFrom } from "@server/origin";
 import { readTailscaleConfig } from "@server/tailscale/config";
 import { startTailnetListener, tailnetHosts } from "@server/tailscale/listener";
+import { runTailscale, runTailscaleOff } from "@server/tailscale/command";
 import { buildIdFrom } from "@server/build-id";
 import { EMBEDDED } from "@server/embedded";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
@@ -74,9 +75,11 @@ import {
   resolveHost,
 } from "@server/startup-errors";
 
-const { command, flags, values, verb } = parseArgs(Bun.argv.slice(2));
+const { command, flags, values, verb, args } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
 const PORT = Number(process.env.PADDOCK_PORT ?? 8787);
+// The tailnet listener `tailscale serve` forwards to. Bound by the service only.
+const TAILNET_PORT = Number(process.env.PADDOCK_TAILNET_PORT ?? 8789);
 // Loopback by default; exposure is normally the tunnel's job. `PADDOCK_HOST`
 // exists for the one case that cannot use loopback: in a container, a published
 // port arrives on the container's own interface, so a loopback listener refuses
@@ -200,6 +203,39 @@ if (command === "stop") {
  */
 if (command === "pair") {
   process.exit(await runPair({ dir: defaultConfigDir() }));
+}
+
+/**
+ * `paddock tailscale [off]` — publish the service on the tailnet, or stop.
+ *
+ * Up here with the other early verbs: it never opens a herdr socket or binds a
+ * port. It writes `tailscale.json` and restarts the service, which binds the
+ * tailnet listener itself.
+ */
+if (command === "tailscale") {
+  const sub = args[0];
+  if (args.length > 1 || (sub !== undefined && sub !== "off")) {
+    warn(`paddock tailscale: unknown argument '${args.join(" ")}'`);
+    warn(USAGE);
+    process.exit(2);
+  }
+  // A trailing `--login` with nothing after it must not silently mean "the owner".
+  if (flags.has("--login") && !values.get("--login")) {
+    warn("paddock: --login needs a Tailscale login name (e.g. `--login operator@github`)");
+    process.exit(1);
+  }
+  const dir = defaultConfigDir();
+  const opts = {
+    dir,
+    port: PORT,
+    tailnetPort: TAILNET_PORT,
+    loginOverride: values.get("--login"),
+    service: serviceManager({ configDir: dir }),
+    colour: useColour(process.env, Boolean(process.stdout.isTTY)),
+    columns: process.stdout.columns ?? 0,
+    rows: process.stdout.rows ?? 0,
+  };
+  process.exit(sub === "off" ? await runTailscaleOff(opts) : await runTailscale(opts));
 }
 
 
@@ -1044,7 +1080,7 @@ if (command === "serve" && serviceKindOf(process.env) !== undefined) {
       ...appDeps,
       publicHosts: () => tailnetHosts(publicHosts(), cfg.host),
     });
-    const tailnetPort = Number(process.env.PADDOCK_TAILNET_PORT ?? 8789);
+    const tailnetPort = TAILNET_PORT;
     const tailnet = startTailnetListener({
       app: tailnetApp,
       websocket: hubWebSocket({ hub, hostId, store, presence }),

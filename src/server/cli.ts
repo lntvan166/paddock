@@ -1,6 +1,6 @@
 /**
- * `serve`, `update`, `start`, `status`, `stop`, `tunnel`, `pair` and `local` are
- * implemented and act.
+ * `serve`, `update`, `start`, `status`, `stop`, `tunnel`, `pair`, `local` and
+ * `tailscale` are implemented and act.
  * `help` is implemented and only prints — it is the one command that must
  * answer without touching a socket or a port, since asking what the tool does
  * must never start it.
@@ -12,7 +12,7 @@
  */
 export type Command =
   | "serve" | "update" | "start" | "stop" | "status" | "doctor" | "tunnel"
-  | "pair" | "local" | "help" | "agent" | "hub"
+  | "pair" | "local" | "tailscale" | "help" | "agent" | "hub"
   | "unknown";
 
 export interface ParsedArgs {
@@ -22,13 +22,15 @@ export interface ParsedArgs {
   values: Map<string, string>;
   /** The verb as typed, so an error can quote it back. Null for a bare run. */
   verb: string | null;
+  /** Positionals after the verb, e.g. `off` in `paddock tailscale off`. */
+  args: string[];
 }
 
 /** Reserved, and deliberately not implemented — see docs/roadmap.md. */
 const RESERVED = new Set(["agent", "hub"]);
 
 /** The only flags that consume the token after them. */
-const VALUE_FLAGS = new Set(["--for"]);
+const VALUE_FLAGS = new Set(["--for", "--login"]);
 
 export const USAGE = [
   "usage: paddock [--demo]          start the dashboard in the foreground",
@@ -45,6 +47,8 @@ export const USAGE = [
   "                                 publish the paddock already running here",
   "                                 D is 30m, 2h or 7d",
   "       paddock pair              the URL, code and QR of the running tunnel",
+  "       paddock tailscale [off]   publish on your tailnet (Tailscale)",
+  "                                 --login <name> allows that Tailscale user instead",
   "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",
 ].join("\n");
@@ -72,6 +76,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const flags = new Set<string>();
   const values = new Map<string, string>();
   let verb: string | null = null;
+  const args: string[] = [];
 
   // A POSITIONAL scan, not two independent filters. The old
   // `argv.find(a => !a.startsWith("-"))` had no way to know that the token
@@ -80,7 +85,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (!a.startsWith("-")) {
-      verb ??= a;
+      if (verb === null) verb = a;
+      else args.push(a);
       continue;
     }
     const eq = a.indexOf("=");
@@ -98,9 +104,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
   const command = commandFor(verb);
   if (command === "serve" && (flags.has("--help") || flags.has("-h"))) {
-    return { command: "help", flags, values, verb };
+    return { command: "help", flags, values, verb, args };
   }
-  return { command, flags, values, verb };
+  return { command, flags, values, verb, args };
 }
 
 function commandFor(verb: string | null): Command {
@@ -111,6 +117,7 @@ function commandFor(verb: string | null): Command {
   if (verb === "tunnel") return "tunnel";
   if (verb === "pair") return "pair";
   if (verb === "local") return "local";
+  if (verb === "tailscale") return "tailscale";
   if (verb === "help") return "help";
   if (RESERVED.has(verb)) return verb as Command;
   return "unknown";

@@ -19,6 +19,7 @@ function fakeManager(over: Partial<ServiceManager> = {}) {
     install: async (s) => { installed.push(s); return { warnings: [] }; },
     uninstall: async () => {},
     inspect: async () => "active",
+    restart: async () => {},
     ...over,
   };
   return { m, installed };

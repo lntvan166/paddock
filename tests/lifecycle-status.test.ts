@@ -165,6 +165,7 @@ function svc(status: "absent" | "registered" | "active", over: Partial<ServiceMa
     install: async () => ({ warnings: [] }),
     uninstall: async () => { calls.push("uninstall"); },
     inspect: async () => status,
+    restart: async () => {},
     ...over,
   };
   return { service: { ok: true as const, manager }, calls };

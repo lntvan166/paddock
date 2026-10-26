@@ -115,6 +115,10 @@ export function systemdManager(o: { run: Run; unitDir: string; user: string }): 
       await must(o.run, sc("daemon-reload"));
     },
 
+    async restart(): Promise<void> {
+      await must(o.run, sc("restart", SYSTEMD_UNIT));
+    },
+
     async startsAt() {
       // Read back, never remembered: linger can be turned off by hand, and
       // claiming "boot" then would be the promise this feature exists to keep.
