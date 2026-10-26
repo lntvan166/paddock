@@ -1103,11 +1103,16 @@ session does not silently re-litigate them.
     header is the only gate and a mistake is world-readable terminals.
 
     **Amendment to 17: the same-origin allowlist is per listener.** The shared
-    list (loopback and the configured public URL) is unchanged. The tailnet
-    listener's own list is that list plus the ts.net host, so writes and `/ws`
-    from the tailnet name pass `hostAllowed` there and nowhere else. Adding the
-    host to the shared list would have let the ts.net name through on `8787`
-    too.
+    list (the configured public URL) is unchanged. The tailnet listener's own
+    list is that list plus the ts.net host, so writes and `/ws` from the
+    tailnet name pass `hostAllowed` there. The reason is that an EMPTY shared
+    list means the host check is OFF (`publicHostsFrom`). An operator on a
+    Cloudflare named tunnel who never set `publicUrl` has an empty list, so
+    adding the ts.net host to the shared list would switch the check ON
+    everywhere. Their Cloudflare hostname would then fail every write and `/ws`
+    with `host-not-allowed`, leaving a read-only dashboard. A per-listener list
+    leaves that behaviour alone. It also keeps the ts.net name out of the
+    allowlist on `8787`.
 
     **The trust decision is the operator's: every device signed in as the
     allowed Tailscale user is trusted like the phone in hand, including for
