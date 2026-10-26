@@ -1,0 +1,19 @@
+{
+  "Version": "1.0.0",
+  "BackendState": "Running",
+  "Self": {
+    "ID": "n0000000000000001",
+    "UserID": 1000001,
+    "HostName": "dev-box",
+    "DNSName": "dev-box.example-tailnet.ts.net.",
+    "Online": true
+  },
+  "CertDomains": ["dev-box.example-tailnet.ts.net"],
+  "User": {
+    "1000001": {
+      "ID": 1000001,
+      "LoginName": "operator@github",
+      "DisplayName": "Operator"
+    }
+  }
+}
