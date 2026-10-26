@@ -396,6 +396,8 @@ session does not silently re-litigate them.
     Telling the second operator to check their proxy would send them to a file
     that is already correct.
 
+    Amended by decision 35 (per-listener allowlist).
+
 18. **The journal — flattened server-side, never mixed with reconstruction,
     menus stripped, prose only, no session id on the wire, quiet in the UI.**
     `POST /api/agents/:id/history` reads a harness's own session log so "Show
@@ -1091,9 +1093,24 @@ session does not silently re-litigate them.
     `127.0.0.1:${PADDOCK_TAILNET_PORT ?? 8789}`. Every request on it must carry
     a `Tailscale-User-Login` (matched case-insensitively) equal to the one
     login in `tailscale.json`, checked before any route. Tailscale writes that
-    header, and strips a client's copy, only for traffic that came through
-    `serve`. That is why the default `8787` listener never reads it: anyone
-    local could send the header there. Decision 3 stands. This is another
+    header only for traffic that came through `serve`. That is why the default
+    `8787` listener never reads it: anyone local could send the header there.
+    Decision 3 stands.
+
+    **What was measured about a forged header, and what was not.** For a
+    caller WITH a user identity it was measured: a request through `serve`
+    carrying `Tailscale-User-Login: intruder@github` got `200`, so `serve`
+    overwrote the forged header with the caller's real login. The case where
+    the caller has NO user identity (a tagged or ephemeral device), where
+    `serve` must delete a client-sent `Tailscale-User-*` header rather than
+    overwrite it, was NOT measured. It relies on upstream tailscaled's
+    behaviour: serve's identity-header handling removes incoming
+    `Tailscale-User-*` headers before setting its own. A request from the
+    serving node itself carried the owner's identity and got `200`.
+
+    Any local process can reach `127.0.0.1:8789` directly and set the header
+    itself. That is no new exposure: `8787` is already open on loopback with no
+    identity check at all. This is another
     authenticating front, with the check done by the node's own identity
     instead of an Access policy, and still no application token.
 

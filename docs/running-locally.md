@@ -51,8 +51,16 @@ overwrites that.
 What it does: records the allowed login (this machine's Tailscale user, or
 `--login`) in `tailscale.json` in the config directory, restarts the service,
 runs `tailscale serve --bg --https=443 http://127.0.0.1:8789`, checks that the
-name reaches paddock, then prints the URL and a QR code. `PADDOCK_TAILNET_PORT`
-changes the 8789.
+name reaches paddock, then prints the URL and a QR code. The first run on a
+node can sit at "checking" for up to a minute (about 27s, measured) while
+Tailscale issues the HTTPS certificate; it waits up to 90s. `PADDOCK_TAILNET_PORT`
+changes the 8789. The service reads it, so set it in the environment before
+`paddock local`, which captures it into the service, and use the same value
+for `paddock tailscale`.
+
+On Linux, `tailscale serve` needs root or tailscaled's operator user, and fails
+with `Access denied` otherwise: run `sudo tailscale set --operator=$USER` once,
+then `paddock tailscale` again.
 
 On the phone: join the same tailnet, open the URL, Share → Add to Home Screen,
 then enable push in Settings. The ts.net URL is its own origin, so on iOS it is

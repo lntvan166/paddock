@@ -284,13 +284,20 @@ next to it with the trust caveat above.
 
 On a Linux node and the operator's phone, both on one tailnet:
 
-- **A forged identity header does not get through.** A request through
-  `tailscale serve` carrying `Tailscale-User-Login: intruder@github` got `200`.
-  If paddock had seen the forged login, the gate would have answered `403`
-  naming it, so serve overwrote the header with the caller's real login. This
-  was tested from the operator's own devices only; no device of another user
-  was online. Direct requests to `127.0.0.1:8789` with no header, or with
-  another login, get `403`. Both listeners bind `127.0.0.1` only.
+- **A forged identity header does not get through, for a caller with a user
+  identity.** A request through `tailscale serve` carrying
+  `Tailscale-User-Login: intruder@github` got `200`. If paddock had seen the
+  forged login, the gate would have answered `403` naming it, so serve
+  overwrote the header with the caller's real login. This was tested from the
+  operator's own devices only; no device of another user was online. A request
+  from the serving node itself carried the owner's identity (`200`).
+- **Not measured: a caller with no user identity** (a tagged or ephemeral
+  device). There, serve must delete a client-sent `Tailscale-User-*` header
+  rather than overwrite it. That relies on upstream tailscaled's behaviour:
+  serve's identity-header handling removes incoming `Tailscale-User-*` headers
+  before setting its own. No such device was on the tailnet to test it.
+- **Direct requests** to `127.0.0.1:8789` with no header, or with another
+  login, get `403`. Both listeners bind `127.0.0.1` only.
 - **Phone:** the dashboard loads with no login, the WebSocket connects, and
   writes succeed. That confirms `Host` is preserved: no `cross-origin` refusals.
 - **Lifecycle:** `paddock stop` removed paddock's serve config and kept
@@ -300,7 +307,8 @@ On a Linux node and the operator's phone, both on one tailnet:
 - **Found in the live run:**
   - On Linux, `tailscale serve` needs root or the tailscaled operator user. Its
     `Access denied: serve config denied` needs a hint naming
-    `tailscale set --operator=$USER`.
+    `tailscale set --operator=$USER`. Fixed: `cli.ts` adds that hint on Linux.
   - The first HTTPS request on a node with a new certificate took about 27s
     while the certificate was issued, so a 5s verify timeout fails the first
-    run.
+    run. Fixed: the verify retries transport failures for up to 90s and says
+    it is waiting on the certificate.
