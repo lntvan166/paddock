@@ -27,6 +27,8 @@ import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
 import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
 import { publicHostsFrom } from "@server/origin";
+import { readTailscaleConfig } from "@server/tailscale/config";
+import { startTailnetListener, tailnetHosts } from "@server/tailscale/listener";
 import { buildIdFrom } from "@server/build-id";
 import { EMBEDDED } from "@server/embedded";
 import { SettingsStore, defaultConfigDir, isConfigured } from "@server/settings/store";
@@ -1020,6 +1022,46 @@ try {
   if (errorCode(err) !== "EADDRINUSE") throw err;
   warn(portInUseMessage(PORT, HOSTNAME));
   process.exit(1);
+}
+
+/**
+ * The tailnet listener: a SECOND, identity-gated door that `tailscale serve`
+ * forwards to. The service only — a foreground `paddock` or `paddock tunnel`
+ * never binds it — and only when `tailscale.json` enables it.
+ *
+ * Its app is the full app with ONE difference: its same-origin list also names
+ * the ts.net host. The shared `publicHosts` thunk above is not changed, and
+ * nothing on the listener above reads a Tailscale header.
+ *
+ * A failed bind warns and carries on: the dashboard on PORT is already serving,
+ * and taking it down because the optional second door could not open would
+ * trade a working dashboard for nothing.
+ */
+if (command === "serve" && serviceKindOf(process.env) !== undefined) {
+  const cfg = await readTailscaleConfig(defaultConfigDir());
+  if (cfg !== null) {
+    const tailnetApp = createApp({
+      ...appDeps,
+      publicHosts: () => tailnetHosts(publicHosts(), cfg.host),
+    });
+    const tailnetPort = Number(process.env.PADDOCK_TAILNET_PORT ?? 8789);
+    const tailnet = startTailnetListener({
+      app: tailnetApp,
+      websocket: hubWebSocket({ hub, hostId, store, presence }),
+      port: tailnetPort,
+      login: cfg.login,
+      publicHosts: () => tailnetHosts(publicHosts(), cfg.host),
+    });
+    if (tailnet.ok) {
+      console.info(`tailscale: listening on 127.0.0.1:${tailnet.port} for https://${cfg.host} (allows ${cfg.login})`);
+    } else {
+      warn(
+        `paddock: tailnet listener not started — ${tailnet.error}. ` +
+          `The dashboard on port ${PORT} keeps serving; free port ${tailnetPort} ` +
+          `or set PADDOCK_TAILNET_PORT, then restart the service.`,
+      );
+    }
+  }
 }
 
 // A quiet system sends nothing at all, so without this the browser would
