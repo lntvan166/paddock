@@ -122,6 +122,32 @@ Running paddock under a service manager of your own instead? Point it at plain
 the process it launched directly, which is exactly what a foreground paddock
 is. See decision 33 in `docs/decisions.md`.
 
+### When the Mac sleeps
+
+A sleeping Mac freezes every process on it: paddock, herdr, your agents, and
+`tailscaled` or `cloudflared` with them. From the phone, Tailscale times out
+and a Cloudflare tunnel shows its error page. No push goes out, but nothing
+happens that would need one, because the agents are frozen too. On wake,
+everything picks up where it stopped: the service is still registered, the
+tunnel reconnects, and the dashboard reconnects on its own. There is nothing
+to re-run.
+
+A display that is off is not a sleeping Mac. Locking the screen
+(Ctrl+Cmd+Q) or turning the display off (Ctrl+Shift+Power) leaves everything
+running. What matters is system sleep:
+
+- **On the power adapter:** System Settings → Battery → Options → *Prevent
+  automatic sleeping on power adapter when the display is off*. With that on,
+  lock the screen and walk away; nothing else is needed.
+- **On battery:** that setting does not apply, and the Mac idle-sleeps on its
+  usual timer. Run `caffeinate -i` (until Ctrl-C) to keep it awake. `-s` is
+  ignored on battery. Your agents keep spending the battery while you are
+  away.
+- **Lid closed:** the Mac sleeps whatever `caffeinate` says, unless it is in
+  clamshell mode (power, an external display and an input device attached).
+- **Wake for network access** only answers through a Bonjour sleep proxy. It
+  does not wake the Mac for Tailscale or tunnel traffic, so do not rely on it.
+
 ## Then add it to your Home Screen
 
 <p align="center">
