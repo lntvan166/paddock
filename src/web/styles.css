@@ -11,27 +11,35 @@
 /* Light is the base palette. Every token is defined here — never only inside a
    media query, or the manual toggle has nothing to fall back to. */
 :root {
-  --bg: #ffffff;
-  --surface: #f6f7f9;
-  --border: #e3e5e9;
-  --fg: #14161a;
-  --fg-dim: #5f6672;
-  --accent: #b4542e;
-  --warn: #9a6600;
-  --ok: #1a7f37;
+  /* The data-terminal palette (docs/design/2026-11-05-data-terminal-ui.md).
+     The page is one tone step off white and the panels that hold work sit on
+     white, so a surface is told apart by a tone step and a hairline, never a
+     shadow. */
+  --bg: #f6f6f7;
+  --surface: #ffffff;
+  --border: #e4e4e7;
+  --fg: #111113;
+  --fg-dim: #55585e;
+  /* Blue, not the rust it replaced. Rust read as the stock "assistant"
+     palette, and the accent now has ONE job: marking what is selected — the
+     open tab, the option Enter commits, the live-rate in Settings — as a thin
+     line. A state never borrows it (tests/tokens.test.ts). */
+  --accent: #1f5fae;
+  --warn: #8a5a00;
+  --ok: #247b50;
   /* Red is the loudest colour in the app and is spent on ONE thing: an agent
      that has stopped and needs a person. `--warn` (amber) means "in motion or
      degraded", which is what a working agent is. Before this existed, blocked
      borrowed amber and `working` borrowed `--accent` — the same token every
      link and button uses for "you can tap this", so a state competed with the
      interaction colour. */
-  --danger: #cf222e;
+  --danger: #c4242a;
   /* The tint behind a row that needs a person. Hand-picked per theme rather
      than color-mix(--danger, --bg): every other colour here is spelled out in
      all three blocks, and a computed token would be the one value an operator
      cannot read off the file. Kept far enough from --bg to register as a
      wash and close enough not to compete with the border. */
-  --danger-wash: #fdf0f0;
+  --danger-wash: #ffedea;
   /* The same idea as --danger-wash, for the interaction colour: a ground
      tinted far enough from --bg to register and not far enough to compete with
      the accent border on top of it. Spelled out in all three theme blocks for
@@ -39,7 +47,7 @@
      operator cannot read off the file. Used by the prompt option Enter would
      commit, which is the only place in the app that needs to say "this one"
      without saying "danger" or "done". */
-  --accent-wash: #fbeee6;
+  --accent-wash: #e8f0fa;
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
      of the theme rule — it is a consequence of where the colours come from.
@@ -95,13 +103,13 @@
      4.70 on the fill. That near-miss is what pinned the accent to a
      mid-saturated blue: no warmer hue could take white at all.
 
-     A near-black label in dark mode removes the constraint entirely. Rust then
-     scores 7.58 as text and 6.89 under its label, against indigo's 4.24 and
-     4.70 — better on both, not a trade. Light mode keeps white (4.94:1).
+     A near-black label in dark mode removes the constraint entirely. The
+     data-terminal blue (#5b98e0) takes near-black at 6.3:1 and reads at 6.0:1
+     as text on the dark ground; light mode keeps white on #1f5fae (6.35:1).
 
      So this is defined in all three theme blocks, like a colour, and
      tests/tokens.test.ts now guards it as one. A single value here is what a
-     future edit will reach for; it would silently put white on the light rust
+     future edit will reach for; it would silently put white on the light-blue
      fill or near-black on the dark one. */
   --accent-fg: #ffffff;
 
@@ -277,36 +285,36 @@
    file. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --bg: #08090a;
-    --surface: #12141a;
-    --border: #1f2126;
-    --fg: #f7f8f8;
-    --fg-dim: #8a8f98;
-    --accent: #e08a63;
-    --warn: #e0a838;
-    --ok: #3fb950;
-    --danger: #f85149;
-    --danger-wash: #2a1416;
-    --accent-wash: #33210f;
-    /* Near-black ON the rust fill — see --accent-fg above. */
-    --accent-fg: #14161a;
+    --bg: #171719;
+    --surface: #131217;
+    --border: #252528;
+    --fg: #ffffff;
+    --fg-dim: #b0b2b8;
+    --accent: #5b98e0;
+    --warn: #d9a441;
+    --ok: #5fc39c;
+    --danger: #ef6a80;
+    --danger-wash: #2c1a20;
+    --accent-wash: #1a2533;
+    /* Near-black ON the light-blue fill — see --accent-fg above. */
+    --accent-fg: #111113;
   }
 }
 
 /* Explicit dark toggle wins regardless of system preference. */
 :root[data-theme="dark"] {
-  --bg: #08090a;
-  --surface: #12141a;
-  --border: #1f2126;
-  --fg: #f7f8f8;
-  --fg-dim: #8a8f98;
-  --accent: #e08a63;
-  --warn: #e0a838;
-  --ok: #3fb950;
-  --danger: #f85149;
-  --danger-wash: #2a1416;
-  --accent-wash: #33210f;
-  --accent-fg: #14161a;
+  --bg: #171719;
+  --surface: #131217;
+  --border: #252528;
+  --fg: #ffffff;
+  --fg-dim: #b0b2b8;
+  --accent: #5b98e0;
+  --warn: #d9a441;
+  --ok: #5fc39c;
+  --danger: #ef6a80;
+  --danger-wash: #2c1a20;
+  --accent-wash: #1a2533;
+  --accent-fg: #111113;
 }
 
 /* ── Named themes ─────────────────────────────────────────────────────────

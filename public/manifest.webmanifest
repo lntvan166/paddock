@@ -4,8 +4,8 @@
   "description": "Watch and answer coding agents from anywhere.",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#08090a",
-  "theme_color": "#08090a",
+  "background_color": "#171719",
+  "theme_color": "#171719",
   "icons": [
     { "src": "icon-192-v2.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512-v2.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
