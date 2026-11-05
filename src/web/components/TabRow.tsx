@@ -130,5 +130,5 @@ export function TabRow({ tab, onChanged, senders }: {
  *  surface's own class; `NO_AGENT` is the one string every surface that says
  *  this shares. */
 function PaneState({ pane }: { pane: TreePane }) {
-  return <span className="pane-state">{pane.state ?? NO_AGENT}</span>;
+  return <span className="pane-state" data-state={pane.state ?? "none"}>{pane.state ?? NO_AGENT}</span>;
 }

@@ -3806,10 +3806,18 @@ body {
   color: var(--fg-dim);
 }
 
-.spaces {
+/* The space list and a space's tab list are PANELS, the same shape as the
+   dashboard's (see "── Panels" above): on the gutter, a hairline and a 6px
+   corner, rows divided by the quieter --rule. */
+.spaces,
+.tabs {
   list-style: none;
-  margin: 0;
+  margin: 0.75rem var(--gutter) 1rem;
   padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
 }
 
 /* A flex LINE, and this is load-bearing rather than cosmetic.
@@ -3820,8 +3828,9 @@ body {
 [data-space-row] {
   display: flex;
   align-items: center;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--rule);
 }
+[data-space-row]:first-child { border-top: 0; }
 
 /* The row's only tap target (§5.1: no `⋯`, no `+` on any row) — the whole
    row IS the link, so its layout lives here now rather than on a
@@ -3839,7 +3848,7 @@ body {
   min-height: 2.75rem;
   /* No trailing padding: the `⋯` beside it carries its own, and doubling them
      puts the control a thumb-width from the screen edge. */
-  padding: 0.6rem 0 0.6rem 0.75rem;
+  padding: 0.6rem 0 0.6rem var(--pad-panel);
   color: inherit;
   text-decoration: none;
 }
@@ -3879,16 +3888,24 @@ body {
 /* The state word beside the marker (§6: colour is never the only channel —
    `StateMarker` is `aria-hidden`). Shared by the space list row and the
    space picker row, which is why it is not scoped to either. */
+/* The state in words, coloured like the dashboard's state word — colour on
+   the word and the marker together, keyed off the row's own data-state. */
 .space-state {
   flex: none;
   font-size: var(--t-xs);
+  font-weight: 500;
   color: var(--fg-dim);
 }
+[data-space-row][data-state="blocked"] .space-state { color: var(--danger); }
+[data-space-row][data-state="working"] .space-state { color: var(--warn); }
+[data-space-row][data-state="done"] .space-state { color: var(--ok); }
 
 .space-count {
   flex: none;
-  font-size: var(--t-xs);
-  color: var(--fg-dim);
+  min-width: 1.5rem;
+  text-align: right;
+  font-size: var(--t-md);
+  color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3897,22 +3914,20 @@ body {
    no third level: a pane has no children, so TabRow.tsx never nests another
    one of these. Style A (§6): hairline dividers, no per-row card, no border
    around a row — the same channel `.spaces` above uses for the same reason. */
-.tabs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
+
 
 [data-tab-row] {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--rule);
 }
+[data-tab-row]:first-child { border-top: 0; }
 
 .tab-head {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-height: 2.75rem;
-  padding: 0 var(--gutter);
+  min-height: 3.25rem;
+  /* Inside the `.tabs` panel, so the panel's step in, not the screen gutter. */
+  padding: 0 var(--pad-panel);
 }
 
 /* The row's link, when the tab has a root pane. TabRow.tsx renders a bare
@@ -3991,7 +4006,7 @@ body {
    The old scope existed because a MERGED space row used to share the same
    attribute for an unrelated layout, which is gone with `.space-head`. */
 [data-pane-row] {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--rule);
 }
 
 /* Indented under the tab row above it, so a split tab's panes read as
@@ -4005,7 +4020,7 @@ body {
      tab, and 1.75rem was that indent measured against the OLD 0.75rem gutter.
      Expressed as the relationship it always was, so the nesting reads the
      same when the gutter moves. */
-  padding: 0 var(--gutter) 0 calc(var(--gutter) + 0.75rem);
+  padding: 0 var(--pad-panel) 0 calc(var(--pad-panel) + 0.75rem);
   color: inherit;
   text-decoration: none;
 }
@@ -4015,7 +4030,7 @@ body {
    "a tab in this space" the way the Spaces header's `+` says "a space" —
    see `.create-btn` below — so this one says it in words instead. */
 .tab-create {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--rule);
 }
 
 .create-row {
@@ -4062,8 +4077,13 @@ body {
 .pane-state {
   flex: none;
   font-size: var(--t-xs);
+  font-weight: 500;
   color: var(--fg-dim);
 }
+/* Coloured like the dashboard's state word: colour on the word and its marker. */
+.pane-state[data-state="blocked"] { color: var(--danger); }
+.pane-state[data-state="working"] { color: var(--warn); }
+.pane-state[data-state="done"] { color: var(--ok); }
 
 /* A shell has no triage state at all — it is not `idle`, which is why it gets
    no `StatusDot`. Same 7px footprint as `.dot`, because hollowing a marker
