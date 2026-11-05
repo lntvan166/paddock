@@ -14,7 +14,14 @@
   /* The data-terminal palette (docs/design/2026-11-05-data-terminal-ui.md).
      The page is one tone step off white and the panels that hold work sit on
      white, so a surface is told apart by a tone step and a hairline, never a
-     shadow. */
+     shadow.
+
+     This SWAPPED what the two tokens mean. Before, --bg was the white page
+     and --surface the grey grouped region, so fields and keys inside a region
+     took --bg to stand out. Now --surface is the panel (white; one step darker
+     than the ground in dark) and a text field sits on --surface with a
+     --control edge; --bg is only the page and the quiet fill of keys and
+     tags. */
   --bg: #f6f6f7;
   --surface: #ffffff;
   --border: #e4e4e7;
@@ -1182,8 +1189,16 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  /* --r-sm, the dashboard panels' corner: one panel shape across the app
+     (data-terminal). --r-md is left to what floats — sheets and dialogs. */
+  border-radius: var(--r-sm);
   overflow: hidden;
+  /* shadcn's Card root adds 16px of block padding AND a 16px gap between
+     header and body, on top of `.card-head`'s and `.card-body`'s own padding —
+     measured, a one-row card was 115px tall for 44px of control. The head and
+     body carry their own insets; the root carries none. */
+  padding: 0;
+  gap: 0;
 }
 
 .card + .card { margin-top: 0.75rem; }
@@ -1208,10 +1223,10 @@ body {
    about the whole setting, not about its first line. */
 .card-control { flex-shrink: 0; display: inline-flex; align-items: center; }
 
-.card-body { border-top: 1px solid var(--border); padding: 0.75rem var(--gutter); }
+.card-body { border-top: 1px solid var(--rule); padding: 0.75rem var(--gutter); }
 
 .card-foot {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--rule);
   padding: 0.75rem var(--gutter);
   font-size: var(--t-xs);
   color: var(--fg-dim);
@@ -1228,7 +1243,7 @@ body {
   font-size: var(--t-md);
 }
 
-.card-row + .card-row { border-top: 1px solid var(--border); }
+.card-row + .card-row { border-top: 1px solid var(--rule); }
 
 /* The one link that leaves the app, in the interaction colour.
    Inheriting the body colour made it identical to the label beside it — a
@@ -1253,10 +1268,10 @@ body {
 .term-notes-field {
   width: 100%;
   resize: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   /* --r-sm is the step the scale reserves for inputs. */
   border-radius: var(--r-sm);
-  background: var(--bg);
+  background: var(--surface);
   color: var(--fg);
   padding: 0.5rem 0.625rem;
   /* 16px LITERAL, not a scale step, and that is the documented exception:
@@ -1366,9 +1381,9 @@ body {
      public URL. The label beside the field keeps its own smaller size; only the
      thing you type into has to clear the threshold. */
   font-size: 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: var(--r-sm);
-  background: var(--bg);
+  background: var(--surface);
   color: var(--fg);
 }
 
@@ -1398,7 +1413,8 @@ body {
    This is the app's ONLY `.card-row select`. If a second one arrives that is
    genuinely a form field rather than a settings value, give it a class rather
    than widening this rule back out. */
-.card-row select {
+.card-row select,
+.card-control select {
   min-height: 2.75rem;
   padding: 0 1.1rem 0 0;
   font-size: 16px;
@@ -1480,10 +1496,12 @@ body {
   width: 100%;
   display: flex;
   gap: 0.25rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 0.2rem;
+  /* No track: the data-terminal segmented control is its labels, with the
+     selected one marked by an accent line under it. A filled track around
+     three words read as a fourth control. */
+  background: none;
+  border: 0;
+  padding: 0;
 }
 
 .seg-item {
@@ -1501,19 +1519,24 @@ body {
   cursor: pointer;
 }
 
-/* The selected member fills with --accent, the same colour every other "on" in
-   the app uses: a checked Checkbox, a switched-on Toggle, the Send button. It
-   inverted to --fg before, which was defensible on its own — contrast rather
-   than hue, so it survived greyscale — but beside an indigo switch it read as
-   two different systems answering the same question.
-
-   The greyscale property is not given up to get there: --accent-fg on --accent
-   is 6.15:1 in light and 4.70:1 in dark, so the selected member is still
-   obviously selected without relying on colour vision. */
+/* The selected member: ink, weight, and one accent line under its label —
+   the same selection mark as the tab bar and the terminal's panel toggles.
+   It used to FILL with the accent, which made a setting look like the
+   primary action on the screen. Ink and weight carry it without colour
+   vision; the line says which in the one hue that means "selected". */
+.seg-item { position: relative; }
 .seg-item[data-selected="yes"] {
-  background: var(--accent);
-  color: var(--accent-fg);
+  color: var(--fg);
   font-weight: 600;
+}
+.seg-item[data-selected="yes"]::after {
+  content: "";
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  bottom: 0.375rem;
+  height: 2px;
+  background: var(--accent);
 }
 
 .seg-icon { display: inline-flex; }
@@ -1963,9 +1986,9 @@ body {
   min-width: 0;
   min-height: 2.75rem;
   padding: 0 0.5rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: var(--r-sm);
-  background: var(--bg);
+  background: var(--surface);
   color: var(--fg);
   font-family: var(--mono);
   /* 16px for the same reason every other typable field has it: iOS zooms a
@@ -3011,9 +3034,9 @@ body {
   min-width: 0;
   min-height: 2.75rem;
   padding: 0.5rem var(--pad-control);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: var(--r-sm);
-  background: var(--bg);
+  background: var(--surface);
   color: var(--fg);
   font: inherit;
   /* 16px, like every other field you can type into — NOT a scale step. iOS
@@ -3158,15 +3181,13 @@ body {
 
 .band { padding: 1rem var(--gutter) 0.5rem; }
 
-/* The same device as `.sec-label` on the dashboard, so the same size and the
-   same tracking. They were 0.62rem/0.09em here and 9.5px/0.09em there, which
-   is two eyebrows that look alike without being alike. */
+/* The same device as `.sec-label` on the dashboard, so the same size and
+   weight: sentence case at a readable size, not the uppercase eyebrow both of
+   them used to be. */
 .band-label {
   margin: 0 0 0.15rem;
-  font-size: var(--t-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--t-md);
+  font-weight: 500;
   color: var(--fg-dim);
 }
 
@@ -3300,9 +3321,9 @@ body {
      now fails on any rule that declares font-size twice, because a stylesheet
      that contradicts itself cannot be read to find out what it does. */
   font-size: 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
   border-radius: var(--r-sm);
-  background: var(--bg);
+  background: var(--surface);
   color: var(--fg);
 }
 
@@ -4375,8 +4396,8 @@ body {
 .row-actions-rename input {
   min-height: 2.75rem;
   padding: 0 var(--pad-control);
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--control);
   border-radius: var(--r-sm);
   color: var(--fg);
   font-family: var(--mono);
@@ -4492,8 +4513,8 @@ body {
 .create-form select {
   min-height: 2.75rem;
   padding: 0 var(--pad-control);
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--control);
   border-radius: var(--r-sm);
   color: var(--fg);
   font-family: var(--mono);

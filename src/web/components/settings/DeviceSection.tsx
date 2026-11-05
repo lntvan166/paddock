@@ -16,21 +16,21 @@ export function DeviceSection({ prefs, setPref }: DeviceSectionProps) {
     <>
       <Card
         icon={<MonitorIcon />}
-        title="Appearance"
+        title="Theme"
         subtitle="Follow this device, or pin one."
-      >
-        {/* A `<select>`, not `Segmented`. Segmented holds three options well
-            and seven badly, and `.card-row select` is already styled — on iOS
-            this renders as the native wheel.
+        /* The select sits on the card's own heading row: a card that holds ONE
+           control does not need a body under a divider to hold it (the
+           data-terminal settings row — label left, control right). A
+           `<select>`, not `Segmented`: it holds seven options, and on iOS it
+           renders as the native wheel.
 
-            No swatch previews, deliberately: `setPref` applies `themeAttr`
-            synchronously, so changing the selection repaints the whole app at
-            once. The operator sees the theme itself, which is strictly better
-            than a chip of it — and it is why this needs no Save, like every
-            other "This device" setting. */}
-        <label className="card-row">
-          <span>Theme</span>
+           No swatch previews, deliberately: `setPref` applies `themeAttr`
+           synchronously, so changing the selection repaints the whole app at
+           once — and it is why this needs no Save, like every other "This
+           device" setting. */
+        control={
           <select
+            aria-label="Theme"
             data-field="theme"
             data-tour="theme-picker"
             value={prefs.theme}
@@ -38,8 +38,8 @@ export function DeviceSection({ prefs, setPref }: DeviceSectionProps) {
           >
             {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
-        </label>
-      </Card>
+        }
+      />
 
       <Card
         icon={<ActivityIcon />}

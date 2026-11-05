@@ -16,7 +16,9 @@ function harness() {
 test("each group is its own card", async () => {
   const h = harness();
   const host = await render(<DeviceSection prefs={h.prefs} setPref={h.setPref as never} />);
-  expect(textsOf(host, ".card-title")).toEqual(["Appearance", "Live updates", "Terminal"]);
+  // "Theme", not "Appearance": the card holds one control, so it is named
+  // after it and carries the select on its own heading row.
+  expect(textsOf(host, ".card-title")).toEqual(["Theme", "Live updates", "Terminal"]);
 });
 
 test("theme is a select, because there are more than three of them", async () => {

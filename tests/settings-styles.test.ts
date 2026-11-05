@@ -68,7 +68,9 @@ test("a text field inside a card looks like a field, and is a full touch target"
   // which is why nothing failed when they went.
   const sel = '.card-row input:not([type="checkbox"])';
   expect(declaration(sel, "min-height")).toBe(TOUCH_TARGET);
-  expect(declaration(sel, "border")).toContain("var(--border)");
+  // The control step of line, one louder than a panel edge, so the field
+  // reads as something to type into rather than a box.
+  expect(declaration(sel, "border")).toContain("var(--control)");
 });
 
 test("the triggers legend is not laid out inline with its options", () => {
