@@ -614,6 +614,44 @@ body {
   margin-top: 0.375rem;
 }
 
+/* ── A blocked agent's prompt, on its card ───────────────────────────────
+   The agent's own options, answerable in one tap. Outlined rows at the touch
+   floor, the digit in its own fixed column so the labels share a left edge,
+   and the `❯` as plain information — never the accent, which would read as
+   the recommended answer (see CardPrompt.tsx). */
+.card-prompt { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.375rem; }
+.card-question { margin: 0; font-size: var(--t-md); font-weight: 600; color: var(--fg); }
+.card-options { display: flex; flex-direction: column; gap: 0.375rem; }
+.card-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.5rem var(--pad-control);
+  border: 1px solid var(--control);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--t-md);
+  text-align: left;
+}
+@media (hover: hover) { .card-option:hover { border-color: var(--fg); } }
+.card-option:disabled { opacity: 0.5; }
+.card-option-cursor { width: 0.75rem; flex: none; color: var(--fg-dim); }
+.card-option-key { width: 0.75rem; flex: none; font-family: var(--mono); color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.card-option-label { min-width: 0; flex: 1; }
+.card-option-note {
+  flex: none;
+  margin-left: auto;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--r-full);
+  background: var(--bg);
+  color: var(--fg-dim);
+  font-size: var(--t-xs);
+}
+.card-prompt-error { margin: 0; font-size: var(--t-md); color: var(--danger); }
+
 /* The trailing column of a row: state word over age, both on one right edge. */
 .row-trail {
   display: flex;

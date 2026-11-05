@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { isStale, useStore } from "@web/store";
 import { agentHash } from "@web/route";
 import { AgentCard } from "@web/components/AgentCard";
+import { CardPrompt } from "@web/components/CardPrompt";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
 import { AgentActions } from "@web/components/AgentActions";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
@@ -129,7 +130,14 @@ export function Dashboard({ active = true }: { active?: boolean }) {
                       <AgentCard
                         key={a.agentId} agent={a} now={now}
                         onSelect={() => { location.hash = agentHash(a.agentId); }}
-                      />
+                      >
+                        {a.state === "blocked" && (
+                          <CardPrompt
+                            agent={a}
+                            onOpen={() => { location.hash = agentHash(a.agentId); }}
+                          />
+                        )}
+                      </AgentCard>
                     ))
                   : open
                     ? (
