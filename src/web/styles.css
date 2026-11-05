@@ -4719,3 +4719,72 @@ body {
    Dimmed like the row's own explanation, because it is the same KIND of
    sentence: what this checkbox can and cannot do on this device. */
 .push-note { margin: 0; color: var(--fg-dim); font-size: var(--t-xs); }
+
+/* ── Wide screens: an icon rail, the list, and the agent beside it ─────────
+   At and above 70rem (kept in step with WIDE_QUERY in src/web/layout.ts) the
+   three destinations leave the bottom of the screen for a rail on the left —
+   the data-terminal shell — and opening an agent keeps the list beside its
+   terminal instead of replacing it (`.split`, rendered by App only when the
+   query matches). Below it nothing here applies and the phone layout is
+   untouched.
+
+   The rail is the tab bar, restyled: same component, same badge, same
+   `aria-current`. Its selection mark moves from the bar's top edge to the
+   rail's trailing edge — the nearest existing edge, as the style asks. */
+@media (min-width: 70rem) {
+  .tab-bar {
+    position: fixed;
+    z-index: 20;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 4.5rem;
+    grid-auto-flow: row;
+    grid-auto-rows: min-content;
+    align-content: start;
+    gap: 0.25rem;
+    padding: 0.75rem 0 0;
+    border-top: 0;
+    border-right: 1px solid var(--border);
+  }
+  .tab-item[data-current="true"]::before {
+    top: 0.75rem;
+    bottom: 0.75rem;
+    left: auto;
+    right: -1px;
+    width: 2px;
+    height: auto;
+    margin-left: 0;
+  }
+  /* Settings is a utility: pushed to the foot of the rail. */
+  .tab-bar > .tab-item:last-child { position: absolute; bottom: 0.75rem; left: 0; right: 0; }
+
+  /* Nothing open: the phone column, centred in what the rail leaves. */
+  .app-shell { left: 4.5rem; }
+
+  /* An agent open: the list is a fixed column beside the rail, and the
+     terminal takes the rest of the width. */
+  .split-list .app-shell {
+    left: 4.5rem;
+    right: auto;
+    width: 26rem;
+    margin: 0;
+    border-right: 1px solid var(--border);
+  }
+  .split > .term,
+  .split > .screen {
+    left: calc(4.5rem + 26rem);
+    right: 0;
+    width: auto;
+    margin: 0;
+    border-inline: 0;
+  }
+
+  /* The row or card whose terminal is open beside the list: the accent line
+     on its leading edge (the data-terminal selection mark) and the active
+     tone, so it is not mistaken for a focus ring or a hover. */
+  .row[data-selected="yes"] { background: var(--bg); box-shadow: inset 2px 0 0 var(--accent); }
+  .agent-card[data-selected="yes"] { border-color: var(--accent); }
+  /* The card's options are answered in the terminal beside it. */
+  .agent-card[data-selected="yes"] .card-options { display: none; }
+}

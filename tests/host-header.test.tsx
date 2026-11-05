@@ -77,3 +77,12 @@ test("the default host id is not worth a chip", async () => {
   const host = await render(<HostHeader hostId="local" />);
   expect(host.querySelector(".host-chip")).toBeNull();
 });
+
+test("under a minute, the finding still reads as a sentence", async () => {
+  // `elapsedLabel` says "now" under a minute; "has waited now for you" is not
+  // English, and it was on screen the moment an agent stopped.
+  const host = await render(
+    <Finding now={10_000} agents={[agent({ agentId: "a", name: "perf-audit", state: "blocked", stateSince: 0, stateSinceExact: true })]} />,
+  );
+  expect((host.textContent ?? "").replace(/\s+/g, " ")).toContain("perf-audit just stopped and needs you.");
+});

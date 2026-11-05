@@ -25,10 +25,12 @@ export function showAcknowledge(agent: Agent): boolean {
  * what it says and by sitting first, not by painting the whole band red.
  */
 export function AgentCard({
-  agent, now, onSelect, children,
+  agent, now, onSelect, children, selected = false,
 }: {
   agent: Agent;
   now: number;
+  /** This agent is open beside the list (wide screens only). */
+  selected?: boolean;
   /** Opens the detail sheet for this agent. Optional so the card still
    * renders standalone (e.g. in a future context with no sheet to open). */
   onSelect?: () => void;
@@ -70,6 +72,8 @@ export function AgentCard({
       // belongs here, with the state, while the geometry belongs there.
       className="tap agent-card"
       data-state={agent.state}
+      data-selected={selected ? "yes" : undefined}
+      aria-current={selected ? "true" : undefined}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { isStale, useStore } from "@web/store";
-import { agentHash } from "@web/route";
+import { agentHash, useAgentRoute } from "@web/route";
 import { AgentCard } from "@web/components/AgentCard";
 import { CardPrompt } from "@web/components/CardPrompt";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
@@ -56,6 +56,11 @@ export function Dashboard({ active = true }: { active?: boolean }) {
   // Read once on mount, not on every render: localStorage is synchronous, and
   // this sits in a component that re-renders on a ten-second clock.
   const [dismissedVersion, setDismissedVersion] = useState(dismissedRelease);
+
+  // The agent open beside this list on a wide screen, marked so the list says
+  // which row the terminal belongs to. On a phone the list is not on screen
+  // while an agent is open, so this is only ever visible in the split.
+  const openId = useAgentRoute();
 
   const groups = groupAgents(agents);
   const stale = isStale({ connected, lastMessageAt }, now);
@@ -128,7 +133,7 @@ export function Dashboard({ active = true }: { active?: boolean }) {
                 {key === "needs-you" || key === "ready-unseen"
                   ? list.map((a) => (
                       <AgentCard
-                        key={a.agentId} agent={a} now={now}
+                        key={a.agentId} agent={a} now={now} selected={a.agentId === openId}
                         onSelect={() => { location.hash = agentHash(a.agentId); }}
                       >
                         {a.state === "blocked" && (
@@ -144,7 +149,7 @@ export function Dashboard({ active = true }: { active?: boolean }) {
                       <div className="sec-panel">
                         {list.map((a) => (
                           <AgentRow
-                            key={a.agentId} agent={a} now={now}
+                            key={a.agentId} agent={a} now={now} selected={a.agentId === openId}
                             onSelect={() => { location.hash = agentHash(a.agentId); }}
                             // Rename and close, for the agent this row shows.
                             // `onChanged` is a no-op for the same reason the agent

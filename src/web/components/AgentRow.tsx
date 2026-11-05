@@ -14,10 +14,12 @@ export { StatusDot };
  * `ready-unseen`) render `AgentCard` instead, which carries its own border
  * and accent — a row never needs to escalate itself. */
 export function AgentRow({
-  agent, now, onSelect, actions,
+  agent, now, onSelect, actions, selected = false,
 }: {
   agent: Agent;
   now: number;
+  /** This agent is open beside the list (wide screens only). */
+  selected?: boolean;
   /** Opens the detail sheet for this agent. Optional so the row still
    * renders standalone. */
   onSelect?: () => void;
@@ -33,7 +35,7 @@ export function AgentRow({
     // than inside it: a control nested in a `role="button"` fires that button
     // too, which is the same trap `TabRow` and `RowActions` both carry notes
     // about for a `<button>` inside an `<a>`.
-    <div className="row">
+    <div className="row" data-selected={selected ? "yes" : undefined} aria-current={selected ? "true" : undefined}>
     <div
       className="tap row-open"
       role={onSelect ? "button" : undefined}

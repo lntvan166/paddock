@@ -70,7 +70,10 @@ export function Finding({ agents, now }: { agents: Agent[]; now: number }) {
     const more = blocked.length - 1;
     return (
       <p className="finding">
-        <b className="ident">{first.name}</b> has waited {age(first)} for you.
+        <b className="ident">{first.name}</b>{" "}
+        {/* `elapsedLabel` says "now" under a minute, and "has waited now"
+            is not a sentence. */}
+        {age(first) === "now" ? "just stopped and needs you." : `has waited ${age(first)} for you.`}
         {more > 0 ? ` ${more} more ${more === 1 ? "needs" : "need"} you.` : ""}
       </p>
     );
@@ -80,7 +83,8 @@ export function Finding({ agents, now }: { agents: Agent[]; now: number }) {
     const more = ready.length - 1;
     return (
       <p className="finding">
-        <b className="ident">{first.name}</b> finished {age(first)} ago.
+        <b className="ident">{first.name}</b>{" "}
+        {age(first) === "now" ? "just finished." : `finished ${age(first)} ago.`}
         {more > 0 ? ` ${more} more ready.` : ""}
       </p>
     );

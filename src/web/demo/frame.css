@@ -84,6 +84,15 @@ html[data-demo-embedded="on"] .quick-add-fab {
   position: absolute;
 }
 
+/* The wide-screen rail is the one shell fixed only above 70rem. An embedded
+   demo is a phone and never reaches that width, but if an embedding ever does,
+   the rail must sit against #root like every other shell above. */
+@media (min-width: 70rem) {
+  html[data-demo-embedded="on"] .tab-bar {
+    position: absolute;
+  }
+}
+
 @media (min-width: 760px) {
   html[data-demo-frame="on"] body {
     min-height: 100dvh;

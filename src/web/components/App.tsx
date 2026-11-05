@@ -15,6 +15,7 @@ import {
 import { prunePanes } from "@web/pane-cache";
 import { BackIcon } from "@web/components/ui/icons";
 import { AppShell } from "@web/components/AppShell";
+import { useWide } from "@web/layout";
 import { PAGER_TABS, Pager } from "@web/components/Pager";
 import { TAB_HASH, type TabKey } from "@web/components/TabBar";
 import { readPrefs, themeAttr } from "@web/prefs";
@@ -192,6 +193,7 @@ export function App() {
    * disagree about it — the defect `HostHeader`'s counts comment records.
    */
   const needsYou = agents.filter((a) => sectionFor(a) === "needs-you").length;
+  const wide = useWide();
 
   /**
    * Which tab is in front.
@@ -401,13 +403,28 @@ export function App() {
     // dashboard by default, a spaces-family hash only when the real
     // navigation that opened it came from there.
     const back = backTargetFor(openId);
-    return (
+    const terminal = (
       <AgentTerminal
         key={openAgent.agentId}
         agent={openAgent}
         onBack={() => { location.hash = back.hash; }}
         backLabel={back.ariaLabel}
       />
+    );
+    if (!wide) return terminal;
+    // Wide screens keep the list beside the terminal: the rail, the agent
+    // list, then the agent you opened. A tab here NAVIGATES (sets the hash)
+    // rather than `goTab`'s history-free swap, because leaving for Spaces or
+    // Settings also closes the terminal, and that is a real route change.
+    return (
+      <div className="split">
+        <div className="split-list">
+          <AppShell tab="agents" needsYou={needsYou} onSelect={(key) => { location.hash = TAB_HASH[key]; }}>
+            <Pager index={0} onIndexChange={(i) => { location.hash = TAB_HASH[PAGER_TABS[i] ?? "agents"]; }} />
+          </AppShell>
+        </div>
+        {terminal}
+      </div>
     );
   }
 
