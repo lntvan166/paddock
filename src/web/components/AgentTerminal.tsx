@@ -9,6 +9,7 @@ import { fileHash } from "@shared/route";
 import { AskDialogView } from "@web/components/AskDialogView";
 import { CommandList } from "@web/components/CommandList";
 import { QuickActions, QuickToggle } from "@web/components/QuickActions";
+import { StateWord } from "@web/components/ui/StateWord";
 import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
 import { RowActions } from "@web/components/RowActions";
@@ -837,32 +838,18 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       }
       headerExtra={
         <>
-          {/* Blocked renders a PILL instead of the dot; every other state keeps
-              the same `StatusDot` the list renders. That is the dashboard's own
-              escalation — needs-you gets a tinted, bordered treatment and the
-              rest get a bare dot — and it costs nothing here: the pill's
-              padding is paid for by the dot and gap it replaces, which matters
-              because this header is width-starved and the agent's name is
-              already truncated. Measured: the name holds at 65px either way,
-              where a pill BESIDE the dot took it to 50px.
-
-              Blocked keeps its WORD, visibly. Everywhere else the dot is enough
-              and the word is only for assistive tech.
-
-              Colour alone is not a channel a sighted colour-blind operator can
-              read, and the palette pairs red with green. This pill answers that
-              by its own shape: a tinted, bordered, uppercase pill against the
-              bare dot every other state gets, plus the word itself. It carried
-              a lucide `CircleAlert` at size 11 as a third channel, which at
-              that size is 0.92px of stroke around a 9.2px circle holding a
-              1.8px bar — and redundant besides, since `blocked` is the only
-              state that ever renders this pill, so there is no green one here
-              to confuse it with. `StateIcon` is untouched and still renders at
-              its legible 13px default on `AgentCard`. */}
+          {/* Blocked renders the dashboard's STATE WORD — dot plus "Blocked" in
+              red — instead of the bare dot every other state keeps. The word
+              is what a colour-blind operator reads; the dot is what matches
+              the row they tapped. It used to be an uppercase pill on the
+              danger wash, the loudest mark in the app; the data-terminal
+              palette spends red once per agent, and the word is enough. The
+              other states stay a dot because this header is width-starved
+              and the agent's name is already truncated. */}
           {agent.state === "blocked"
             ? (
                 <span className="term-state">
-                  blocked
+                  <StateWord state="blocked" surfaceVar="--bg" />
                 </span>
               )
             : <>

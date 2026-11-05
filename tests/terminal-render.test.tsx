@@ -488,7 +488,7 @@ test("a blocked agent keeps its state word visible, not only its colour", async 
   const host = await render(<AgentTerminal agent={agent({ state: "blocked" })} onBack={() => {}} />);
   await settle();
 
-  expect(host.querySelector(".term-title .term-state")?.textContent).toBe("blocked");
+  expect(host.querySelector(".term-title .term-state")?.textContent).toBe("Blocked");
 });
 
 test("a state change re-reads the transcript, so a screen is never frozen at the state it opened in", async () => {
@@ -547,7 +547,7 @@ test("the blocked pill says its word without an illegible glyph", async () => {
   await settle();
 
   const pill = host.querySelector(".term-title .term-state")!;
-  expect(pill.textContent).toContain("blocked");
+  expect(pill.textContent).toContain("Blocked");
   expect(pill.querySelector("svg")).toBeNull();
 });
 

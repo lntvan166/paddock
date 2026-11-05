@@ -266,8 +266,10 @@
   --card-foreground: var(--fg);
   --popover: var(--surface);
   --popover-foreground: var(--fg);
-  --primary: var(--accent);
-  --primary-foreground: var(--accent-fg);
+  /* Ink, not the accent: the data-terminal primary action is near-black
+     (white on dark), and the accent marks selection only. */
+  --primary: var(--fg);
+  --primary-foreground: var(--bg);
   --secondary: var(--surface);
   --secondary-foreground: var(--fg);
   --muted: var(--surface);
@@ -830,8 +832,8 @@ body {
   height: 2.75rem;
   border: 0;
   border-radius: var(--r-full);
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--fg);
+  color: var(--bg);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -1291,7 +1293,7 @@ body {
 /* Sized and centred exactly like the Keys and Quick glyphs beside it — the
    `⌃`/`⌄` text arrowheads that were here first sit off the baseline next to a
    label, which read as a misaligned control on a phone. */
-.term-fold-glyph { width: 15px; height: 15px; flex: none; color: var(--accent); }
+.term-fold-glyph { width: 15px; height: 15px; flex: none; color: var(--fg); }
 
 /* The way back down, in the control row beside Keys and Quick rather than as a
    row of its own — a fold that cost a row to offer would give back part of what
@@ -1328,7 +1330,7 @@ body {
 }
 
 .help-link {
-  color: var(--accent);
+  color: var(--fg);
   text-decoration: none;
   font-weight: 600;
   display: inline-flex;
@@ -1657,7 +1659,9 @@ body {
   min-width: 2.75rem;
   background: none;
   border: 0;
-  color: var(--accent);
+  /* Ink, not the accent: the accent marks what is SELECTED (data-terminal),
+     and Back and the header's glyphs are actions, not selections. */
+  color: var(--fg);
   font: inherit;
   cursor: pointer;
 }
@@ -1719,19 +1723,12 @@ body {
    a --danger-wash fill, and this is the same sentence. Padding kept tight
    because this header is width-starved: the agent's name is already truncated,
    and every pixel here comes out of it. */
-.term-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.1rem 0.3rem;
-  border-radius: var(--r-sm);
-  background: var(--danger-wash);
-  color: var(--danger);
-  font-size: var(--t-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
+/* The blocked state in the terminal header is the dashboard's state word —
+   dot and "Blocked" in red, sentence case, no fill. It was an uppercase pill
+   on the danger wash, which said the same thing louder than anywhere else
+   in the app. `.state-word` carries the look; this only keeps it from
+   shrinking out of a width-starved header. */
+.term-state { flex: none; }
 
 /* Same reasoning as .detail .output: terminal output is fixed-width, so it
    scrolls sideways rather than reflowing. Wrapping it folds an 80-column
@@ -2015,8 +2012,8 @@ body {
    than filled: the filled accent belongs to Send, and two solid accent blocks
    in one panel is the boldness spent twice. */
 .term-key-enter {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--fg);
+  color: var(--fg);
   font-weight: 600;
 }
 
@@ -2165,7 +2162,7 @@ body {
   display: inline-flex;
   align-items: center;
   padding: 0 var(--pad-control);
-  color: var(--accent);
+  color: var(--fg);
   font-size: var(--t-md);
   font-weight: 600;
 }
@@ -2272,11 +2269,16 @@ body {
 /* Send, now a glyph. Square like the attach control on the other side, so the
    field sits between two equal shoulders rather than between a button and a
    word whose width changes with translation. */
+/* Round, and in INK rather than the accent (data-terminal: the one primary
+   action is near-black, white on dark). The accent only marks selection. */
 .term-reply .term-send {
   flex: none;
   width: 2.75rem;
   min-height: 2.75rem;
   padding: 0;
+  border-radius: var(--r-full);
+  background: var(--fg);
+  color: var(--bg);
 }
 
 .term-send-glyph { width: 18px; height: 18px; }
@@ -2295,7 +2297,8 @@ body {
   min-height: 2.75rem;
   padding: 0;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control);
+  border-radius: var(--r-full);
   color: var(--fg-dim);
 }
 
@@ -2440,12 +2443,12 @@ body {
      focus. This is the field an operator types a reply to a blocked agent
      into, so a zoom here lands mid-conversation. */
   font-size: 16px;
-  border: 1px solid var(--border);
-  /* 0.4rem to match `.card-row input`: this is the same kind of thing — a text
-     field you type into — and two radii that close together read as two
-     designs rather than one. */
-  border-radius: var(--r-sm);
-  background: var(--bg);
+  border: 1px solid var(--control);
+  /* --r-md between two round buttons: the field grows to several lines, where
+     a pill would pinch, and the small step read as a different control from
+     the circles either side of it. */
+  border-radius: var(--r-md);
+  background: var(--surface);
   color: var(--fg);
   font: inherit;
 }
@@ -2478,8 +2481,8 @@ body {
      bordered like `.settings-actions button`: this is the committing action,
      and demoting it to look secondary would lose that. */
   border-radius: var(--r-sm);
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--fg);
+  color: var(--bg);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -2601,6 +2604,21 @@ body {
 }
 .term-wrap-toggle[aria-pressed="false"] { color: var(--fg-dim); }
 
+/* The data-terminal selection mark on the panel toggles: an OPEN panel's
+   toggle carries one accent line under its label, a closed one is dim. Stop
+   is not a toggle and never takes it. */
+.term-keys-toggle, .term-quick-toggle, .term-wrap-toggle { position: relative; }
+.term-keys-toggle:not([data-state="hidden"])::after,
+.term-quick-toggle[aria-expanded="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  height: 2px;
+  background: var(--accent);
+}
+
 /* Dimmed while the pad is hidden, which is its default. Keyed on the state
    attribute, because this control stopped being a boolean when it gained a
    third state and `[aria-pressed="false"]` no longer matches anything here. */
@@ -2674,7 +2692,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--r-full);
   background: var(--surface);
-  color: var(--accent);
+  color: var(--fg);
   font: inherit;
   font-size: var(--t-xs);
   font-weight: 600;
@@ -2748,12 +2766,10 @@ body {
   flex: none;
   display: grid;
   gap: 0.5rem;
+  /* No danger edge any more: the header already says Blocked in red, and the
+     data-terminal palette spends red once per agent. */
   padding: 0.75rem var(--gutter);
-  /* Compensated for the edge, exactly as `.agent-card` is and for the same
-     measured reason. */
-  padding-left: calc(var(--gutter) - var(--edge));
   border-top: 1px solid var(--border);
-  border-left: var(--edge) solid var(--danger);
   background: var(--surface);
   max-height: 40vh;
   overflow-y: auto;
@@ -2762,14 +2778,17 @@ body {
 .term-question {
   margin: 0 0 0.15rem;
   font-size: var(--t-md);
-  color: var(--fg-dim);
+  font-weight: 600;
+  /* Ink: this is the sentence the operator is answering. */
+  color: var(--fg);
   overflow-wrap: anywhere;
 }
 
 .term-option {
   min-height: 2.75rem;
   padding: 0.5rem var(--pad-control);
-  border: 1px solid var(--border);
+  /* The control step of line, so an outlined option reads as tappable. */
+  border: 1px solid var(--control);
   /* 0.4rem to match `.card-row input` and the rest of the card vocabulary.
      0.5rem here was the terminal's own radius, from before that vocabulary
      existed — two radii a thumb's width apart read as two designs. */
@@ -2831,9 +2850,7 @@ body {
   min-height: 0;
   gap: 0.5rem;
   padding: 0.75rem var(--gutter);
-  padding-left: calc(var(--gutter) - var(--edge));
   border-top: 1px solid var(--border);
-  border-left: var(--edge) solid var(--danger);
   background: var(--surface);
   /* MEASURED on a 390x844 phone: at 50vh this panel took 357px against the
      transcript's 239, so the agent's own words — the thing you read to decide —
@@ -2902,7 +2919,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
-  color: var(--accent);
+  color: var(--fg);
   font: inherit;
   font-size: var(--t-md);
   cursor: pointer;
@@ -3016,7 +3033,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
-  color: var(--accent);
+  color: var(--fg);
   font: inherit;
   font-size: var(--t-md);
   cursor: pointer;
@@ -3061,8 +3078,8 @@ body {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.75rem var(--gutter);
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--fg);
+  color: var(--bg);
   font-size: var(--t-md);
 }
 
@@ -3071,10 +3088,10 @@ body {
   padding: 0 var(--pad-control);
   border: 0;
   border-radius: var(--r-sm);
-  /* An opacity treatment rather than a palette colour: this is a scrim over
-     the accent bar, not a token anyone would reuse. */
-  background: rgb(255 255 255 / 0.18);
-  color: var(--accent-fg);
+  /* Inverted from the ink bar: the bar is --fg, so its button is the page
+     ground on it — the one primary action, by inversion. */
+  background: var(--bg);
+  color: var(--fg);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -3755,7 +3772,7 @@ body {
   padding: 0;
   background: none;
   border: 0;
-  color: var(--accent);
+  color: var(--fg);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -4015,7 +4032,7 @@ body {
      `.space-screen-head .term-back` below is also accent, by the same
      app-wide back-navigation convention every screen uses, so "the one
      accent control" is only true of the rows this list renders. */
-  color: var(--accent);
+  color: var(--fg);
   font: inherit;
   font-size: var(--t-md);
   font-weight: 600;
@@ -4127,7 +4144,7 @@ body {
   padding: 0 0.5rem;
   background: none;
   border: 0;
-  color: var(--accent);
+  color: var(--fg);
   font: inherit;
   cursor: pointer;
 }
@@ -4309,7 +4326,7 @@ body {
   background: none;
   border: 0;
   border-top: 1px solid var(--border);
-  color: var(--accent);
+  color: var(--fg);
   font: inherit;
   font-size: var(--t-md);
   cursor: pointer;
@@ -4370,7 +4387,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  color: var(--accent);
+  color: var(--fg);
   font: inherit;
   font-size: var(--t-md);
   cursor: pointer;
@@ -4407,7 +4424,7 @@ body {
   justify-content: center;
   background: none;
   border: 0;
-  color: var(--accent);
+  color: var(--fg);
   /* Sizes the `+` GLYPH, not text — the same exemption the arrow keys carry,
      and for the same reason: on the 13px prose step a `+` sat in the middle
      of a 44px target and read as an empty button. */

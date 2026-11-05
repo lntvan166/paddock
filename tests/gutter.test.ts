@@ -126,11 +126,15 @@ test("dashboard panels sit on the gutter and inset their content by --pad-panel"
   expect(ruleBody(".row")).toMatch(/padding\s*:\s*[^;]*var\(--pad-panel\)/);
 });
 
-for (const sel of [".term-options"]) {
-  test(`${sel} subtracts its accent edge from its own gutter`, () => {
-    const body = ruleBody(sel);
-    expect(body).toContain("border-left: var(--edge)");
-    expect(body).toContain("padding-left: calc(var(--gutter) - var(--edge))");
+/**
+ * No band carries a coloured attention edge any more. The edge needed the
+ * subtraction above to keep its content on the gutter, and the data-terminal
+ * redesign removed it: red is spent on the state word, once per agent. If an
+ * edge comes back, so must the `calc(var(--gutter) - var(--edge))`.
+ */
+for (const sel of [".term-options", ".agent-card", ".dialog"]) {
+  test(`${sel} carries no attention edge`, () => {
+    expect(ruleBody(sel)).not.toContain("border-left: var(--edge)");
   });
 }
 
