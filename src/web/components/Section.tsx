@@ -68,9 +68,9 @@ export function SectionHeader({
     <>
       {dotState ? <StatusDot state={dotState} /> : null}
       <span className="sec-label">{title}</span>
-      {/* The count is a reading off the list, so it takes the machine voice —
-          which also stops it from reading as part of the label. */}
-      <span className="ident row-meta"> · {count}</span>
+      {/* The count is a reading off the list: one step quieter than the
+          label, tabular, and no "·" glue between them. */}
+      <span className="sec-count">{count}</span>
     </>
   );
   return (
@@ -83,7 +83,10 @@ export function SectionHeader({
           className="tap flex flex-1 items-center gap-1.5 text-left"
           style={{ color: "inherit" }}
         >
-          {label} <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
+          {label}
+          {/* A word, not a ▴/▾ glyph: the glyph rendered as an emoji on some
+              platforms and said nothing about what tapping would do. */}
+          <span className="sec-fold">{expanded ? "Hide" : "Show"}</span>
         </button>
       ) : (
         <div className="flex flex-1 items-center gap-1.5">{label}</div>

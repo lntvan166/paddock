@@ -9,7 +9,7 @@ import { HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
 import { QuickAdd } from "@web/components/QuickAdd";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
-import { groupAgents, SECTION_DOT, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
+import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
 import { staleAttrs } from "@web/components/staleness";
 import { UpdateBar } from "@web/components/UpdateBar";
 import { dismissedRelease, dismissRelease, shouldShowRelease } from "@web/release-notice";
@@ -119,7 +119,6 @@ export function Dashboard({ active = true }: { active?: boolean }) {
                 <SectionHeader
                   title={SECTION_TITLES[key]}
                   count={list.length}
-                  dotState={SECTION_DOT[key]}
                   expandable={collapsible}
                   expanded={open}
                   onToggle={() => setIdleOpen((v) => !v)}
@@ -132,19 +131,23 @@ export function Dashboard({ active = true }: { active?: boolean }) {
                       />
                     ))
                   : open
-                    ? list.map((a) => (
-                        <AgentRow
-                          key={a.agentId} agent={a} now={now}
-                          onSelect={() => { location.hash = agentHash(a.agentId); }}
-                          // Rename and close, for the agent this row shows.
-                          // `onChanged` is a no-op for the same reason the agent
-                          // view's is: this screen renders the agent STORE, and
-                          // both writes reach it on their own — a rename because
-                          // the route asks the supervisor to re-read, a close
-                          // because herdr announces `pane_closed`.
-                          actions={<AgentActions agent={a} onChanged={() => {}} />}
-                        />
-                      ))
+                    ? (
+                      <div className="sec-panel">
+                        {list.map((a) => (
+                          <AgentRow
+                            key={a.agentId} agent={a} now={now}
+                            onSelect={() => { location.hash = agentHash(a.agentId); }}
+                            // Rename and close, for the agent this row shows.
+                            // `onChanged` is a no-op for the same reason the agent
+                            // view's is: this screen renders the agent STORE, and
+                            // both writes reach it on their own — a rename because
+                            // the route asks the supervisor to re-read, a close
+                            // because herdr announces `pane_closed`.
+                            actions={<AgentActions agent={a} onChanged={() => {}} />}
+                          />
+                        ))}
+                      </div>
+                    )
                     : (
                       <div className="chip-row">
                         {list.map((a) => (

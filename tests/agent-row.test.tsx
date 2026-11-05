@@ -11,13 +11,15 @@ test("the row carries the harness tile", async () => {
   expect(host.querySelector(".tile")?.getAttribute("aria-label")).toBe("codex");
 });
 
-test("the status dot is overlaid on the tile, not placed beside it", async () => {
-  // At 390px an overlaid dot costs nothing where a sibling dot costs a column.
+test("the state sits in the trailing column as a dot and a word, not on the tile", async () => {
+  // The data-terminal redesign moved it off the tile's corner: a 7px dot on a
+  // 28px tile was decoded, a word in the trailing column is read.
   const host = await render(<AgentRow agent={agent()} now={0} />);
-  expect(host.querySelector(".tile-badge .dot")).not.toBeNull();
+  expect(host.querySelector(".tile-badge")).toBeNull();
+  expect(host.querySelector(".row-trail .state-word .dot")).not.toBeNull();
 });
 
 test("the state is still carried as text, because colour is never the only channel", async () => {
   const host = await render(<AgentRow agent={agent({ state: "blocked" })} now={0} />);
-  expect(host.textContent).toContain("blocked");
+  expect(host.querySelector(".state-word")?.textContent).toBe("Blocked");
 });

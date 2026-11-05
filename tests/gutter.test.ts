@@ -54,9 +54,8 @@ test("the gutter is a token on bare :root, not buried in a media query", () => {
  * is asserted below rather than left implicit.
  */
 const BANDS = [
-  // Dashboard
-  ".row",
-  ".agent-card",
+  // Dashboard. `.row` and `.agent-card` are not bands any more: they live in
+  // panels, asserted separately below.
   ".sec-head",
   ".host-head",
   // Terminal
@@ -115,7 +114,19 @@ for (const sel of BANDS) {
  * an `AgentCard`'s tile measured 18px against every row's 16px. Smaller than
  * the 8px jog this work removed, and the same defect.
  */
-for (const sel of [".agent-card", ".term-options"]) {
+/**
+ * The dashboard's lists are panels on the gutter, with their content one shared
+ * step further in. Two edges, both tokens: the panels share the screen's edge,
+ * and the tile column inside every panel — card or rows — shares the second.
+ */
+test("dashboard panels sit on the gutter and inset their content by --pad-panel", () => {
+  expect(ruleBody(".sec-panel")).toContain("margin-inline: var(--gutter)");
+  expect(ruleBody(".agent-card")).toContain("margin-inline: var(--gutter)");
+  expect(ruleBody(".agent-card")).toMatch(/padding\s*:\s*[^;]*var\(--pad-panel\)/);
+  expect(ruleBody(".row")).toMatch(/padding\s*:\s*[^;]*var\(--pad-panel\)/);
+});
+
+for (const sel of [".term-options"]) {
   test(`${sel} subtracts its accent edge from its own gutter`, () => {
     const body = ruleBody(sel);
     expect(body).toContain("border-left: var(--edge)");

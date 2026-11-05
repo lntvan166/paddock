@@ -92,6 +92,9 @@ test("every registered theme has a block, and every block is registered", () => 
 const REQUIRED = [
   "--bg", "--surface", "--border", "--fg", "--fg-dim",
   "--accent", "--accent-fg", "--accent-wash", "--danger-wash",
+  // The two line steps around --border. Inherited, a dark theme would draw
+  // light-mode rules and control edges on its own ground.
+  "--rule", "--control",
 ] as const;
 
 /**

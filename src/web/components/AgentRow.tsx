@@ -2,6 +2,7 @@ import type { Agent } from "@shared/types";
 import { elapsedLabel } from "@web/components/elapsed";
 import { IconTile } from "@web/components/ui/IconTile";
 import { StatusDot } from "@web/components/ui/StatusDot";
+import { StateWord } from "@web/components/ui/StateWord";
 
 /** Re-exported for the card and the terminal header, which imported it from
  *  here before the primitive layer existed. */
@@ -49,15 +50,19 @@ export function AgentRow({
           : undefined
       }
     >
-      <IconTile harness={agent.harness} badge={<StatusDot state={agent.state} />} />
-      <span className="sr-only">{agent.state}</span>
+      <IconTile harness={agent.harness} />
       <div className="min-w-0 flex-1">
         {/* `ident` because an agent name is an identifier you match, not prose
             you read — see the two-voices block in styles.css. */}
         <div className="ident row-name truncate">{agent.name}</div>
         <div className="row-task truncate">{agent.task}</div>
       </div>
-      <span className="ident row-meta shrink-0">{elapsedLabel(now - agent.stateSince, agent.stateSinceExact)}</span>
+      {/* The state READ, not decoded: word and dot above the age, in one
+          trailing column so every row's figures end on the same edge. */}
+      <span className="row-trail">
+        <StateWord state={agent.state} surfaceVar="--surface" />
+        <span className="ident row-meta">{elapsedLabel(now - agent.stateSince, agent.stateSinceExact)}</span>
+      </span>
     </div>
     {actions}
     </div>
