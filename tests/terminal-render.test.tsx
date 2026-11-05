@@ -641,7 +641,10 @@ test("a permission prompt marks the agent's cursor quietly and tags the lasting 
   await settle();
   await settle();
 
-  expect(textsOf(host, ".term-option-cursor")).toEqual(["❯", "", ""]);
+  // A drawn chevron on the cursor row only — not the U+276F dingbat, which
+  // paints as emoji on some platforms.
+  const cursors = [...host.querySelectorAll(".term-option-cursor")];
+  expect(cursors.map((c) => c.querySelector("svg") !== null)).toEqual([true, false, false]);
   expect(textsOf(host, ".term-option-note")).toEqual(["remembered"]);
   expect(host.querySelector(".term-option-note")?.closest(".term-option")?.textContent).toContain("don't ask again");
 });

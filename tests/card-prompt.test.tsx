@@ -61,7 +61,9 @@ test("the persistent grant is tagged, and the cursor is information, not a recom
   const second = host.querySelector('[data-prompt-option="2"]') as HTMLElement;
   expect(second.querySelector(".card-option-note")?.textContent).toBe("remembered");
   const first = host.querySelector('[data-prompt-option="1"]') as HTMLElement;
-  expect(first.querySelector(".card-option-cursor")?.textContent).toBe("❯");
+  // Drawn, not the U+276F dingbat, which paints as emoji on some platforms.
+  expect(first.querySelector(".card-option-cursor svg")).not.toBeNull();
+  expect(second.querySelector(".card-option-cursor svg")).toBeNull();
 });
 
 test("a question dialog is never answered from the card", async () => {

@@ -16,7 +16,7 @@ import { RowActions } from "@web/components/RowActions";
 import { PaneTerminal, type EarlierContext, type PaneTerminalHandle } from "@web/components/PaneTerminal";
 import { hasProse, trimSeen } from "@web/journal-overlap";
 import { NotesField } from "@web/components/NotesField";
-import { ChevronDownIcon, ChevronUpIcon } from "@web/components/ui/icons";
+import { ChevronDownIcon, ChevronUpIcon, CloseIcon, CursorIcon } from "@web/components/ui/icons";
 import { ImageIcon, SendIcon } from "@web/components/ui/icons";
 import { Keypad, KeypadToggle } from "@web/components/ui/Keypad";
 import {
@@ -1027,7 +1027,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                       says where the cursor is without choosing for anyone. */}
                   {prompt.commit !== "cursor" && (
                     <span aria-hidden="true" className="term-option-cursor">
-                      {isSelected(o) ? "❯" : ""}
+                      {isSelected(o) ? <CursorIcon className="cursor-glyph" /> : null}
                     </span>
                   )}
                   <span aria-hidden="true" className="term-option-key">{o.key}</span>
@@ -1232,7 +1232,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                         setAttached((prev) => prev.filter((_, at) => at !== i));
                       }}
                     >
-                      ✕
+                      <CloseIcon className="close-glyph" />
                     </button>
                   )}
                 </span>

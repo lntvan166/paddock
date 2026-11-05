@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CloseIcon } from "@web/components/ui/icons";
 import { isCtrlKey, type CtrlKey } from "@shared/types";
 
 /**
@@ -83,7 +84,7 @@ export function CtrlCompose({ onSend, onDismiss, busy = false }: {
         onClick={onDismiss}
         aria-label="Cancel Ctrl"
       >
-        ✕
+        <CloseIcon className="close-glyph" />
       </button>
     </div>
   );

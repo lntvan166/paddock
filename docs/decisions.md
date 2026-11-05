@@ -1149,3 +1149,16 @@ session does not silently re-litigate them.
     serve config but keeps the file, and `local` re-applies it. Only
     `paddock tailscale off` deletes it. See
     `docs/design/2026-10-26-tailscale-design.md`.
+
+36. **The accent marks selection only, and red is spent once per agent.**
+    The data-terminal redesign replaced the rust accent with blue. The
+    accent's one job is now saying which thing is selected: the open tab, an
+    open panel toggle, the selected member of a segmented control, the agent
+    open beside the list. Actions and links are ink. A blocked agent is red
+    in exactly one place, its state word, and no longer gets a red band and a
+    red edge as well. A blocked agent's permission prompt can be answered
+    from its dashboard card, under the terminal's own rules: buttons only for
+    a parsed digit-answered prompt, never for a question dialog. The live
+    tail under each row was declined, because extracting a meaningful line
+    from a TUI would be harness-specific guessing. See
+    `docs/design/2026-11-05-data-terminal-ui.md`.

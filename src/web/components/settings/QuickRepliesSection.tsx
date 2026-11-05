@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Card } from "@web/components/ui/Card";
 import { Button } from "@web/components/shadcn/button";
-import { FlashIcon } from "@web/components/ui/icons";
+import { CloseIcon, FlashIcon } from "@web/components/ui/icons";
 import {
   MAX_QUICK_REPLIES,
   MAX_QUICK_REPLY_LEN,
@@ -82,7 +82,7 @@ export function QuickRepliesSection() {
                 aria-label={`Remove ${reply}`}
                 onClick={() => commit(replies.filter((r) => r !== reply))}
               >
-                ✕
+                <CloseIcon className="close-glyph" />
               </button>
             </li>
           ))}

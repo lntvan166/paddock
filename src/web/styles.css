@@ -444,7 +444,15 @@ body {
   background: var(--bg);
   color: var(--fg);
   letter-spacing: -0.01em;
+  /* Every figure in the app keeps its width: ages tick, counts change, and a
+     column of times must not jitter as its digits do (data-terminal). */
+  font-variant-numeric: tabular-nums;
 }
+
+/* The drawn close and cursor glyphs (ui/icons.tsx), sized to sit in a line of
+   --t-md text the way the characters they replace did. */
+.close-glyph { width: 14px; height: 14px; display: block; }
+.cursor-glyph { width: 12px; height: 12px; display: block; }
 
 /* Touch devices get larger targets; hover affordances are additive only, never
    the sole route to an action. */
@@ -4738,7 +4746,7 @@ body {
     top: 0;
     bottom: 0;
     left: 0;
-    width: 4.5rem;
+    width: 5rem;
     grid-auto-flow: row;
     grid-auto-rows: min-content;
     align-content: start;
@@ -4760,12 +4768,12 @@ body {
   .tab-bar > .tab-item:last-child { position: absolute; bottom: 0.75rem; left: 0; right: 0; }
 
   /* Nothing open: the phone column, centred in what the rail leaves. */
-  .app-shell { left: 4.5rem; }
+  .app-shell { left: 5rem; }
 
   /* An agent open: the list is a fixed column beside the rail, and the
      terminal takes the rest of the width. */
   .split-list .app-shell {
-    left: 4.5rem;
+    left: 5rem;
     right: auto;
     width: 26rem;
     margin: 0;
@@ -4773,7 +4781,7 @@ body {
   }
   .split > .term,
   .split > .screen {
-    left: calc(4.5rem + 26rem);
+    left: calc(5rem + 26rem);
     right: 0;
     width: auto;
     margin: 0;

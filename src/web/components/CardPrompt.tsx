@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CursorIcon } from "@web/components/ui/icons";
 import type { ActionResult, Agent, ParsedPrompt } from "@shared/types";
 import { answerWithKey, fetchPrompt } from "@web/api";
 
@@ -75,7 +76,7 @@ export function CardPrompt({ agent, onOpen }: { agent: Agent; onOpen?: () => voi
                   .finally(() => setBusy(false));
               }}
             >
-              <span aria-hidden="true" className="card-option-cursor">{o.selected ? "❯" : ""}</span>
+              <span aria-hidden="true" className="card-option-cursor">{o.selected ? <CursorIcon className="cursor-glyph" /> : null}</span>
               <span aria-hidden="true" className="card-option-key">{o.key}</span>
               <span className="card-option-label">{o.label}</span>
               {/don['’]t ask again/i.test(o.label) && (

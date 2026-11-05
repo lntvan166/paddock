@@ -26,6 +26,9 @@ const NAMES = [
   // sit in the same row as `KeyboardIcon` and `FlashIcon`, whose 1.5 stroke
   // they have to match.
   "ChevronUpIcon", "ChevronDownIcon",
+  // Close and cursor joined when the `✕` and `❯` codepoints were drawn
+  // instead: both are dingbats some platforms paint as coloured emoji.
+  "CloseIcon", "CursorIcon",
 ] as const;
 
 test("every icon the module exports is in the list the tests below walk", async () => {

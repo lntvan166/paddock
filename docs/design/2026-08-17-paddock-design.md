@@ -337,6 +337,8 @@ IDLE · 3                                            ▾
 
 ### Visual style
 
+> **Superseded in part (2026-11-05):** the palette and selection rules below were replaced by the data-terminal UI: blue accent for selection only, panels, and state words. See `docs/design/2026-11-05-data-terminal-ui.md` and decision 36.
+
 Near-black ground, hairline borders, one accent colour, tight letter-spacing —
 restrained enough that colour carries only meaning.
 

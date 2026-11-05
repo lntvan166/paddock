@@ -114,6 +114,20 @@ export function ChevronDownIcon({ className }: IconProps) {
   return <Svg className={className}><path d="M5 9l7 7 7-7" /></Svg>;
 }
 
+/** Close / remove. Drawn, not the `✕` codepoint it replaces: U+2715 is a
+ *  dingbat that some platforms paint as a coloured emoji, and its weight and
+ *  baseline changed from one font fallback to the next. */
+export function CloseIcon({ className }: IconProps) {
+  return <Svg className={className}><path d="M6 6l12 12M18 6L6 18" /></Svg>;
+}
+
+/** Where the agent's own `❯` cursor sits, drawn. The harness's character is
+ *  U+276F, a dingbat that renders as emoji on some platforms; this keeps the
+ *  meaning ("Enter lands here") in the app's own glyph language. */
+export function CursorIcon({ className }: IconProps) {
+  return <Svg className={className}><path d="M9 6l6 6-6 6" /></Svg>;
+}
+
 export function BackIcon({ className }: IconProps) {
   return <Svg className={className}><path d="M15 5l-7 7 7 7" /></Svg>;
 }
