@@ -3,7 +3,7 @@
 import "./support/dom";
 
 import { afterEach, expect, test } from "bun:test";
-import { HostHeader } from "@web/components/HostHeader";
+import { Finding, HostHeader } from "@web/components/HostHeader";
 import { agent, render, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
@@ -28,35 +28,52 @@ afterEach(async () => { await unmount(); });
  *   the screen SAYS there is no herdr session, rather than erroring. The
  *   original objection was that the control was broken, and it no longer is.
  */
-test("the summary counts by section, so it cannot contradict the section headers", async () => {
-  // The defect this guards: counting `blocked` + `done` by raw state made the
-  // header read "2 needs you" over sections reading "NEEDS YOU · 1" and
-  // "READY · 1", and tallied an acknowledged finish — which renders under
-  // Idle — as needing attention.
+test("the finding names the agent that has waited longest-changed first, as the sections order it", async () => {
+  // The defect the old counts sentence guarded: counting `blocked` + `done` by
+  // raw state made the header contradict the sections under it. The finding
+  // takes its agent from `groupAgents`, the same grouping the sections use.
   const host = await render(
-    <HostHeader
-      hostId="dev-box"
+    <Finding
+      now={120_000}
       agents={[
-        agent({ agentId: "a", name: "schema-migration", state: "blocked" }),
+        agent({ agentId: "a", name: "schema-migration", state: "blocked", stateSince: 0, stateSinceExact: true }),
         agent({ agentId: "b", name: "lint-config", state: "done", acknowledgedAt: null }),
         agent({ agentId: "c", name: "api-refactor", state: "working" }),
       ]}
     />,
   );
   const text = (host.textContent ?? "").replace(/\s+/g, " ");
-  expect(text).toContain("1 needs you");
-  expect(text).toContain("1 ready");
-  expect(text).toContain("1 working");
+  expect(text).toContain("schema-migration has waited 2m for you.");
+  expect(text).not.toContain("lint-config");
+});
+
+test("with nobody blocked, the finding names the finished agent", async () => {
+  const host = await render(
+    <Finding
+      now={300_000}
+      agents={[agent({ agentId: "b", name: "lint-config", state: "done", acknowledgedAt: null, stateSince: 0, stateSinceExact: true })]}
+    />,
+  );
+  expect((host.textContent ?? "").replace(/\s+/g, " ")).toContain("lint-config finished 5m ago.");
 });
 
 test("an acknowledged finish is counted as idle, not as needing attention", async () => {
   const host = await render(
-    <HostHeader
-      hostId="dev-box"
-      agents={[agent({ agentId: "d", name: "docs-cleanup", state: "done", acknowledgedAt: 1 })]}
-    />,
+    <Finding now={0} agents={[agent({ agentId: "d", name: "docs-cleanup", state: "done", acknowledgedAt: 1 })]} />,
   );
   const text = (host.textContent ?? "").replace(/\s+/g, " ");
   expect(text).toContain("1 idle");
-  expect(text).not.toContain("needs you");
+  expect(text).toContain("Nothing needs you.");
+  expect(text).not.toContain("finished");
+});
+
+test("the title is the screen's noun, and the host is a chip beside it", async () => {
+  const host = await render(<HostHeader hostId="dev-box" />);
+  expect(host.querySelector("h1")?.textContent).toBe("Agents");
+  expect(host.querySelector(".host-chip")?.textContent).toBe("dev-box");
+});
+
+test("the default host id is not worth a chip", async () => {
+  const host = await render(<HostHeader hostId="local" />);
+  expect(host.querySelector(".host-chip")).toBeNull();
 });

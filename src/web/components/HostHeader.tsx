@@ -1,5 +1,7 @@
 import { sectionFor, type Agent, type Section } from "@shared/types";
 import { Mark } from "@web/components/Mark";
+import { elapsedLabel } from "@web/components/elapsed";
+import { groupAgents } from "@web/components/Section";
 
 
 /**
@@ -13,82 +15,80 @@ import { Mark } from "@web/components/Mark";
 const DEFAULT_HOST_ID = "local";
 
 export function HostHeader({
-  hostId, agents,
+  hostId,
 }: {
   hostId: string | null;
-  /**
-   * Still required, and still counted with `sectionFor` — see the summary
-   * below. The header no longer NAVIGATES anywhere: `onOpenSettings` and
-   * `onOpenSpaces` moved to `TabBar`, which puts both destinations within
-   * thumb reach and gives them visible labels.
-   *
-   * Their old doc comments argued at length that they must be REQUIRED rather
-   * than optional, because an optional callback makes a dropped entry point a
-   * silent no-op instead of a compile error. That reasoning was right and is
-   * not lost: `TabBar`'s destinations are plain `href`s to the hashes the
-   * router already owns, so there is no callback left to drop.
-   */
-  agents: Agent[];
 }) {
-  // Counted by SECTION, never by raw state. Deriving these from `state` was how
-  // the header came to read "2 needs you" over sections reading "NEEDS YOU · 1"
-  // and "READY · 1" — and why an acknowledged finish, which renders under Idle,
-  // was still tallied as needing attention. sectionFor is the one rule.
-  const n = (s: Section) => agents.filter((a) => sectionFor(a) === s).length;
-  const parts = [
-    n("needs-you") > 0 ? `${n("needs-you")} needs you` : null,
-    n("ready-unseen") > 0 ? `${n("ready-unseen")} ready` : null,
-    n("working") > 0 ? `${n("working")} working` : null,
-    n("idle") > 0 ? `${n("idle")} idle` : null,
-  ].filter(Boolean);
   return (
-    /* ONE line, the same shape `.spaces-head` uses — a title, then what it is
-       a title OF, on the same baseline. It was two rows, and its own note gave
-       the reason: at these type sizes the line overflowed at 390px and
-       `demo-box` hyphenated into "demo-" / "box", which is the one thing an
-       identifier must never do.
-
-       That reason expired when navigation moved to the bottom bar. The line no
-       longer carries a 44px gear and a 44px Spaces button, and the measurement
-       now is 297px of content in 358px of room — 350px in the worst case that
-       also shows a non-default host id.
-
-       350 in 358 is eight pixels of slack, which is not enough to promise, so
-       the row WRAPS rather than overflows. In the common case it is one line;
-       in the rare long one the summary drops below instead of hyphenating the
-       wordmark. */
+    /* The screen's name, then what it is scoped to. The data-terminal redesign
+       made the title the noun "Agents" — a screen named after what it lists,
+       the same shape Spaces and Settings use — and moved the host into a chip
+       at the trailing end, where a switcher will live once there is more than
+       one host. The counts sentence that used to sit here is now `Finding`,
+       under the band, because it grew into a sentence that needs the width. */
     <header className="host-head">
       <h1 className="host-title">
         <Mark size={18} />
-        paddock
-        {/* The host label, demoted from the title but not dropped — see
-            DEFAULT_HOST_ID above. `connecting…` still has to appear somewhere:
-            the title is a constant, so it can no longer carry the "we have not
-            heard from the server yet" signal it used to. `whitespace-nowrap`
-            because a hostname that breaks across a hyphen reads as a different
-            hostname — and on one line that is the failure this layout has to
-            keep refusing. */}
-        {hostId === null ? (
-          <span className="row-state whitespace-nowrap">connecting…</span>
-        ) : hostId !== DEFAULT_HOST_ID ? (
-          <span className="ident row-meta truncate whitespace-nowrap">{hostId}</span>
-        ) : null}
+        Agents
       </h1>
-      {/* paddock's own sentence about the list, so sans — the counts inside it
-          are part of the sentence, not a data readout.
-
-          `--t-md`, the step the scale reserves for "anything you read". It was
-          at --t-xs, one below what the app's own rule prescribes, which is why
-          the line that says how many agents need you read as fine print.
-
-          The new-release notice USED to live in this header as another dim
-          line. It is `ReleaseBanner` now, shown once and dismissible — one
-          fact, one channel. And Spaces and Settings used to sit here as two
-          unlabelled glyphs in the top-right corner; they are labelled tabs at
-          the bottom now. Do not put a navigation control back in this row. */}
-      <p className="host-summary">
-        {parts.length ? parts.join(" · ") : "no agents"}
-      </p>
+      {/* The host label is only shown when it distinguishes something — see
+          DEFAULT_HOST_ID above. `connecting…` still has to appear somewhere:
+          the title is a constant, so it cannot carry the "we have not heard
+          from the server yet" signal. */}
+      {hostId === null ? (
+        <span className="host-chip" data-live="no">connecting…</span>
+      ) : hostId !== DEFAULT_HOST_ID ? (
+        <span className="host-chip ident" data-live="yes" title={`Host ${hostId}`}>
+          <span className="host-chip-dot" aria-hidden="true" />
+          <span className="truncate">{hostId}</span>
+        </span>
+      ) : null}
     </header>
   );
+}
+
+/**
+ * The one sentence the dashboard leads with: the fact that most needs a
+ * person, named, with how long it has waited.
+ *
+ * Counted with `sectionFor` and ordered by the shared comparator (through
+ * `groupAgents`), so it cannot contradict the section headers under it — the
+ * defect this file's counts used to guard against, when "2 needs you" sat
+ * over sections reading "Needs you 1".
+ *
+ * When nothing needs anyone, it falls back to the counts by section, which
+ * is the answer to "is everything fine?".
+ */
+export function Finding({ agents, now }: { agents: Agent[]; now: number }) {
+  const g = groupAgents(agents);
+  const blocked = g["needs-you"];
+  const ready = g["ready-unseen"];
+  const age = (a: Agent) => elapsedLabel(now - a.stateSince, a.stateSinceExact);
+
+  if (blocked.length > 0) {
+    const first = blocked[0]!;
+    const more = blocked.length - 1;
+    return (
+      <p className="finding">
+        <b className="ident">{first.name}</b> has waited {age(first)} for you.
+        {more > 0 ? ` ${more} more ${more === 1 ? "needs" : "need"} you.` : ""}
+      </p>
+    );
+  }
+  if (ready.length > 0) {
+    const first = ready[0]!;
+    const more = ready.length - 1;
+    return (
+      <p className="finding">
+        <b className="ident">{first.name}</b> finished {age(first)} ago.
+        {more > 0 ? ` ${more} more ready.` : ""}
+      </p>
+    );
+  }
+  const n = (s: Section) => agents.filter((a) => sectionFor(a) === s).length;
+  const parts = [
+    n("working") > 0 ? `${n("working")} working` : null,
+    n("idle") > 0 ? `${n("idle")} idle` : null,
+  ].filter(Boolean);
+  return <p className="finding">{parts.length ? `Nothing needs you. ${parts.join(" · ")}.` : "No agents yet."}</p>;
 }

@@ -5,7 +5,7 @@ import { AgentCard } from "@web/components/AgentCard";
 import { AgentChip, AgentRow } from "@web/components/AgentRow";
 import { AgentActions } from "@web/components/AgentActions";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
-import { HostHeader } from "@web/components/HostHeader";
+import { Finding, HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
 import { QuickAdd } from "@web/components/QuickAdd";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
@@ -85,7 +85,7 @@ export function Dashboard({ active = true }: { active?: boolean }) {
               one element now that the header is chrome. They never nest, so the
               0.55 opacity cannot compound. */}
           <div {...staleAttrs(stale)}>
-            <HostHeader hostId={hostId} agents={agents} />
+            <HostHeader hostId={hostId} />
           </div>
         </div>
 
@@ -108,6 +108,7 @@ export function Dashboard({ active = true }: { active?: boolean }) {
             />
           )}
           <InstallHint />
+          {agents.length > 0 && <Finding agents={agents} now={now} />}
 
           {SECTION_ORDER.map((key) => {
             const list = groups[key];

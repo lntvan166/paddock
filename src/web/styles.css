@@ -910,7 +910,7 @@ body {
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--bg);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -974,9 +974,23 @@ body {
 
 /* Colour AND weight, never colour alone — and `aria-current` in the markup
    carries it to a screen reader, which neither of these reaches. */
+/* The data-terminal selection mark: one accent line on the bar's own top edge,
+   as wide as the label, plus ink and weight on the label. The accent is never
+   a fill here — it marks WHICH, and the ink says it is the one you are on. */
+.tab-item { position: relative; }
 .tab-item[data-current="true"] {
-  color: var(--accent);
+  color: var(--fg);
   font-weight: 600;
+}
+.tab-item[data-current="true"]::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 2.75rem;
+  margin-left: -1.375rem;
+  height: 2px;
+  background: var(--accent);
 }
 
 .tab-glyph-wrap { position: relative; display: inline-flex; }
@@ -1086,29 +1100,35 @@ body {
   color: var(--fg-dim);
 }
 
-/* The dashboard header's summary sentence — "1 needs you · 2 working".
-   --t-md, not --t-xs. This scale's own definitions put "eyebrows, ages,
-   counts, badges: metadata" at --t-xs and "anything you read: prose, labels,
-   controls" at --t-md, and this line is a sentence: it is the one place that
-   says, in words, how many agents want something from you. It was set a step
-   below what that rule prescribes, which is why it read as fine print on the
-   screen whose whole job is answering that question at a glance.
-   The counts INSIDE it are part of the sentence, not a data readout, so this
-   stays sans and does not take `.ident`. */
-/* Pushed to the trailing edge, the same shape `.spaces-head` uses: the title
-   owns the left, the reading off the list owns the right. Beside the title it
-   read as part of the name; at the far end it reads as what it is, a count of
-   what the screen below holds.
+/* The host, as a chip at the trailing end of the Agents band. A pill with a
+   hairline, so it reads as a scope you are in rather than as a title; the dot
+   says the connection is live, in the "finished/ok" green rather than the
+   accent, because it is a state, not a selection. */
+.host-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 50%;
+  margin-left: auto;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.host-chip-dot { width: 6px; height: 6px; border-radius: var(--r-full); background: var(--ok); flex: none; }
 
-   `margin-left: auto` rather than `justify-content: space-between` on the
-   header, because the row wraps — with space-between, a wrapped summary would
-   be pushed to the right of its own line instead of sitting under the title
-   where it belongs. */
-.host-summary {
-  margin: 0 0 0 auto;
+/* The dashboard's one sentence: what most needs a person, named, with how
+   long it has waited. --t-md, the step for "anything you read". The agent's
+   name inside it keeps the identifier voice. */
+.finding {
+  margin: 0;
+  padding: 0.875rem var(--gutter) 0;
   font-size: var(--t-md);
   color: var(--fg-dim);
 }
+.finding b { color: var(--fg); font-weight: 600; }
 
 /* Sentence case at a readable size. It was 11px, bold, uppercase and
    letter-spaced — the stock "eyebrow" every generated dashboard carries, and
