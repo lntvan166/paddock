@@ -1150,7 +1150,7 @@ session does not silently re-litigate them.
     `paddock tailscale off` deletes it. See
     `docs/design/2026-10-26-tailscale-design.md`.
 
-36. **The accent marks selection only, and red is spent once per agent.**
+36. **Red is spent once per agent; the accent is rust.**
     The data-terminal redesign replaced the rust accent with blue. The
     accent's one job is now saying which thing is selected: the open tab, an
     open panel toggle, the selected member of a segmented control, the agent
@@ -1162,3 +1162,8 @@ session does not silently re-litigate them.
     tail under each row was declined, because extracting a meaningful line
     from a TUI would be harness-specific guessing. See
     `docs/design/2026-11-05-data-terminal-ui.md`.
+
+    **Amended 2026-11-06:** the blue accent was reverted to paddock's rust
+    after review ("monotone"), and the accent fills the primary actions again
+    (Send, the create dial, switched-on toggles, the selected segment) as
+    well as marking selection. Links and Back stay ink.

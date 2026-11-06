@@ -34,11 +34,14 @@
   --control: #cdd0d5;
   --fg: #111113;
   --fg-dim: #55585e;
-  /* Blue, not the rust it replaced. Rust read as the stock "assistant"
-     palette, and the accent now has ONE job: marking what is selected — the
-     open tab, the option Enter commits, the live-rate in Settings — as a thin
-     line. A state never borrows it (tests/tokens.test.ts). */
-  --accent: #1f5fae;
+  /* Rust, paddock's own accent, kept by the operator's choice over the blue
+     the data-terminal style dealt (the taste-skill inspector flags it as the
+     "terracotta" palette; that check is overridden for this one token). It
+     marks what is SELECTED — the open tab, an open panel toggle — and fills
+     the primary actions: Send, the create dial, a switched-on toggle, the
+     selected segment. A state never borrows it (tests/tokens.test.ts).
+     4.58:1 as text on the #f6f6f7 page, 4.94:1 under a white label. */
+  --accent: #b4542e;
   --warn: #8a5a00;
   --ok: #247b50;
   /* Red is the loudest colour in the app and is spent on ONE thing: an agent
@@ -61,7 +64,7 @@
      operator cannot read off the file. Used by the prompt option Enter would
      commit, which is the only place in the app that needs to say "this one"
      without saying "danger" or "done". */
-  --accent-wash: #e8f0fa;
+  --accent-wash: #fbeee6;
   /* The terminal ground is dark in BOTH themes, and is therefore correctly
      defined once here rather than redefined below. This is not an oversight
      of the theme rule — it is a consequence of where the colours come from.
@@ -117,13 +120,13 @@
      4.70 on the fill. That near-miss is what pinned the accent to a
      mid-saturated blue: no warmer hue could take white at all.
 
-     A near-black label in dark mode removes the constraint entirely. The
-     data-terminal blue (#5b98e0) takes near-black at 6.3:1 and reads at 6.0:1
-     as text on the dark ground; light mode keeps white on #1f5fae (6.35:1).
+     A near-black label in dark mode removes the constraint entirely. Rust
+     (#e08a63) takes near-black at 7.17:1 and reads at 6.81:1 as text on the
+     dark ground; light mode keeps white on #b4542e (4.94:1).
 
      So this is defined in all three theme blocks, like a colour, and
      tests/tokens.test.ts now guards it as one. A single value here is what a
-     future edit will reach for; it would silently put white on the light-blue
+     future edit will reach for; it would silently put white on the light rust
      fill or near-black on the dark one. */
   --accent-fg: #ffffff;
 
@@ -273,10 +276,10 @@
   --card-foreground: var(--fg);
   --popover: var(--surface);
   --popover-foreground: var(--fg);
-  /* Ink, not the accent: the data-terminal primary action is near-black
-     (white on dark), and the accent marks selection only. */
-  --primary: var(--fg);
-  --primary-foreground: var(--bg);
+  /* The accent: a switched-on toggle and a primary button fill with paddock's
+     rust, the same colour as Send and the create dial. */
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-fg);
   --secondary: var(--surface);
   --secondary-foreground: var(--fg);
   --muted: var(--surface);
@@ -311,13 +314,13 @@
     --control: #3a3a3e;
     --fg: #ffffff;
     --fg-dim: #b0b2b8;
-    --accent: #5b98e0;
+    --accent: #e08a63;
     --warn: #d9a441;
     --ok: #5fc39c;
     --danger: #ef6a80;
     --danger-wash: #2c1a20;
-    --accent-wash: #1a2533;
-    /* Near-black ON the light-blue fill — see --accent-fg above. */
+    --accent-wash: #33210f;
+    /* Near-black ON the light rust fill — see --accent-fg above. */
     --accent-fg: #111113;
   }
 }
@@ -331,12 +334,12 @@
   --control: #3a3a3e;
   --fg: #ffffff;
   --fg-dim: #b0b2b8;
-  --accent: #5b98e0;
+  --accent: #e08a63;
   --warn: #d9a441;
   --ok: #5fc39c;
   --danger: #ef6a80;
   --danger-wash: #2c1a20;
-  --accent-wash: #1a2533;
+  --accent-wash: #33210f;
   --accent-fg: #111113;
 }
 
@@ -847,8 +850,8 @@ body {
   height: 2.75rem;
   border: 0;
   border-radius: var(--r-full);
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-fg);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -1029,12 +1032,11 @@ body {
 
 /* Colour AND weight, never colour alone — and `aria-current` in the markup
    carries it to a screen reader, which neither of these reaches. */
-/* The data-terminal selection mark: one accent line on the bar's own top edge,
-   as wide as the label, plus ink and weight on the label. The accent is never
-   a fill here — it marks WHICH, and the ink says it is the one you are on. */
+/* The selection mark: one accent line on the bar's own top edge, as wide as
+   the label, plus the accent and weight on the label itself. */
 .tab-item { position: relative; }
 .tab-item[data-current="true"] {
-  color: var(--fg);
+  color: var(--accent);
   font-weight: 600;
 }
 .tab-item[data-current="true"]::before {
@@ -1504,12 +1506,10 @@ body {
   width: 100%;
   display: flex;
   gap: 0.25rem;
-  /* No track: the data-terminal segmented control is its labels, with the
-     selected one marked by an accent line under it. A filled track around
-     three words read as a fourth control. */
-  background: none;
-  border: 0;
-  padding: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 0.2rem;
 }
 
 .seg-item {
@@ -1527,24 +1527,14 @@ body {
   cursor: pointer;
 }
 
-/* The selected member: ink, weight, and one accent line under its label —
-   the same selection mark as the tab bar and the terminal's panel toggles.
-   It used to FILL with the accent, which made a setting look like the
-   primary action on the screen. Ink and weight carry it without colour
-   vision; the line says which in the one hue that means "selected". */
-.seg-item { position: relative; }
+/* The selected member fills with the accent, the same colour every other
+   "on" in the app uses: a switched-on toggle, Send, the create dial.
+   --accent-fg on --accent is 4.94:1 in light and 7.17:1 in dark, so the
+   selected member is obviously selected without relying on colour vision. */
 .seg-item[data-selected="yes"] {
-  color: var(--fg);
-  font-weight: 600;
-}
-.seg-item[data-selected="yes"]::after {
-  content: "";
-  position: absolute;
-  left: 25%;
-  right: 25%;
-  bottom: 0.375rem;
-  height: 2px;
   background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
 }
 
 .seg-icon { display: inline-flex; }
@@ -2043,8 +2033,8 @@ body {
    than filled: the filled accent belongs to Send, and two solid accent blocks
    in one panel is the boldness spent twice. */
 .term-key-enter {
-  border-color: var(--fg);
-  color: var(--fg);
+  border-color: var(--accent);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -2300,16 +2290,15 @@ body {
 /* Send, now a glyph. Square like the attach control on the other side, so the
    field sits between two equal shoulders rather than between a button and a
    word whose width changes with translation. */
-/* Round, and in INK rather than the accent (data-terminal: the one primary
-   action is near-black, white on dark). The accent only marks selection. */
+/* Round, and filled with the accent: Send is the committing action. */
 .term-reply .term-send {
   flex: none;
   width: 2.75rem;
   min-height: 2.75rem;
   padding: 0;
   border-radius: var(--r-full);
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 .term-send-glyph { width: 18px; height: 18px; }
@@ -2512,8 +2501,8 @@ body {
      bordered like `.settings-actions button`: this is the committing action,
      and demoting it to look secondary would lose that. */
   border-radius: var(--r-sm);
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-fg);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -3064,7 +3053,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--bg);
-  color: var(--fg);
+  color: var(--accent);
   font: inherit;
   font-size: var(--t-md);
   cursor: pointer;
@@ -3109,8 +3098,8 @@ body {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.75rem var(--gutter);
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--accent-fg);
   font-size: var(--t-md);
 }
 
@@ -3119,10 +3108,10 @@ body {
   padding: 0 var(--pad-control);
   border: 0;
   border-radius: var(--r-sm);
-  /* Inverted from the ink bar: the bar is --fg, so its button is the page
-     ground on it — the one primary action, by inversion. */
-  background: var(--bg);
-  color: var(--fg);
+  /* An opacity treatment rather than a palette colour: this is a scrim over
+     the accent bar, not a token anyone would reuse. */
+  background: rgb(255 255 255 / 0.18);
+  color: var(--accent-fg);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -4473,7 +4462,7 @@ body {
   justify-content: center;
   background: none;
   border: 0;
-  color: var(--fg);
+  color: var(--accent);
   /* Sizes the `+` GLYPH, not text — the same exemption the arrow keys carry,
      and for the same reason: on the 13px prose step a `+` sat in the middle
      of a 44px target and read as an empty button. */

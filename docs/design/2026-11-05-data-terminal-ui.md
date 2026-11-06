@@ -20,6 +20,16 @@ seven were compared on the demo data. **Data terminal** was chosen: a
 monitoring screen read in long sessions, where every selection is the same
 thin accent line and colour lives on data and state.
 
+## Amendment (2026-11-06): the rust accent stays
+
+On review, the operator found the blue build monotone next to the old one and
+kept paddock's rust: `#b4542e` light, `#e08a63` dark with a near-black label.
+The accent marks selection AND fills the primary actions again: Send, the
+create dial, a switched-on toggle (shadcn `--primary`), the selected segment,
+the current tab's label. Links and Back stay ink. The taste-skill inspector's
+`palette-terracotta` check is overridden for this token, by the operator's
+choice. Everything below about blue describes the first pass.
+
 ## What changed
 
 **Palette.** Light: page `#f6f6f7`, panels white, ink `#111113`, accent
