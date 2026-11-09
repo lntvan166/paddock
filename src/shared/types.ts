@@ -717,6 +717,11 @@ export interface HealthBody {
     detail: string | null;
   };
   /**
+   * The Herdr desktop app itself (its command socket answers), which is what
+   * renaming a space or tab needs. `null` in demo, where there is no app.
+   */
+  app: { running: boolean } | null;
+  /**
    * Epoch ms of the last herdr event. Exposed deliberately: a stuck event stream
    * is otherwise invisible, which is how a comparable system dropped every
    * event while reporting success.

@@ -117,7 +117,7 @@ test("/api/health reports core state", async () => {
   const { store, sup } = setup([c]);
   const health = () => ({
     ok: true, hostId: "dev-box", agents: store.snapshot().length, clients: 0, herdrConnected: true,
-    core: sup.health(), lastEventAt: null, lastNotifyError: null, version: "0.0.0-dev",
+    core: sup.health(), app: null, lastEventAt: null, lastNotifyError: null, version: "0.0.0-dev",
     latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null,
   });
   const app = createApp({ store, hub: new Hub(), health });

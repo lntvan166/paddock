@@ -6,7 +6,7 @@ import { render, textsOf, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
-const LABELS = ["Endpoint", "Secure context", "herdr", "herdr-core", "Last event", "Protocol", "Server version"];
+const LABELS = ["Endpoint", "Secure context", "herdr", "herdr-core", "Herdr app", "Last event", "Protocol", "Server version"];
 
 test("every diagnostics row is rendered before the data arrives", async () => {
   // A row that appears when its data lands GROWS the card and shoves
@@ -51,4 +51,13 @@ test("connection card shows herdr-core as connected", async () => {
   const host = await render(<InfoSection health={{ version: "0.8.5", herdrConnected: true, core } as never} />);
   const rows = Array.from(host.querySelectorAll(".dl-row")).map((r) => r.textContent ?? "");
   expect(rows.find((r) => r.startsWith("herdr-core"))).toContain("Connected");
+});
+
+test("connection card shows the Herdr app as running or not running", async () => {
+  for (const [app, text] of [[{ running: true }, "Running"], [{ running: false }, "Not running"]] as const) {
+    const host = await render(<InfoSection health={{ version: "0.8.5", herdrConnected: true, core: null, app } as never} />);
+    const rows = Array.from(host.querySelectorAll(".dl-row")).map((r) => r.textContent ?? "");
+    expect(rows.find((r) => r.startsWith("Herdr app"))).toBe(`Herdr app${text}`);
+    await unmount();
+  }
 });

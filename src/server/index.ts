@@ -64,6 +64,7 @@ import { runDoctor } from "@server/doctor";
 import { detectManagedBy, runUpdate } from "@server/update";
 import { noUpdateCheckRequested, scheduleUpdateChecks } from "@server/update-check";
 import { say, warn } from "@server/term";
+import { createAppSocket } from "@server/herdr-core/app-socket";
 import { BootLog } from "@server/boot-log";
 import {
   errorCode,
@@ -696,6 +697,17 @@ presence.onChange((agentId) => notifier.reconsider(agentId));
 let herdrProtocol: number | null = null;
 
 let supervisor: Supervisor | null = null;
+// Is the Herdr app up (its command socket accepts)? `health()` is synchronous,
+// so a probe every few seconds feeds it; never longer than that, because the
+// app is opened and closed by hand.
+let appRunning = false;
+if (!DEMO) {
+  const appSocket = createAppSocket();
+  const probe = () => { void appSocket.available().then((up) => { appRunning = up; }); };
+  probe();
+  setInterval(probe, 3000).unref();
+}
+
 // herdr-core (the Herdr app's runtime): optional, absent in --demo. It feeds the
 // same store; a missing core is a logged state, never an error.
 let coreSupervisor: CoreSupervisor | null = null;
@@ -1045,6 +1057,7 @@ const appDeps = {
       connected: false, lastEventAt: null, generation: null, version: null,
       detail: DEMO ? "demo" : "not started",
     },
+    app: DEMO ? null : { running: appRunning },
     // Read from the supervisor rather than cached here, for the same reason
     // herdrConnected reads the stream: a copy can go stale and then lie.
     schemaWarning: shapeSummary(supervisor?.shape ?? { kind: "unknown" }),

@@ -22,7 +22,7 @@ const NOW = 1_700_000_000_000;
 const health = () => ({
   ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true,
   lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null,
-  herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, schemaWarning: null,
+  herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null,
 });
 
 function agent(state: Agent["state"] = "blocked"): Agent {
