@@ -14,7 +14,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state: "idle", workspaceId: "w1",
     workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: true, ...over,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: true, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
@@ -94,7 +94,7 @@ test("read_agent keeps only the last `limit` lines", async () => {
 });
 
 test("read_agent falls back to the screen without a journal", async () => {
-  const r = await call(deps([agent({ hasJournal: false })]), "read_agent", { id: "w1:p1" }) as any;
+  const r = await call(deps([agent({ hasJournal: false, origin: "herdr", turn: null, seen: null })]), "read_agent", { id: "w1:p1" }) as any;
   expect(r.data.source).toBe("screen");
   expect(r.data.transcript).toEqual(["$ make test", "ok"]);
 });

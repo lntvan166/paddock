@@ -34,7 +34,7 @@ function harness(state: Agent["state"] = "blocked") {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor", task: "Extract auth middleware",
     state, workspaceId: "w1", workspaceLabel: "api work", cwd: "/srv/project",
     harness: "claude", stateSince: 0, stateSinceExact: false, updatedAt: 0,
-    acknowledgedAt: null, hasJournal: false,
+    acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null,
   }], 0);
 
   const app = createApp({
@@ -148,7 +148,7 @@ function advanceHarness(reads: string[]) {
     task: "Extract auth middleware", state: "blocked", workspaceId: "w1",
     workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
     stateSince: 0, stateSinceExact: false, updatedAt: 0, acknowledgedAt: null,
-    hasJournal: false,
+    hasJournal: false, origin: "herdr", turn: null, seen: null,
   } as Agent], 0);
 
   let i = 0;

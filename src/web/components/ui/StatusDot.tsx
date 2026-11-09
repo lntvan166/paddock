@@ -23,6 +23,7 @@ const DOT: Record<AgentState, string> = {
   done: "var(--ok)",
   working: "var(--warn)",
   idle: "var(--fg-dim)",
+  error: "var(--danger)",
 };
 
 /**
@@ -39,6 +40,7 @@ const RESTING: Record<AgentState, boolean> = {
   done: false,
   working: false,
   idle: true,
+  error: false,
 };
 
 /**
@@ -54,6 +56,7 @@ const PULSE: Record<AgentState, boolean> = {
   done: false,
   working: true,
   idle: false,
+  error: false,
 };
 
 /**

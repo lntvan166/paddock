@@ -70,7 +70,7 @@ function store(state: Agent["state"] = "blocked") {
   s.replaceAll([{
     hostId: "dev-box", agentId: "w1:p1", name: "docs-cleanup", task: "Rewrite the quickstart", state,
     workspaceId: "w1", workspaceLabel: null, cwd: "/path/to/project", harness: "claude",
-    stateSince: 0, stateSinceExact: true, updatedAt: 0, acknowledgedAt: null, hasJournal: true,
+    stateSince: 0, stateSinceExact: true, updatedAt: 0, acknowledgedAt: null, hasJournal: true, origin: "herdr", turn: null, seen: null,
   }], 0);
   return s;
 }

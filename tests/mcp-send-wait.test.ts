@@ -19,7 +19,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "schema-migration",
     task: "Add the orders index", state: "idle", workspaceId: "w1",
     workspaceLabel: null, cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: true, ...over,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: true, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
@@ -186,7 +186,7 @@ test("a malformed cursor is refused", async () => {
 });
 
 test("no-journal agent: waiting on a working send is refused before sending", async () => {
-  const w = world({ state: "working", hasJournal: false });
+  const w = world({ state: "working", hasJournal: false, origin: "herdr", turn: null, seen: null });
   const r = await w.call("send_message", { id: "w1:p1", text: "go", wait_seconds: 10 });
   expect(r.ok).toBe(false);
   expect(r.error).toContain("no journal");
@@ -194,7 +194,7 @@ test("no-journal agent: waiting on a working send is refused before sending", as
 });
 
 test("no-journal agent: finished on the state edge, from the screen", async () => {
-  const w = world({ hasJournal: false });
+  const w = world({ hasJournal: false, origin: "herdr", turn: null, seen: null });
   later(20, () => w.setState("working"));
   later(50, () => w.setState("idle"));
   const r = await w.call("send_message", { id: "w1:p1", text: "go", wait_seconds: 1 });

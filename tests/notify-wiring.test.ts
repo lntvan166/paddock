@@ -16,7 +16,7 @@ const agent = (state: Agent["state"]): Agent => ({
   stateSince: 0, stateSinceExact: true,
   updatedAt: 0,
   acknowledgedAt: null,
-  hasJournal: false,
+  hasJournal: false, origin: "herdr", turn: null, seen: null,
 });
 // The hub/notifier split is covered by `deltaSink` at the foot of this file.
 // `fanOut` used to live in `notifier.ts` and be tested here; it was retired

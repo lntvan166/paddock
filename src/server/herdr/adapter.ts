@@ -74,6 +74,9 @@ export function toAgent(rawAgent: HerdrAgentRaw, ctx: AdaptContext): Agent | nul
     updatedAt: ctx.now,
     acknowledgedAt: null,
     hasJournal: ctx.hasJournal?.(rawAgent.agent_session) ?? false,
+    origin: "herdr",
+    turn: null,
+    seen: null,
   };
 }
 

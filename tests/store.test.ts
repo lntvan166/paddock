@@ -19,7 +19,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     stateSinceExact: true,
     updatedAt: NOW,
     acknowledgedAt: null,
-    hasJournal: false,
+    hasJournal: false, origin: "herdr", turn: null, seen: null,
     ...over,
   };
 }

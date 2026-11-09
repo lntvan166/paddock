@@ -55,6 +55,9 @@ const agents: Agent[] = SEED.map((s) => ({
   // shared with `server/demo.ts` (the CLI's `--demo` backend) so both hosts
   // tell the same invented story rather than two that could drift.
   hasJournal: s.id === DEMO_JOURNAL_AGENT_ID,
+  origin: "herdr",
+  turn: null,
+  seen: null,
 }));
 
 /**

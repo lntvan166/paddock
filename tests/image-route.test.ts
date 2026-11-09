@@ -14,7 +14,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     task: "Tidy the README", state: "blocked", workspaceId: "w1",
     workspaceLabel: "docs", cwd: "/srv/project", harness: "claude",
     stateSince: NOW, stateSinceExact: true, updatedAt: NOW,
-    acknowledgedAt: null, hasJournal: false, ...over,
+    acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 

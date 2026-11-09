@@ -9,6 +9,7 @@ import { fileHash } from "@shared/route";
 import { AskDialogView } from "@web/components/AskDialogView";
 import { CommandList } from "@web/components/CommandList";
 import { QuickActions, QuickToggle } from "@web/components/QuickActions";
+import { OriginMark } from "@web/components/ui/OriginMark";
 import { StateWord } from "@web/components/ui/StateWord";
 import { StatusDot } from "@web/components/AgentRow";
 import { Button } from "@web/components/shadcn/button";
@@ -846,10 +847,11 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               palette spends red once per agent, and the word is enough. The
               other states stay a dot because this header is width-starved
               and the agent's name is already truncated. */}
-          {agent.state === "blocked"
+          {agent.origin === "core" ? <OriginMark /> : null}
+          {agent.state === "blocked" || agent.state === "error"
             ? (
                 <span className="term-state">
-                  <StateWord state="blocked" surfaceVar="--bg" />
+                  <StateWord state={agent.state} surfaceVar="--bg" />
                 </span>
               )
             : <>

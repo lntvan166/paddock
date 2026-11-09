@@ -33,7 +33,7 @@ function agent(over: Partial<Agent> = {}): Agent {
   return {
     hostId: "dev-box", agentId: "w1:p1", name: "flaky-test-fix", task: "Stabilise the retry test",
     state: "blocked", workspaceId: "w1", workspaceLabel: null, cwd: "/srv/project", harness: "claude",
-    stateSince: 0, stateSinceExact: true, updatedAt: 0, acknowledgedAt: null, hasJournal: true, ...over,
+    stateSince: 0, stateSinceExact: true, updatedAt: 0, acknowledgedAt: null, hasJournal: true, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 

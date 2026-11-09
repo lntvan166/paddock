@@ -19,6 +19,7 @@ export const STATE_WORD: Record<AgentState, string> = {
   working: "Working",
   done: "Finished",
   idle: "Idle",
+  error: "Error",
 };
 
 export function StateWord({

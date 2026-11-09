@@ -11,7 +11,7 @@ const agent = (over: Partial<Agent> = {}): Agent => ({
   task: "Quarantine the retry test", state: "working", workspaceId: "w1",
   workspaceLabel: null, cwd: "/srv/project", harness: "claude",
   stateSince: NOW, stateSinceExact: true,
-  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
+  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
 });
 
 type PushPayload = { name: string; state: AgentState; agentId: string; skipDeviceKeys: Set<string> };

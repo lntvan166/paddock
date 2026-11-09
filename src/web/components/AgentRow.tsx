@@ -2,6 +2,7 @@ import type { Agent } from "@shared/types";
 import { elapsedLabel } from "@web/components/elapsed";
 import { IconTile } from "@web/components/ui/IconTile";
 import { StatusDot } from "@web/components/ui/StatusDot";
+import { OriginMark } from "@web/components/ui/OriginMark";
 import { StateWord } from "@web/components/ui/StateWord";
 
 /** Re-exported for the card and the terminal header, which imported it from
@@ -57,7 +58,10 @@ export function AgentRow({
         {/* `ident` because an agent name is an identifier you match, not prose
             you read — see the two-voices block in styles.css. */}
         <div className="ident row-name truncate">{agent.name}</div>
-        <div className="row-task truncate">{agent.task}</div>
+        <div className="row-task truncate">
+          {agent.origin === "core" ? <OriginMark /> : null}
+          {agent.task}
+        </div>
       </div>
       {/* The state READ, not decoded: word and dot above the age, in one
           trailing column so every row's figures end on the same edge. */}

@@ -695,7 +695,8 @@ body {
   flex: none;
 }
 .state-word .dot { width: 7px; height: 7px; }
-.state-word[data-state="blocked"] { color: var(--danger); }
+.state-word[data-state="blocked"],
+.state-word[data-state="error"] { color: var(--danger); }
 .state-word[data-state="working"] { color: var(--warn); }
 .state-word[data-state="done"] { color: var(--ok); }
 .state-word[data-state="idle"] { color: var(--fg-dim); }
@@ -4784,4 +4785,18 @@ body {
   .agent-card[data-selected="yes"] { border-color: var(--accent); }
   /* The card's options are answered in the terminal beside it. */
   .agent-card[data-selected="yes"] .card-options { display: none; }
+}
+
+/* Where an agent lives, when it is not a terminal. Quiet on purpose: existing
+   tokens only, a hairline pill, no state colour. */
+.origin-mark {
+  display: inline-block;
+  margin-right: 0.375rem;
+  padding: 0 0.3125rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  color: var(--fg-dim);
+  font-size: var(--t-xs);
+  line-height: 1.25;
+  vertical-align: baseline;
 }

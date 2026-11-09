@@ -16,7 +16,7 @@ async function deps(enabled: boolean, over: Partial<AppDeps> = {}): Promise<AppD
   store.replaceAll([{
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor", task: "Extract auth middleware", state: "idle",
     workspaceId: "w1", workspaceLabel: null, cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null,
   }], NOW);
   const settings = new SettingsStore(await mkdtemp(join(tmpdir(), "paddock-mcp-route-")), {});
   await settings.load();

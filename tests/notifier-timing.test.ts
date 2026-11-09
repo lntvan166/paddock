@@ -8,7 +8,7 @@ const agent = (over: Partial<Agent> = {}): Agent => ({
   hostId: "dev-box", agentId: "w1:p1", name: "flaky-test-fix",
   task: "Re-running the suite", state: "working", workspaceId: "w1",
   workspaceLabel: null, cwd: "/srv/project", harness: "claude", stateSince: NOW, stateSinceExact: true,
-  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
+  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
 });
 
 function harness(o: { mutedUntil?: number | null; cooldownMs?: number; failWith?: string } = {}) {

@@ -12,7 +12,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     task: "Extract auth middleware", state: "blocked", workspaceId: "w1",
     workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
     stateSince: NOW, stateSinceExact: true, updatedAt: NOW,
-    acknowledgedAt: null, hasJournal: false, ...over,
+    acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 

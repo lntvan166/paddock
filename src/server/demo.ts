@@ -46,6 +46,9 @@ export function demoAgents(now: number): Agent[] {
     // drift. `index.ts` wires this agent's `/history` answer in the DEMO
     // branch; this flag is only the client-facing hint (decision 18).
     hasJournal: s.id === DEMO_JOURNAL_AGENT_ID,
+    origin: "herdr",
+    turn: null,
+    seen: null,
   }));
 }
 

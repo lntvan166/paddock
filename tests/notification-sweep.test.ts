@@ -9,7 +9,7 @@ const agent = (over: Partial<Agent> = {}): Agent => ({
   task: "Add the index", state: "blocked", workspaceId: "w1",
   workspaceLabel: null, cwd: "/srv/project", harness: "claude",
   stateSince: NOW, stateSinceExact: true,
-  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
+  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
 });
 
 /** One notification, and whether the sweep closed it. */
