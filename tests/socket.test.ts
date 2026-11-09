@@ -273,6 +273,51 @@ test("a routine open() replacing the stream reports no false disconnect", async 
   stream.close();
 });
 
+// `up` is what gates terminal herdr's actions (`requireHerdr` in index.ts).
+// It used to be `connected`, which is false for the whole window in which a
+// routine resubscribe has torn down the old socket and not yet had the new
+// one acknowledged — so an answer tapped while any agent started or exited
+// came back 503 "terminal herdr is not running", with herdr running fine, and
+// a multi-step dialog walk could stop half-done. `up` follows what the stream
+// REPORTS: it drops only on a disconnect nobody asked for.
+test("a routine reopen keeps the stream up for its whole window", async () => {
+  const { path } = await fakeHerdr();
+  const stream = new HerdrStream({ path, onEvent: () => {} });
+  expect(stream.up).toBe(false);
+  await stream.open(statusSubscriptions(["w1:p1"]));
+  expect(stream.up).toBe(true);
+
+  const reopening = stream.open(statusSubscriptions(["w1:p1", "w1:p2"]));
+  // Mid-reopen: the old socket is gone, the new ack has not arrived.
+  expect(stream.connected).toBe(false);
+  expect(stream.up).toBe(true);
+  await reopening;
+  expect(stream.up).toBe(true);
+
+  stream.close();
+  expect(stream.up).toBe(false);
+});
+
+test("up drops on a genuine drop", async () => {
+  const a = await fakeHerdr();
+  const dropped = new HerdrStream({ path: a.path, onEvent: () => {} });
+  await dropped.open(statusSubscriptions(["w1:p1"]));
+  a.dropStream();
+  await Bun.sleep(50);
+  expect(dropped.up).toBe(false);
+  dropped.close();
+});
+
+test("up drops on a reopen that fails", async () => {
+  const b = await fakeHerdr();
+  const failed = new HerdrStream({ path: b.path, onEvent: () => {} });
+  await failed.open(statusSubscriptions(["w1:p1"]));
+  await unlink(b.path);
+  await expect(failed.open(statusSubscriptions(["w1:p1", "w1:p2"]))).rejects.toThrow();
+  expect(failed.up).toBe(false);
+  failed.close();
+});
+
 // The other half of the same fix: a drop nobody asked for must still be
 // reported, or a real herdr crash would go unnoticed and Task 16's keeper
 // would never fire.

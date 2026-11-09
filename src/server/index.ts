@@ -785,8 +785,9 @@ if (DEMO) {
   actions = actionsByOrigin(
     // Guarded like the core: a terminal herdr that is not running is a 503
     // naming it (and app-only harness kinds fall back to the core's), not a
-    // socket error per call. The stream is what knows whether it is up.
-    requireHerdr(createActions(socketPath), () => herdrStream.connected),
+    // socket error per call. The stream is what knows whether it is up —
+    // `up`, not `connected`, which is false during every routine resubscribe.
+    requireHerdr(createActions(socketPath), () => herdrStream.up),
     createCoreActions(requireCore(() => coreSupervisor?.connection() ?? null), appSocket!),
   );
   const client = {
