@@ -3,6 +3,7 @@ import { sectionFor, type ActionResult, type Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
 import { elapsedLabel } from "@web/components/elapsed";
 import { IconTile } from "@web/components/ui/IconTile";
+import { OriginMark } from "@web/components/ui/OriginMark";
 import { StateWord } from "@web/components/ui/StateWord";
 
 /**
@@ -105,7 +106,10 @@ export function AgentCard({
           surfaceVar="--surface"
         />
       </header>
-      <p className="row-task card-indent">{agent.task}</p>
+      <p className="row-task card-indent">
+        {agent.origin === "core" ? <OriginMark /> : null}
+        {agent.task}
+      </p>
       {children}
       {showAcknowledge(agent) && (
         <div className="card-foot-row card-indent">

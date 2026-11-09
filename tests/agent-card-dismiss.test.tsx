@@ -34,3 +34,14 @@ test("a done core agent with no turn offers no Dismiss: there is nothing it coul
   expect(showAcknowledge(a)).toBe(false);
   expect(await hasDismiss(a)).toBe(false);
 });
+
+// Seen on the live 8787 dashboard: a finished app agent's Ready card had no
+// "app" mark while its row in Idle did. The card is where an app agent that
+// needs a person shows up (Ready, Blocked), so it carries the mark too.
+test("a core agent's card carries the app mark; a herdr agent's does not", async () => {
+  const core = await render(<AgentCard agent={agent({ origin: "core", state: "done", turn: 2, seen: 1 })} now={0} />);
+  expect(core.querySelector(".origin-mark")?.textContent).toBe("app");
+  await unmount();
+  const herdr = await render(<AgentCard agent={agent({ state: "done" })} now={0} />);
+  expect(herdr.querySelector(".origin-mark")).toBeNull();
+});
