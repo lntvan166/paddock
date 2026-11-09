@@ -82,6 +82,35 @@ function isPermissionPrompt(t: CoreTerminal): boolean {
   return t.state === "live" && t.status?.state === "blocked" && t.status.kind === "permission";
 }
 
+/**
+ * Characters whose key name was measured to type exactly that character into
+ * a shell (docs/probes/2026-11-09-herdr-core.md, step 6). A bare uppercase
+ * key name types the LOWERCASE letter, so `A` goes as `shift+a`; `+`, `|`,
+ * `_`, `:`, `~` and the other symbols are refused by the core as unknown keys
+ * and `shift+` does not reach them. Nothing outside this table is sent.
+ */
+const TYPED_AS_ITSELF = new Set([..."abcdefghijklmnopqrstuvwxyz0123456789',-./;=[\\]`"]);
+
+/** What the operator is told when a character has no measured key. */
+export const CANNOT_TYPE_CHARS = "can't be typed into an app terminal from paddock yet";
+
+/** `text` as measured key names, or an `Unsupported` naming what has none. */
+export function shellKeys(text: string): string[] {
+  const keys: string[] = [];
+  const missing = new Set<string>();
+  for (const ch of text) {
+    if (ch === " ") keys.push("space");
+    else if (TYPED_AS_ITSELF.has(ch)) keys.push(ch);
+    else if (ch >= "A" && ch <= "Z") keys.push(`shift+${ch.toLowerCase()}`);
+    else missing.add(ch);
+  }
+  if (missing.size > 0) {
+    const list = [...missing].map((c) => JSON.stringify(c)).join(" ");
+    throw new Unsupported(`${list} ${CANNOT_TYPE_CHARS}; nothing was typed`);
+  }
+  return keys;
+}
+
 /** Neither herdr-core nor the app has a call that renames a running terminal. */
 export const CANNOT_RENAME_AGENT = "herdr can't rename a running app terminal";
 
@@ -192,6 +221,12 @@ export function createCoreActions(
     }
   }
 
+  /** With a harness, the new terminal IS the agent (`argv[0]` may name a
+   *  template); without one, the core's own shell. */
+  function asProgram(o: CreateOpts): object {
+    return o.harness ? { argv: [o.harness.kind], name: o.harness.name } : {};
+  }
+
   async function run(labels: Record<string, string>, cwd: string | undefined, extra: object = {}): Promise<CoreTerminal> {
     return call<CoreTerminal>("terminal.run", {
       ...extra,
@@ -260,12 +295,11 @@ export function createCoreActions(
       // TYPED, not sent: `terminal.send` pastes and then presses Enter, and
       // this call must leave the command on the line — the pane route presses
       // Enter itself only when the operator asked to run it. So one key per
-      // character (`a` is a documented key name); a space is `space`, the
-      // same spelling terminal herdr needs. Unmeasured against a live core.
-      await call("terminal.keys", {
-        terminal: rawCoreId(paneId),
-        keys: [...text].map((ch) => (ch === " " ? "space" : ch)),
-      });
+      // character, through the MEASURED table only (probe step 6). Every
+      // character is checked before anything is sent: half a command typed
+      // and then refused would leave a different command on the line.
+      const keys = shellKeys(text);
+      await call("terminal.keys", { terminal: rawCoreId(paneId), keys });
     },
 
     async waitUntilUnblocked(target, timeoutMs) {
@@ -307,7 +341,7 @@ export function createCoreActions(
       await requireAppForName(o.label);
       const space = freshId("sp");
       const tab = freshId("tb");
-      const t = await run({ [SPACE]: space, [TAB]: tab }, o.cwd);
+      const t = await run({ [SPACE]: space, [TAB]: tab }, o.cwd, asProgram(o));
       if (o.label !== undefined) await nameIt("space", space, o.label);
       return { spaceId: coreId(space), tabId: coreId(tab), paneId: coreId(t.address) };
     },
@@ -319,7 +353,7 @@ export function createCoreActions(
       // core's working directory.
       const cwd = o.cwd ?? (await labelled(SPACE, space))[0]?.cwd;
       const tab = freshId("tb");
-      const t = await run({ [SPACE]: space, [TAB]: tab }, cwd);
+      const t = await run({ [SPACE]: space, [TAB]: tab }, cwd, asProgram(o));
       if (o.label !== undefined) await nameIt("tab", tab, o.label);
       return { tabId: coreId(tab), paneId: coreId(t.address) };
     },

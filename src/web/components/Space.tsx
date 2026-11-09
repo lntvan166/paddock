@@ -1,5 +1,6 @@
 import { fetchSpaceTree } from "@web/api";
 import { BackIcon } from "@web/components/ui/icons";
+import { OriginMark } from "@web/components/ui/OriginMark";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
 import { RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
 import { SpacePicker } from "@web/components/SpacePicker";
@@ -118,6 +119,7 @@ export function Space({
   return screen(
     <>
       <SpacePicker spaces={tree.spaces} currentId={space.spaceId} navigate={navigate} />
+      {space.origin === "core" && <OriginMark />}
       {/* The SPACE's actions. Its position — in the header, beside the
           space's own name — is what separates it from the `⋯` on each tab
           row below. */}
@@ -157,6 +159,7 @@ export function Space({
                 // The space's cwd is its FIRST pane's. Null asks herdr for its
                 // default rather than guessing a path.
                 spaceCwd: panes[0]?.cwd ?? null,
+                spaceOrigin: space.origin,
               }}
               cwds={cwds}
               onChanged={() => void refresh()}

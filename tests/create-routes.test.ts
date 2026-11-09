@@ -254,7 +254,7 @@ function agent(over: Partial<Agent> = {}): Agent {
 const TREE: SpaceTree = {
   readAt: NOW,
   spaces: [{
-    spaceId: "w1", label: "example-space", tabCount: 1, paneCount: 1,
+    spaceId: "w1", label: "example-space", origin: "herdr", tabCount: 1, paneCount: 1,
     tabs: [{
       tabId: "w1:t1", label: "docs-cleanup",
       panes: [
@@ -765,4 +765,60 @@ test("a RELATIVE cwd is refused, the same as a tilde paddock cannot resolve", as
   // can never be relabelled a 502, and herdr is never asked.
   expect(calls).toEqual([]);
   expect(readTreeCallCount()).toBe(0);
+});
+
+// ── Task 10: app spaces (herdr-core) through the same two routes ─────────
+
+const CORE_TREE: SpaceTree = {
+  readAt: NOW,
+  spaces: [...TREE.spaces, {
+    spaceId: "hc.spA", label: "api", origin: "core", tabCount: 1, paneCount: 1,
+    tabs: [{ tabId: "hc.tbA", label: null, panes: [
+      { paneId: "hc.t3", harness: null, name: null, title: null, cwd: "/srv/api", state: null },
+    ] }],
+  }],
+};
+
+test("a new space with origin core goes to the core, with its harness", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  const res = await post(app, "/api/spaces", { origin: "core", kind: "claude", name: "api-refactor", cwd: "/srv/api" });
+  expect(res.status).toBe(200);
+  expect(calls).toEqual([
+    "harnessKinds",
+    `createSpace:${JSON.stringify({ cwd: "/srv/api", origin: "core", harness: { kind: "claude", name: "api-refactor" } })}`,
+  ]);
+});
+
+test("a new space with no origin still goes to terminal herdr, unchanged", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  await post(app, "/api/spaces", { label: "docs-cleanup" });
+  expect(calls).toEqual([`createSpace:${JSON.stringify({ label: "docs-cleanup" })}`]);
+});
+
+test("an unknown origin is refused 400 and nothing is created", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  const res = await post(app, "/api/spaces", { origin: "mainframe" });
+  expect(res.status).toBe(400);
+  expect(calls).toEqual([]);
+});
+
+test("a harness at create time is refused for terminal herdr, which starts agents in its own pane", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  expect((await post(app, "/api/spaces", { kind: "claude", name: "x" })).status).toBe(400);
+  expect((await post(app, "/api/spaces/w1/tabs", { kind: "claude", name: "x" })).status).toBe(400);
+  expect(calls.filter((c) => c.startsWith("create"))).toEqual([]);
+});
+
+test("a harness at create time needs a name and an installed kind", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  expect((await post(app, "/api/spaces", { origin: "core", kind: "claude" })).status).toBe(400);
+  expect((await post(app, "/api/spaces", { origin: "core", kind: "nope", name: "x" })).status).toBe(400);
+  expect(calls.filter((c) => c.startsWith("create"))).toEqual([]);
+});
+
+test("a tab in an app space carries its harness to the core", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  const res = await post(app, "/api/spaces/hc.spA/tabs", { kind: "codex", name: "flaky-test-fix" });
+  expect(res.status).toBe(200);
+  expect(calls.at(-1)).toBe(`createTab:hc.spA:${JSON.stringify({ harness: { kind: "codex", name: "flaky-test-fix" } })}`);
 });

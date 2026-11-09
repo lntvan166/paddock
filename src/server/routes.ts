@@ -310,6 +310,25 @@ function findSpace(tree: SpaceTree, id: string): Space | undefined {
  * because a client-supplied value reaching a herdr parameter is governed
  * by paddock's own policy either way (same reasoning as `MAX_READ_LINES`).
  */
+/**
+ * A harness to start AS the new terminal (herdr-core only — see
+ * `CreateOpts.harness`). `kind` absent means none; present, it needs a name,
+ * with the same rules `/api/panes/:id/agent` applies.
+ */
+function normalizeCreateHarness(
+  body: Record<string, unknown>,
+): { harness?: { kind: string; name: string }; err?: string } {
+  if (body.kind === undefined) return {};
+  if (typeof body.kind !== "string" || body.kind.trim() === "") return { err: "kind must be a non-empty string" };
+  if (typeof body.name !== "string" || body.name.trim() === "") return { err: "name must be a non-empty string" };
+  if (body.name.length > MAX_LABEL_LEN) return { err: "name must be within the length limit" };
+  return { harness: { kind: body.kind, name: body.name } };
+}
+
+/** A harness at create time is the app's way; terminal herdr starts one in
+ *  the new pane, through `/api/panes/:id/agent`. */
+const HARNESS_ONLY_FOR_APP = "an agent can be started with the create only in an app space; start it in the new pane instead";
+
 function normalizeCreateBody(
   body: Record<string, unknown>,
   home: string | undefined,
@@ -2044,11 +2063,26 @@ export function createApp(deps: AppDeps) {
     app.post("/api/spaces", async (c) => {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
 
-      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c), deps.home);
+      const body = await jsonBody(c);
+      const { label, cwd, err } = normalizeCreateBody(body, deps.home);
       if (err) return c.json({ ok: false, detail: err }, 400);
+      // Which backend the new space goes to. Absent is terminal herdr, which
+      // is what every caller before the app backend meant.
+      const origin = body.origin;
+      if (origin !== undefined && origin !== "herdr" && origin !== "core") {
+        return c.json({ ok: false, detail: "origin must be \"herdr\" or \"core\"" }, 400);
+      }
+      const { harness, err: harnessErr } = normalizeCreateHarness(body);
+      if (harnessErr) return c.json({ ok: false, detail: harnessErr }, 400);
+      if (harness && origin !== "core") return c.json({ ok: false, detail: HARNESS_ONLY_FOR_APP }, 400);
 
       try {
-        const created = await actions.createSpace({ label, cwd });
+        if (harness && !(await actions.harnessKinds()).includes(harness.kind)) {
+          return c.json({ ok: false, detail: `unsupported kind: ${harness.kind}` }, 400);
+        }
+        const created = await actions.createSpace({
+          label, cwd, ...(origin !== undefined ? { origin } : {}), ...(harness ? { harness } : {}),
+        });
         return c.json({ ok: true, ...created });
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
@@ -2075,14 +2109,22 @@ export function createApp(deps: AppDeps) {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
       const id = c.req.param("id");
 
-      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c), deps.home);
+      const body = await jsonBody(c);
+      const { label, cwd, err } = normalizeCreateBody(body, deps.home);
       if (err) return c.json({ ok: false, detail: err }, 400);
+      const { harness, err: harnessErr } = normalizeCreateHarness(body);
+      if (harnessErr) return c.json({ ok: false, detail: harnessErr }, 400);
 
       try {
         const tree = await deps.readTree();
         const space = findSpace(tree, id);
         if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
-        const created = await actions.createTab(id, { label, cwd });
+        // The backend is the space's own; the id routes the create there.
+        if (harness && space.origin !== "core") return c.json({ ok: false, detail: HARNESS_ONLY_FOR_APP }, 400);
+        if (harness && !(await actions.harnessKinds()).includes(harness.kind)) {
+          return c.json({ ok: false, detail: `unsupported kind: ${harness.kind}` }, 400);
+        }
+        const created = await actions.createTab(id, { label, cwd, ...(harness ? { harness } : {}) });
         return c.json({ ok: true, ...created });
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);

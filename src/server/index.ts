@@ -66,6 +66,7 @@ import { noUpdateCheckRequested, scheduleUpdateChecks } from "@server/update-che
 import { say, warn } from "@server/term";
 import { createAppSocket } from "@server/herdr-core/app-socket";
 import { createCoreActions, requireCore } from "@server/herdr-core/actions";
+import { mergeTrees, readCoreSpaces } from "@server/herdr-core/tree";
 import { actionsByOrigin } from "@server/actions-by-origin";
 import { BootLog } from "@server/boot-log";
 import {
@@ -788,11 +789,19 @@ if (DEMO) {
     request: <T,>(method: string, params?: object) => request<T>(socketPath, method, params),
     openStream: (subs: Subscription[]) => herdrStream.open(subs),
   };
-  readTree = async () => toSpaceTree(
-    (await client.request<{ snapshot: HerdrSessionSnapshot }>("session.snapshot", {})).snapshot,
-    Date.now(),
-    { home: process.env.HOME },
-  );
+  // Both backends' spaces, terminal herdr's first. The two reads run side by
+  // side; the app's half never fails the whole tree (`readCoreSpaces` says
+  // why it has nothing), and a core that is not connected adds nothing, so a
+  // TUI-only setup reads exactly what it read before.
+  readTree = async () => {
+    const core = coreSupervisor?.connection() ?? null;
+    const [snap, coreSpaces] = await Promise.all([
+      client.request<{ snapshot: HerdrSessionSnapshot }>("session.snapshot", {}),
+      core ? readCoreSpaces(core, process.env.HOME) : Promise.resolve(null),
+    ]);
+    const now = Date.now();
+    return mergeTrees(toSpaceTree(snap.snapshot, now, { home: process.env.HOME }), coreSpaces, now);
+  };
   supervisor = new Supervisor({
     client,
     store,

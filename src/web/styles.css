@@ -4800,3 +4800,7 @@ body {
   line-height: 1.25;
   vertical-align: baseline;
 }
+/* In a flex row (a space row, the space screen's header) the mark keeps its
+   size and the row's own gap spaces it; the long space name truncates first. */
+[data-space-row] .origin-mark,
+.space-screen-head .origin-mark { flex: none; margin-right: 0; }

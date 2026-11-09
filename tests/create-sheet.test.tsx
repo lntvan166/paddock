@@ -31,13 +31,13 @@ const TREE: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [
     {
-      spaceId: "w1", label: "api refactor", tabCount: 1, paneCount: 1,
+      spaceId: "w1", label: "api refactor", origin: "herdr", tabCount: 1, paneCount: 1,
       tabs: [{ tabId: "w1:t1", label: null, panes: [
         { paneId: "w1:p1", harness: "claude", name: "api-refactor", title: "x", cwd: "/srv/project", state: "working" },
       ] }],
     },
     {
-      spaceId: "w2", label: "docs-cleanup", tabCount: 1, paneCount: 1,
+      spaceId: "w2", label: "docs-cleanup", origin: "herdr", tabCount: 1, paneCount: 1,
       tabs: [{ tabId: "w2:t1", label: null, panes: [
         { paneId: "w2:p1", harness: null, name: null, title: "bash", cwd: "/srv/docs", state: null },
       ] }],

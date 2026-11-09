@@ -831,8 +831,11 @@ export interface SpaceTree {
 }
 
 export interface Space {
-  spaceId: string;              // herdr workspace_id
+  spaceId: string;              // herdr workspace_id, or `hc.<id>` for an app space
   label: string | null;
+  /** Which backend holds it: terminal herdr, or the Herdr app (herdr-core).
+   *  An app space carries the quiet `app` mark, as an app agent does. */
+  origin: Origin;
   tabCount: number;
   paneCount: number;
   tabs: Tab[];

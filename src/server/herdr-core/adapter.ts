@@ -18,7 +18,7 @@ const loggedUnknown = new Set<string>();
  * grows, so an unknown word is tolerated as `idle` (the one state that never
  * raises an alarm or hides an agent) and said once at INFO, never silently.
  */
-function toState(word: string): AgentState {
+export function toState(word: string): AgentState {
   if (KNOWN_STATES.has(word)) return word as AgentState;
   if (!loggedUnknown.has(word)) {
     loggedUnknown.add(word);
@@ -28,13 +28,13 @@ function toState(word: string): AgentState {
 }
 
 /** `claude-code` is what Claude Code reports; paddock's harness id is `claude`. */
-function toHarness(app: string | undefined): string {
+export function toHarness(app: string | undefined): string {
   if (!app) return "";
   return app === "claude-code" ? "claude" : app;
 }
 
 /** "api-space / 1" is the app's `where` label: the space name, then the tab. */
-function spaceLabel(labels: Record<string, string>): string | null {
+export function spaceLabel(labels: Record<string, string>): string | null {
   const where = labels["where"];
   if (!where) return null;
   const i = where.indexOf(" / ");

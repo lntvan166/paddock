@@ -344,3 +344,47 @@ test("typing into an app shell leaves the command on the line", async () => {
   await a.sendPaneText("hc.t9", "ls -la");
   expect(calls).toEqual([{ method: "terminal.keys", params: { terminal: "t9", keys: ["l", "s", "space", "-", "l", "a"] } }]);
 });
+
+// Step 6 of the probe: `A` as a key name types `a`, `shift+a` types `A`, and
+// `+`, `|`, `_`, `:`, `~` and the rest have no key at all (invalid_params).
+test("typing into an app shell sends an uppercase letter as shift plus the letter", async () => {
+  const { a, calls } = actions(() => ({ turn: 0 }));
+  await a.sendPaneText("hc.t9", "cd Src/x.y; a=1 [b] `c` 'd',\\");
+  expect(calls[0]!.params.keys).toEqual([
+    "c", "d", "space", "shift+s", "r", "c", "/", "x", ".", "y", ";", "space",
+    "a", "=", "1", "space", "[", "b", "]", "space", "`", "c", "`", "space", "'", "d", "'", ",", "\\",
+  ]);
+});
+
+test("a character with no measured key is refused and nothing is typed", async () => {
+  for (const text of ["ls | wc", "a+b", "echo ~", "x_y", "a:b", "ls\n", "café"]) {
+    const { a, calls } = actions(() => ({ turn: 0 }));
+    const err = await a.sendPaneText("hc.t9", text).catch((e) => e);
+    expect(err).toBeInstanceOf(Unsupported);
+    expect(err.message).toContain("can't be typed into an app terminal");
+    expect(calls).toEqual([]);
+  }
+});
+
+test("a new app space with a harness runs the agent as its only terminal", async () => {
+  const { a, calls } = actions((m) => (m === "terminal.run" ? terminal({ address: "t21" }) : {}));
+  const out = await a.createSpace({ cwd: "/srv/project" as never, harness: { kind: "claude", name: "api-refactor" } });
+  expect(calls.map((c) => c.method)).toEqual(["terminal.run"]);
+  expect(calls[0]!.params.argv).toEqual(["claude"]);
+  expect(calls[0]!.params.name).toBe("api-refactor");
+  expect(out.paneId).toBe("hc.t21");
+});
+
+test("a new app tab with a harness runs the agent as its only terminal", async () => {
+  const { a, calls } = actions((m) => {
+    if (m === "terminal.list") return { hidden_finished: 0, machines: [], terminals: [terminal({ address: "t1" })] };
+    if (m === "terminal.run") return terminal({ address: "t22" });
+    return {};
+  });
+  const out = await a.createTab("hc.spA", { harness: { kind: "codex", name: "flaky-test-fix" } });
+  const runs = calls.filter((c) => c.method === "terminal.run");
+  expect(runs.length).toBe(1);
+  expect(runs[0]!.params.argv).toEqual(["codex"]);
+  expect(runs[0]!.params.name).toBe("flaky-test-fix");
+  expect(out.paneId).toBe("hc.t22");
+});

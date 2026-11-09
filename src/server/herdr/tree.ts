@@ -51,6 +51,7 @@ export function toSpaceTree(
   const spaces: Space[] = snap.workspaces.map((w) => ({
     spaceId: w.workspace_id,
     label: w.label?.trim() || null,
+    origin: "herdr",
     tabCount: w.tab_count,
     paneCount: w.pane_count,
     tabs: tabsBySpace.get(w.workspace_id) ?? [],
@@ -93,7 +94,7 @@ function toPane(p: HerdrPaneInfo, agent: HerdrAgentRaw | undefined, home: string
  * means the username never crosses the wire at all, rather than being hidden
  * by the client that happens to render it.
  */
-function tildeise(cwd: string, home: string | undefined): string {
+export function tildeise(cwd: string, home: string | undefined): string {
   if (!home || home === "/" || !cwd) return cwd;
   const h = home.replace(/\/+$/, "");
   if (cwd === h) return "~";

@@ -1,8 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useKeyboardInset } from "@web/keyboard-inset";
 import { paneHash } from "@shared/route";
+import type { Origin } from "@shared/origin";
 import type { CreateSpaceResult, CreateTabResult } from "@shared/types";
-import { createSpace, createTab, fetchHarnessKinds, startAgent } from "@web/api";
+import {
+  createSpace, createTab, fetchHarnessKinds, fetchHealth, startAgent, type CreateBody,
+} from "@web/api";
 import { launchAgent, type StartSender } from "@web/launch";
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
@@ -63,6 +66,9 @@ export type CreateTarget =
     /** The space's own working directory — its first pane's — or null when the
      *  tree does not say. Null means "let herdr pick", never a guessed path. */
     spaceCwd: string | null;
+    /** Which backend holds the space. Absent is terminal herdr. A tab in an
+     *  app space is created through herdr-core, with the app's rules. */
+    spaceOrigin?: Origin;
   };
 
 /**
@@ -75,15 +81,27 @@ export type CreateTarget =
  */
 export interface CreateSenders {
   harnesses(): Promise<string[]>;
-  createSpace(opts: { label?: string; cwd?: string }): Promise<CreateSpaceResult>;
-  createTab(spaceId: string, opts: { label?: string; cwd?: string }): Promise<CreateTabResult>;
+  /**
+   * Is herdr-core connected (an app space can be made), and is the Herdr app
+   * up (an app space or tab can be NAMED now)? Read at open, like
+   * `harnesses`. Optional: without it the sheet is terminal herdr's alone.
+   */
+  backends?(): Promise<Backends>;
+  createSpace(opts: CreateBody): Promise<CreateSpaceResult>;
+  createTab(spaceId: string, opts: CreateBody): Promise<CreateTabResult>;
   startAgent: StartSender;
 }
+
+export interface Backends { core: boolean; app: boolean }
 
 /** The real clients from `api.ts`, wrapped so the optional `fetch` parameter
  *  each one carries stays out of the interface above. */
 export const LIVE_CREATE_SENDERS: CreateSenders = {
   harnesses: async () => (await fetchHarnessKinds()).kinds,
+  backends: async () => {
+    const h = await fetchHealth();
+    return { core: h.core.connected, app: h.app?.running === true };
+  },
   createSpace: (opts) => createSpace(opts),
   createTab: (spaceId, opts) => createTab(spaceId, opts),
   startAgent: (paneId, kind, name) => startAgent(paneId, kind, name),
@@ -108,6 +126,10 @@ export function slug(label: string): string {
  *  what an unset `<select>` naturally holds and because no herdr harness kind
  *  can be empty — `routes.ts` refuses an empty `kind` with 400. */
 const SHELL = "";
+
+/** The name field of an app space or tab while the Herdr app is closed: the
+ *  app is what names things, and a name typed now would be dropped. */
+export const OPEN_HERDR_TO_NAME = "Open Herdr to name it now";
 
 export function CreateSheet({
   target, cwds, onChanged,
@@ -185,6 +207,8 @@ export function CreateSheet({
   const [cwdEdited, setCwdEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [backends, setBackends] = useState<Backends | null>(null);
+  const [newOrigin, setNewOrigin] = useState<Origin>("herdr");
   const cwdListId = useId();
 
   /**
@@ -214,6 +238,18 @@ export function CreateSheet({
 
   const isSpace = target.kind === "space";
   const what = isSpace ? "space" : "tab";
+  /**
+   * Which backend this create goes to. A tab: its space's. A new space:
+   * terminal herdr unless the operator picks the app, which is offered only
+   * while herdr-core is connected — so a TUI-only setup sees the sheet it
+   * always saw.
+   */
+  const origin: Origin = isSpace ? newOrigin : (target.spaceOrigin ?? "herdr");
+  const isApp = origin === "core";
+  /** The app names spaces and tabs; while it is closed (or not yet known to
+   *  be open) the field is locked rather than taking a name it would drop. */
+  const nameLocked = isApp && backends?.app !== true;
+  const typedLabel = nameLocked ? "" : label;
   /** Where this tab is going, for the heading and the accessible name. The id
    *  IS the honest answer for an unnamed space — it is what the row shows, and
    *  the sheet must agree with the row it opened from. */
@@ -255,7 +291,7 @@ export function CreateSheet({
    * is already disabled on a blank name for a harness, so the operator is asked
    * for a name exactly when paddock has nothing honest to suggest.
    */
-  const nameSource = isSpace ? label : target.spaceLabel;
+  const nameSource = isSpace ? typedLabel : target.spaceLabel;
   const suggested = nameSource === null ? "" : slug(nameSource);
   const name = nameEdited ? nameDraft : suggested;
 
@@ -293,6 +329,19 @@ export function CreateSheet({
         if (live) setError(err instanceof Error ? err.message : String(err));
       }
     })();
+    // Read beside the kinds. A failure is SHOWN: the sheet then offers
+    // terminal herdr only, and an app name field stays locked.
+    const readBackends = sendersRef.current.backends;
+    if (readBackends) {
+      void (async () => {
+        try {
+          const found = await readBackends();
+          if (live) setBackends(found);
+        } catch (err) {
+          if (live) setError(err instanceof Error ? err.message : String(err));
+        }
+      })();
+    }
     return () => { live = false; };
   }, [open]);
 
@@ -303,6 +352,7 @@ export function CreateSheet({
     if (!next) {
       setLabel(""); setKind(SHELL); setNameDraft(""); setNameEdited(false);
       setCwdDraft(""); setCwdEdited(false); setError(null);
+      setBackends(null); setNewOrigin("herdr");
       // `kinds` too, and it was the one that got left out — which falsified the
       // comment on the read above ("A failed read is SHOWN — the picker then
       // offers a plain shell and nothing else"). On any open after a successful
@@ -327,9 +377,15 @@ export function CreateSheet({
     setBusy(true);
     setError(null);
     try {
-      const opts = {
-        label: label.trim() === "" ? undefined : label.trim(),
+      // An app create starts its harness AS the new terminal (the core
+      // cannot start a program inside an existing one), so `kind`/`name` go
+      // with the create and nothing is launched after it.
+      const startsWithCreate = isApp && kind !== SHELL;
+      const opts: CreateBody = {
+        label: typedLabel.trim() === "" ? undefined : typedLabel.trim(),
         cwd: cwd.trim() === "" ? undefined : cwd.trim(),
+        ...(isSpace && isApp ? { origin: "core" as const } : {}),
+        ...(startsWithCreate ? { kind, name: name.trim() } : {}),
       };
       const created = target.kind === "space"
         ? await senders.createSpace(opts)
@@ -351,7 +407,7 @@ export function CreateSheet({
       }
       // Started before the navigate, so `starting <kind>…` is already in the
       // store by the time the pane's screen mounts and reads it.
-      if (kind !== SHELL) void launchAgent(created.paneId, kind, name.trim(), senders.startAgent);
+      if (kind !== SHELL && !startsWithCreate) void launchAgent(created.paneId, kind, name.trim(), senders.startAgent);
       navigate(paneHash(created.paneId));
       show(false);
     } catch (err) {
@@ -416,12 +472,27 @@ export function CreateSheet({
             <input
               type="text"
               data-field="label"
-              value={label}
+              value={typedLabel}
               autoComplete="off"
-              placeholder={`herdr names the ${what} if you leave this blank`}
+              disabled={nameLocked}
+              placeholder={nameLocked ? OPEN_HERDR_TO_NAME : `herdr names the ${what} if you leave this blank`}
               onChange={(e) => setLabel(e.target.value)}
             />
           </label>
+
+          {/* Only while herdr-core is connected, and never in the dial's quick
+              flow: terminal herdr stays the default for a brand-new space. */}
+          {isSpace && !quick && backends?.core === true && <label>
+            <span>Where</span>
+            <select
+              data-field="origin"
+              value={newOrigin}
+              onChange={(e) => setNewOrigin(e.target.value as Origin)}
+            >
+              <option value="herdr">terminal herdr</option>
+              <option value="core">Herdr app</option>
+            </select>
+          </label>}
 
           {/* Hidden in quick mode: the dial's entry IS this answer. Still
               RENDERED in the normal flow, where nothing has been asked yet. */}

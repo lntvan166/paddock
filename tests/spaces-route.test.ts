@@ -10,7 +10,7 @@ const NOW = 1_700_000_000_000;
 const TREE: SpaceTree = {
   readAt: NOW,
   spaces: [{
-    spaceId: "w1", label: "api-refactor", tabCount: 1, paneCount: 1,
+    spaceId: "w1", label: "api-refactor", origin: "herdr", tabCount: 1, paneCount: 1,
     tabs: [{ tabId: "w1:t1", label: null, panes: [
       { paneId: "w1:p1", harness: "claude", name: "api-refactor", title: "api-refactor", cwd: "/srv/project", state: "working" },
     ] }],

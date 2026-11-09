@@ -7,7 +7,7 @@ import type { Space } from "@shared/types";
 afterEach(async () => { await unmount(); });
 
 const space = (spaceId: string, label: string | null, state: "blocked" | "idle" | null): Space => ({
-  spaceId, label, tabCount: 1, paneCount: 1,
+  spaceId, label, origin: "herdr", tabCount: 1, paneCount: 1,
   tabs: [{ tabId: `${spaceId}:t1`, label: null, panes: [{
     paneId: `${spaceId}:p1`, harness: state === null ? null : "claude",
     name: null, title: "t", cwd: "/srv/project", state,

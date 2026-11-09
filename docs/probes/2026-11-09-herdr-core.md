@@ -260,3 +260,35 @@ is not the probe's:
 
 `tests/core-live.test.ts` asserts the answer path against a live probe (see
 its header). On 2026-11-09 it passed 5/5 against the probe used here.
+
+## Step 6 — shell keys (Task 10)
+
+Measured before core shell panes became reachable from the Spaces screen,
+because `sendPaneText` types a shell command one `terminal.keys` call per
+character and none of those key names had been measured.
+
+On a throwaway, UNLABELLED shell (`hc run --bg --no-parent --no-notify --name
+paddock-keyprobe -- sh`, killed and removed afterwards — unlabelled
+terminals are invisible to the app, and no other terminal was touched), each
+candidate was sent as ONE key in its own `hc keys` call, the screen read
+after it, and the character erased with `backspace` before the next. Same
+core (0.1.19).
+
+| Key name sent | Result |
+|---|---|
+| `space` | a space (seen between two letters: `a b`) |
+| `backspace` | erases the last character |
+| `a`…`z`, `0`…`9` | that character |
+| `'` `,` `-` `.` `/` `;` `=` `[` `\` `]` `` ` `` | that character |
+| `shift+a`…`shift+z` | the UPPERCASE letter |
+| `A`…`Z` | **the lowercase letter** — accepted, and wrong |
+| `+` `plus` `!` `"` `#` `$` `%` `&` `(` `)` `*` `:` `<` `>` `?` `@` `^` `_` `{` `\|` `}` `~` | refused: `invalid_params`, `unknown key "+"`; nothing typed |
+| `shift+` a digit or one of the punctuation keys above | the UNshifted character (`shift+1` typed `1`), so shift does not reach the symbols |
+
+What this decides: core `sendPaneText` maps a lowercase letter, a digit and
+the eleven punctuation keys to themselves, an uppercase letter to
+`shift+<letter>`, and a space to `space`. Any other character is refused
+before anything is sent (`Unsupported`, naming the characters), because a
+bare `A` would silently type `a` and the refused symbols have no measured key
+at all. Typing a command that needs `|`, `_`, `:` or `~` into an app shell is
+therefore not offered from the phone yet.

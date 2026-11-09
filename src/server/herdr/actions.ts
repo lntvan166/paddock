@@ -84,6 +84,13 @@ export interface CreateOpts {
   /** Which backend a new SPACE goes to. A space has no id yet to route by, so
    *  `actionsByOrigin` reads this; absent means terminal herdr, as before. */
   origin?: Origin;
+  /**
+   * herdr-core only: start this harness AS the new terminal, so a new app
+   * space or tab holds the agent and nothing beside it (the core cannot start
+   * a program inside an existing terminal). Terminal herdr starts agents in
+   * the new pane with `startAgent`; the create routes refuse this for it.
+   */
+  harness?: { kind: string; name: string };
 }
 
 export type ReadSource = "detection" | "visible" | "recent_unwrapped";

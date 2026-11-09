@@ -10,7 +10,7 @@ const load = (t: SpaceTree) => async () => t;
 const TABBED: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [{
-    spaceId: "w3", label: "schema migration", tabCount: 2, paneCount: 2,
+    spaceId: "w3", label: "schema migration", origin: "herdr", tabCount: 2, paneCount: 2,
     tabs: [
       { tabId: "w3:t1", label: "migrate up", panes: [{ paneId: "w3:p1", harness: "codex", name: "schema-migration", title: "x", cwd: "/srv/project", state: "working" }] },
       { tabId: "w3:t2", label: null, panes: [{ paneId: "w3:p2", harness: "claude", name: "schema-migration-2", title: "x", cwd: "/srv/project", state: "idle" }] },
@@ -134,9 +134,9 @@ test("blocked sorts first and a space with no agent sorts last", async () => {
   const MIXED: SpaceTree = {
     readAt: 1_700_000_000_000,
     spaces: [
-      { spaceId: "wi", label: "docs-cleanup", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wi:t1", label: null, panes: [{ paneId: "wi:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "idle" }] }] },
-      { spaceId: "wn", label: "scratch", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wn:t1", label: null, panes: [{ paneId: "wn:p1", harness: null, name: null, title: "t", cwd: "/srv/project", state: null }] }] },
-      { spaceId: "wb", label: "flaky-test-fix", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wb:t1", label: null, panes: [{ paneId: "wb:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "blocked" }] }] },
+      { spaceId: "wi", label: "docs-cleanup", origin: "herdr", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wi:t1", label: null, panes: [{ paneId: "wi:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "idle" }] }] },
+      { spaceId: "wn", label: "scratch", origin: "herdr", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wn:t1", label: null, panes: [{ paneId: "wn:p1", harness: null, name: null, title: "t", cwd: "/srv/project", state: null }] }] },
+      { spaceId: "wb", label: "flaky-test-fix", origin: "herdr", tabCount: 1, paneCount: 1, tabs: [{ tabId: "wb:t1", label: null, panes: [{ paneId: "wb:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "blocked" }] }] },
     ],
   };
   const host = await render(<Spaces load={load(MIXED)} />);
@@ -160,7 +160,7 @@ test("the header keeps the one control that makes a space", async () => {
 test("an unnamed space is named by its id, because a blank row is not a row", async () => {
   const UNNAMED: SpaceTree = {
     readAt: 1_700_000_000_000,
-    spaces: [{ spaceId: "w7", label: null, tabCount: 1, paneCount: 1, tabs: [{ tabId: "w7:t1", label: null, panes: [{ paneId: "w7:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "idle" }] }] }],
+    spaces: [{ spaceId: "w7", label: null, origin: "herdr", tabCount: 1, paneCount: 1, tabs: [{ tabId: "w7:t1", label: null, panes: [{ paneId: "w7:p1", harness: "claude", name: null, title: "t", cwd: "/srv/project", state: "idle" }] }] }],
   };
   const host = await render(<Spaces load={load(UNNAMED)} />);
   expect(textsOf(host, "[data-space-row] .space-name")).toEqual(["w7"]);

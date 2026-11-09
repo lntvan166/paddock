@@ -231,6 +231,7 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
       spaces: agents.map((a) => ({
         spaceId: a.workspaceId,
         label: a.name,
+        origin: a.origin,
         tabCount: 1,
         paneCount: 1,
         tabs: [{

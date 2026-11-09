@@ -51,7 +51,7 @@ function agent(over: Partial<Agent> = {}): Agent {
 const TREE: SpaceTree = {
   readAt: NOW,
   spaces: [{
-    spaceId: "w1", label: "example-space", tabCount: 1, paneCount: 2,
+    spaceId: "w1", label: "example-space", origin: "herdr", tabCount: 1, paneCount: 2,
     tabs: [{
       tabId: "w1:t1", label: "docs-cleanup",
       panes: [

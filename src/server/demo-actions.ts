@@ -168,6 +168,7 @@ export function demoTree(now: number): SpaceTree {
   ) => ({
     spaceId: id,
     label,
+    origin: "herdr" as const,
     tabCount: 1,
     paneCount: 1,
     tabs: [{
