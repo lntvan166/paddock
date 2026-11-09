@@ -292,6 +292,7 @@ function harness(
     readTree: countedReadTree,
     home: overrides.home,
     actions: {
+      async markSeen() {},
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
       async readPromptScreen() { return ""; },

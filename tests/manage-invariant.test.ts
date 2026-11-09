@@ -131,6 +131,7 @@ function harness() {
     now: () => NOW,
     readTree: async () => TREE,
     actions: {
+      async markSeen() {},
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
       async readPromptScreen() { return ""; },

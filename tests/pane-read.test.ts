@@ -51,6 +51,7 @@ function harness(
     now: () => NOW,
     readTree,
     actions: {
+      async markSeen() {},
       async readOutput() { return { lines: [], source: "visible" as const }; },
       readPane,
       async readPromptScreen() { return ""; },

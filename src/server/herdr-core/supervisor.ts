@@ -82,6 +82,15 @@ export class CoreSupervisor {
     };
   }
 
+  /**
+   * The client actions should use, or null while the core is not up. Only
+   * after the snapshot: before it, the store holds no core agents, so no
+   * route could have validated a core id against it anyway.
+   */
+  connection(): CoreClientLike | null {
+    return this.up ? this.client : null;
+  }
+
   private publish(d: Delta): void {
     if (d.upserted.length || d.removedIds.length) this.o.onDelta(d);
   }

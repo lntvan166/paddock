@@ -65,6 +65,8 @@ import { detectManagedBy, runUpdate } from "@server/update";
 import { noUpdateCheckRequested, scheduleUpdateChecks } from "@server/update-check";
 import { say, warn } from "@server/term";
 import { createAppSocket } from "@server/herdr-core/app-socket";
+import { createCoreActions, requireCore } from "@server/herdr-core/actions";
+import { actionsByOrigin } from "@server/actions-by-origin";
 import { BootLog } from "@server/boot-log";
 import {
   errorCode,
@@ -701,8 +703,9 @@ let supervisor: Supervisor | null = null;
 // so a probe every few seconds feeds it; never longer than that, because the
 // app is opened and closed by hand.
 let appRunning = false;
-if (!DEMO) {
-  const appSocket = createAppSocket();
+// Also the core actions' route to the app (space and tab names). Null in demo.
+const appSocket = DEMO ? null : createAppSocket();
+if (appSocket) {
   const probe = () => { void appSocket.available().then((up) => { appRunning = up; }); };
   probe();
   setInterval(probe, 3000).unref();
@@ -773,7 +776,14 @@ if (DEMO) {
     },
   });
   stream = herdrStream;
-  actions = createActions(socketPath);
+  // One object over both backends: core ids (`hc.…`) go to herdr-core, the
+  // rest to terminal herdr. The core side asks the supervisor for its live
+  // client on every call, so a core that is down is a 503 naming it, and a
+  // reconnect needs no rewiring.
+  actions = actionsByOrigin(
+    createActions(socketPath),
+    createCoreActions(requireCore(() => coreSupervisor?.connection() ?? null), appSocket!),
+  );
   const client = {
     request: <T,>(method: string, params?: object) => request<T>(socketPath, method, params),
     openStream: (subs: Subscription[]) => herdrStream.open(subs),

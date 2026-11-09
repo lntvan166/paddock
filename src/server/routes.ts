@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
+import { BackendUnavailable, Unsupported } from "@server/action-errors";
 import { expandHome } from "@server/herdr/tree";
 import { addNote, moveDialogTab, selectByCursor, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
@@ -726,6 +727,25 @@ function detailOf(err: unknown): string {
 }
 
 /**
+ * The status for an action that threw.
+ *
+ * Two refusals are not backend failures and must not read as one:
+ *  - `BackendUnavailable` — the backend that owns this id is not running
+ *    ("herdr-core is not running"). 503: the request was fine, the service
+ *    behind it is down.
+ *  - `Unsupported` — the action cannot be done here ("herdr can't rename a
+ *    running app terminal", "Open Herdr to rename app spaces"). 409, the
+ *    status every other deliberate refusal in this file uses; its message is
+ *    written for the operator and relayed verbatim.
+ * Everything else is the 502 it always was.
+ */
+function failStatus(err: unknown): 409 | 502 | 503 {
+  if (err instanceof BackendUnavailable) return 503;
+  if (err instanceof Unsupported) return 409;
+  return 502;
+}
+
+/**
  * A rename refusal an operator can read.
  *
  * MEASURED, and it answers a question `docs/roadmap.md` recorded as unknown:
@@ -1267,7 +1287,7 @@ export function createApp(deps: AppDeps) {
         }
         return c.json({ ...out, digest });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, failStatus(err));
       }
     });
 
@@ -1277,7 +1297,7 @@ export function createApp(deps: AppDeps) {
       try {
         return c.json(parsePrompt(await actions.readPromptScreen(agent.agentId)));
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, failStatus(err));
       }
     });
 
@@ -1330,7 +1350,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1369,7 +1389,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1423,7 +1443,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, dialog: parsed.dialog });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1473,7 +1493,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1530,7 +1550,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1574,7 +1594,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, notes: parsed.notes });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1610,7 +1630,7 @@ export function createApp(deps: AppDeps) {
         const out = await actions.readOutput(agent.agentId, agent.state);
         return c.json({ ok: true, ...out });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1667,7 +1687,7 @@ export function createApp(deps: AppDeps) {
         // what someone debugging this needs. The RESPONSE gets the readable
         // one, because that is what an operator sees.
         warn(`agents: could not rename \`${agent.agentId}\`: ${detailOf(err)}`);
-        return c.json({ ok: false, detail: renameDetail(err) }, 502);
+        return c.json({ ok: false, detail: renameDetail(err) }, failStatus(err));
       }
     });
 
@@ -1705,7 +1725,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not read pane \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1772,7 +1792,7 @@ export function createApp(deps: AppDeps) {
           } catch (err) {
             const detail = err instanceof Error ? err.message : String(err);
             warn(`panes: typed into \`${id}\` but could not run it: ${detail}`);
-            return c.json({ ok: false, detail: `typed, but not run: ${detail}` }, 502);
+            return c.json({ ok: false, detail: `typed, but not run: ${detail}` }, failStatus(err));
           }
         }
         // Settle, then read, then return the screen the command produced.
@@ -1794,7 +1814,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not send text to pane \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1832,7 +1852,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not send key to pane \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1882,7 +1902,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`tabs: could not rename \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1912,7 +1932,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`spaces: could not rename \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1954,7 +1974,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`tabs: could not close \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1993,7 +2013,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`spaces: could not close \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -2026,7 +2046,7 @@ export function createApp(deps: AppDeps) {
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         warn(`spaces: could not create a space: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(e));
       }
     });
 
@@ -2060,7 +2080,7 @@ export function createApp(deps: AppDeps) {
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         warn(`spaces: could not create a tab in \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(e));
       }
     });
 
@@ -2161,14 +2181,14 @@ export function createApp(deps: AppDeps) {
           warn(`panes: agent did not start in \`${id}\`: ${detail}`);
           return c.json(
             { ok: false, detail: `shell exists, but the agent did not start: ${detail}`, paneId: id },
-            502,
+            failStatus(e),
           );
         }
         return c.json({ ok: true, paneId: id });
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         warn(`panes: could not start an agent in \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(e));
       }
     });
 
@@ -2185,7 +2205,7 @@ export function createApp(deps: AppDeps) {
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         warn(`harnesses: could not read installed kinds: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(e));
       }
     });
 
@@ -2226,7 +2246,7 @@ export function createApp(deps: AppDeps) {
         await actions.waitUntilUnblocked(agent.agentId);
         return c.json({ ok: true });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, failStatus(err));
       }
     });
   }

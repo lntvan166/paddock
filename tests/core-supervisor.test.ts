@@ -158,3 +158,17 @@ test("a failed server.status leaves version null and logs once at INFO", async (
     sup.stop();
   } finally { console.info = info; }
 });
+
+test("actions get the live client only while the core is connected", async () => {
+  const c = new FakeClient();
+  const { sup } = setup([c, null], 10_000);
+  expect(sup.connection()).toBeNull();
+  sup.start(); await tick();
+  // Connected but no snapshot yet: not up, so no client for actions.
+  expect(sup.connection()).toBeNull();
+  c.onSnapshot({ channel: null, seq: 1, terminals: [] });
+  expect(sup.connection()).toBe(c);
+  c.onClose(new Error("gone"));
+  expect(sup.connection()).toBeNull();
+  sup.stop();
+});

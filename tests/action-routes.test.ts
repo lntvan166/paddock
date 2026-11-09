@@ -26,6 +26,7 @@ function harness(a: Agent = agent(), screen?: string[]) {
     // The line count is recorded, not just the call: it is the only
     // client-supplied value that reaches a herdr parameter, so what arrives
     // here is the thing under test.
+    async markSeen() {},
     async readOutput(_t: string, _s: Agent["state"], lines?: number) {
       calls.push(`readOutput:${lines}`);
       return { lines: screen ?? ["out"], source: "visible" as const };
@@ -262,6 +263,7 @@ test("a failed action reports ok:false rather than throwing", async () => {
   const app2 = createApp({
     store, hub: new Hub({ now: () => NOW }),
     actions: {
+      async markSeen() {},
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
       async readPromptScreen() { return ""; },
@@ -381,6 +383,7 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
   const app2 = createApp({
     store, hub: new Hub({ now: () => NOW }),
     actions: {
+      async markSeen() {},
       async readOutput() { return { lines: ["kept"], source: "visible" as const }; },
       async readPane() { return { lines: ["kept"], source: "recent_unwrapped" as const }; },
       async readPromptScreen() { return ""; },

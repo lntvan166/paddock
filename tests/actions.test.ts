@@ -296,3 +296,11 @@ test("a literal space is sent as the key NAME, because herdr refuses the charact
   // every realistic use of the field.
   expect([..."chào bạn"].map(keyForChar)).toEqual(["c", "h", "à", "o", "space", "b", "ạ", "n"]);
 });
+
+test("terminal herdr has no shared seen state, and says so instead of pretending", async () => {
+  const { Unsupported } = await import("@server/action-errors");
+  // No socket is touched: the refusal comes before any request.
+  const err = await createActions("/nonexistent/herdr.sock").markSeen("w1:p1", 3).catch((e) => e);
+  expect(err).toBeInstanceOf(Unsupported);
+  expect(err.message).toBe("terminal herdr has no shared seen state");
+});

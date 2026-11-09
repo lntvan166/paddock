@@ -6,6 +6,8 @@ import type {
   HerdrWorkspaceCreated,
 } from "@shared/herdr-api";
 import { ctrlChar, isCtrlKey, type AgentState, type NavKey } from "@shared/types";
+import type { Origin } from "@shared/origin";
+import { Unsupported } from "@server/action-errors";
 
 /**
  * Whether this key has to travel as text, and the byte it becomes.
@@ -79,6 +81,9 @@ export type HostPath = string & { readonly __hostPath: unique symbol };
 export interface CreateOpts {
   label?: string;
   cwd?: HostPath;
+  /** Which backend a new SPACE goes to. A space has no id yet to route by, so
+   *  `actionsByOrigin` reads this; absent means terminal herdr, as before. */
+  origin?: Origin;
 }
 
 export type ReadSource = "detection" | "visible" | "recent_unwrapped";
@@ -476,6 +481,13 @@ export interface HerdrActions {
    * `AgentStartParams.kind` is a plain string in protocol 20, not an enum.
    */
   harnessKinds(): Promise<string[]>;
+  /**
+   * Record that the operator has seen this agent's latest turn — the shared
+   * `herdr.seen` label every herdr-core client reads. Written only on a
+   * deliberate act (Dismiss, or opening the agent), never from presence.
+   * Terminal herdr has no shared seen state and refuses.
+   */
+  markSeen(target: string, turn: number): Promise<void>;
 }
 
 /** Binds the socket path once so routes can take an injectable object. */
@@ -725,6 +737,12 @@ export function createActions(socketPath: string): HerdrActions {
     async harnessKinds() {
       const res = await request<HerdrAgentManifests>(socketPath, "server.agent_manifests", {});
       return res.manifests.map((m) => m.agent);
+    },
+
+    async markSeen() {
+      // Refused, not a quiet no-op: a resolved promise would tell the caller
+      // the label was written. paddock's own acknowledge model covers these.
+      throw new Unsupported("terminal herdr has no shared seen state");
     },
   };
 }

@@ -39,6 +39,7 @@ function harness(state: Agent["state"] = "blocked") {
   store.replaceAll([agent(state)], NOW, "herdr");
   const calls: string[] = [];
   const actions = {
+    async markSeen() {},
     async readOutput() { calls.push("readOutput"); return { lines: ["out"], source: "visible" as const }; },
     async readPane() { calls.push("readPane"); return { lines: ["out"], source: "recent_unwrapped" as const }; },
     async readPromptScreen() { calls.push("readPromptScreen"); return ""; },

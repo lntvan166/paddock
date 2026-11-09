@@ -15,16 +15,14 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isCoreId, rawCoreId } from "@shared/origin";
+import { Unsupported } from "@server/action-errors";
 
 export const OPEN_HERDR_TO_RENAME = "Open Herdr to rename app spaces";
 
-/** The operation cannot be done right now; the message says what to do. */
-export class Unsupported extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "Unsupported";
-  }
-}
+// Defined beside the routes' other refusal, so terminal herdr's actions can
+// throw the same class without importing this directory. Re-exported so
+// existing importers keep working and `instanceof` sees one class.
+export { Unsupported };
 
 export interface AppSocket {
   available(): Promise<boolean>;

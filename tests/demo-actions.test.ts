@@ -32,6 +32,7 @@ const WRITES: [string, (a: ReturnType<typeof demoActions>) => Promise<unknown>][
   ["createSpace", (a) => a.createSpace({})],
   ["createTab", (a) => a.createTab("d1", {})],
   ["startAgent", (a) => a.startAgent("d1:p1", "claude", "api-refactor")],
+  ["markSeen", (a) => a.markSeen("d1:p1", 1)],
 ];
 
 for (const [name, call] of WRITES) {

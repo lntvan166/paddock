@@ -137,6 +137,7 @@ export function demoActions(): HerdrActions {
     async createSpace() { refuse(); },
     async createTab() { refuse(); },
     async startAgent() { refuse(); },
+    async markSeen() { refuse(); },
 
     // A READ, so it answers: the create sheet's harness picker is populated
     // and looks like itself. The create it leads to still refuses.
