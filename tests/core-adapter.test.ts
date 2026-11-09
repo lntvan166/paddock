@@ -41,6 +41,34 @@ test("name falls back to the address, never the folder", () => {
   expect(toCoreAgent(f.unnamed!, "h")!.name).toBe("t10");
 });
 
+// The app lists an unnamed agent by its tab ("worklog", "hermes"), and paddock
+// showed the bare address ("t1h") for the same agent. The tab is a name the
+// operator chose; the folder is still never one (agents share folders).
+test("an unnamed agent is called by its tab, as the app calls it", () => {
+  const t = term("unnamed", { labels: { "herdr.space": "sp1", "herdr.tab": "tb1", where: "tools / worklog" } });
+  expect(toCoreAgent(t, "h")!.name).toBe("worklog");
+});
+
+test("a tab known only by its number is named with its space", () => {
+  const t = term("unnamed", { labels: { "herdr.space": "sp1", "herdr.tab": "tb1", where: "gt / 2" } });
+  expect(toCoreAgent(t, "h")!.name).toBe("gt 2");
+});
+
+test("an agent's own name still wins over its tab", () => {
+  expect(toCoreAgent(f.reporting!, "h")!.name).toBe("api-refactor");
+});
+
+test("renaming the tab renames an unnamed agent, and leaves a named one alone", () => {
+  const unnamed = term("unnamed", { labels: { "herdr.space": "sp1", "herdr.tab": "tb1", where: "tools / worklog" } });
+  const prev = toCoreAgent(unnamed, "h")!;
+  const labels = { "herdr.space": "sp1", "herdr.tab": "tb1", where: "tools / timesheet" };
+  const next = applyCoreEvent(prev, { seq: 3, type: "labels", terminal: "t10", data: { labels } }, unnamed)!;
+  expect(next.name).toBe("timesheet");
+
+  const named = applyCoreEvent(toCoreAgent(f.reporting!, "h")!, { seq: 4, type: "labels", terminal: "t7", data: { labels } }, f.reporting!)!;
+  expect(named.name).toBe("api-refactor");
+});
+
 test("blocked with kind permission maps to blocked", () => {
   const t = term("reporting", { status: { app: "claude-code", state: "blocked", kind: "permission", msg: "approve Bash: touch x" } });
   const a = toCoreAgent(t, "h")!;

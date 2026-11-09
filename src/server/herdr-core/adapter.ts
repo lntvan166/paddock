@@ -41,6 +41,26 @@ export function spaceLabel(labels: Record<string, string>): string | null {
   return (i === -1 ? where : where.slice(0, i)) || null;
 }
 
+/**
+ * What the app calls an unnamed agent: its tab, from `where`. A tab the
+ * operator never named is known by its number ("gt / 2"), which alone is no
+ * name, so it is said with its space ("gt 2").
+ */
+export function tabName(labels: Record<string, string>): string | null {
+  const where = labels["where"];
+  if (!where) return null;
+  const i = where.indexOf(" / ");
+  if (i === -1) return null;
+  const tab = where.slice(i + 3).trim();
+  if (!tab) return null;
+  return /^\d+$/.test(tab) ? `${where.slice(0, i)} ${tab}` : tab;
+}
+
+/** The agent's own name, else its tab's, else its address — never its folder. */
+function nameOf(t: Pick<CoreTerminal, "name" | "address">, labels: Record<string, string>): string {
+  return t.name ?? tabName(labels) ?? t.address;
+}
+
 /** Raw space id for a terminal the app has not put in a space. */
 export const CORE_UNGROUPED = "ungrouped";
 
@@ -62,9 +82,9 @@ function taskOf(status: CoreStatus, fallback: string): string {
 
 /**
  * Normalize one terminal record. Null for anything that is not a live agent
- * with its own pane. `name` falls back to the address and never to
- * `basename(cwd)`: agents share working directories, and every row would read
- * the same.
+ * with its own pane. `name` falls back to the tab, then the address, and never
+ * to `basename(cwd)`: agents share working directories, and every row would
+ * read the same.
  */
 export function toCoreAgent(t: CoreTerminal, hostId: string): Agent | null {
   if (t.state !== "live") return null;
@@ -77,7 +97,7 @@ export function toCoreAgent(t: CoreTerminal, hostId: string): Agent | null {
   return {
     hostId,
     agentId: coreId(t.address),
-    name: t.name ?? t.address,
+    name: nameOf(t, t.labels),
     task: taskOf(status, t.title || ""),
     state: toState(status.state),
     workspaceId: workspaceIdOf(t.labels),
@@ -160,6 +180,9 @@ export function applyCoreEvent(
       if (!prev) return record ? toCoreAgent(record, host()) : null;
       return {
         ...prev,
+        // A tab rename reaches an unnamed agent here. Without the record the
+        // agent's own name is unknown, so the name it has stands.
+        name: record ? nameOf(record, labels) : prev.name,
         workspaceId: workspaceIdOf(labels),
         workspaceLabel: spaceLabel(labels),
         seen: toSeen(labels),

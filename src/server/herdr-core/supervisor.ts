@@ -195,7 +195,11 @@ export class CoreSupervisor {
     // Keep a record per terminal so an event can promote a non-agent.
     let record = this.records.get(term);
     if (ev.type === "created" || ev.type === "restarted") record = ev.data;
-    else if (ev.type === "labels" && ev.data.record) record = ev.data.record;
+    else if (ev.type === "labels") {
+      // Kept current either way: the name an unnamed agent takes from its tab
+      // is read from the record's labels on the next event too.
+      record = ev.data.record ?? (record ? { ...record, labels: ev.data.labels } : record);
+    }
     else if (ev.type === "status" && record) record = { ...record, status: ev.data.status, status_ms: this.now() };
     if (ev.type === "removed") this.records.delete(term);
     else if (record) this.records.set(term, record);
