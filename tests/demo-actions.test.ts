@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { demoActions, demoTree } from "@server/demo-actions";
+import { DEMO_BLOCKED_APP_AGENT_ID } from "@server/demo";
 
 /**
  * The demo shim's one hard rule: reads answer, writes REFUSE.
@@ -51,6 +52,65 @@ for (const [name, call] of WRITES) {
     expect(message).toContain("demo");
   });
 }
+
+/**
+ * The same writes, aimed at the demo's APP agent and app space. The shim does
+ * not route by origin, so these refuse for the same reason the list above
+ * does — and this is what proves it: a composite that sent `hc.` ids
+ * somewhere else, or a shim that special-cased them, would show up here as a
+ * write that resolved.
+ */
+const CORE_WRITES: [string, (a: ReturnType<typeof demoActions>) => Promise<unknown>][] = [
+  ["sendOptionKey", (a) => a.sendOptionKey(DEMO_BLOCKED_APP_AGENT_ID, "1")],
+  ["sendNavKey", (a) => a.sendNavKey(DEMO_BLOCKED_APP_AGENT_ID, "down")],
+  ["sendChars", (a) => a.sendChars(DEMO_BLOCKED_APP_AGENT_ID, ["n"])],
+  ["sendReply", (a) => a.sendReply("hc.t2", "ship it")],
+  ["sendPaneText", (a) => a.sendPaneText("hc.t2", "ls")],
+  ["sendPaneKey", (a) => a.sendPaneKey("hc.t2", "enter")],
+  ["waitUntilUnblocked", (a) => a.waitUntilUnblocked(DEMO_BLOCKED_APP_AGENT_ID)],
+  ["renameAgent", (a) => a.renameAgent("hc.t2", "x")],
+  ["renameTab", (a) => a.renameTab("hc.tab-build", "x")],
+  ["renameSpace", (a) => a.renameSpace("hc.docs-site", "x")],
+  ["closeTab", (a) => a.closeTab("hc.tab-notes")],
+  ["closeSpace", (a) => a.closeSpace("hc.docs-site")],
+  ["createSpace", (a) => a.createSpace({ origin: "core" })],
+  ["createTab", (a) => a.createTab("hc.docs-site", {})],
+  ["startAgent", (a) => a.startAgent("hc.t2", "claude", "api-refactor")],
+  ["markSeen", (a) => a.markSeen("hc.t2", 5)],
+];
+
+test("every demo write to a core id is refused with the demo message", async () => {
+  const sentence = "this is the demo — paddock has no herdr here, so nothing was sent";
+  for (const [name, call] of CORE_WRITES) {
+    let message: string | null = null;
+    try { await call(demoActions()); } catch (err) { message = (err as Error).message; }
+    expect(message, `${name} on a core id resolved instead of refusing`).toBe(sentence);
+  }
+  // Guarded like the list above: a write added to the interface and left off
+  // this list would go untested for app ids.
+  expect(CORE_WRITES.map(([n]) => n).sort()).toEqual(WRITES.map(([n]) => n).sort());
+});
+
+test("the blocked app agent's prompt is a permission prompt the real parser reads", async () => {
+  const raw = await demoActions().readPromptScreen(DEMO_BLOCKED_APP_AGENT_ID);
+  expect(raw).toContain("Do you want to proceed?");
+  expect(raw).toContain("1. Yes");
+  expect(await demoActions().promptAllowed(DEMO_BLOCKED_APP_AGENT_ID)).toBe(true);
+  const out = await demoActions().readOutput(DEMO_BLOCKED_APP_AGENT_ID, "blocked");
+  expect(out.lines.join("\n")).toContain("Do you want to proceed?");
+});
+
+test("the tree carries one app space, docs-site, with two tabs", () => {
+  const app = demoTree(1000).spaces.filter((s) => s.origin === "core");
+  expect(app.map((s) => [s.spaceId, s.label])).toEqual([["hc.docs-site", "docs-site"]]);
+  const tabs = app[0]!.tabs;
+  expect(tabs).toHaveLength(2);
+  expect(app[0]!.tabCount).toBe(2);
+  for (const t of tabs) expect(t.tabId.startsWith("hc.")).toBe(true);
+  const panes = tabs.flatMap((t) => t.panes);
+  expect(panes.map((p) => p.paneId).sort()).toEqual(["hc.t1", "hc.t2"]);
+  expect(panes.find((p) => p.paneId === DEMO_BLOCKED_APP_AGENT_ID)?.state).toBe("blocked");
+});
 
 test("every write on the interface is covered by the list above", () => {
   // Guards the guard. A method added to `HerdrActions` and implemented in the

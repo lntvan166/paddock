@@ -1,6 +1,8 @@
 import type { HerdrActions } from "@server/herdr/actions";
 import type { NavKey, SpaceTree } from "@shared/types";
-import { DEMO_BLOCKED_AGENT_ID, DEMO_HOST_ID } from "@server/demo";
+import {
+  DEMO_APP_SPACE_ID, DEMO_APP_SPACE_LABEL, DEMO_BLOCKED_AGENT_ID, DEMO_BLOCKED_APP_AGENT_ID, DEMO_HOST_ID,
+} from "@server/demo";
 
 /**
  * The herdr a demo does not have.
@@ -99,6 +101,33 @@ const BLOCKED_DETECTION = [
   "  3. No",
 ].join("\n");
 
+/** The app's blocked agent: a docs build waiting for approval. Invented. */
+const APP_BLOCKED_TRANSCRIPT: string[] = [
+  "  Updated the docs navigation and two broken links.",
+  "",
+  "  Bash command",
+  "",
+  "    bun run docs:build",
+  "    Build the docs site",
+  "",
+  "  This command requires approval",
+  "",
+  "  Do you want to proceed?",
+  "  ❯ 1. Yes",
+  "    2. Yes, and don't ask again for: bun run docs:build *",
+  "    3. No",
+  "",
+  "  Esc to cancel · Tab to amend",
+];
+
+/** Same bytes as the tail of `APP_BLOCKED_TRANSCRIPT`, for the real parser. */
+const APP_BLOCKED_DETECTION = [
+  "Do you want to proceed?",
+  "❯ 1. Yes",
+  "  2. Yes, and don't ask again for: bun run docs:build *",
+  "  3. No",
+].join("\n");
+
 /** Imported rather than repeated: `demo.ts`'s `tick` must leave the SAME
  *  agent alone that this file serves a prompt for, and two literals is how
  *  those quietly stop being the same agent. */
@@ -118,7 +147,8 @@ export function demoActions(): HerdrActions {
       return { lines: transcriptFor(paneId), source: "visible" as const };
     },
     async readPromptScreen(target) {
-      return target === BLOCKED_ID ? BLOCKED_DETECTION : "";
+      if (target === BLOCKED_ID) return BLOCKED_DETECTION;
+      return target === DEMO_BLOCKED_APP_AGENT_ID ? APP_BLOCKED_DETECTION : "";
     },
 
     // Every write below refuses. None of them resolves.
@@ -149,17 +179,19 @@ export function demoActions(): HerdrActions {
 
 function transcriptFor(target: string): string[] {
   if (target === BLOCKED_ID) return BLOCKED_TRANSCRIPT;
-  if (target === "d3:p1" || target === "d4:p1") return WORKING_TRANSCRIPT;
+  if (target === DEMO_BLOCKED_APP_AGENT_ID) return APP_BLOCKED_TRANSCRIPT;
+  if (target === "d3:p1" || target === "d4:p1" || target === "hc.t2") return WORKING_TRANSCRIPT;
   return IDLE_TRANSCRIPT;
 }
 
 /**
  * The session tree, so both Spaces screens render instead of erroring.
  *
- * Built from the same six agents `demoAgents` seeds, one space per agent plus
- * one shell-only space — enough structure to show what the screen is for (a
- * space holding a tab holding a pane, and a pane with no agent) without
- * inventing a herd nobody would have.
+ * Built from the same agents `demoAgents` seeds: one space per TUI agent, one
+ * shell-only space, and the app's one space holding its two agents in two
+ * tabs — enough structure to show what the screen is for (a space holding a
+ * tab holding a pane, a pane with no agent, and the app beside the TUI)
+ * without inventing a herd nobody would have.
  */
 export function demoTree(now: number): SpaceTree {
   const of = (
@@ -193,6 +225,28 @@ export function demoTree(now: number): SpaceTree {
       // folder rather than its terminal title — `shellLabel`'s rule, and the
       // reason a demo must not seed a prompt-shaped title here.
       of("d7", "scratch", null, null, null, null),
+      // The app's one space: two named tabs, an agent in each. Its ids are
+      // core ids, so every write aimed at it routes as an app write would —
+      // and is refused like every other demo write.
+      {
+        spaceId: DEMO_APP_SPACE_ID,
+        label: DEMO_APP_SPACE_LABEL,
+        origin: "core" as const,
+        tabCount: 2,
+        paneCount: 2,
+        tabs: [
+          {
+            tabId: "hc.tab-build",
+            label: "build",
+            panes: [{ paneId: DEMO_BLOCKED_APP_AGENT_ID, harness: "claude", name: "release-notes", title: "Build the docs site", cwd: "~/demo-docs", state: "blocked" as const }],
+          },
+          {
+            tabId: "hc.tab-notes",
+            label: "notes",
+            panes: [{ paneId: "hc.t2", harness: "codex", name: "changelog-sync", title: "Sync the changelog with merged work", cwd: "~/demo-docs", state: "working" as const }],
+          },
+        ],
+      },
     ],
   };
 }

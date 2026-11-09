@@ -77,6 +77,15 @@ and opens a fresh connection for every request. There is no request
 multiplexing and no `id`→promise map, because a connection never carries more
 than one response.
 
+**Since 2026-11-09 there is a second backend.** The Herdr desktop app runs its
+terminals in herdr-core, which has its own socket and API. paddock reads it
+beside terminal herdr into the same store, with namespaced ids (`hc.…`) and an
+`origin` on every agent and space. Either backend may be absent. The diagram
+above is still the terminal herdr half, and it is unchanged. For the core's
+modules, dependency direction, the `herdr.seen` label and what is refused for
+app agents, see `docs/architecture.md` "Second backend: herdr-core" and
+`docs/decisions.md` decision 37.
+
 ### Modules
 
 | Module | Responsibility |

@@ -47,6 +47,9 @@ export class CoreSupervisor {
   private generation: number | null = null;
   private version: string | null = null;
   private detail: string | null = null;
+  /** Resolved when the first attempt has settled, up or down. */
+  private settleFirst!: () => void;
+  private readonly first = new Promise<void>((r) => { this.settleFirst = r; });
 
   constructor(private readonly o: CoreSupervisorOptions) {
     this.now = o.now ?? Date.now;
@@ -70,6 +73,17 @@ export class CoreSupervisor {
     this.client = null;
     this.up = false;
     this.publish(this.o.store.removeOrigin("core"));
+    this.settleFirst();
+  }
+
+  /**
+   * Resolves once the first connection attempt has settled: the snapshot
+   * landed (connected) or the attempt failed (down). Boot waits on this to
+   * learn whether a core is there before deciding it can run without terminal
+   * herdr; it never rejects.
+   */
+  firstAttempt(): Promise<void> {
+    return this.first;
   }
 
   health(): CoreHealth {
@@ -140,6 +154,7 @@ export class CoreSupervisor {
     this.records.clear();
     this.seq = -1;
     this.publish(this.o.store.removeOrigin("core"));
+    this.settleFirst();
     if (!this.downLogged) {
       console.info(`herdr-core: not running (${reason})`);
       this.downLogged = true;
@@ -163,6 +178,7 @@ export class CoreSupervisor {
       this.downLogged = false;
       console.info(`herdr-core: connected · ${agents.length} agents`);
     }
+    this.settleFirst();
   }
 
   private onEvent(e: CoreEvent | CoreUnknownEvent): void {

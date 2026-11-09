@@ -151,6 +151,9 @@ function runServer(args: string[], extraEnv: Record<string, string> = {}) {
     PADDOCK_NO_UPDATE_CHECK: "1",
     PADDOCK_CONFIG_DIR: CONFIG,
     PADDOCK_HERDR_WAIT_MS: "0",
+    // Never the developer's real Herdr app: with a live core, an absent herdr
+    // runs on the app alone instead of exiting (tests/app-only-boot.test.ts).
+    PADDOCK_HC_SOCKET: join(CONFIG, "no-such-core.sock"),
     ...extraEnv,
   } as Record<string, string>;
   // Dropped unless a caller asked for it. The Makefile exports a
@@ -216,6 +219,7 @@ function runVerb(verb: string, extraArgs: string[] = [], extraEnv: Record<string
       PADDOCK_CONFIG_DIR: CONFIG,
       PADDOCK_HERDR_SOCKET: join(CONFIG, "no-such-herdr.sock"),
       PADDOCK_HERDR_WAIT_MS: "0",
+      PADDOCK_HC_SOCKET: join(CONFIG, "no-such-core.sock"),
       // `status`/`stop`/`start`/`local` talk to the `paddock local` service.
       // Without this the spawned `stop` case reaches the developer's REAL
       // systemd and stops their real service — a bad DBUS_SESSION_BUS_ADDRESS

@@ -1,7 +1,7 @@
 import type { CoreListResult, CoreTerminal } from "@shared/herdr-core-api";
 import { coreId } from "@shared/origin";
 import type { Space, SpaceTree, Tab, TreePane } from "@shared/types";
-import { tildeise } from "@server/herdr/tree";
+import { tildeise } from "@server/paths";
 import { spaceLabel, toHarness, toState } from "./adapter";
 import type { CoreClient } from "./socket";
 

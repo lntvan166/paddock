@@ -1,3 +1,4 @@
+import type { HostPath } from "@server/paths";
 import { request } from "@server/herdr/socket";
 import type {
   HerdrAgentManifests, HerdrAgentPrompted, HerdrAgentPromptParams,
@@ -46,32 +47,9 @@ export function keyForChar(ch: string): string {
   return ch === " " ? "space" : ch;
 }
 
-/**
- * A path herdr can actually chdir into: absolute, and with paddock's own
- * tilde already undone.
- *
- * Both halves are enforced, which was not always true: `expandHome` once
- * guaranteed only the second, refusing a tilde it could not resolve while
- * forwarding `./relative` — so the sentence above was false in writing about
- * the word "absolute". It now refuses anything that is not absolute after
- * expansion, and this doc is a promise again rather than an aspiration.
- *
- * A BRAND, not a validation helper — the only way to obtain one is
- * `expandHome` in `tree.ts`, which is the single function that casts into it.
- * That is the whole point. `tree.ts` tilde-ises every cwd on the way out so a
- * username never crosses the wire, the create sheet offers those tilde-ised
- * cwds back as quick picks, and herdr was measured to neither expand nor
- * refuse a `~` — it silently starts the pane in the home directory instead.
- * The first fix for that put the expansion in one route and left nothing
- * forcing the next route to call it. This does: a future `pane.split` or any
- * other cwd-accepting route cannot assign a raw client string here, so it
- * cannot compile without going through the expansion.
- *
- * `HostPath` is assignable to `string`, so every consumer of `opts.cwd` —
- * including a test fake typed `(opts: {cwd?: string})` — is unaffected. Only
- * the direction that matters is blocked.
- */
-export type HostPath = string & { readonly __hostPath: unique symbol };
+// `HostPath` lives in `@server/paths` beside `expandHome`, the one function
+// that casts into it; re-exported here because `CreateOpts` is its consumer.
+export type { HostPath };
 
 /** The `{label?, cwd?}` a create route forwards to `createSpace`/`createTab`.
  *  Both fields are already normalised by the ROUTE before this is called: an

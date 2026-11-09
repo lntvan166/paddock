@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { expandHome, toSpaceTree } from "@server/herdr/tree";
+import { toSpaceTree } from "@server/herdr/tree";
+import { expandHome } from "@server/paths";
 import type { HerdrSessionSnapshot } from "@shared/herdr-api";
 import snapshot from "./fixtures/session-snapshot.json";
 

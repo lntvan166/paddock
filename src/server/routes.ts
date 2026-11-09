@@ -3,7 +3,7 @@ import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
 import { BackendUnavailable, Unsupported } from "@server/action-errors";
-import { expandHome } from "@server/herdr/tree";
+import { expandHome } from "@server/paths";
 import { addNote, moveDialogTab, selectByCursor, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
@@ -718,7 +718,7 @@ export interface AppDeps {
   /**
    * The operator's home directory, so a tilde-ised `cwd` coming BACK from the
    * client can be expanded before it reaches herdr — see `expandHome` in
-   * `tree.ts`, which is the same value `toSpaceTree` uses to tilde-ise it on
+   * `paths.ts`, which is the same value `toSpaceTree` uses to tilde-ise it on
    * the way out. Optional and absent in tests that do not exercise a path: an
    * absent home leaves the value untouched, which is the same thing
    * `tildeise` does.

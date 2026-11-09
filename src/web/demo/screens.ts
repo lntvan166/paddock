@@ -212,7 +212,50 @@ export const IDLE_FLAKY_SCREEN: string[] = [
   ...inputBox(),
 ];
 
+/** The app's blocked agent: a docs build waiting for approval. */
+export const APP_BLOCKED_SCREEN: string[] = [
+  green("●") + " Updated the docs navigation and fixed two broken links.",
+  "",
+  "  " + green("✓") + " " + white("navigation.yml") + dim(" — 3 entries reordered"),
+  "  " + green("✓") + " " + white("guides/install.md") + dim(" — 2 links repaired"),
+  "",
+  bold("Bash command"),
+  "",
+  "  " + blue("bun run docs:build"),
+  "  " + dim("Build the docs site"),
+  "",
+  "This command requires approval",
+  "",
+  "Do you want to proceed?",
+  "❯ 1. Yes",
+  "  2. Yes, and don't ask again for: bun run docs:build *",
+  "  3. No",
+  "",
+  dim("Esc to cancel · Tab to amend"),
+];
+
+/** The app's working agent, mid-task. */
+export const APP_WORKING_SCREEN: string[] = [
+  green("●") + " Syncing the changelog with merged work.",
+  "",
+  "  " + dim("Ran 1 shell command"),
+  "",
+  "  Grouped 12 entries under Added, Changed and Fixed. Two entries had no",
+  "  description and were written from their diffs.",
+  "",
+  "  " + amber("·") + " checking the version links …",
+];
+
+/** The app's blocked agent's options. Answering one is refused in the demo. */
+export const APP_DEMO_OPTIONS = [
+  { key: "1", label: "Yes", selected: true },
+  { key: "2", label: "Yes, and don't ask again for: bun run docs:build *", selected: false },
+  { key: "3", label: "No", selected: false },
+];
+
 export const SCREENS: Record<string, string[]> = {
+  "hc.t1": APP_BLOCKED_SCREEN,
+  "hc.t2": APP_WORKING_SCREEN,
   "d1:p1": blockedScreen(),
   "d2:p1": DONE_SCREEN,
   "d3:p1": WORKING_SCREEN,

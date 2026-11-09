@@ -7,7 +7,7 @@ import {
 } from "@server/herdr/actions";
 import { HERDR_TIMEOUT_MS } from "@server/herdr/socket";
 import { createApp } from "@server/routes";
-import { expandHome } from "@server/herdr/tree";
+import { expandHome } from "@server/paths";
 
 /**
  * A cwd as `CreateOpts` requires it — minted through the ONE function allowed
@@ -655,7 +655,7 @@ test("a tilde-ised cwd is EXPANDED before it reaches herdr, in both create route
   // Measured on a live herd: `workspace.create {cwd: "~/Documents/…"}` is
   // neither expanded nor refused — the new pane came up in the HOME directory
   // with nothing anywhere saying the folder the operator picked had been
-  // ignored. The tilde is paddock's own invention (`tildeise` in `tree.ts`, so
+  // ignored. The tilde is paddock's own invention (`tildeise` in `paths.ts`, so
   // a username never crosses the wire) and the create sheet's quick picks are
   // the tree's own tilde-ised cwds coming back, so paddock has to undo what
   // paddock did.
