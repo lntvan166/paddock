@@ -50,7 +50,7 @@ function agent(): Agent {
  */
 function harness(publicHosts: readonly string[] = []) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const pairing = new Pairing({ now: () => NOW });
   // The SAME thunk reaches the app's write middleware and the listener's `/ws`
   // upgrade, exactly as `index.ts` hands it to both. Passing it to only one is

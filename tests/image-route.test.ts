@@ -20,7 +20,7 @@ function agent(over: Partial<Agent> = {}): Agent {
 
 function harness(save?: (bytes: Uint8Array) => Promise<SavedImage | { refused: string }>) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const seen: number[] = [];
   const app = createApp({
     store,

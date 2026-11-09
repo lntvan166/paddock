@@ -119,7 +119,7 @@ test("a demo tick is reflected in the STORE, not just pushed at browsers", () =>
   const store = new AgentStore(DEMO_HOST_ID);
   let ticks = 0;
   const src = createDemoSource({ store, onDelta: () => { ticks++; }, now: () => NOW });
-  store.replaceAll(src.snapshot(), NOW);
+  store.replaceAll(src.snapshot(), NOW, "herdr");
 
   // NOT `snapshot()[0]`, which is the pinned blocked agent: `tick()` skips it
   // on purpose so the demo always has a permission prompt on screen, and an
@@ -141,7 +141,7 @@ test("the delta browsers receive in demo mode is the store's own", () => {
   const store = new AgentStore(DEMO_HOST_ID);
   const deltas: { upserted: Agent[]; removedIds: string[] }[] = [];
   const src = createDemoSource({ store, onDelta: (d) => deltas.push(d), now: () => NOW });
-  store.replaceAll(src.snapshot(), NOW);
+  store.replaceAll(src.snapshot(), NOW, "herdr");
 
   src.tick();
 

@@ -161,7 +161,7 @@ const agentAt = (cwd: string) => ({
 
 function withAgent(cwd: string) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agentAt(cwd) as never], 0);
+  store.replaceAll([agentAt(cwd) as never], 0, "herdr");
   return createApp({ store, hub: new Hub(), health: () => ({}) as never, files: createFileStore() });
 }
 
@@ -171,7 +171,7 @@ test("the forms the transcript linkifies are the forms this opens", async () => 
   // `web/paths.ts` and this route — every shape that becomes a link has to open
   // — and it grew a fourth member when relative paths started linking.
   const store = new AgentStore("dev-box");
-  store.replaceAll([agentAt(DIR) as never], 0);
+  store.replaceAll([agentAt(DIR) as never], 0, "herdr");
   const app = createApp({
     store, hub: new Hub(), health: () => ({}) as never,
     files: createFileStore(), homeDir: DIR,

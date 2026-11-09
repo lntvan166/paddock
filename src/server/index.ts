@@ -728,7 +728,7 @@ if (DEMO) {
   // one call, so an edit cannot make the herdr branch look like this one by
   // accident; see `index-wiring.ts`.
   demo = createDemoSource({ store, onDelta: deltaSink(hub, null, watch) });
-  store.replaceAll(demo.snapshot(), Date.now());
+  store.replaceAll(demo.snapshot(), Date.now(), "herdr");
   // Reads answer, writes refuse. `demoTree` is read fresh on every call so its
   // `readAt` is the moment it was asked — the Spaces screen renders "as of 3s
   // ago" from that, and a frozen timestamp would age visibly on screen.

@@ -40,7 +40,7 @@ const page = (lines: string[]): JournalPage =>
 
 function deps(agents: Agent[], over: { screen?: string; lines?: string[] | null } = {}) {
   const store = new AgentStore("dev-box");
-  store.replaceAll(agents, NOW);
+  store.replaceAll(agents, NOW, "herdr");
   const actions = {
     async readOutput() { return { lines: ["$ make test", "ok"], source: "visible" as const }; },
     async readPromptScreen() { return over.screen ?? PERMISSION; },

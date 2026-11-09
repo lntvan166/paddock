@@ -36,7 +36,7 @@ function agent(state: Agent["state"] = "blocked"): Agent {
 
 function harness(state: Agent["state"] = "blocked") {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent(state)], NOW);
+  store.replaceAll([agent(state)], NOW, "herdr");
   const calls: string[] = [];
   const actions = {
     async readOutput() { calls.push("readOutput"); return { lines: ["out"], source: "visible" as const }; },

@@ -20,7 +20,7 @@ function agent(over: Partial<Agent> = {}): Agent {
  *  the route derives FROM the screen rather than that it read one. */
 function harness(a: Agent = agent(), screen?: string[]) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([a], NOW);
+  store.replaceAll([a], NOW, "herdr");
   const calls: string[] = [];
   const actions = {
     // The line count is recorded, not just the call: it is the only
@@ -231,7 +231,7 @@ test("ack marks a done agent and is refused for others", async () => {
 // was the one broken in the mode the README takes screenshots from.
 test("ack works with no herdr actions wired up at all, as in --demo", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent({ state: "done" })], NOW);
+  store.replaceAll([agent({ state: "done" })], NOW, "herdr");
   const app = createApp({
     store, hub: new Hub({ now: () => NOW }), now: () => NOW,
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
@@ -246,7 +246,7 @@ test("ack works with no herdr actions wired up at all, as in --demo", async () =
 // call, and a 404 is honest where a synthetic success would not be.
 test("the herdr-backed routes stay absent with no actions", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app = createApp({
     store, hub: new Hub({ now: () => NOW }), now: () => NOW,
     health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
@@ -258,7 +258,7 @@ test("the herdr-backed routes stay absent with no actions", async () => {
 
 test("a failed action reports ok:false rather than throwing", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app2 = createApp({
     store, hub: new Hub({ now: () => NOW }),
     actions: {
@@ -377,7 +377,7 @@ test("an unknown agent is refused before any key is sent", async () => {
 
 test("a failed key reports ok:false with no lines, never a blanked screen", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app2 = createApp({
     store, hub: new Hub({ now: () => NOW }),
     actions: {

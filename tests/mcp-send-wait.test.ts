@@ -27,12 +27,12 @@ function agent(over: Partial<Agent> = {}): Agent {
 function world(start: Partial<Agent> = {}, actionsOver: Partial<HerdrActions> = {}) {
   const store = new AgentStore("dev-box");
   const watch = new AgentWatch();
-  store.replaceAll([agent(start)], NOW);
+  store.replaceAll([agent(start)], NOW, "herdr");
   const sent: string[] = [];
   let lines: string[] = [];
   const setState = (state: Agent["state"]) => {
     const cur = store.snapshot()[0]!;
-    watch.observe(store.replaceAll([{ ...cur, state }], NOW));
+    watch.observe(store.replaceAll([{ ...cur, state }], NOW, "herdr"));
   };
   const actions = {
     async readOutput() { return { lines: ["screen line"], source: "visible" as const }; },
@@ -171,7 +171,7 @@ test("never_started after the grace", async () => {
 
 test("removal ends the wait", async () => {
   const w = world({ state: "working" });
-  later(20, () => w.watch.observe(w.store.replaceAll([], NOW)));
+  later(20, () => w.watch.observe(w.store.replaceAll([], NOW, "herdr")));
   const t0 = Date.now();
   const r = await w.call("wait_for_agent", { id: "w1:p1", cursor: TAG, wait_seconds: 1 });
   expect(r).toEqual({ ok: false, error: "agent is gone" });

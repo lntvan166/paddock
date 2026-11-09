@@ -48,7 +48,7 @@ function harness(
 ) {
   const calls: string[] = [];
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app = createApp({
     store,
     hub: new Hub({ now: () => NOW }),

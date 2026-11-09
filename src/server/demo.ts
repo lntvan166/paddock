@@ -113,7 +113,7 @@ interface DemoDelta {
  * dependency the wrong way down `herdr → store → hub → web`.
  */
 export interface DemoStoreSink {
-  replaceAll(incoming: Agent[], now: number): DemoDelta;
+  replaceAll(incoming: Agent[], now: number, origin: "herdr"): DemoDelta;
 }
 
 /**
@@ -139,7 +139,7 @@ export function createDemoSource(opts: {
     // The delta forwarded to browsers is the STORE's, not the demo array's,
     // so what a browser is told and what a later /api/agents reports are the
     // same computation.
-    onDelta: () => opts.onDelta(opts.store.replaceAll(source.snapshot(), now())),
+    onDelta: () => opts.onDelta(opts.store.replaceAll(source.snapshot(), now(), "herdr")),
   });
   return source;
 }

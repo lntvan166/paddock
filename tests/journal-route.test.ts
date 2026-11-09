@@ -23,7 +23,7 @@ function agent(over: Partial<Agent> = {}): Agent {
 
 function harness(page: JournalPage = { lines: ["you · 13:04", "hi", ""], source: "journal", hasMore: true, cursor: "120", detail: null }) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const calls: unknown[] = [];
   const app = createApp({
     store, now: () => NOW, health, hub: new Hub({ now: () => NOW }),
@@ -94,7 +94,7 @@ test("the route exists with no actions dep — it never touches herdr", async ()
   // filesystem read on a herdr dependency is the /ack mistake: the one
   // feature that works without herdr being the one broken in --demo.
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app = createApp({
     store, now: () => NOW, health, hub: new Hub({ now: () => NOW }),
     sessionFor: () => null,
@@ -148,7 +148,7 @@ test("a miss is reported once per agent, and again after the journal recovers", 
     detail: "session log not found — compacted, rotated or removed",
   };
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent({ agentId: "w9:p9" })], NOW);
+  store.replaceAll([agent({ agentId: "w9:p9" })], NOW, "herdr");
   const app = createApp({
     store, now: () => NOW, health, hub: new Hub({ now: () => NOW }),
     sessionFor: () => ({ agent: "claude", kind: "id", source: "herdr:claude", value: "u1" }),
@@ -183,7 +183,7 @@ test("the miss set cannot grow without bound", async () => {
   // about exactly like the first.
   const store = new AgentStore("dev-box");
   const many = Array.from({ length: 400 }, (_, i) => agent({ agentId: `wb:p${i}` }));
-  store.replaceAll(many, NOW);
+  store.replaceAll(many, NOW, "herdr");
   const app = createApp({
     store, now: () => NOW, health, hub: new Hub({ now: () => NOW }),
     sessionFor: () => ({ agent: "claude", kind: "id", source: "herdr:claude", value: "u1" }),

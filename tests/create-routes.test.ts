@@ -281,7 +281,7 @@ function harness(
   const calls: string[] = [];
   let readTreeCalls = 0;
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const countedReadTree = readTree
     ? async () => { readTreeCalls++; return readTree(); }
     : undefined;

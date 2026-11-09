@@ -3,6 +3,7 @@ import { createApp } from "@server/routes";
 import { AgentStore } from "@server/state/store";
 import { Hub } from "@server/ws/hub";
 import type { Agent, SpaceTree } from "@shared/types";
+import type { Origin } from "@shared/origin";
 
 // ── The §3 invariant, guarded ────────────────────────────────────────────
 //
@@ -84,9 +85,9 @@ class RecordingStore extends AgentStore {
     return super.remove(agentId);
   }
 
-  replaceAll(incoming: Agent[], now: number) {
+  replaceAll(incoming: Agent[], now: number, origin: Origin) {
     this.writes.push(`replaceAll:${incoming.length}`);
-    return super.replaceAll(incoming, now);
+    return super.replaceAll(incoming, now, origin);
   }
 
   applyEvent(agentId: string, mutate: (prev: Agent) => Agent) {
@@ -120,7 +121,7 @@ class RecordingHub extends Hub {
 
 function harness() {
   const store = new RecordingStore("dev-box");
-  store.replaceAll([agent()], NOW); // setup, not a route call — cleared below
+  store.replaceAll([agent()], NOW, "herdr"); // setup, not a route call — cleared below
   const hub = new RecordingHub({ now: () => NOW });
 
   const actionCalls: string[] = [];

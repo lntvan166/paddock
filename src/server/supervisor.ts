@@ -304,7 +304,7 @@ export class Supervisor {
     // pane's id does not linger.
     this.sessions = sessionRefs(list.agents ?? []);
 
-    const delta = this.opts.store.replaceAll(agents, now);
+    const delta = this.opts.store.replaceAll(agents, now, "herdr");
     if (delta.upserted.length || delta.removedIds.length) this.opts.onDelta(delta);
     return delta;
   }

@@ -42,7 +42,7 @@ test("C1: a permission prompt carrying a tab-bar line is never a question", asyn
   expect(describeBlocked(PERMISSION_WITH_BAR).kind).toBe("permission");
 
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], 0);
+  store.replaceAll([agent()], 0, "herdr");
   const keys: string[] = [];
   const io = {
     readPromptScreen: async () => PERMISSION_WITH_BAR,
@@ -67,7 +67,7 @@ test("I1: the publishing proxy never forwards /mcp", async () => {
 function world(state: Agent["state"], screen: string, journalLines: () => JournalPage) {
   const store = new AgentStore("dev-box");
   const watch = new AgentWatch();
-  store.replaceAll([agent({ state })], 0);
+  store.replaceAll([agent({ state })], 0, "herdr");
   const sent: string[] = [];
   const actions = {
     async readOutput() { return { lines: ["final screen"], source: "visible" as const }; },

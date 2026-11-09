@@ -21,21 +21,21 @@ test("a done agent is in ready-unseen until acknowledged", () => {
 
 test("acknowledging a non-done agent changes nothing", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent({ state: "working" })], NOW);
+  store.replaceAll([agent({ state: "working" })], NOW, "herdr");
   expect(store.acknowledge("w1:p1", NOW)).toBeNull();
   expect(store.snapshot()[0]!.acknowledgedAt).toBeNull();
 });
 
 test("acknowledge stamps the flag and reports an upsert", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const d = store.acknowledge("w1:p1", NOW + 5);
   expect(d!.upserted[0]!.acknowledgedAt).toBe(NOW + 5);
 });
 
 test("acknowledging twice is a no-op the second time", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   store.acknowledge("w1:p1", NOW + 5);
   expect(store.acknowledge("w1:p1", NOW + 9)).toBeNull();
 });
@@ -49,18 +49,18 @@ test("acknowledging an unknown agent returns null", () => {
 // acknowledged card would reappear in Ready within half a minute.
 test("a reconcile preserves the acknowledge flag", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   store.acknowledge("w1:p1", NOW + 5);
-  store.replaceAll([agent()], NOW + 30_000);
+  store.replaceAll([agent()], NOW + 30_000, "herdr");
   expect(store.snapshot()[0]!.acknowledgedAt).toBe(NOW + 5);
 });
 
 // Acknowledging means "I have dealt with this finish". A new finish is new news.
 test("leaving done clears the acknowledge flag", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   store.acknowledge("w1:p1", NOW + 5);
-  store.replaceAll([agent({ state: "working" })], NOW + 10);
+  store.replaceAll([agent({ state: "working" })], NOW + 10, "herdr");
   expect(store.snapshot()[0]!.acknowledgedAt).toBeNull();
 });
 
@@ -71,7 +71,7 @@ test("leaving done clears the acknowledge flag", () => {
 // suppressed by the stale flag.
 test("acknowledge, then off-done and back to done via push events, resurfaces in ready-unseen", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   store.acknowledge("w1:p1", NOW + 5);
 
   store.applyEvent("w1:p1", (prev) =>
