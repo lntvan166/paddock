@@ -44,3 +44,29 @@ export function downgradeRefusal(
     `  to pin to the older protocol on purpose: ${ALLOW_DOWNGRADE_ENV}=1 make types`,
   ].join("\n");
 }
+
+// The same gate for herdr-core's generated types (scripts/gen-core-types.ts).
+// That file carries its generation in a header comment rather than a constant.
+const COMMITTED_GENERATION = /^\/\/ generation: (\d+)$/m;
+
+/** The generation src/shared/herdr-core-api.d.ts is committed at, if it says. */
+export function parseCommittedGeneration(source: string): number | null {
+  const match = source.match(COMMITTED_GENERATION);
+  return match ? Number(match[1]) : null;
+}
+
+export function coreDowngradeRefusal(
+  schemaGeneration: number,
+  committed: number | null,
+  allowDowngrade: boolean,
+): string | null {
+  if (committed === null || allowDowngrade || schemaGeneration >= committed) return null;
+  return [
+    "make types: refusing to regenerate — the installed hc is older than this checkout",
+    `  hc reports  ${schemaGeneration}`,
+    `  committed   ${committed}`,
+    "  regenerating would lower the protocol generation and narrow the generated",
+    "  types, and it would report success while doing it. Upgrade herdr-core.",
+    `  to pin to the older generation on purpose: ${ALLOW_DOWNGRADE_ENV}=1 make types`,
+  ].join("\n");
+}
