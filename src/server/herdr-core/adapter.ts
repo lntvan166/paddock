@@ -41,6 +41,14 @@ function spaceLabel(labels: Record<string, string>): string | null {
   return (i === -1 ? where : where.slice(0, i)) || null;
 }
 
+/** Raw space id for a terminal the app has not put in a space. */
+export const CORE_UNGROUPED = "ungrouped";
+
+/** Never an empty raw id: a terminal without a space label is "ungrouped". */
+function workspaceIdOf(labels: Record<string, string>): string {
+  return coreId(labels["herdr.space"] || CORE_UNGROUPED);
+}
+
 function toSeen(labels: Record<string, string>): number | null {
   const raw = labels["herdr.seen"];
   if (raw === undefined) return null;
@@ -72,7 +80,7 @@ export function toCoreAgent(t: CoreTerminal, hostId: string): Agent | null {
     name: t.name ?? t.address,
     task: taskOf(status, t.title || ""),
     state: toState(status.state),
-    workspaceId: coreId(t.labels["herdr.space"] ?? ""),
+    workspaceId: workspaceIdOf(t.labels),
     workspaceLabel: spaceLabel(t.labels),
     cwd: t.cwd,
     harness: toHarness(status.app),
@@ -109,19 +117,27 @@ export function applyCoreEvent(
   record?: CoreTerminal,
   ctx: CoreEventContext = {},
 ): Agent | null {
-  const hostId = ctx.hostId ?? prev?.hostId ?? "local";
+  // A host is never guessed: with no prev to inherit from, the caller says.
+  // Resolved lazily so events that create nothing (removed, finished) need none.
+  const host = (): string => {
+    const h = ctx.hostId ?? prev?.hostId;
+    if (h === undefined) {
+      throw new Error(`applyCoreEvent: ctx.hostId is required to build an agent for ${e.terminal ?? "an unknown terminal"} without a previous agent`);
+    }
+    return h;
+  };
   const now = ctx.now ?? Date.now();
   switch (e.type) {
     case "created":
     case "restarted":
-      return toCoreAgent((e as Extract<CoreEvent, { type: "created" }>).data, hostId);
+      return toCoreAgent((e as Extract<CoreEvent, { type: "created" }>).data, host());
     case "removed":
     case "finished":
       return null;
     case "status": {
       const { status } = (e as Extract<CoreEvent, { type: "status" }>).data;
       if (!status) return null; // cleared: no longer an agent
-      if (!prev) return record ? toCoreAgent(record, hostId) : null;
+      if (!prev) return record ? toCoreAgent(record, host()) : null;
       const state = toState(status.state);
       return {
         ...prev,
@@ -140,11 +156,11 @@ export function applyCoreEvent(
     }
     case "labels": {
       const { labels, record: matched } = (e as Extract<CoreEvent, { type: "labels" }>).data;
-      if (matched) return toCoreAgent(matched, hostId);
-      if (!prev) return record ? toCoreAgent(record, hostId) : null;
+      if (matched) return toCoreAgent(matched, host());
+      if (!prev) return record ? toCoreAgent(record, host()) : null;
       return {
         ...prev,
-        workspaceId: coreId(labels["herdr.space"] ?? ""),
+        workspaceId: workspaceIdOf(labels),
         workspaceLabel: spaceLabel(labels),
         seen: toSeen(labels),
         updatedAt: now,

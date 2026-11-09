@@ -118,3 +118,17 @@ test("an unknown event type leaves the agent untouched", () => {
   const prev = toCoreAgent(f.reporting!, "h")!;
   expect(applyCoreEvent(prev, { seq: 4, type: "newthing", terminal: "t7", data: {} } as any)).toBe(prev);
 });
+
+test("a terminal with no herdr.space label gets workspaceId hc.ungrouped", () => {
+  const t = term("reporting", { labels: {} });
+  expect(toCoreAgent(t, "h")!.workspaceId).toBe("hc.ungrouped");
+  const prev = toCoreAgent(f.reporting!, "h")!;
+  const l = applyCoreEvent(prev, { seq: 1, type: "labels", terminal: "t7", data: { labels: {} } })!;
+  expect(l.workspaceId).toBe("hc.ungrouped");
+});
+
+test("creating from nothing requires ctx.hostId", () => {
+  const created: CoreEvent = { seq: 1, type: "created", terminal: "t7", data: f.reporting! };
+  expect(() => applyCoreEvent(null, created)).toThrow(/t7/);
+  expect(applyCoreEvent(null, created, undefined, { hostId: "dev-box" })!.hostId).toBe("dev-box");
+});
