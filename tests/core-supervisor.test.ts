@@ -16,7 +16,13 @@ class FakeClient implements CoreClientLike {
   onEvent!: (e: CoreEvent | CoreUnknownEvent) => void;
   onClose!: (r: Error) => void;
   closed = false;
-  hello = async () => ({ core: { id: "c", name: "c" }, features: [], framed: false, generation: 1, methods: [], version: "9.9.9" }) as never;
+  hello = async () => ({ core: { id: "c", name: "c" }, features: [], framed: false, generation: 1, methods: [] }) as never;
+  statusFails = false;
+  request = async (method: string) => {
+    if (method !== "server.status") throw new Error(`unexpected ${method}`);
+    if (this.statusFails) throw new Error("status refused");
+    return { core: { id: "c", name: "c" }, version: "9.9.9", pid: 1 } as never;
+  };
   subscribe = async (a: any, b: any, c: any) => { this.onSnapshot = a; this.onEvent = b; this.onClose = c; return () => {}; };
   close = () => { this.closed = true; };
 }
@@ -121,4 +127,34 @@ test("/api/health reports core state", async () => {
   c.onSnapshot({ channel: null, seq: 1, terminals: [term("t1")] });
   expect(await get()).toEqual({ connected: true, lastEventAt: expect.any(Number), generation: 1, version: "9.9.9", detail: null });
   sup.stop();
+});
+
+test("a resync that changes only turn or seen emits an upsert", async () => {
+  const c = new FakeClient();
+  const { deltas, sup } = setup([c]);
+  sup.start(); await tick();
+  c.onSnapshot({ channel: null, seq: 1, terminals: [term("t1"), term("t2")] });
+  deltas.length = 0;
+  c.onSnapshot({ channel: null, seq: 2, terminals: [term("t1", "idle", { turn: 2 }), term("t2")] });
+  expect(deltas.flatMap((d) => d.upserted.map((a) => a.agentId))).toEqual(["hc.t1"]);
+  deltas.length = 0;
+  c.onSnapshot({ channel: null, seq: 3, terminals: [term("t1", "idle", { turn: 2 }), term("t2", "idle", { labels: { "herdr.seen": "1" } })] });
+  expect(deltas.flatMap((d) => d.upserted.map((a) => a.agentId))).toEqual(["hc.t2"]);
+  sup.stop();
+});
+
+test("a failed server.status leaves version null and logs once at INFO", async () => {
+  const c = new FakeClient(); c.statusFails = true;
+  const lines: string[] = [];
+  const info = console.info;
+  console.info = (...a: unknown[]) => { lines.push(a.join(" ")); };
+  try {
+    const { sup } = setup([c]);
+    sup.start(); await tick();
+    c.onSnapshot({ channel: null, seq: 1, terminals: [] });
+    expect(sup.health().version).toBeNull();
+    expect(sup.health().connected).toBe(true);
+    expect(lines.filter((l) => l.includes("server.status"))).toHaveLength(1);
+    sup.stop();
+  } finally { console.info = info; }
 });

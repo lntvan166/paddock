@@ -32,7 +32,10 @@ function differs(a: Agent, b: Agent): boolean {
     a.task !== b.task ||
     a.state !== b.state ||
     a.workspaceLabel !== b.workspaceLabel ||
-    a.cwd !== b.cwd
+    a.cwd !== b.cwd ||
+    // Core agents only (null for herdr): sectionFor reads `turn > seen`.
+    a.turn !== b.turn ||
+    a.seen !== b.seen
   );
 }
 

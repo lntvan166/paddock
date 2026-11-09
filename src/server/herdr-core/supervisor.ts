@@ -15,7 +15,7 @@ import { applyCoreEvent, toCoreAgent } from "./adapter";
 import type { CoreClient } from "./socket";
 
 /** The slice of CoreClient the supervisor uses, so a test can fake it. */
-export type CoreClientLike = Pick<CoreClient, "hello" | "subscribe" | "close">;
+export type CoreClientLike = Pick<CoreClient, "hello" | "request" | "subscribe" | "close">;
 
 export interface CoreSupervisorOptions {
   /** A client for the core's socket, or null when none exists right now. */
@@ -96,7 +96,16 @@ export class CoreSupervisor {
       const hello = await client.hello();
       if (id !== this.attemptId) { client.close(); return; }
       this.generation = hello.generation;
-      this.version = hello.version ?? null;
+      // hello carries no version on a live core; server.status does. A
+      // failure here costs the version only, so it is logged, not fatal.
+      try {
+        const st = await client.request<{ version?: string }>("server.status", {});
+        this.version = st.version ?? null;
+      } catch (e) {
+        this.version = null;
+        console.info(`herdr-core: version unknown (server.status failed: ${(e as Error).message})`);
+      }
+      if (id !== this.attemptId) { client.close(); return; }
       this.closeStream = await client.subscribe(
         (snap) => { if (id === this.attemptId) this.onSnapshot(snap); },
         (e) => { if (id === this.attemptId) this.onEvent(e); },

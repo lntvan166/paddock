@@ -161,3 +161,12 @@ test("removeOrigin drops only that origin and reports them as removed", () => {
   expect(store.snapshot().map((a) => a.agentId)).toEqual(["w1:p1"]);
   expect(store.removeOrigin("core")).toEqual({ upserted: [], removedIds: [] });
 });
+
+test("replaceAll reports a core agent whose only change is turn or seen", () => {
+  const store = new AgentStore("dev-box");
+  const base = agent({ agentId: "hc.t1", origin: "core", turn: 1, seen: null });
+  store.replaceAll([base], NOW, "core");
+  expect(store.replaceAll([{ ...base, turn: 2 }], NOW, "core").upserted.map((a) => a.agentId)).toEqual(["hc.t1"]);
+  expect(store.replaceAll([{ ...base, turn: 2, seen: 2 }], NOW, "core").upserted.map((a) => a.agentId)).toEqual(["hc.t1"]);
+  expect(store.replaceAll([{ ...base, turn: 2, seen: 2 }], NOW, "core").upserted).toEqual([]);
+});
