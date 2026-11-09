@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
-import type { ActionResult, Agent } from "@shared/types";
+import { sectionFor, type ActionResult, type Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
 import { elapsedLabel } from "@web/components/elapsed";
 import { IconTile } from "@web/components/ui/IconTile";
@@ -12,6 +12,10 @@ import { StateWord } from "@web/components/ui/StateWord";
  * an answer, which is the opposite of what Needs you is for.
  */
 export function showAcknowledge(agent: Agent): boolean {
+  // A core agent's read marker is `herdr.seen`, not `acknowledgedAt`: Dismiss
+  // is offered exactly while the agent sits in Ready, and goes away when the
+  // label event raises `seen` to its turn.
+  if (agent.origin === "core") return sectionFor(agent) === "ready-unseen";
   return agent.state === "done" && agent.acknowledgedAt === null;
 }
 
