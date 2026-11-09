@@ -155,6 +155,9 @@ export class Notifier {
   }>();
   lastError: string | null = null;
 
+  /** The newest row seen for each agent. See `#see`. */
+  readonly #latest = new Map<string, Agent>();
+
   constructor(private o: NotifierOpts) {}
 
   #now(): number { return (this.o.now ?? Date.now)(); }
@@ -221,6 +224,7 @@ export class Notifier {
   #forget(agentId: string): void {
     this.#cancel(agentId);
     this.#lastSeen.delete(agentId);
+    this.#latest.delete(agentId);
     // Deleted too, or a returning pane id inherits a suppression it never
     // earned and its first real notification is silently dropped.
     this.#lastNotified.delete(agentId);
@@ -232,6 +236,10 @@ export class Notifier {
   }
 
   #see(a: Agent): void {
+    // The newest row, kept for `#fire`: the `a` a timer closes over is the row
+    // from the moment of arming, and a core agent's `seen` can move during the
+    // settle window.
+    this.#latest.set(a.agentId, a);
     const prev = this.#lastSeen.get(a.agentId);
     this.#lastSeen.set(a.agentId, a.state);
     // First sight: paddock cannot tell "just blocked" from "blocked an hour
@@ -312,6 +320,16 @@ export class Notifier {
   async #fire(a: Agent, state: NotifyTrigger, attempts: number, episode: number): Promise<void> {
     if (this.#lastSeen.get(a.agentId) !== state) return;
     if (this.#lastNotified.get(a.agentId) === state) return;
+
+    // A herdr-core agent whose `herdr.seen` has reached its turn has been
+    // looked at, in the Herdr app or here, so it is not news. Decided NOW, at
+    // settle time, on the newest row — a label that landed during the window
+    // silences the send. herdr agents carry no turn and are unaffected.
+    const cur = this.#latest.get(a.agentId) ?? a;
+    if (cur.origin === "core" && cur.seen !== null && cur.turn !== null && cur.seen >= cur.turn) {
+      this.#deferred.delete(a.agentId);
+      return;
+    }
 
     const s = this.o.settings.current();
     if (!s.notify.triggers.includes(state)) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sectionFor } from "@shared/types";
 import { useStore } from "@web/store";
-import { fetchPaneOutput, fetchSpaceTree, sendPaneKey, sendPaneText } from "@web/api";
+import { fetchPaneOutput, fetchSpaceTree, markOpened, sendPaneKey, sendPaneText } from "@web/api";
 import type { NavKey, SpaceTree, TreePane } from "@shared/types";
 import { PaneTerminal, SHELL_MIN_REFRESH_MS } from "@web/components/PaneTerminal";
 import { AgentTerminal } from "@web/components/AgentTerminal";
@@ -91,6 +91,19 @@ export function App() {
     // You are looking at it. Whatever the lock screen still says about this
     // agent, it is no longer news.
     if (openId !== null) void closeFor(openId);
+  }, [openId]);
+
+  // Opening an agent is a deliberate act that marks a herdr-core agent seen.
+  // Keyed on `openId` ALONE, so it fires once per navigation into an agent —
+  // never on a re-render, a poll, a delta or a reconnect, none of which change
+  // it. The server ignores ids that are not core agents.
+  useEffect(() => {
+    if (openId === null) return;
+    void markOpened(openId).then((r) => {
+      // A background courtesy: never a toast. The demo refuses every write,
+      // so this is an expected outcome there and still worth a console line.
+      if (!r.ok) console.warn(`could not mark ${openId} seen: ${r.detail}`);
+    });
   }, [openId]);
 
   useEffect(() => {

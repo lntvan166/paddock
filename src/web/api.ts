@@ -321,6 +321,22 @@ export const acknowledge = (id: string, f: Fetch = fetch) =>
   act(url(id, "ack"), {}, f);
 
 /**
+ * Tell the server the operator opened this agent's terminal, so a herdr-core
+ * agent's `herdr.seen` can follow. A background courtesy: it resolves with the
+ * outcome and never throws, and the caller logs a refusal rather than showing
+ * it. `204` is success; a refusal carries the server's `detail`.
+ */
+export async function markOpened(id: string, f: Fetch = fetch): Promise<ActionResult> {
+  try {
+    const res = await request(url(id, "opened"), {}, f);
+    if (res.ok) return { ok: true };
+    return { ok: false, detail: (await detailFrom(res)) ?? `request failed: ${res.status}` };
+  } catch (err) {
+    return { ok: false, detail: String(err) };
+  }
+}
+
+/**
  * Send a navigation key and take back the screen it produced.
  *
  * Uses the action convention, not the read convention: a rejected key is a

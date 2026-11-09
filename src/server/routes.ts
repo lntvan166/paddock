@@ -36,6 +36,7 @@ import { errorCode } from "@server/startup-errors";
 import type { FileStore } from "@server/files/store";
 import {
   isNavKey,
+  type Agent,
   type AgentCommand,
   type HealthBody,
   type NotifyTrigger,
@@ -902,11 +903,65 @@ export function createApp(deps: AppDeps) {
   // a Dismiss button whose POST fell through to the `/api/*` 404, so the card
   // reported "Could not dismiss." forever, in the mode the README says
   // screenshots come from.
-  app.post("/api/agents/:id/ack", (c) => {
-    const delta = deps.store.acknowledge(c.req.param("id"), now());
+  /**
+   * Write `herdr.seen` for a core agent — the ONE place paddock does.
+   *
+   * Only Dismiss and an open reach here, both deliberate acts. Presence never
+   * does (it is per-device and a left-open tab is not a person watching), and
+   * nothing repeats it while a terminal stays open.
+   *
+   * The store is not edited: the core announces the label and the supervisor
+   * applies it, so every client, paddock included, learns `seen` the same way.
+   *
+   * A core agent with no `turn` has nothing to mark — there is no turn to
+   * claim to have seen, and inventing one would write a lie into a label the
+   * Herdr app also reads. Succeeds without writing.
+   */
+  async function markCoreSeen(agent: Agent): Promise<void> {
+    if (agent.turn === null) return;
+    if (!deps.actions) throw new Unsupported("this paddock has no herdr-core connection to write to");
+    await deps.actions.markSeen(agent.agentId, agent.turn);
+  }
+
+  app.post("/api/agents/:id/ack", async (c) => {
+    const id = c.req.param("id");
+    const agent = deps.store.snapshot().find((a) => a.agentId === id);
+    if (agent?.origin === "core") {
+      try {
+        await markCoreSeen(agent);
+      } catch (err) {
+        const detail = detailOf(err);
+        warn(`ack: could not mark ${id} seen: ${detail}`);
+        return c.json({ ok: false, detail }, failStatus(err));
+      }
+      return c.json({ ok: true });
+    }
+    const delta = deps.store.acknowledge(id, now());
     if (!delta) return c.json({ ok: false, detail: "not a fresh done agent" }, 409);
     deps.hub.queue(delta); // reaches every other open browser
     return c.json({ ok: true });
+  });
+
+  /**
+   * The operator opened this agent's terminal. POST-only, and the client
+   * sends it once per navigation INTO an agent.
+   *
+   * A background courtesy: 204 for everything that has nothing to write (a
+   * herdr agent, a shell pane, an unknown id, a core agent with no turn), so
+   * the client has exactly one failure to log.
+   */
+  app.post("/api/agents/:id/opened", async (c) => {
+    const id = c.req.param("id");
+    const agent = deps.store.snapshot().find((a) => a.agentId === id);
+    if (agent?.origin !== "core") return c.body(null, 204);
+    try {
+      await markCoreSeen(agent);
+    } catch (err) {
+      const detail = detailOf(err);
+      warn(`opened: could not mark ${id} seen: ${detail}`);
+      return c.json({ ok: false, detail }, failStatus(err));
+    }
+    return c.body(null, 204);
   });
 
   /**

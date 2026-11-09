@@ -395,6 +395,9 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
     });
   }
 
+  // Nothing to write: the demo has no herdr-core agents.
+  if (route === "opened") return new Response(null, { status: 204 });
+
   if (route === "ack") {
     if (agent.state !== "done" || agent.acknowledgedAt !== null) {
       return json({ ok: false, detail: "not a fresh done agent" }, 409);
