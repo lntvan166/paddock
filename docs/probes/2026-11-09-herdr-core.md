@@ -242,10 +242,13 @@ is not the probe's:
 - **`sendOptionKey` (Task 8)** → `terminal.keys {terminal, keys:[digit]}`,
   one key per call, digit read off the parsed prompt by label.
   Arrows+`enter` also work, as a fallback.
-- **`sendReply` (Task 8)** → `terminal.send {terminal, text}` WITHOUT
-  `force`. While the agent is blocked, the core refuses with
-  `data.kind:"blocked"`. Surface that refusal to the operator. Never retry
-  with `force`.
+- **`sendReply` / `sendChars` (Task 8): this is the controller's ruling, not a
+  measurement.** When a core agent is BLOCKED, paddock refuses these itself
+  and gives the reason ("answer the dialog's options"). Text into a blocked
+  dialog is UNMEASURED and must be probed before paddock ever offers it. When
+  the agent is not blocked, use `terminal.send {terminal, text}` without
+  `force`. `terminal.send` with `force` must never be used to answer a
+  dialog: step 4 showed it approves the command whatever digit it pastes.
 - **Connection (Task 3)** → one persistent plain connection can carry all
   requests, matched by `id`. Use a separate connection for
   `events.subscribe`, since it turns its connection into a stream.

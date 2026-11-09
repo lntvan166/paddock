@@ -40,6 +40,12 @@ import { parsePrompt } from "@server/herdr/prompt-parse";
  * folder, waits for the permission prompt, and answers it. The probe is a real
  * Claude Code session and costs real usage, which is why this is a deliberate
  * act rather than part of `make test`.
+ *
+ * ORDER MATTERS. The first two tests leave the probe blocked on purpose (one
+ * only parses the prompt, the other is refused and types nothing), and the
+ * next test relies on `block()` returning early on that same prompt instead
+ * of asking for a new one. Run the file whole and in order. Do not use
+ * `--test-name-pattern` to run one answering test alone, or shuffle the order.
  */
 
 const PROBE = process.env.HC_PROBE_TERMINAL ?? "";
@@ -97,7 +103,12 @@ async function screen(): Promise<string> {
   return String(reply.result?.text ?? "");
 }
 
-/** How many times the screen and its history say a tool call was interrupted. */
+/**
+ * How many times the screen and its history say a tool call was interrupted.
+ * This is a secondary signal: the status leaving `blocked` is the real check.
+ * The "Interrupted" substring belongs to Claude Code's wording, so a change to
+ * that wording breaks this signal, not the answer path.
+ */
 async function interrupted(): Promise<number> {
   const reply = await rpc("terminal.read", { terminal: PROBE, lines: 5000 });
   if (reply.error) throw new Error(`terminal.read ${PROBE}: ${reply.error.message}`);
