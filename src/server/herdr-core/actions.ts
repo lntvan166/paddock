@@ -10,8 +10,11 @@
  *  - `terminal.send {force:true}` APPROVED a command when asked to answer "No"
  *    (the pasted digit is not a key press, and send's Enter commits the cursor
  *    row). No request in this file sends `force`, and none may.
- *  - text into a blocked dialog is unmeasured, so `sendReply` and `sendChars`
- *    read the terminal's live status first and refuse while it is blocked.
+ *  - an option digit is pressed only while the LIVE status is a blocked
+ *    `permission` prompt (`promptAllowed` gates the buttons the same way);
+ *  - text into a blocked dialog is unmeasured, so `sendReply` reads the live
+ *    status first and refuses while blocked, and `sendChars` (dialog typing)
+ *    is refused outright.
  */
 import type { CoreListResult, CoreReadResult, CoreTerminal } from "@shared/herdr-core-api";
 import { coreId, rawCoreId } from "@shared/origin";
@@ -63,6 +66,21 @@ const ONE_DIGIT = /^[1-9]$/;
 
 /** Shown when a typed reply would land in a blocked dialog. */
 export const ANSWER_THE_OPTIONS = "this agent is waiting on a dialog: answer the dialog's options";
+
+/** Typing into an app agent's dialog (question free-text, notes). */
+export const CANNOT_TYPE_IN_DIALOG = "typing into an app agent's dialog isn't supported yet — answer in Herdr";
+
+/** An option digit offered or sent to anything but a live permission prompt. */
+export const NOT_A_PERMISSION_PROMPT = "this app agent is not showing a permission prompt; nothing was sent";
+
+/**
+ * One-tap answers need a live, blocked PERMISSION prompt. `status.kind` may
+ * remove buttons, never add them: a question, an auth prompt, or a missing
+ * kind all mean no buttons.
+ */
+function isPermissionPrompt(t: CoreTerminal): boolean {
+  return t.state === "live" && t.status?.state === "blocked" && t.status.kind === "permission";
+}
 
 /** Neither herdr-core nor the app has a call that renames a running terminal. */
 export const CANNOT_RENAME_AGENT = "herdr can't rename a running app terminal";
@@ -200,10 +218,19 @@ export function createCoreActions(
       return read(target, 0);
     },
 
+    async promptAllowed(target) {
+      return isPermissionPrompt(await get(target));
+    },
+
     async sendOptionKey(target, key) {
       if (!ONE_DIGIT.test(key)) {
         throw new Unsupported(`option ${JSON.stringify(key)} has no single key on an app terminal; use the arrow keys and Enter`);
       }
+      // Gated on the LIVE status, at the moment of sending: a digit is pressed
+      // only into a permission prompt, the one dialog the probe measured. A
+      // question or auth dialog, or a prompt answered at the desk a moment
+      // ago, gets nothing. This also covers /dialog-key, which comes here.
+      if (!isPermissionPrompt(await get(target))) throw new Unsupported(NOT_A_PERMISSION_PROMPT);
       await press(target, key);
     },
 
@@ -220,14 +247,13 @@ export function createCoreActions(
       await send(target, text);
     },
 
-    async sendChars(target, chars) {
-      await refuseIfBlocked(target);
-      // The dialog typer puts key NAMES (`right`, `backspace`) beside the
-      // characters. Pasted, they would arrive as those words; refuse instead.
-      if (chars.some((c) => [...c].length !== 1)) {
-        throw new Unsupported("an app terminal takes typed characters only, not key names");
-      }
-      await send(target, chars.join(""));
+    async sendChars() {
+      // Refused OUTRIGHT, before any request. The only caller is the dialog
+      // typer. Text into a blocked dialog is unmeasured, and the only text
+      // call (`terminal.send`) presses Enter, so in the race where the store
+      // says blocked and the terminal no longer is, dialog text would be
+      // submitted to the agent as a prompt.
+      throw new Unsupported(CANNOT_TYPE_IN_DIALOG);
     },
 
     async sendPaneText(paneId, text) {

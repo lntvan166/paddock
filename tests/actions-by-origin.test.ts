@@ -20,7 +20,8 @@ function recorder(tag: string, log: string[]): HerdrActions {
   const rec = (name: string) => async (...args: unknown[]) => {
     log.push(`${tag}:${name}:${typeof args[0] === "string" ? args[0] : JSON.stringify(args[0])}`);
     if (name === "readOutput" || name === "readPane") return { lines: [], source: "visible" };
-    if (name === "readPromptScreen") return "";
+    if (name === "readPromptScreen") return "Do you want to proceed?\n❯ 1. Yes\n  2. No\n";
+    if (name === "promptAllowed") return tag === "herdr";
     if (name === "createSpace") return { spaceId: "s", tabId: "t", paneId: "p" };
     if (name === "createTab") return { tabId: "t", paneId: "p" };
     if (name === "harnessKinds") return tag === "herdr" ? ["claude", "codex"] : ["claude", "reviewer"];
@@ -49,6 +50,7 @@ const BY_ID: [string, (a: HerdrActions, id: string) => Promise<unknown>][] = [
   ["createTab", (a, id) => a.createTab(id, {})],
   ["startAgent", (a, id) => a.startAgent(id, "claude", "api-refactor")],
   ["markSeen", (a, id) => a.markSeen(id, 3)],
+  ["promptAllowed", (a, id) => a.promptAllowed(id)],
 ];
 
 test("actionsByOrigin sends hc. ids to core and others to herdr", async () => {
@@ -142,4 +144,35 @@ test("any other failure is still a 502", async () => {
   const res = await post("/api/agents/hc.t7/answer", { key: "1" });
   expect(res.status).toBe(502);
   expect((await res.json()).detail).toBe("t7 is gone");
+});
+
+const PERMISSION = "Do you want to proceed?\n❯ 1. Yes\n  2. No\n";
+
+/** A core backend whose live terminal reports `kind` (undefined: none). */
+function coreWithKind(kind: string | undefined) {
+  return {
+    ...recorder("core", []),
+    readPromptScreen: async () => PERMISSION,
+    promptAllowed: async () => kind === "permission",
+  } as HerdrActions;
+}
+
+test("/prompt offers one-tap options for a core agent only on a permission prompt", async () => {
+  for (const kind of ["question", "auth", undefined]) {
+    const post = route(actionsByOrigin(recorder("herdr", []), coreWithKind(kind)));
+    const body = await (await post("/api/agents/hc.t7/prompt", {})).json();
+    expect(body.options, String(kind)).toBeNull();
+    expect(body.dialog, String(kind)).toBeNull();
+  }
+  const post = route(actionsByOrigin(recorder("herdr", []), coreWithKind("permission")));
+  const body = await (await post("/api/agents/hc.t7/prompt", {})).json();
+  expect(body.options.map((o: { key: string }) => o.key)).toEqual(["1", "2"]);
+});
+
+test("/prompt for a herdr agent is unchanged", async () => {
+  // Terminal herdr's real answer: the parser alone decides.
+  const herdr = { readPromptScreen: async () => PERMISSION, promptAllowed: async () => true };
+  const post = route(actionsByOrigin(herdr as unknown as HerdrActions, coreWithKind(undefined)), agent({ agentId: "w1:p1", origin: "herdr", workspaceId: "w1" }));
+  const body = await (await post("/api/agents/w1:p1/prompt", {})).json();
+  expect(body.options.map((o: { key: string }) => o.key)).toEqual(["1", "2"]);
 });

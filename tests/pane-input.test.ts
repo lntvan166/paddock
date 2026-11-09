@@ -43,6 +43,7 @@ function harness(
       readTree,
       actions: {
         async markSeen() {},
+        async promptAllowed() { return true; },
         async readOutput() { return { lines: [], source: "visible" as const }; },
         async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
         async readPromptScreen() { return ""; },

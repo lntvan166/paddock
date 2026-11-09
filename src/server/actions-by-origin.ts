@@ -47,6 +47,7 @@ export function actionsByOrigin(
     createTab: async (spaceId, opts) => by(spaceId).createTab(spaceId, opts),
     startAgent: async (paneId, kind, name, args) => by(paneId).startAgent(paneId, kind, name, args),
     markSeen: async (target, turn) => by(target).markSeen(target, turn),
+    promptAllowed: async (target) => by(target).promptAllowed(target),
 
     // A new space has no id yet: the caller names the backend. Absent means
     // terminal herdr, which is what every existing caller meant.

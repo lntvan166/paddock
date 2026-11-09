@@ -304,3 +304,7 @@ test("terminal herdr has no shared seen state, and says so instead of pretending
   expect(err).toBeInstanceOf(Unsupported);
   expect(err.message).toBe("terminal herdr has no shared seen state");
 });
+
+test("terminal herdr allows a parsed prompt's one-tap options, as it always has", async () => {
+  expect(await createActions("/nonexistent/herdr.sock").promptAllowed("w1:p1")).toBe(true);
+});

@@ -1295,7 +1295,14 @@ export function createApp(deps: AppDeps) {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
       try {
-        return c.json(parsePrompt(await actions.readPromptScreen(agent.agentId)));
+        const parsed = parsePrompt(await actions.readPromptScreen(agent.agentId));
+        // The backend may withhold one-tap buttons (a herdr-core agent shows
+        // them only on a live permission prompt). It can remove them, never
+        // add them: the parser still decides whether there are any.
+        if ((parsed.options !== null || parsed.dialog !== null) && !(await actions.promptAllowed(agent.agentId))) {
+          return c.json({ ...parsed, options: null, dialog: null });
+        }
+        return c.json(parsed);
       } catch (err) {
         return c.json({ ok: false, detail: detailOf(err) }, failStatus(err));
       }

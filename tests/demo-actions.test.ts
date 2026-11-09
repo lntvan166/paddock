@@ -56,7 +56,9 @@ test("every write on the interface is covered by the list above", () => {
   // Guards the guard. A method added to `HerdrActions` and implemented in the
   // shim, but not listed here, would go untested — and the defect this file
   // exists to catch is exactly one write quietly resolving.
-  const READS = new Set(["readOutput", "readPane", "readPromptScreen", "harnessKinds"]);
+  // `promptAllowed` is a READ (may one-tap buttons be shown?), not a write:
+  // it changes nothing, so it answers like the others instead of refusing.
+  const READS = new Set(["readOutput", "readPane", "readPromptScreen", "harnessKinds", "promptAllowed"]);
   const implemented = Object.keys(demoActions()).filter((k) => !READS.has(k));
   expect(implemented.sort()).toEqual(WRITES.map(([n]) => n).sort());
 });
@@ -76,6 +78,10 @@ test("the blocked agent's detection is the real parser's input, not a parsed ans
   const raw = await demoActions().readPromptScreen("d1:p1");
   expect(raw).toContain("1. Yes");
   expect(raw).toContain("3. No");
+});
+
+test("the demo's prompt may show its options, so the blocked screenshot keeps its buttons", async () => {
+  expect(await demoActions().promptAllowed("d1:p1")).toBe(true);
 });
 
 test("an agent that is not blocked has no prompt to detect", async () => {

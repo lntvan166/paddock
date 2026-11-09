@@ -488,6 +488,12 @@ export interface HerdrActions {
    * Terminal herdr has no shared seen state and refuses.
    */
   markSeen(target: string, turn: number): Promise<void>;
+  /**
+   * May one-tap answer buttons be offered for this agent's prompt? A read.
+   * Terminal herdr: always (the parser alone decides, as before). herdr-core:
+   * only while the live status is a blocked `permission` prompt.
+   */
+  promptAllowed(target: string): Promise<boolean>;
 }
 
 /** Binds the socket path once so routes can take an injectable object. */
@@ -737,6 +743,10 @@ export function createActions(socketPath: string): HerdrActions {
     async harnessKinds() {
       const res = await request<HerdrAgentManifests>(socketPath, "server.agent_manifests", {});
       return res.manifests.map((m) => m.agent);
+    },
+
+    async promptAllowed() {
+      return true;
     },
 
     async markSeen() {

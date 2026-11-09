@@ -81,12 +81,17 @@ test("the key table covers every key the terminal view can send", () => {
   for (const l of CTRL_LETTERS) expect(NAV_TO_CORE[`ctrl-${l}`]).toBe(`ctrl+${l}`);
 });
 
+const permission = { state: "blocked", kind: "permission", app: "claude-code" };
+
 test("answer uses the measured call", async () => {
-  const { a, calls } = actions(() => ({ status: "blocked", turn: 1 }));
+  const { a, calls } = actions((m) => (m === "terminal.get" ? terminal({ status: permission }) : { status: "blocked", turn: 1 }));
   // The digit is whatever the route passes — the parsed option's own key.
   // Claude Code's "No" is 4 in manual mode and 3 elsewhere; never a constant.
   await a.sendOptionKey("hc.t7", "4");
-  expect(calls).toEqual([{ method: "terminal.keys", params: { terminal: "t7", keys: ["4"] } }]);
+  expect(calls).toEqual([
+    { method: "terminal.get", params: { terminal: "t7" } },
+    { method: "terminal.keys", params: { terminal: "t7", keys: ["4"] } },
+  ]);
   noForceAnywhere(calls);
 });
 
@@ -103,30 +108,30 @@ test("a reply to a blocked core agent is refused, and nothing is typed", async (
   const err = await a.sendReply("hc.t7", "yes").catch((e) => e);
   expect(err).toBeInstanceOf(Unsupported);
   expect(err.message).toContain("answer the dialog's options");
-  const chars = await a.sendChars("hc.t7", ["h", "i"]).catch((e) => e);
-  expect(chars).toBeInstanceOf(Unsupported);
-  expect(calls.map((c) => c.method)).toEqual(["terminal.get", "terminal.get"]);
+  expect(calls.map((c) => c.method)).toEqual(["terminal.get"]);
 });
 
 test("a reply to a core agent that is not blocked is sent without force", async () => {
   const { a, calls } = actions((m) => (m === "terminal.get" ? terminal() : { turn: 2, started: true }));
   await a.sendReply("hc.t7", "run the suite");
-  await a.sendChars("hc.t7", ["o", "k"]);
   expect(calls).toEqual([
     { method: "terminal.get", params: { terminal: "t7" } },
     { method: "terminal.send", params: { terminal: "t7", text: "run the suite" } },
-    { method: "terminal.get", params: { terminal: "t7" } },
-    { method: "terminal.send", params: { terminal: "t7", text: "ok" } },
   ]);
   noForceAnywhere(calls);
 });
 
-test("typed characters that carry a key name are refused rather than pasted as words", async () => {
-  // The dialog typer mixes `right`/`backspace` into its character list. Pasted,
-  // they would arrive as the literal words.
-  const { a, calls } = actions((m) => (m === "terminal.get" ? terminal() : {}));
-  await expect(a.sendChars("hc.t7", ["right", "backspace", "x"])).rejects.toThrow(Unsupported);
-  expect(calls.map((c) => c.method)).toEqual(["terminal.get"]);
+test("typing into an app agent's dialog is refused outright, and nothing is sent", async () => {
+  // Not only while blocked: `terminal.send` presses Enter, so in the race
+  // where the store says blocked and the terminal no longer is, the dialog
+  // text would be submitted to the agent as a prompt.
+  for (const state of ["blocked", "idle", "working"]) {
+    const { a, calls } = actions(() => terminal({ status: { state, kind: "question" } }));
+    const err = await a.sendChars("hc.t7", ["o", "k"]).catch((e) => e);
+    expect(err).toBeInstanceOf(Unsupported);
+    expect(err.message).toContain("answer in Herdr");
+    expect(calls).toEqual([]);
+  }
 });
 
 test("reads drop the trailing CR and report an empty screen as no lines", async () => {
@@ -292,6 +297,29 @@ test("harness kinds are the core's usable templates", async () => {
     ],
   }));
   expect(await a.harnessKinds()).toEqual(["claude"]);
+});
+
+test("an option digit is pressed only on a live permission prompt", async () => {
+  const cases: Record<string, unknown>[] = [
+    { state: "blocked", kind: "question" },
+    { state: "blocked", kind: "auth" },
+    { state: "blocked" },
+    { state: "idle", kind: "permission" },
+  ];
+  for (const status of cases) {
+    const { a, calls } = actions((m) => (m === "terminal.get" ? terminal({ status }) : { turn: 1 }));
+    await expect(a.sendOptionKey("hc.t7", "1"), JSON.stringify(status)).rejects.toBeInstanceOf(Unsupported);
+    expect(calls.map((c) => c.method)).toEqual(["terminal.get"]);
+  }
+});
+
+test("promptAllowed is true only for a blocked permission prompt", async () => {
+  const at = async (status: unknown) => actions(() => terminal({ status })).a.promptAllowed("hc.t7");
+  expect(await at(permission)).toBe(true);
+  expect(await at({ state: "blocked", kind: "question" })).toBe(false);
+  expect(await at({ state: "blocked", kind: "auth" })).toBe(false);
+  expect(await at({ state: "blocked" })).toBe(false);
+  expect(await at(null)).toBe(false);
 });
 
 test("a core error reaches the caller unchanged", async () => {

@@ -142,6 +142,8 @@ export function demoActions(): HerdrActions {
     // A READ, so it answers: the create sheet's harness picker is populated
     // and looks like itself. The create it leads to still refuses.
     async harnessKinds() { return ["claude", "codex"]; },
+    // Also a read: the blocked demo agent's buttons stay on screen.
+    async promptAllowed() { return true; },
   };
 }
 
