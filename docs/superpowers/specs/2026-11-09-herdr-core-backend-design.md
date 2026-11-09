@@ -1,6 +1,6 @@
 # herdr-core as a second backend
 
-Status: approved for planning, 2026-11-09. Gated on Risk 1.
+Status: awaiting the operator's review, 2026-11-09. Gated on Risk 1.
 
 ## Intent
 
