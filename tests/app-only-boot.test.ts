@@ -7,6 +7,7 @@ import { ProtocolMismatchError } from "@server/herdr/socket";
 import { CoreSupervisor, type CoreClientLike } from "@server/herdr-core/supervisor";
 import { AgentStore } from "@server/state/store";
 import { freePort } from "./support/port";
+import { HERDR_PROTOCOL } from "@shared/herdr-api";
 
 /**
  * paddock with the Herdr app and no terminal herdr.
@@ -178,3 +179,81 @@ test("herdr absent, core absent: the same explanation and exit as before", () =>
   expect(said).toContain("--demo");
   expect(said).not.toContain("herdr-core only");
 }, 30_000);
+
+// ── a terminal herdr that appears LATER, with a broken agent.list ───────────
+
+/**
+ * A terminal herdr whose agent.list has lost `workspace_id` on every row — a
+ * broken contract that `toAgent` still maps, so without the refusal its agent
+ * WOULD be rendered. One response per connection, like herdr; the stream
+ * stays open.
+ */
+function brokenHerdr(path: string) {
+  const conns = new Set<{ end(): void }>();
+  const server = Bun.listen({
+    unix: path,
+    socket: {
+      open(s) { conns.add(s); },
+      close(s) { conns.delete(s); },
+      data(s, chunk) {
+        for (const line of chunk.toString().split("\n")) {
+          if (!line.trim()) continue;
+          const req = JSON.parse(line);
+          const answer = (result: unknown) => { s.write(JSON.stringify({ id: req.id, result }) + "\n"); s.end(); };
+          if (req.method === "ping") answer({ type: "pong", version: "0.0.0-test", protocol: HERDR_PROTOCOL });
+          else if (req.method === "workspace.list") answer({ type: "workspace_list", workspaces: [] });
+          else if (req.method === "agent.list") {
+            answer({ type: "agent_list", agents: [{ pane_id: "w1:p1", agent: "claude", agent_status: "idle", name: "flaky-test-fix" }] });
+          } else if (req.method === "events.subscribe") {
+            s.write(JSON.stringify({ id: req.id, result: { type: "subscription_started" } }) + "\n");
+          } else answer({});
+        }
+      },
+    },
+  });
+  return { stop: () => { for (const c of conns) c.end(); server.stop(true); } };
+}
+
+test("after an app-only boot, a herdr that appears with a broken agent.list is refused, not rendered", async () => {
+  const core = fakeCore();
+  const port = freePort();
+  const herdrSock = join(CONFIG, `late-herdr-${Math.random().toString(36).slice(2)}.sock`);
+  const proc = Bun.spawn(["bun", "src/server/index.ts"], {
+    env: { ...baseEnv(port, core.path), PADDOCK_HERDR_SOCKET: herdrSock }, stdout: "pipe", stderr: "pipe",
+  });
+  let said = "";
+  const drain = async (s: ReadableStream<Uint8Array>) => {
+    const dec = new TextDecoder();
+    for await (const chunk of s) said += dec.decode(chunk);
+  };
+  void drain(proc.stdout);
+  void drain(proc.stderr);
+  const agentsNow = async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/agents`);
+    return ((await res.json()) as { agents: { agentId: string; origin: string }[] }).agents;
+  };
+  let herdr: { stop(): void } | null = null;
+  try {
+    const up = await poll(async () => ((await agentsNow()).length > 0 ? true : null), 15_000);
+    expect(up, "the app-only boot never served the core's agents").toBe(true);
+
+    herdr = brokenHerdr(herdrSock);
+    const refused = await poll(async () => (said.includes("refusing to show terminal herdr") ? true : null), 25_000);
+    expect(refused, `no refusal line; paddock said:\n${said}`).toBe(true);
+    await Bun.sleep(500);
+
+    expect(proc.exitCode, "paddock exited instead of staying up on the app").toBeNull();
+    expect((await agentsNow()).map((a) => [a.agentId, a.origin])).toEqual([["hc.t1", "core"]]);
+    expect(said).not.toContain("showing both backends");
+    const health = (await (await fetch(`http://127.0.0.1:${port}/api/health`)).json()) as {
+      agents: number; core: { connected: boolean };
+    };
+    expect(health.agents).toBe(1);
+    expect(health.core.connected).toBe(true);
+  } finally {
+    proc.kill("SIGKILL");
+    await proc.exited;
+    herdr?.stop();
+    core.stop();
+  }
+}, 60_000);

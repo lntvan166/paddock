@@ -933,6 +933,9 @@ if (DEMO) {
   const waitMs = resolveWaitMs(process.env);
   const connectHerdr = async () => {
     const check = await checkProtocol(socketPath);
+    // Before `start()`, so a shape message printed during it names the
+    // protocol actually answering rather than "0".
+    herdrProtocol = check.kind === "newer" ? check.herdr : HERDR_PROTOCOL;
     if (check.kind === "newer") {
       // Reported once, at INFO: this is the ordinary case now, not a problem.
       // herdr bumps its protocol often and mostly additively, and the fields
@@ -971,6 +974,23 @@ if (DEMO) {
     void connectWithWait({ socketPath, budgetMs: Number.POSITIVE_INFINITY, connect: connectHerdr }).then((later) => {
       if (later.kind === "ready") {
         herdrProtocol = later.protocol;
+        // The boot-time shape rule, applied late: rendering every agent in one
+        // wrong state is worse than not showing them. At boot that is an exit;
+        // here the app's agents are already being served, so terminal herdr is
+        // refused instead — its agents removed, its stream closed, and no retry
+        // until paddock restarts. `onShapeChange` has already printed the
+        // detail, and `health.schemaWarning` keeps saying it.
+        if (supervisor!.shape.kind === "broken") {
+          console.error(
+            "paddock: refusing to show terminal herdr — herdr's agent.list does not match what paddock reads;" +
+              " still running with herdr-core only (restart paddock after fixing it)",
+          );
+          keeper?.stop();
+          supervisor!.stop();
+          herdrStream.close();
+          deltaSink(hub, notifier, watch)(store.removeOrigin("herdr"));
+          return;
+        }
         console.info("paddock: terminal herdr is up; showing both backends");
         return;
       }

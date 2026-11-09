@@ -192,7 +192,11 @@ with its own socket and its own API. paddock reads both: terminal herdr's
 agents and the app's agents land in one store, one Agents list and one Spaces
 screen. Either backend may be absent. With only terminal herdr, paddock reads
 and renders exactly what it did before. With only the app, paddock boots and
-runs on the core alone, and picks terminal herdr up if it starts later.
+runs on the core alone, and picks terminal herdr up if it starts later. A
+terminal herdr that is wrong when it appears is refused rather than rendered.
+That covers a protocol mismatch, a path that is not a socket, and an
+`agent.list` whose shape is broken. paddock keeps running on the app and does
+not retry until it restarts. At boot, the same faults are still fatal.
 Settings → Connection and `/api/health` report each backend on its own.
 Decision 37 records the choices; `docs/probes/2026-11-09-herdr-core.md`
 records the measurements they rest on.

@@ -1175,8 +1175,16 @@ session does not silently re-litigate them.
     never meet, and every `Agent` and `Space` carries `origin`. Either backend
     may be absent. With only terminal herdr, nothing changes. With only the
     app, paddock boots and runs on the core alone. An *absent* terminal herdr
-    with a live core is not fatal, but a terminal herdr that is present and
-    wrong still is (a protocol mismatch, a path that is not a socket). See
+    with a live core is not fatal. At boot, a terminal herdr that is present
+    and wrong is still fatal, core or no core: a protocol mismatch, a path that
+    is not a socket, or an `agent.list` whose shape is broken. After an
+    app-only boot, paddock keeps trying to reach terminal herdr in the
+    background. If a herdr that appears then is wrong, it is refused rather
+    than ending the process, because the app's agents are already on screen.
+    A mismatch or a bad path is warned once. A broken `agent.list` shape gets
+    the refusal line, terminal herdr's agents are removed and its stream is
+    closed, so none of them is rendered. In neither case is it retried until
+    paddock restarts. See
     `docs/architecture.md` "Second backend: herdr-core" and
     `docs/probes/2026-11-09-herdr-core.md`.
 
