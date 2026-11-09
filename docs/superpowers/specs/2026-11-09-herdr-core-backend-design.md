@@ -211,7 +211,10 @@ review:
   - close an agent: kill the terminal;
   - close a tab or space: kill its terminals, so the app closes the empty
     tab and space by its own rule;
-  - rename an agent: the terminal's name.
+  - rename an agent: **not possible — correction found while planning.**
+    Neither herdr-core nor the app has a call that renames a running terminal
+    (a name is set only at `terminal.run`, and `herdr-app commands` lists no
+    `terminal.rename`). An app agent's Rename says so instead of acting.
 - **Renaming a space or tab goes through the running app** (its socket,
   using the same command `herdr-app do space.rename` sends). When the app is
   not running, the Rename control is still shown and says "Open Herdr to
