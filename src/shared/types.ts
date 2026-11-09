@@ -704,6 +704,19 @@ export interface HealthBody {
   clients: number;
   herdrConnected: boolean;
   /**
+   * The herdr-core backend (the Herdr desktop app's runtime). Optional in the
+   * world, required here for the usual reason: a dropped field must be a type
+   * error. `detail` is why it is not connected ("demo", "no herdr-core socket
+   * found", ...) and `null` when it is.
+   */
+  core: {
+    connected: boolean;
+    lastEventAt: number | null;
+    generation: number | null;
+    version: string | null;
+    detail: string | null;
+  };
+  /**
    * Epoch ms of the last herdr event. Exposed deliberately: a stuck event stream
    * is otherwise invisible, which is how a comparable system dropped every
    * event while reporting success.

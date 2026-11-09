@@ -24,7 +24,7 @@ async function deps(enabled: boolean, over: Partial<AppDeps> = {}): Promise<AppD
   const actions = { async sendReply() {}, async readOutput() { return { lines: [], source: "visible" } } } as unknown as HerdrActions;
   return {
     store, hub: new Hub({ now: () => NOW }), settings, actions, watch: new AgentWatch(), now: () => NOW,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, schemaWarning: null }),
     ...over,
   };
 }

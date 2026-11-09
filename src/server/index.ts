@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@server/routes";
@@ -22,6 +22,8 @@ import { toSpaceTree } from "@server/herdr/tree";
 import { AgentStore } from "@server/state/store";
 import { PresenceStore } from "@server/state/presence";
 import { Supervisor } from "@server/supervisor";
+import { CoreSupervisor } from "@server/herdr-core/supervisor";
+import { CoreClient, locateCoreSocket } from "@server/herdr-core/socket";
 import { createJournalReader, defaultRoots, type JournalReader } from "@server/journal/read";
 import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
@@ -694,6 +696,9 @@ presence.onChange((agentId) => notifier.reconsider(agentId));
 let herdrProtocol: number | null = null;
 
 let supervisor: Supervisor | null = null;
+// herdr-core (the Herdr app's runtime): optional, absent in --demo. It feeds the
+// same store; a missing core is a logged state, never an error.
+let coreSupervisor: CoreSupervisor | null = null;
 let demo: DemoSource | null = null;
 // Demo has no herdr to act on, so the herdr-backed action routes stay unset
 // and 404 honestly rather than pretending to answer a synthetic agent. `/ack`
@@ -902,6 +907,18 @@ if (DEMO) {
   }
   herdrProtocol = started.protocol;
 
+  // herdr-core is optional and never blocks boot: start() returns at once and
+  // the supervisor logs its own state, so a missing app costs one INFO line.
+  coreSupervisor = new CoreSupervisor({
+    connect: () => {
+      const path = locateCoreSocket(process.env, process.getuid?.() ?? 0, (p) => existsSync(p));
+      return path ? new CoreClient(path) : null;
+    },
+    store,
+    onDelta: deltaSink(hub, notifier, watch),
+  });
+  coreSupervisor.start();
+
   // The startup half of the shape check. `start()` has just reconciled, so
   // this verdict is about real data. Refusing here is deliberate: rendering
   // every agent in one wrong state, or every row under the same label, is
@@ -1024,6 +1041,10 @@ const appDeps = {
     latestKnown,
     managedBy,
     herdrProtocol: DEMO ? HERDR_PROTOCOL : herdrProtocol,
+    core: coreSupervisor?.health() ?? {
+      connected: false, lastEventAt: null, generation: null, version: null,
+      detail: DEMO ? "demo" : "not started",
+    },
     // Read from the supervisor rather than cached here, for the same reason
     // herdrConnected reads the stream: a copy can go stale and then lie.
     schemaWarning: shapeSummary(supervisor?.shape ?? { kind: "unknown" }),
@@ -1224,6 +1245,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // open — but a timer that fires against a torn-down store would report
     // about an agent nobody is watching any more.
     notifier.dispose();
+    coreSupervisor?.stop();
     // The sweep timer is unref'd too, but a stale-viewer entry surviving this
     // process's own shutdown would answer `viewers()` on a socket that no
     // longer exists.

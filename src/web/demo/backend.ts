@@ -110,6 +110,7 @@ function demoHealth(): HealthBody {
     latestKnown: null,
     managedBy: null,
     herdrProtocol: 20,
+    core: { connected: false, lastEventAt: null, generation: null, version: null, detail: "demo" },
     schemaWarning: null,
   };
 }
