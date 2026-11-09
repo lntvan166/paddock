@@ -86,6 +86,8 @@ type Msg = {
 class Conn {
   private sock: Awaited<ReturnType<typeof Bun.connect>> | null = null;
   private buf = "";
+  /** One decoder per connection: a multi-byte character can straddle two chunks. */
+  private decoder = new TextDecoder();
   closed = false;
   private constructor(
     private onMessage: (m: Msg) => void,
@@ -98,7 +100,7 @@ class Conn {
       c.sock = await Bun.connect({
         unix: path,
         socket: {
-          data(_s, chunk) { c.feed(chunk.toString()); },
+          data(_s, chunk) { c.feed(c.decoder.decode(chunk, { stream: true })); },
           close() { c.shut(new Error(`herdr-core connection closed (${path})`)); },
           error(_s, e) { c.shut(new Error(`herdr-core socket error (${path}): ${e.message}`)); },
         },
@@ -237,7 +239,14 @@ export class CoreClient {
       (m) => {
         if (m.id === SUB_ID) {
           if (m.error) nack(new CoreError(m.error.message, m.error.data?.kind ?? "unknown", m.error.data?.hint));
-          else ack(m.result as CoreSubscribeResult);
+          else {
+            // Deliver the snapshot HERE, synchronously: a chunk can carry the
+            // reply and the first events together, and they must land after it.
+            settled = true;
+            clearTimeout(timer);
+            onSnapshot(m.result as CoreSubscribeResult);
+            ack(m.result as CoreSubscribeResult);
+          }
           return;
         }
         if (m.method === "event") onEvent(m.params as CoreEvent | CoreUnknownEvent);
@@ -257,13 +266,9 @@ export class CoreClient {
     this.streams.add(conn);
     conn.send({ id: SUB_ID, method: "events.subscribe", params: {} });
 
-    let snapshot: CoreSubscribeResult;
-    try { snapshot = await acked; }
+    try { await acked; }
     catch (e) { wantClose = true; conn.close(); throw e; }
     finally { clearTimeout(timer); }
-    settled = true;
-    if (conn.closed) throw new Error("herdr-core connection closed before the snapshot was delivered");
-    onSnapshot(snapshot);
     return () => { wantClose = true; conn.close(); };
   }
 

@@ -36,6 +36,7 @@ async function fakeCore(handler: Handler) {
   stop = () => { for (const s of conns) s.end(); server.stop(true); };
   return {
     path,
+    raw: (...parts: (string | Uint8Array)[]) => { for (const s of conns) for (const p of parts) s.write(p); },
     broadcast: (m: object) => { for (const s of conns) s.write(JSON.stringify(m) + "\n"); },
     hangUp: () => { for (const s of conns) s.end(); },
   };
@@ -185,4 +186,32 @@ test("an unreachable socket rejects with the path", async () => {
   const err = await c.request<any>("server.status").catch((e: any) => e);
   expect(err).toBeInstanceOf(Error);
   expect(err.message).toContain("/nonexistent/paddock-core.sock");
+});
+
+test("a reply and an event in ONE write reach onSnapshot before onEvent", async () => {
+  const core = await fakeCore((req, write) => {
+    if (req.method === "events.subscribe") {
+      const a = JSON.stringify(ok(req, { channel: null, seq: 1, terminals: [] }));
+      const b = JSON.stringify({ jsonrpc: "2.0", method: "event", params: { type: "title", seq: 2, terminal: "t1", data: { title: "x" } } });
+      core.raw(a + "\n" + b + "\n");
+    }
+  });
+  const order: string[] = [];
+  const c = new CoreClient(core.path);
+  const close = await c.subscribe(() => order.push("snapshot"), () => order.push("event"));
+  await Bun.sleep(30);
+  expect(order).toEqual(["snapshot", "event"]);
+  close();
+});
+
+test("a multi-byte character split across two writes arrives intact", async () => {
+  const core = await fakeCore((req, write) => {
+    const bytes = new TextEncoder().encode(JSON.stringify(ok(req, { text: "box \u2500 end" })) + "\n");
+    const cut = bytes.indexOf(0xe2) + 1; // inside the 3-byte character
+    core.raw(bytes.slice(0, cut));
+    setTimeout(() => core.raw(bytes.slice(cut)), 30);
+  });
+  const c = new CoreClient(core.path);
+  expect(await c.request<any>("terminal.read", {})).toEqual({ text: "box \u2500 end" });
+  c.close();
 });
