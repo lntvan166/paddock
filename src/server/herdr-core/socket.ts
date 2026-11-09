@@ -102,7 +102,9 @@ class Conn {
         socket: {
           data(_s, chunk) { c.feed(c.decoder.decode(chunk, { stream: true })); },
           close() { c.shut(new Error(`herdr-core connection closed (${path})`)); },
-          error(_s, e) { c.shut(new Error(`herdr-core socket error (${path}): ${e.message}`)); },
+          // Ended, not just marked shut: whoever owned this connection forgets
+          // it in `onClose`, so nothing would ever close the fd otherwise.
+          error(s, e) { c.shut(new Error(`herdr-core socket error (${path}): ${e.message}`)); s.end(); },
         },
       });
     } catch (e) {
@@ -126,6 +128,9 @@ class Conn {
         return;
       }
       this.onMessage(msg);
+      // A handler may close this connection mid-chunk; the rest of the chunk
+      // belongs to a stream nobody is listening to any more.
+      if (this.closed) return;
     }
   }
 
@@ -244,7 +249,18 @@ export class CoreClient {
             // reply and the first events together, and they must land after it.
             settled = true;
             clearTimeout(timer);
-            onSnapshot(m.result as CoreSubscribeResult);
+            try {
+              onSnapshot(m.result as CoreSubscribeResult);
+            } catch (e) {
+              // Settled already, so the close handler will not reject `acked`:
+              // reject it here, or `subscribe` waits forever. Our own close —
+              // the caller hears it as this rejection, not as a drop.
+              const err = e instanceof Error ? e : new Error(String(e));
+              wantClose = true;
+              nack(err);
+              conn.close(err);
+              return;
+            }
             ack(m.result as CoreSubscribeResult);
           }
           return;
@@ -275,6 +291,11 @@ export class CoreClient {
   /** Close the request connection and any subscription; pending requests reject. */
   close() {
     for (const s of [...this.streams]) s.close();
-    this.conn?.then((c) => c.close(), () => {});
+    // A connect that failed was already rejected to the request awaiting it;
+    // said here too rather than dropped, since nobody awaits this close.
+    this.conn?.then(
+      (c) => c.close(),
+      (e: Error) => console.info(`herdr-core: closing a connection that never opened: ${e.message}`),
+    );
   }
 }

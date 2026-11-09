@@ -92,7 +92,8 @@ export interface CreateSenders {
   startAgent: StartSender;
 }
 
-export interface Backends { core: boolean; app: boolean }
+/** What `/api/health` says is up. `herdr` is terminal herdr's stream. */
+export interface Backends { herdr: boolean; core: boolean; app: boolean }
 
 /** The real clients from `api.ts`, wrapped so the optional `fetch` parameter
  *  each one carries stays out of the interface above. */
@@ -100,7 +101,7 @@ export const LIVE_CREATE_SENDERS: CreateSenders = {
   harnesses: async () => (await fetchHarnessKinds()).kinds,
   backends: async () => {
     const h = await fetchHealth();
-    return { core: h.core.connected, app: h.app?.running === true };
+    return { herdr: h.herdrConnected, core: h.core.connected, app: h.app?.running === true };
   },
   createSpace: (opts) => createSpace(opts),
   createTab: (spaceId, opts) => createTab(spaceId, opts),
@@ -242,7 +243,8 @@ export function CreateSheet({
    * Which backend this create goes to. A tab: its space's. A new space:
    * terminal herdr unless the operator picks the app, which is offered only
    * while herdr-core is connected — so a TUI-only setup sees the sheet it
-   * always saw.
+   * always saw. With terminal herdr down and the core up, the app is the
+   * default instead.
    */
   const origin: Origin = isSpace ? newOrigin : (target.spaceOrigin ?? "herdr");
   const isApp = origin === "core";
@@ -336,7 +338,13 @@ export function CreateSheet({
       void (async () => {
         try {
           const found = await readBackends();
-          if (live) setBackends(found);
+          if (!live) return;
+          setBackends(found);
+          // App-only: the core is the only backend that can take a create, so
+          // it is the default — and the ONLY answer in the dial's quick flow,
+          // which never asks "Where". Defaulting to terminal herdr here sent
+          // every create to a backend that is not running.
+          if (!found.herdr && found.core) setNewOrigin("core");
         } catch (err) {
           if (live) setError(err instanceof Error ? err.message : String(err));
         }
@@ -481,7 +489,8 @@ export function CreateSheet({
           </label>
 
           {/* Only while herdr-core is connected, and never in the dial's quick
-              flow: terminal herdr stays the default for a brand-new space. */}
+              flow: terminal herdr stays the default for a brand-new space,
+              unless it is not running — then the app is (see the read above). */}
           {isSpace && !quick && backends?.core === true && <label>
             <span>Where</span>
             <select

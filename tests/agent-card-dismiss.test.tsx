@@ -28,3 +28,9 @@ test("a herdr done agent still offers Dismiss until acknowledged", async () => {
   expect(showAcknowledge(agent({ state: "done", acknowledgedAt: 5 }))).toBe(false);
   expect(showAcknowledge(agent({ state: "idle" }))).toBe(false);
 });
+
+test("a done core agent with no turn offers no Dismiss: there is nothing it could write", async () => {
+  const a = agent({ origin: "core", state: "done", turn: null, seen: null });
+  expect(showAcknowledge(a)).toBe(false);
+  expect(await hasDismiss(a)).toBe(false);
+});

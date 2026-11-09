@@ -31,7 +31,8 @@ const TREE: SpaceTree = {
   ],
 };
 
-function recorder(backends: { core: boolean; app: boolean }) {
+function recorder(b: { core: boolean; app: boolean; herdr?: boolean }) {
+  const backends = { herdr: true, ...b };
   const calls: string[] = [];
   const senders: CreateSenders = {
     harnesses: async () => ["claude", "codex"],
@@ -153,4 +154,39 @@ test("a new space offers the app only when herdr-core is connected, and sends or
   await click(sheet().querySelector("button[data-create-submit]"));
   await settle();
   expect(r.calls).toEqual([`createSpace ${JSON.stringify({ origin: "core" })}`]);
+});
+
+test("app-only: a new space defaults to the app, and sends origin core", async () => {
+  const r = recorder({ herdr: false, core: true, app: false });
+  await render(<CreateSheet target={{ kind: "space" }} cwds={[]} onChanged={() => {}} senders={r.senders} navigate={() => {}} />);
+  await click(document.querySelector('[data-create="space"]'));
+  await settle();
+  expect(select("origin")!.value).toBe("core");
+  await click(sheet().querySelector("button[data-create-submit]"));
+  await settle();
+  expect(r.calls).toEqual([`createSpace ${JSON.stringify({ origin: "core" })}`]);
+});
+
+test("app-only: the dial's quick flow creates in the only connected backend", async () => {
+  const r = recorder({ herdr: false, core: true, app: false });
+  await render(
+    <CreateSheet target={{ kind: "space" }} preset="shell" openWhen cwds={[]} onChanged={() => {}} senders={r.senders} navigate={() => {}} />,
+  );
+  await settle();
+  // Quick mode never asks "Where".
+  expect(select("origin")).toBeNull();
+  await click(sheet().querySelector("button[data-create-submit]"));
+  await settle();
+  expect(r.calls).toEqual([`createSpace ${JSON.stringify({ origin: "core" })}`]);
+});
+
+test("with both backends up, terminal herdr stays the default", async () => {
+  const r = recorder({ herdr: true, core: true, app: true });
+  await render(
+    <CreateSheet target={{ kind: "space" }} preset="shell" openWhen cwds={[]} onChanged={() => {}} senders={r.senders} navigate={() => {}} />,
+  );
+  await settle();
+  await click(sheet().querySelector("button[data-create-submit]"));
+  await settle();
+  expect(r.calls).toEqual([`createSpace ${JSON.stringify({})}`]);
 });

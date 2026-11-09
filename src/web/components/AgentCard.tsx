@@ -14,8 +14,9 @@ import { StateWord } from "@web/components/ui/StateWord";
 export function showAcknowledge(agent: Agent): boolean {
   // A core agent's read marker is `herdr.seen`, not `acknowledgedAt`: Dismiss
   // is offered exactly while the agent sits in Ready, and goes away when the
-  // label event raises `seen` to its turn.
-  if (agent.origin === "core") return sectionFor(agent) === "ready-unseen";
+  // label event raises `seen` to its turn. With no turn there is nothing for
+  // Dismiss to write, so it is not offered (the server refuses it too).
+  if (agent.origin === "core") return agent.turn !== null && sectionFor(agent) === "ready-unseen";
   return agent.state === "done" && agent.acknowledgedAt === null;
 }
 

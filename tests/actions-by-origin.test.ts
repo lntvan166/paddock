@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { BackendUnavailable, Unsupported } from "@server/action-errors";
-import { actionsByOrigin } from "@server/actions-by-origin";
+import { actionsByOrigin, requireHerdr } from "@server/actions-by-origin";
 import type { HerdrActions } from "@server/herdr/actions";
 import { createApp } from "@server/routes";
 import { AgentStore } from "@server/state/store";
@@ -88,6 +88,48 @@ test("a core that is not running costs herdr's harness kinds nothing", async () 
   expect(await a.harnessKinds()).toEqual(["claude", "codex"]);
 });
 
+test("app-only: a terminal herdr that is not running costs the core's harness kinds nothing", async () => {
+  const herdr = { ...recorder("herdr", []), harnessKinds: async () => { throw new BackendUnavailable("terminal herdr is not running"); } };
+  const a = actionsByOrigin(herdr as HerdrActions, recorder("core", []));
+  expect(await a.harnessKinds()).toEqual(["claude", "reviewer"]);
+});
+
+test("app-only through the guard: harness kinds are the core's, said once at INFO", async () => {
+  const infos: string[] = [];
+  const orig = console.info;
+  console.info = (...args: unknown[]) => { infos.push(args.join(" ")); };
+  try {
+    const a = actionsByOrigin(requireHerdr(recorder("herdr", []), () => false), recorder("core", []));
+    expect(await a.harnessKinds()).toEqual(["claude", "reviewer"]);
+    expect(await a.harnessKinds()).toEqual(["claude", "reviewer"]);
+    expect(infos.filter((l) => l.includes("terminal herdr is not running"))).toHaveLength(1);
+  } finally {
+    console.info = orig;
+  }
+});
+
+test("with neither backend up, harness kinds is terminal herdr's 503", async () => {
+  const a = actionsByOrigin(requireHerdr(recorder("herdr", []), () => false), undefined);
+  const e = await a.harnessKinds().catch((err) => err);
+  expect(e).toBeInstanceOf(BackendUnavailable);
+  expect(e.message).toBe("terminal herdr is not running");
+});
+
+test("requireHerdr refuses every call while terminal herdr is not connected, and passes through when it is", async () => {
+  let up = false;
+  const log: string[] = [];
+  const g = requireHerdr(recorder("herdr", log), () => up);
+  for (const [name, call] of BY_ID) {
+    const e = await call(g, "w1:p1").catch((err: Error) => err) as Error;
+    expect(e, name).toBeInstanceOf(BackendUnavailable);
+    expect(e.message, name).toBe("terminal herdr is not running");
+  }
+  expect(log).toEqual([]);
+  up = true;
+  await g.sendOptionKey("w1:p1", "1");
+  expect(log).toEqual(["herdr:sendOptionKey:w1:p1"]);
+});
+
 test("a missing backend is a typed refusal naming it", async () => {
   const onlyHerdr = actionsByOrigin(recorder("herdr", []), undefined);
   const e1 = await onlyHerdr.sendOptionKey("hc.t7", "1").catch((e) => e);
@@ -128,6 +170,14 @@ test("a missing backend is a 503 with its name", async () => {
 
   const out = await post("/api/agents/hc.t7/output", {});
   expect(out.status).toBe(503);
+});
+
+test("app-only: a herdr id is a 503 naming terminal herdr, not a 502", async () => {
+  const herdrDown = requireHerdr(recorder("herdr", []), () => false);
+  const post = route(actionsByOrigin(herdrDown, recorder("core", [])), agent({ agentId: "w1:p1", origin: "herdr", workspaceId: "w1" }));
+  const res = await post("/api/agents/w1:p1/answer", { key: "1" });
+  expect(res.status).toBe(503);
+  expect((await res.json()).detail).toBe("terminal herdr is not running");
 });
 
 test("an unsupported action is a 409 carrying its reason verbatim", async () => {
@@ -176,3 +226,48 @@ test("/prompt for a herdr agent is unchanged", async () => {
   const body = await (await post("/api/agents/w1:p1/prompt", {})).json();
   expect(body.options.map((o: { key: string }) => o.key)).toEqual(["1", "2"]);
 });
+
+/**
+ * A core backend showing a QUESTION dialog (not a permission prompt), that
+ * records every key it is asked to send. The live gate says no; the dialog
+ * routes must ask it before moving a cursor or typing a character.
+ */
+function coreQuestionDialog(log: string[]) {
+  const screen = [
+    "Which deploy target should I use?",
+    "",
+    "❯ 1. Option number 1 with a reasonably long label",
+    "  2. Option number 2 with a reasonably long label",
+    "  3. Option number 3 with a reasonably long label",
+    "",
+    "Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel",
+  ].join("\n");
+  return {
+    ...recorder("core", log),
+    readPromptScreen: async () => screen,
+    readOutput: async () => ({ lines: screen.split("\n"), source: "visible" }),
+    promptAllowed: async () => { log.push("core:promptAllowed"); return false; },
+    sendNavKey: async (_t: string, k: string) => { log.push(`core:sendNavKey:${k}`); },
+    sendOptionKey: async (_t: string, k: string) => { log.push(`core:sendOptionKey:${k}`); },
+    sendChars: async (_t: string, c: string[]) => { log.push(`core:sendChars:${c.join("")}`); },
+  } as unknown as HerdrActions;
+}
+
+const DIALOG_ROUTES: [string, object][] = [
+  ["select", { key: "3" }],
+  ["dialog-tab", { dir: "right" }],
+  ["type", { text: "staging" }],
+  ["note", { text: "staging", mode: "note-only" }],
+  ["dialog-key", { key: "2" }],
+];
+
+for (const [path, body] of DIALOG_ROUTES) {
+  test(`/${path} for a core agent is refused by the live permission gate, with nothing sent`, async () => {
+    const log: string[] = [];
+    const post = route(actionsByOrigin(recorder("herdr", []), coreQuestionDialog(log)));
+    const res = await post(`/api/agents/hc.t7/${path}`, body);
+    expect(res.status).toBe(409);
+    expect((await res.json()).detail).toContain("not showing a permission prompt");
+    expect(log).toEqual(["core:promptAllowed"]);
+  });
+}

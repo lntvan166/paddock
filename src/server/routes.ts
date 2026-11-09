@@ -47,7 +47,13 @@ import {
   type TreePane,
 } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
+import { isCoreId } from "@shared/origin";
 import type { HerdrAgentSession } from "@shared/herdr-api";
+
+/** Why a dialog route sent nothing to an app agent: paddock answers only its
+ *  permission prompts (see `refuseCoreDialog`). */
+export const CORE_DIALOG_REFUSED =
+  "this app agent is not showing a permission prompt; answer it in the Herdr app — nothing was sent";
 
 // Re-exported for call sites that imported this from here before the
 // contract moved to `@shared/types` — see `src/shared/types.ts` for the
@@ -927,6 +933,14 @@ export function createApp(deps: AppDeps) {
     const id = c.req.param("id");
     const agent = deps.store.snapshot().find((a) => a.agentId === id);
     if (agent?.origin === "core") {
+      // Refused, not "ok": `markCoreSeen` writes nothing for an agent with no
+      // turn, and a 200 there was a Dismiss that did nothing while saying it
+      // worked. The card does not offer Dismiss for such an agent; this is the
+      // server saying so to any client that asks anyway. `/opened` keeps its
+      // quiet 204 — it is a background courtesy, not a control.
+      if (agent.turn === null) {
+        return c.json({ ok: false, detail: "this app agent has no turn to mark seen yet; nothing was written" }, 409);
+      }
       try {
         await markCoreSeen(agent);
       } catch (err) {
@@ -1278,6 +1292,31 @@ export function createApp(deps: AppDeps) {
     const actions = deps.actions;
 
     /**
+     * The live permission gate for the dialog routes, asked BEFORE any key.
+     *
+     * A herdr-core agent is answered from paddock only while it shows a
+     * permission prompt — the one dialog the probe measured. The core's
+     * `sendOptionKey` and `sendChars` refuse otherwise, but the dialog routes
+     * walk the cursor with arrows and Enter first (`sendNavKey`, which is not
+     * gated and must not be: the terminal pane uses it). So `/select` could
+     * commit an option of a question dialog, and `/type` or `/dialog-tab`
+     * moved the cursor before the character was refused. Enforced here, on the
+     * server, rather than trusted to the UI hiding the controls.
+     *
+     * Returns the 409 to send, or null to go on. Terminal herdr agents are
+     * untouched: the parser alone decides for them, as before.
+     */
+    async function refuseCoreDialog(c: Context, agentId: string): Promise<Response | null> {
+      if (!isCoreId(agentId)) return null;
+      try {
+        if (await actions.promptAllowed(agentId)) return null;
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
+      }
+      return c.json({ ok: false, detail: CORE_DIALOG_REFUSED, lines: [], source: "" }, 409);
+    }
+
+    /**
      * The MCP bridge — see docs/design/2026-10-24-mcp-bridge-design.md.
      *
      * NEVER on the gated quick-tunnel app (`deps.pairing`): that listener has
@@ -1458,6 +1497,9 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: `dir must be "left" or "right"` }, 400);
       }
 
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
+
       try {
         const outcome = await moveDialogTab(agent.agentId, dir, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
@@ -1516,6 +1558,9 @@ export function createApp(deps: AppDeps) {
         }, 400);
       }
 
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
+
       try {
         const outcome = await typeIntoFreeText(agent.agentId, chars, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
@@ -1560,6 +1605,9 @@ export function createApp(deps: AppDeps) {
       if (typeof key !== "string" || !OPTION_KEY_RE.test(key)) {
         return c.json({ ok: false, detail: `key must be an option digit, e.g. "2"` }, 400);
       }
+
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
 
       try {
         // NOT a bare `sendOptionKey`: a digit is a toggle only while the cursor
@@ -1623,6 +1671,9 @@ export function createApp(deps: AppDeps) {
       // moving keeps answering rather than silently doing half the action.
       const commit = body.commit !== false;
 
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
+
       try {
         const outcome = await selectByCursor(agent.agentId, key, commit, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
@@ -1665,6 +1716,9 @@ export function createApp(deps: AppDeps) {
           detail: `mode must be "note-only" or "with-option"`,
         }, 400);
       }
+
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
 
       try {
         const outcome = await addNote(agent.agentId, chars, mode, { ...actions, settle });

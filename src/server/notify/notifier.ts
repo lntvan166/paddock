@@ -8,7 +8,16 @@ export type TimerHandle = ReturnType<typeof setTimeout>;
 /** Attempts per settled transition, including the first. */
 const MAX_ATTEMPTS = 3;
 
-const isTrigger = (s: AgentState): s is NotifyTrigger => s === "blocked" || s === "done";
+/**
+ * A state that is announced. `error` is one of them without being a setting of
+ * its own: a herdr-core agent in error is "needs you" (spec), so it rides the
+ * BLOCKED trigger — its tick, its settle window — while the episode bookkeeping
+ * below keeps the real state, so `blocked → error` is still a transition.
+ */
+type Announced = NotifyTrigger | "error";
+const isTrigger = (s: AgentState): s is Announced => s === "blocked" || s === "done" || s === "error";
+/** The setting that governs an announced state. */
+const triggerOf = (s: Announced): NotifyTrigger => (s === "done" ? "done" : "blocked");
 
 export interface NotifierOpts {
   settings: SettingsStore;
@@ -90,7 +99,9 @@ export function composeMessage(
   state: AgentState,
   publicUrl: string | null,
 ): { text: string; replyMarkup?: InlineKeyboard } {
-  const text = `${a.name} is ${state}`;
+  // "is in error", not "is error": the state word is an adjective for every
+  // other state and a noun for this one.
+  const text = `${a.name} is ${state === "error" ? "in error" : state}`;
   if (publicUrl === null || publicUrl === "") return { text };
   // A free-text field collects a trailing slash, and `${url}/${hash}` would
   // then produce "https://host//#/pane/...".
@@ -135,7 +146,7 @@ export class Notifier {
   #nextEpisode = 0;
   /** In-flight settle windows. At most one per agent — `#arm` cancels before
    *  it sets, and a timer callback only ever removes its OWN entry. */
-  #pending = new Map<string, { state: NotifyTrigger; timer: TimerHandle; attempts: number }>();
+  #pending = new Map<string, { state: Announced; timer: TimerHandle; attempts: number }>();
   /**
    * Episodes withheld because every subscribed device was already showing the
    * agent, waiting for a viewer to leave.
@@ -151,7 +162,7 @@ export class Notifier {
    * is already true of a retry and not worth a second mechanism.
    */
   #deferred = new Map<string, {
-    agent: Agent; state: NotifyTrigger; episode: number; attempts: number;
+    agent: Agent; state: Announced; episode: number; attempts: number;
   }>();
   lastError: string | null = null;
 
@@ -272,11 +283,12 @@ export class Notifier {
     if (!isTrigger(a.state)) return;
 
     const s = this.o.settings.current();
-    if (!s.notify.triggers.includes(a.state)) return;
-    this.#arm(a, a.state, s.notify.settleMs[a.state], 0, episode);
+    const trigger = triggerOf(a.state);
+    if (!s.notify.triggers.includes(trigger)) return;
+    this.#arm(a, a.state, s.notify.settleMs[trigger], 0, episode);
   }
 
-  #arm(a: Agent, state: NotifyTrigger, ms: number, attempts: number, episode: number): void {
+  #arm(a: Agent, state: Announced, ms: number, attempts: number, episode: number): void {
     // FIRST, always. An arm REPLACES whatever this agent had pending, and
     // `#pending.set` over a live entry loses the handle: the old timer stays
     // armed but is no longer reachable by `#cancel` or `dispose()`, so the
@@ -317,7 +329,7 @@ export class Notifier {
     this.#pending.set(a.agentId, { state, timer, attempts });
   }
 
-  async #fire(a: Agent, state: NotifyTrigger, attempts: number, episode: number): Promise<void> {
+  async #fire(a: Agent, state: Announced, attempts: number, episode: number): Promise<void> {
     if (this.#lastSeen.get(a.agentId) !== state) return;
     if (this.#lastNotified.get(a.agentId) === state) return;
 
@@ -332,7 +344,7 @@ export class Notifier {
     }
 
     const s = this.o.settings.current();
-    if (!s.notify.triggers.includes(state)) {
+    if (!s.notify.triggers.includes(triggerOf(state))) {
       // The operator unticked this trigger while this agent's episode was
       // deferred (`#deferred.set` below can only have run for a PRIOR `#fire`
       // that reached it, so an entry can exist here). Left in place, every
@@ -492,7 +504,7 @@ export class Notifier {
    * reaching the delta path would take the dashboard down to deliver a
    * notification, which is exactly backwards.
    */
-  async #sendPush(a: Agent, state: NotifyTrigger, skipDeviceKeys: ReadonlySet<string>): Promise<void> {
+  async #sendPush(a: Agent, state: Announced, skipDeviceKeys: ReadonlySet<string>): Promise<void> {
     const send = this.o.sendPush;
     if (send === undefined) return;
     try {

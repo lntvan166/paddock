@@ -27,6 +27,9 @@ export function actionsByOrigin(
     return herdr;
   };
   const by = (id: string): HerdrActions => (isCoreId(id) ? forCore() : forHerdr());
+  /** Whether the "offering the core's kinds only" line has been said for the
+   *  current stretch of terminal herdr being down. */
+  let herdrFallbackSaid = false;
 
   return {
     readOutput: async (target, state, lines, scrollback) => by(target).readOutput(target, state, lines, scrollback),
@@ -55,15 +58,28 @@ export function actionsByOrigin(
       (opts.origin === "core" ? forCore() : forHerdr()).createSpace(opts),
 
     /**
-     * Both backends' kinds, herdr's first. Terminal herdr's list is required
-     * when herdr is there (its failure is the failure, as before); the core
-     * only ADDS, so a core that is down or failing never takes the TUI's
-     * create sheet with it. A core failure other than "not running" is said
-     * at INFO rather than dropped.
+     * Both backends' kinds, herdr's first. Either side may be down: the other
+     * side's list is then the whole list, so app-only operation still offers
+     * the core's templates and a TUI-only setup still offers terminal herdr's.
+     * Terminal herdr's list is required when herdr is up (its failure is the
+     * failure, as before); the core only ADDS, so a core that is failing never
+     * takes the TUI's create sheet with it. A core failure other than "not
+     * running" is said at INFO rather than dropped, and so is falling back to
+     * the core alone — once per stretch of herdr being down, not per call.
      */
     harnessKinds: async () => {
-      if (!herdr) return forCore().harnessKinds();
-      const kinds = await herdr.harnessKinds();
+      let kinds: string[];
+      try {
+        kinds = await forHerdr().harnessKinds();
+        herdrFallbackSaid = false;
+      } catch (e) {
+        if (!(e instanceof BackendUnavailable) || !core) throw e;
+        if (!herdrFallbackSaid) {
+          console.info(`paddock: ${e.message}; offering herdr-core's harness kinds only`);
+          herdrFallbackSaid = true;
+        }
+        return core.harnessKinds();
+      }
       if (!core) return kinds;
       let extra: string[] = [];
       try {
@@ -76,4 +92,27 @@ export function actionsByOrigin(
       return [...kinds, ...extra.filter((k) => !kinds.includes(k))];
     },
   };
+}
+
+/**
+ * Terminal herdr's actions, refused while it is not connected.
+ *
+ * The composition root always HAS terminal herdr's actions — they are just a
+ * socket path — so without this a herdr that is not running reached every
+ * caller as a socket error: a 502 instead of the 503 that names it, and, worse,
+ * app-only `harnessKinds` failing outright instead of falling back to the
+ * core's list. This is the herdr twin of `requireCore`: the backend answers
+ * "is it up?" per call, so a herdr that comes back needs no rewiring.
+ */
+export function requireHerdr(actions: HerdrActions, connected: () => boolean): HerdrActions {
+  return new Proxy(actions, {
+    get(target, name, receiver) {
+      const v = Reflect.get(target, name, receiver) as unknown;
+      if (typeof v !== "function") return v;
+      return async (...args: unknown[]) => {
+        if (!connected()) throw new BackendUnavailable(HERDR_DOWN);
+        return (v as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
 }

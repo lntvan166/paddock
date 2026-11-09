@@ -215,3 +215,38 @@ test("a multi-byte character split across two writes arrives intact", async () =
   expect(await c.request<any>("terminal.read", {})).toEqual({ text: "box \u2500 end" });
   c.close();
 });
+
+test("an onSnapshot that throws rejects subscribe and closes the stream, never hanging it", async () => {
+  const core = await fakeCore((req, write) => {
+    if (req.method === "events.subscribe") write(ok(req, { channel: null, seq: 1, terminals: [] }));
+  });
+  const c = new CoreClient(core.path, 5000);
+  let closedCalls = 0;
+  const outcome = await Promise.race([
+    c.subscribe(() => { throw new Error("snapshot handler broke"); }, () => {}, () => { closedCalls++; })
+      .then(() => "resolved", (e: Error) => e.message),
+    Bun.sleep(1000).then(() => "hung"),
+  ]);
+  expect(outcome).toBe("snapshot handler broke");
+  // Our own close, not one the caller is told about as a drop.
+  await Bun.sleep(30);
+  expect(closedCalls).toBe(0);
+});
+
+test("closing a client whose request connection never opened logs the failure rather than dropping it", async () => {
+  const infos: string[] = [];
+  const orig = console.info;
+  console.info = (...a: unknown[]) => { infos.push(a.join(" ")); };
+  try {
+    const c = new CoreClient("/nonexistent/paddock-core.sock", 500);
+    // A request that is mid-connect when close() runs; its own rejection is
+    // the caller's to see, and close() must not be the place it vanishes.
+    const p = c.request<any>("server.status").catch((e: Error) => e);
+    c.close();
+    await p;
+    await Bun.sleep(20);
+    expect(infos.some((l) => l.includes("/nonexistent/paddock-core.sock"))).toBe(true);
+  } finally {
+    console.info = orig;
+  }
+});

@@ -39,7 +39,7 @@ self.addEventListener("push", function (event) {
     payload = null;
   }
   var title = payload && payload.name
-    ? payload.name + " is " + payload.state
+    ? payload.name + " is " + (payload.state === "error" ? "in error" : payload.state)
     : "paddock: an agent needs you";
   var agentId = (payload && payload.agentId) || "";
 

@@ -67,7 +67,7 @@ import { say, warn } from "@server/term";
 import { createAppSocket } from "@server/herdr-core/app-socket";
 import { createCoreActions, requireCore } from "@server/herdr-core/actions";
 import { mergeTrees, readCoreSpaces } from "@server/herdr-core/tree";
-import { actionsByOrigin } from "@server/actions-by-origin";
+import { actionsByOrigin, requireHerdr } from "@server/actions-by-origin";
 import { createSpacesReader } from "@server/spaces-read";
 import { BootLog } from "@server/boot-log";
 import {
@@ -783,7 +783,10 @@ if (DEMO) {
   // client on every call, so a core that is down is a 503 naming it, and a
   // reconnect needs no rewiring.
   actions = actionsByOrigin(
-    createActions(socketPath),
+    // Guarded like the core: a terminal herdr that is not running is a 503
+    // naming it (and app-only harness kinds fall back to the core's), not a
+    // socket error per call. The stream is what knows whether it is up.
+    requireHerdr(createActions(socketPath), () => herdrStream.connected),
     createCoreActions(requireCore(() => coreSupervisor?.connection() ?? null), appSocket!),
   );
   const client = {

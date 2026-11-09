@@ -46,9 +46,13 @@ test("dismissing a core agent writes herdr.seen at its turn", async () => {
   expect(h.store.snapshot()[0]!.seen).toBe(3);
 });
 
-test("dismissing a core agent with no turn writes nothing and succeeds", async () => {
+test("dismissing a core agent with no turn is refused with a reason, never a silent success", async () => {
+  // Nothing to write — and reporting ok for a write that did not happen is a
+  // Dismiss that does nothing while saying it worked.
   const h = harness(core({ turn: null, seen: null }));
-  expect((await post(h.app, "/api/agents/core:t1/ack")).status).toBe(200);
+  const res = await post(h.app, "/api/agents/core:t1/ack");
+  expect(res.status).toBe(409);
+  expect((await res.json() as { detail: string }).detail).toContain("no turn");
   expect(h.marks).toEqual([]);
 });
 
