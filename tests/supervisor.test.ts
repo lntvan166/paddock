@@ -50,6 +50,26 @@ test("start reconciles FIRST, then subscribes naming every known pane", async ()
   sup.stop();
 });
 
+// Found on the first live run with both backends: the store holds the app's
+// agents too, and herdr answers a subscription naming one ("hc.t1r") with
+// pane_not_found — which rejected the whole subscribe and crashed paddock at
+// boot on any machine running both. Terminal herdr subscribes its own panes.
+test("the herdr subscription never names an app (herdr-core) agent", async () => {
+  const client = fakeClient();
+  const store = new AgentStore("dev-box");
+  store.replaceAll([{
+    hostId: "dev-box", agentId: "hc.t9", name: "release-notes", task: "Draft the notes", state: "idle",
+    workspaceId: "hc.docs-site", workspaceLabel: "docs-site", cwd: "/srv/docs", harness: "claude",
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null,
+    hasJournal: false, origin: "core", turn: 1, seen: 1,
+  }], NOW, "core");
+  const sup = new Supervisor({ client, store, onDelta: () => {}, now: () => NOW });
+  await sup.start();
+  const named = client.streams.flat().flatMap((s) => ("pane_id" in s ? [s.pane_id] : []));
+  expect(named).toEqual(["w1:p1"]);
+  sup.stop();
+});
+
 test("a status subscription is never sent without a pane_id", async () => {
   // herdr rejects that outright: invalid_request "missing field pane_id".
   const client = fakeClient();

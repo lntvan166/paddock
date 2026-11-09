@@ -183,7 +183,10 @@ export class Supervisor {
    * stream recovered" for a stream that was never reopened.
    */
   private async resubscribe(): Promise<void> {
-    const paneIds = this.opts.store.snapshot().map((a) => a.agentId);
+    // The store holds the app's agents too. herdr rejects a subscription
+    // naming a pane it does not have (pane_not_found), which fails the whole
+    // subscribe, so only terminal herdr's own panes are named.
+    const paneIds = this.opts.store.snapshot().filter((a) => a.origin === "herdr").map((a) => a.agentId);
     const key = JSON.stringify([...paneIds].sort());
     if (key === this.openPaneKey) return;
 
