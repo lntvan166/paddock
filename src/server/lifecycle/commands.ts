@@ -122,6 +122,8 @@ export interface StatusReport {
       state: "running"; url: string; pid: number; startedAt: number;
       /** The port of the paddock it publishes, or null when it serves its own dashboard. */
       publishing: number | null;
+      /** When it closes by itself (`--for`), ms since the epoch; null for "until stopped". */
+      until: number | null;
       /** Null when the tunnel did not answer for its code. */
       pair: PairFact | null;
     }
@@ -289,7 +291,7 @@ async function reportTunnel(
         serving: got.state.publishing === null,
         fact: {
           state: "running", url: got.state.url, pid: got.state.pid, startedAt: got.state.startedAt,
-          publishing: got.state.publishing, pair: null,
+          publishing: got.state.publishing, until: got.state.until, pair: null,
         },
         control: got.state.control,
       };

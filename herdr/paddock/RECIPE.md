@@ -20,38 +20,42 @@ paddock mod install --layout <your-layout>
 
 ## What you see
 
-A column on the right, 400px, hidden until its button is pressed. Its top is a 42px header: the
-paddock mark (18px), "paddock" in the UI font one step up and semibold, the version in muted
-text, and a close button. Below it, sections separated by 1px `border` lines, each titled in
-small muted capitals:
+A column on the right, 400px, hidden until its button is pressed, in the "true-black flat" app
+style on Herdr's own theme tokens: elevation by lightness alone (cards on `raised`, what sits
+inside them sunk back to `background`), no borders or shadows on panels, the primary action as an
+inverted ink pill (`solid` on `solid_foreground`, 36px), and ONE data hue, paddock's coral
+`#e07a4a`, on live routes only.
 
-- **Dashboard.** A dot and a word: green "Running" (the theme's `ansi2`), `blocked` "Running,
-  not tracked" or "Unknown", `dim` "Stopped". A muted line says the port, uptime and how it
-  runs (a systemd or launchd service that starts at boot, or a plain process). Buttons: Open
-  (the dashboard in the browser), Run as a service (only for a plain process), Stop, Logs; or
-  Start when it is stopped.
-- **Tailscale.** Off: one sentence and Turn on. Up: a green dot, the https URL in the terminal
-  font, who it allows, Open and Turn off. Broken: why, Repair and Turn off.
-- **Phone link.** No tunnel: chips for 30 min, 2 hours and 7 days, and Open a tunnel. Open: the
-  public URL, its uptime, a QR code (white tile, 4px modules, 4-module quiet zone) beside the
-  pairing code in the terminal font, six points larger, with when it changes; Open and Close
-  tunnel.
-- **Notifications.** How many phones get pushes (and Telegram, when it is on), or "Muted until
-  14:05". Mute 1 hour, Mute until 8:00 (or Unmute). Chips for "it needs you" and "it finishes".
-- **Health.** Small dots: the number of agents, terminal herdr, the Herdr app. The last
-  notification error, if any, in `blocked`. A chip for the MCP bridge, and Update to x.y.z when
-  a newer paddock is out.
+- **Header**, 44px on the ground: the paddock mark (20px) and "paddock", a close button.
+- **The card** that answers "can my phone reach my agents, and how?": a 20px semibold sentence
+  ("On your phone, at your domain", "On your phone, anywhere", "On your phone, on your tailnet",
+  "Only on this computer", "paddock is off"), one muted line under it with the finding (when the
+  public link closes, how many phones get pushes), the **route**: Herdr, paddock and Phone as
+  three dots with a caption each (agents, port, which route), joined by 2px segments lit coral
+  when they carry traffic, on a sunk strip; then the one next action (Start paddock, Open a
+  2-hour link, Open dashboard).
+- **Reach it from your phone**, one panel, rows split by a 1px groove in the ground's colour:
+  Your domain (a Cloudflare named tunnel the person runs, from `publicUrl`; connected or not, no
+  switch), Public link (switch; 30 min / 2 hours / 7 days when off; when on, a QR code on a white
+  tile beside the pairing code in the terminal font, 22px, and the URL), Tailscale (switch; the
+  tailnet URL when on).
+- **Notifications**: Push (switch; off asks "Mute for 1 hour / until 8:00"), When an agent needs
+  you, When an agent finishes.
+- **paddock**: MCP bridge (switch), which herdrs it reads (a dot each), the last notification
+  error if any, and the version row (uptime, service, Update when there is one, Logs, Stop).
 
-When paddock is missing, the panel is one section, "Not installed": the install command
-(Homebrew on macOS, else the install script) and Install paddock, which runs it in a pane below
-that waits for Enter; Check again reads it once more. A paddock without `status --json` shows
-"Too old" and Update paddock (`paddock update` in a pane). When `status --json` reports
-`tools.tailscale` or `tools.cloudflared` as null, that section's pill says "Needs Tailscale" or
-"Needs cloudflared" and its buttons are Get Tailscale / Get cloudflared (Install with Homebrew on
-macOS) and Check again.
+Each row: a 14/500 title, its state word in muted 11.5px beside it, at most one short muted line,
+the 28x16 switch on the right (ink when on). Sections are titled in muted sentence case.
 
-A failed action leaves a banner at the bottom, in `blocked`, with the command's last lines and a
-close button. The tab-bar button is 26px high: the mark, "paddock", and a 6px dot, green while
+When paddock is missing, the card says "paddock isn't installed" with Install paddock, which runs
+the install command (Homebrew on macOS, else the install script) in a pane below that waits for
+Enter. A paddock without `status --json` gets "paddock needs an update" and Update paddock. When
+`status --json` reports `tools.tailscale` or `tools.cloudflared` as null, that row says "not
+installed" / "needs cloudflared" with Get Tailscale / Get cloudflared (Install with Homebrew on
+macOS) and Check again, instead of a switch.
+
+A failed action leaves a card at the bottom with a `blocked` dot, the command's last lines and a
+close button. The tab-bar button is 26px high: the mark, "paddock", and a 6px dot, coral while
 paddock runs.
 
 ## How it behaves
@@ -60,8 +64,10 @@ paddock runs.
   `start --for 2h`, `tunnel stop`, `update`) or writes the dashboard's own API on
   `127.0.0.1:<port>` (`POST /api/settings/mute`, `PUT /api/settings`). While one runs, the
   buttons give way to a spinning "Starting…" and nothing else can start.
-- Stop asks twice: the first press turns it into "Stop: tunnel, Tailscale and service too",
-  because `paddock stop` takes all of them down.
+- Stop asks twice: the first press turns it into "Stop it, and the links", because
+  `paddock stop` takes the service, the public link and Tailscale serve down too.
+- Your domain is checked through cloudflared's own metrics (`/ready` on 127.0.0.1:20241-20245),
+  not by asking the URL: Cloudflare Access answers at the edge whether or not the tunnel is up.
 - Logs opens a pane below with `journalctl --user -u paddock -f` (or `tail -f` of the launchd
   log).
 - The panel reads `paddock status --json` every 5 seconds while shown, every 30 while hidden,

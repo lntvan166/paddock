@@ -76,3 +76,6 @@ src/server/embedded.ts
 /*.jpg
 /*.jpeg
 /*.webp
+
+# taste-skill working files (direction sheets, inspector screenshots)
+.taste-skill/

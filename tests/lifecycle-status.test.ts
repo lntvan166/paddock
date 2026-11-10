@@ -363,7 +363,7 @@ test("--json: a running tunnel carries its URL and the pairing code the control 
   await writeState(d, s);
   await writeTunnelState(d, {
     pid: 5151, args: "paddock tunnel", url: "https://quick-words.trycloudflare.com",
-    control: join(d, "tunnel.sock"), publishing: 8787, startedAt: 1000, until: null,
+    control: join(d, "tunnel.sock"), publishing: 8787, startedAt: 1000, until: 7_201_000,
   });
   const asked: string[] = [];
   const pair = { code: "ABCD-EFGH", expiresAt: 9000, link: "https://quick-words.trycloudflare.com/#ABCDEFGH", qr: ["10", "01"] };
@@ -373,7 +373,8 @@ test("--json: a running tunnel carries its URL and the pairing code the control 
   });
   expect(asked).toEqual([join(d, "tunnel.sock")]);
   expect(report.tunnel).toEqual({
-    state: "running", url: "https://quick-words.trycloudflare.com", pid: 5151, startedAt: 1000, publishing: 8787, pair,
+    state: "running", url: "https://quick-words.trycloudflare.com", pid: 5151, startedAt: 1000, publishing: 8787,
+    until: 7_201_000, pair,
   });
 });
 
