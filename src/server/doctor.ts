@@ -13,6 +13,13 @@ export type DoctorProbe =
   | { kind: "answered"; protocol: number; version?: string }
   | { kind: "unreachable"; message: string };
 
+/** What was learned about the Herdr app's runtime, herdr-core. */
+export type CoreProbe =
+  | { kind: "answered"; version: string }
+  | { kind: "incompatible"; message: string }
+  /** `detail`: why a socket that exists did not answer (a stale file after the app quit). */
+  | { kind: "absent"; detail?: string };
+
 export interface DoctorReport {
   /**
    * 0 compatible, 1 incompatible, 2 undetermined.
@@ -103,10 +110,50 @@ export function doctorReport(
  * `ping` and `print` are injectable so the exit-code contract can be tested
  * without a live herdr.
  */
+/**
+ * Fold the Herdr app's herdr-core into the terminal-herdr report.
+ *
+ * paddock runs with terminal herdr, the Herdr app, or both, so terminal herdr
+ * being unreachable is only "undetermined" (2) when there is no app either.
+ * An answering, compatible core turns that into 0: install.sh then stops
+ * telling someone who only uses the app to "start herdr". An incompatible
+ * terminal herdr still scores 1 whatever the core says: paddock refuses to
+ * start against it.
+ */
+export function withCore(report: DoctorReport, core: CoreProbe): DoctorReport {
+  const line = core.kind === "answered"
+    ? `  Herdr app        herdr-core ${core.version}`
+    : core.kind === "incompatible"
+      ? `  Herdr app        ${core.message}`
+      : `  Herdr app        not running${core.detail ? ` (${core.detail})` : ""}`;
+  if (report.code === 0) return { code: 0, text: `${report.text}\n${line}` };
+  if (report.code === 1) return { code: 1, text: `${report.text}\n${line}` };
+  // Terminal herdr could not be asked.
+  if (core.kind === "answered") {
+    return {
+      code: 0,
+      text: [
+        `${glyph("yes")} paddock: the Herdr app's herdr-core ${core.version} answers; paddock works with the app alone`,
+        "  terminal herdr   not running (only needed for its own panes)",
+      ].join("\n"),
+    };
+  }
+  if (core.kind === "incompatible") {
+    return { code: 1, text: `${glyph("no")} paddock: ${core.message}\n  terminal herdr   not running either` };
+  }
+  return {
+    code: 2,
+    text: `${report.text}\n${glyph("unknown")} paddock: the Herdr app's herdr-core is not running either. ` +
+      "paddock needs one of them: start terminal herdr or open the Herdr app, then run `paddock doctor` again.",
+  };
+}
+
 export async function runDoctor(opts: {
   socketPath: string;
   expected?: number;
   ping?: (path: string) => Promise<{ protocol: number; version?: string }>;
+  /** herdr-core, the Herdr app's runtime: its version, or why it cannot be used. */
+  core?: () => Promise<CoreProbe>;
   print?: (line: string) => void;
 }): Promise<number> {
   const expected = opts.expected ?? HERDR_PROTOCOL;
@@ -128,7 +175,8 @@ export async function runDoctor(opts: {
     };
   }
 
-  const report = doctorReport(expected, probe, { cloudflared: findCloudflared() });
+  const base = doctorReport(expected, probe, { cloudflared: findCloudflared() });
+  const report = opts.core ? withCore(base, await opts.core()) : base;
   print(report.text);
   return report.code;
 }

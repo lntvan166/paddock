@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+  Source for docs/images/hero.png, the picture at the top of README.md.
+  Rendered by hand and COMMITTED, like scripts/og-card.html: open this file at
+  exactly 1600x900 and screenshot the viewport.
+
+  Every screen in it is a `paddock --demo` screenshot already in docs/images:
+  no live session appears here (CLAUDE.md, "Screenshots ... come from
+  paddock serve --demo").
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body { margin: 0; width: 1600px; height: 900px; overflow: hidden; }
+      body {
+        background: radial-gradient(90% 80% at 50% 0%, #24242b 0%, #141417 60%, #0f0f11 100%);
+        display: flex; align-items: center; justify-content: center; gap: 48px;
+      }
+      .phone { flex: none; width: 360px; height: 780px; border-radius: 48px; background: #2a2a30;
+        padding: 12px; box-shadow: 0 40px 90px rgba(0,0,0,.6), inset 0 0 0 1px #3a3a42; }
+      .phone img { width: 100%; height: 100%; object-fit: cover; object-position: top; border-radius: 38px; display: block; }
+      .mid { transform: translateY(-12px) scale(1.03); }
+    </style>
+  </head>
+  <body>
+    <div class="phone"><img src="../docs/images/01-agents.png" alt="" /></div>
+    <div class="phone mid"><img src="../docs/images/02-blocked.png" alt="" /></div>
+    <div class="phone"><img src="../docs/images/04-spaces.png" alt="" /></div>
+  </body>
+</html>

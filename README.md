@@ -21,14 +21,13 @@
 ---
 
 <p align="center">
-  <img src="docs/images/01-agents.png" alt="The agent list, grouped by what needs attention, with an app agent marked app" width="46%">
-  <img src="docs/images/02-blocked.png" alt="A blocked app agent: its real options, with the reply field folded away so the transcript keeps the screen" width="46%">
+  <img src="docs/images/hero.png" alt="Three phone screens: the agent list grouped by what needs attention, a blocked app agent with its real options, and every space from terminal herdr and the Herdr app" width="100%">
 </p>
 
 **watch and answer your coding agents from your phone.**
 
-You have several agents running in [herdr](https://github.com/herdrdev/herdr)
-panes. You step away from the desk. One finishes, another hits a permission
+You have several agents running in [herdr](https://github.com/herdrdev/herdr),
+in its terminal panes or in the Herdr desktop app. You step away from the desk. One finishes, another hits a permission
 prompt, and both sit there waiting — because the only way to find out is to
 walk back and look.
 
@@ -42,12 +41,16 @@ walk back and look.
   a PDF or an image on the phone, or download it. Any path paddock can read,
   which is the same reach the terminal already has — see
   [decisions](docs/decisions.md) 28
-- **notify** — a Telegram message when an agent needs you, sent only once the
-  state has held, with mute and a per-agent cooldown. [settings →](docs/settings.md)
+- **notify** — a push notification on the phone (or a Telegram message) when an
+  agent needs you or finishes, sent only once the state has held, with mute and
+  a per-agent cooldown. [settings →](docs/settings.md)
 - **on your tailnet** — `paddock tailscale` serves it at your Tailscale HTTPS
   name for your own login only ([details](docs/running-locally.md#tailscale))
 - **reach it in one command** — `paddock tunnel` publishes a temporary URL
-  gated by a short-lived pairing code. No DNS, no inbound port, nothing to configure
+  gated by a short-lived pairing code, through `cloudflared`. No DNS, no inbound
+  port, nothing to configure
+- **terminal herdr and the Herdr app** — agents and spaces from both, side by
+  side, and a [paddock panel inside the Herdr app](#from-the-herdr-app)
 - **install as an app** — Add to Home Screen gives it an icon and no browser chrome
 - **cheap to watch** — adaptive polling, and only changed lines on the wire
 
@@ -88,11 +91,24 @@ has stopped and needs you.
 curl -fsSL https://trypaddock.vercel.app/install.sh | sh
 ```
 
+What it needs, on the machine the agents run on:
+
+| for | you need |
+| --- | --- |
+| the dashboard | [herdr](https://github.com/herdrdev/herdr) in the terminal, **or** the Herdr desktop app (its herdr-core), or both |
+| your phone, anywhere, right now | `cloudflared`, for a quick tunnel ([below](#publish-it)) |
+| your phone, on your tailnet | Tailscale, signed in ([details](docs/running-locally.md#tailscale)) |
+| a permanent URL behind a login | a Cloudflare named tunnel and Access ([guide](docs/deploy-cloudflare.md)) |
+
+On your own machine and network, the dashboard alone is enough: paddock serves
+on `127.0.0.1`. `paddock doctor` says which herdr it can reach.
+
 Installs to `~/.local/bin/paddock`, no `sudo`, checksum verified before anything
 is written · [read it first](https://trypaddock.vercel.app/install.sh) ·
 [binaries](https://github.com/lntvan166/paddock/releases)
 
-Or with Homebrew, which pulls in herdr as a dependency:
+Or with Homebrew, which pulls in terminal herdr as a dependency (with only the
+Herdr app, the script above is the lighter choice):
 
 ```bash
 brew install lntvan166/paddock/paddock
@@ -108,8 +124,10 @@ keg and declines rather than desyncing it.
 ### herdr version
 
 paddock talks to herdr over herdr's own socket protocol, and this release is
-built against **protocol 20** — which herdr **0.8.2** speaks. `install.sh`
-checks after installing; `paddock doctor` asks again whenever.
+built against **protocol 22**, which herdr **0.9.5** speaks. The Herdr app is
+reached through herdr-core, protocol **generation 1** (tested with herdr-core
+0.1.19). `install.sh` checks after installing; `paddock doctor` asks again
+whenever, and is satisfied by either one.
 
 The check is **directional**:
 
@@ -122,6 +140,31 @@ The check is **directional**:
 If yours is older, upgrade herdr **and restart its daemon** — the socket answers
 from the running daemon, not the binary on disk, so upgrading alone keeps
 reporting the old protocol.
+
+## from the Herdr app
+
+<p align="center">
+  <img src="docs/images/herdr-panel.png" alt="The paddock panel inside the Herdr app: dashboard on, Tailscale on, a quick tunnel with its QR code and pairing code, notifications" width="38%">
+</p>
+
+If you use the Herdr desktop app, paddock has a panel for it: start and stop
+the dashboard, turn Tailscale on and off, open a quick tunnel and pair a phone
+from its QR code, mute notifications, and see that it is healthy, beside your
+agents.
+
+```bash
+paddock mod install --layout <your-layout>   # a button in the tab bar shows the panel
+paddock mod install                          # just the mod: open it with mod.open paddock
+```
+
+The panel needs this paddock (0.16 or later; it offers to install one when
+there is none). Its Tailscale section needs Tailscale, and its phone link
+needs `cloudflared`; without them, those sections say so and the rest works.
+
+Herdr replaces its own layouts (`main`, `terminals`, `win98`) on every start,
+so `--layout` refuses them; clone one first (`herdr-app do layout.clone
+'{"name":"main","as":"my-main"}'`). The old layout file is kept beside the new
+one. The mod is in [`herdr-mod/paddock/`](herdr-mod/paddock/RECIPE.md).
 
 ## run it
 
@@ -258,27 +301,6 @@ chrome, and it opens where you left off.
 </p>
 
 [running locally →](docs/running-locally.md)
-
-## from the Herdr app
-
-If you use the Herdr desktop app, paddock has a panel for it: start and stop
-the dashboard, turn Tailscale on and off, open a quick tunnel and pair a phone
-from its QR code, mute notifications, and see that it is healthy, beside your
-agents.
-
-```bash
-paddock mod install --layout <your-layout>   # a button in the tab bar shows the panel
-paddock mod install                          # just the mod: open it with mod.open paddock
-```
-
-The panel needs this paddock (0.16 or later; it offers to install one when
-there is none). Its Tailscale section needs Tailscale, and its phone link
-needs `cloudflared`; without them, those sections say so and the rest works.
-
-Herdr replaces its own layouts (`main`, `terminals`, `win98`) on every start,
-so `--layout` refuses them; clone one first (`herdr-app do layout.clone
-'{"name":"main","as":"my-main"}'`). The old layout file is kept beside the new
-one. The mod is in [`herdr-mod/paddock/`](herdr-mod/paddock/RECIPE.md).
 
 ## from another Claude Code session
 

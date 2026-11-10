@@ -23,7 +23,7 @@ import { AgentStore } from "@server/state/store";
 import { PresenceStore } from "@server/state/presence";
 import { Supervisor } from "@server/supervisor";
 import { CoreSupervisor } from "@server/herdr-core/supervisor";
-import { CoreClient, locateCoreSocket } from "@server/herdr-core/socket";
+import { CoreClient, CoreGenerationError, locateCoreSocket } from "@server/herdr-core/socket";
 import { createJournalReader, defaultRoots, type JournalReader } from "@server/journal/read";
 import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
@@ -397,7 +397,21 @@ const socketPath =
 // the event stream. It sits here rather than beside them only because it needs
 // socketPath — everything between that and here builds plain objects.
 if (command === "doctor") {
-  process.exit(await runDoctor({ socketPath }));
+  process.exit(await runDoctor({
+    socketPath,
+    core: async () => {
+      const path = locateCoreSocket(process.env, process.getuid?.() ?? 0, (p) => existsSync(p));
+      if (path === null) return { kind: "absent" };
+      try {
+        const hello = await new CoreClient(path, 3000).hello();
+        return { kind: "answered", version: hello.version };
+      } catch (e) {
+        if (e instanceof CoreGenerationError) return { kind: "incompatible", message: e.message };
+        // A stale socket file (the app quit) is no app; the reason is still shown.
+        return { kind: "absent", detail: (e as Error).message };
+      }
+    },
+  }));
 }
 
 /*

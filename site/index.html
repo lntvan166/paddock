@@ -82,11 +82,12 @@
 
     <main id="site">
       <header class="hero">
+        <div class="hero-copy">
         <p class="eyebrow"><span class="rule"></span>the phone half of your agents</p>
         <h1>Answer your coding agents<br /><span class="hot">from the sofa.</span></h1>
         <p class="lede">
-          You have several agents running in herdr panes. You step away from the
-          desk. One finishes, another hits a permission prompt, and both sit
+          You have several agents running in herdr, in its terminal panes or in
+          the Herdr desktop app. You step away from the desk. One finishes, another hits a permission prompt, and both sit
           there waiting — because the only way to find out is to walk back and
           look.
         </p>
@@ -107,6 +108,13 @@
         <!-- Filled by main.ts: a tour button with no JavaScript behind it would
              be a control that does nothing, which is worse than no control. -->
         <div id="hero-actions"></div>
+        </div>
+        <!-- The product on the first screen, as a picture (the README's demo
+             screenshot): the live phone below starts a scroll away. Hidden
+             under 1000px, where that phone is the next thing anyway. -->
+        <figure class="hero-shot" aria-hidden="true">
+          <img src="/img/agents.png" alt="" width="390" height="844" />
+        </figure>
       </header>
 
       <!-- Facts, not metrics.
@@ -126,7 +134,7 @@
         </div>
         <div class="fact">
           <p class="fact-n">1</p>
-          <p class="fact-l">binary, nothing else to install</p>
+          <p class="fact-l">binary, for terminal herdr and the Herdr app</p>
         </div>
         <div class="fact">
           <p class="fact-n">0</p>
@@ -136,17 +144,58 @@
 
       <div id="split"></div>
 
+      <!-- Both herdrs. Pictures are the README's, from `paddock --demo` and the
+           mod reading synthetic status: no live session. -->
+      <section class="both" aria-label="terminal herdr and the Herdr app">
+        <h2>Terminal herdr, <span class="hot">the Herdr app,</span> or both.</h2>
+        <div class="both-grid">
+          <article class="both-card">
+            <img src="/img/spaces.png" alt="The Spaces screen: terminal herdr's spaces and the Herdr app's, marked app, in one list" width="390" height="844" loading="lazy" />
+            <div>
+              <h3>One list for both</h3>
+              <p>Agents and spaces from herdr's terminal panes and from the Herdr desktop app sit side by side, the app's marked <em>app</em>. Answer, reply, dismiss and create work the same on either.</p>
+            </div>
+          </article>
+          <article class="both-card">
+            <img src="/img/herdr-panel.png" alt="The paddock panel inside the Herdr app: dashboard, Tailscale, phone link with a QR code, notifications" width="366" height="870" loading="lazy" />
+            <div>
+              <h3>A panel inside Herdr</h3>
+              <p>Start paddock, put it on your tailnet or a quick tunnel, pair a phone from the QR, mute notifications, without leaving the app.</p>
+              <div class="install"><code>paddock mod install --layout &lt;yours&gt;</code></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
       <section class="close">
         <h2>Put the herd<br /><span class="hot">in your pocket.</span></h2>
         <p class="lede">
-          One command on the machine the agents already run on. Nothing else
-          about your setup changes, and nothing new asks you to sign in.
+          One command on the machine the agents already run on. Nothing about
+          your herdr setup changes, and paddock has no account of its own.
         </p>
         <div class="install">
           <code>curl -fsSL https://trypaddock.vercel.app/install.sh | sh</code>
         </div>
+        <ol class="steps">
+          <li>
+            <h3>Keep it running</h3>
+            <div class="install"><code>paddock local</code></div>
+            <p>The dashboard on <code>127.0.0.1</code>, as a service that comes back after a reboot. <code>paddock doctor</code> says which herdr it reached.</p>
+          </li>
+          <li>
+            <h3>Reach it from the phone</h3>
+            <div class="install"><code>paddock start --for 2h</code></div>
+            <p>A quick tunnel and a pairing code: needs <a href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/" target="_blank" rel="noopener"><code>cloudflared</code></a>, no account. On your tailnet instead: <code>paddock tailscale</code>, with Tailscale signed in.</p>
+          </li>
+          <li>
+            <h3>Pair and pin it</h3>
+            <div class="install"><code>paddock pair</code></div>
+            <p>Scan the QR, then Add to Home Screen and allow notifications: a push arrives when an agent needs you.</p>
+          </li>
+        </ol>
         <p class="sub">
-          <a href="/app/" target="_blank" rel="noopener">Open the demo full screen →</a>
+          <a href="/app/" target="_blank" rel="noopener">Open the demo full screen →</a> ·
+          <a href="https://github.com/lntvan166/paddock#install" target="_blank" rel="noopener">every option in the README →</a>
         </p>
       </section>
     </main>

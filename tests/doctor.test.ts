@@ -150,3 +150,38 @@ test("a newer herdr is ✓, matching its exit code of 0", () => {
   expect(r.code).toBe(0);
   expect(r.text).toStartWith("✓");
 });
+
+// ---- the Herdr app's herdr-core: paddock works with either backend ---------
+
+import { withCore } from "@server/doctor";
+
+const ok = { code: 0 as const, text: "✓ paddock: herdr looks compatible" };
+const old = { code: 1 as const, text: "✗ herdr is too old" };
+const gone = { code: 2 as const, text: "⚠ herdr is not running" };
+
+test("doctor: no terminal herdr but a compatible herdr-core is a working install (0), said plainly", () => {
+  const r = withCore(gone, { kind: "answered", version: "0.1.19" });
+  expect(r.code).toBe(0);
+  expect(r.text).toContain("works with the app alone");
+  expect(r.text).not.toContain("start herdr");
+});
+
+test("doctor: neither backend is undetermined (2) and names both", () => {
+  const r = withCore(gone, { kind: "absent", detail: "ECONNREFUSED" });
+  expect(r.code).toBe(2);
+  expect(r.text).toContain("Herdr app");
+  expect(r.text).toContain("terminal herdr");
+});
+
+test("doctor: an incompatible herdr-core with no terminal herdr is incompatible (1)", () => {
+  expect(withCore(gone, { kind: "incompatible", message: "herdr-core speaks protocol generation 2" }).code).toBe(1);
+});
+
+test("doctor: terminal herdr's own verdict stands either way; the app gets a line", () => {
+  const a = withCore(ok, { kind: "absent" });
+  expect(a.code).toBe(0);
+  expect(a.text).toContain("Herdr app        not running");
+  const b = withCore(old, { kind: "answered", version: "0.1.19" });
+  expect(b.code).toBe(1); // paddock refuses to start against an old terminal herdr
+  expect(b.text).toContain("herdr-core 0.1.19");
+});
