@@ -388,3 +388,72 @@ test("a new app tab with a harness runs the agent as its only terminal", async (
   expect(runs[0]!.params.name).toBe("flaky-test-fix");
   expect(out.paneId).toBe("hc.t22");
 });
+
+// ---------------------------------------------------------------------------
+// Colour. `terminal.read` is text only; the screen is read as an observer's
+// first paint instead, at the terminal's own size, and replayed. A failure
+// there falls back to the text read, said in the log, never a blank screen.
+// ---------------------------------------------------------------------------
+
+function paintingCore(paint: () => Uint8Array | Error, answer: (m: string, p: any) => unknown) {
+  const core = fakeCore(answer);
+  const observed: any[] = [];
+  const client = {
+    ...core.client,
+    async observePaint(t: string, cols: number, rows: number, history: number) {
+      observed.push({ t, cols, rows, history });
+      const r = paint();
+      if (r instanceof Error) throw r;
+      return r;
+    },
+  };
+  const a = createCoreActions(() => client, fakeApp(false).app, { sleep: async () => {} });
+  return { a, observed, calls: core.calls };
+}
+
+test("an app agent's screen keeps its colours, read at the terminal's own size", async () => {
+  const { a, observed } = paintingCore(
+    () => new TextEncoder().encode("\x1b[38;5;1mred\x1b[0m plain"),
+    (m) => (m === "terminal.get" ? terminal({ cols: 90, rows: 30 }) : { text: "red plain" }),
+  );
+  const out = await a.readOutput("hc.t7", "idle", 0);
+  expect(observed).toEqual([{ t: "t7", cols: 90, rows: 30, history: 0 }]);
+  expect(out.lines[0]).toContain("\x1b[");
+  expect(out.lines[0]).toContain("red");
+  expect(out.source).toBe("visible");
+});
+
+test("scrollback asks the paint for history", async () => {
+  const { a, observed } = paintingCore(
+    () => new TextEncoder().encode("x"),
+    (m) => (m === "terminal.get" ? terminal() : { text: "x" }),
+  );
+  await a.readOutput("hc.t7", "idle", 0, true);
+  expect(observed[0].history).toBeGreaterThan(0);
+});
+
+test("a paint that fails falls back to the text read and says so once", async () => {
+  const infos: string[] = [];
+  const orig = console.info;
+  console.info = (...args: unknown[]) => { infos.push(args.join(" ")); };
+  try {
+    const { a } = paintingCore(
+      () => new Error("no paint from t7 within 10000 ms"),
+      (m) => (m === "terminal.get" ? terminal() : { text: "plain text\n" }),
+    );
+    expect((await a.readOutput("hc.t7", "idle", 0)).lines[0]).toBe("plain text");
+    await a.readOutput("hc.t7", "idle", 0);
+    expect(infos.filter((l) => l.includes("no paint from t7"))).toHaveLength(1);
+  } finally {
+    console.info = orig;
+  }
+});
+
+test("the prompt parsers still get the plain text read, not the paint", async () => {
+  const { a, observed } = paintingCore(
+    () => new TextEncoder().encode("\x1b[1mDo you want to proceed?"),
+    (m) => (m === "terminal.get" ? terminal() : { text: "Do you want to proceed?\n" }),
+  );
+  expect(await a.readPromptScreen("hc.t7")).toBe("Do you want to proceed?\n");
+  expect(observed).toHaveLength(0);
+});
