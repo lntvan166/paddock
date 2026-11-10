@@ -1,6 +1,6 @@
 # herdr-core as a second backend
 
-Status: awaiting the operator's review, 2026-11-09. Gated on Risk 1.
+Status: shipped on main, 2026-11-10. Risk 1 passed the live probe (docs/probes/2026-11-09-herdr-core.md).
 
 ## Intent
 
