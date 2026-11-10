@@ -23,15 +23,15 @@ paddock mod install --layout <your-layout>
 A column on the right, 400px, hidden until its button is pressed, in the "true-black flat" app
 style on Herdr's own theme tokens: elevation by lightness alone (cards on `raised`, what sits
 inside them sunk back to `background`), no borders or shadows on panels, the primary action as an
-inverted ink pill (`solid` on `solid_foreground`, 36px), and ONE data hue, paddock's coral
-`#e07a4a`, on live routes only.
+inverted ink pill (`solid` on `solid_foreground`, 36px), and ONE data hue, the theme's own
+green (`ansi2`), on live routes only.
 
 - **Header**, 44px on the ground: the paddock mark (20px) and "paddock", a close button.
 - **The card** that answers "can my phone reach my agents, and how?": a 20px semibold sentence
   ("On your phone, at your domain", "On your phone, anywhere", "On your phone, on your tailnet",
   "Only on this computer", "paddock is off"), one muted line under it with the finding (when the
   public link closes, how many phones get pushes), the **route**: Herdr, paddock and Phone as
-  three dots with a caption each (agents, port, which route), joined by 2px segments lit coral
+  three dots with a caption each (agents, port, which route), joined by 2px segments lit green
   when they carry traffic, on a sunk strip; then the one next action (Start paddock, Open a
   2-hour link, Open dashboard).
 - **Reach it from your phone**, one panel, rows split by a 1px groove in the ground's colour:
@@ -55,7 +55,7 @@ installed" / "needs cloudflared" with Get Tailscale / Get cloudflared (Install w
 macOS) and Check again, instead of a switch.
 
 A failed action leaves a card at the bottom with a `blocked` dot, the command's last lines and a
-close button. The tab-bar button is 26px high: the mark, "paddock", and a 6px dot, coral while
+close button. The tab-bar button is 26px high: the mark, "paddock", and a 6px dot, green while
 paddock runs.
 
 ## How it behaves

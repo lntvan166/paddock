@@ -87,10 +87,10 @@ function opener() {
 // Herdr's theme tokens, in the "true-black flat" app style: elevation by lightness alone (cards on
 // `raised`, what sits inside them sunk back to `background`; `surface` is the ground itself in some
 // themes, so it is not a step), no borders and no shadows on panels, the primary action made
-// primary by inversion (`solid` on `solid_foreground`), and ONE data hue: paddock's coral, the lit
-// rail of its mark, on the routes that are live and on nothing else.
+// primary by inversion (`solid` on `solid_foreground`), and ONE data hue: the theme's own green
+// (`ansi2`) on the routes that are live and on nothing else. Not paddock's coral, which read as a
+// warning, and not the theme's `done`, which is blue in some themes: live means "go".
 
-const LIVE = "#e07a4a";
 const icon = (name, size, color) => svg(`mods/paddock/${name}.svg`).size(size).flex_none().text_color(color);
 const dot = (color, size = 8) => div().w(size).h(size).flex_none().rounded_full().bg(color);
 
@@ -186,14 +186,14 @@ function qr(rows, cell = 4) {
 
 /**
  * The route a phone takes to the agents: Herdr, then paddock, then the phone. A segment is lit in
- * paddock's coral when it carries traffic, so "can my phone reach them?" is read before any word.
+ * the theme's green when it carries traffic, so "can my phone reach them?" is read before any word.
  */
 function route(t, nodes, links) {
   const node = ([label, caption, live]) => v_flex().flex_none().items_center().gap(4).w(76)
-    .child(dot(live ? LIVE : t.dim, 10))
+    .child(dot(live ? t.ansi2 : t.dim, 10))
     .child(div().text_size(S().body).font_weight(500).text_color(live ? t.foreground : t.muted).child(label))
     .child(div().text_size(S().meta).text_color(t.muted).truncate().child(caption));
-  const link = (live) => div().flex_1().h(2).mt(4).rounded_full().bg(live ? LIVE : t.input);
+  const link = (live) => div().flex_1().h(2).mt(4).rounded_full().bg(live ? t.ansi2 : t.input);
   return h_flex().items_start().px(2)
     .child(node(nodes[0])).child(link(links[0])).child(node(nodes[1])).child(link(links[1])).child(node(nodes[2]));
 }
@@ -203,7 +203,7 @@ function route(t, nodes, links) {
 function tabButton(t) {
   const node = find(layout(), PANEL), on = node && !node.hidden;
   const state = shared(STATE_KEY);
-  const color = state === "running" ? LIVE : state === "unknown" ? t.blocked : t.dim;
+  const color = state === "running" ? t.ansi2 : state === "unknown" ? t.blocked : t.dim;
   return h_flex().size_full().pr(10).items_center().justify_end().bg(t.chrome)
     .child(h_flex().id("toggle-paddock").h(26).px(8).gap(6).flex_none().items_center().rounded(6)
       .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
@@ -637,7 +637,7 @@ export default class Paddock extends View {
     const bridge = this.settings?.bridge?.enabled === true;
     const latest = h.latestKnown, current = h.version;
     const update = latest && current && latest !== current && !current.startsWith("0.0.0");
-    const backend = (on, label) => h_flex().gap(6).items_center().child(dot(on ? LIVE : t.dim, 6))
+    const backend = (on, label) => h_flex().gap(6).items_center().child(dot(on ? t.ansi2 : t.dim, 6))
       .child(div().text_size(S().body).text_color(on ? t.foreground : t.muted).child(label));
     return group(t, "paddock", [
       setting(t, { id: "bridge", title: "MCP bridge",
