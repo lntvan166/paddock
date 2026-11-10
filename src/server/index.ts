@@ -58,7 +58,7 @@ import { runTunnel } from "@server/tunnel/run";
 import { runDetach } from "@server/tunnel/detach";
 import { pairFact, runPair } from "@server/tunnel/pair";
 import { checkTunnelState } from "@server/tunnel/state";
-import { defaultAppHome, installMod, selfBinary } from "@server/herdr-mod/install";
+import { defaultAppHome, herdrAppCli, installMod, selfBinary } from "@server/herdr-mod/install";
 import { stopTunnel } from "@server/tunnel/stop";
 import { removeTunnelState } from "@server/tunnel/state";
 import { useColour } from "@server/term";
@@ -241,21 +241,28 @@ if (command === "tunnel" && args[0] === "stop") {
 }
 
 /**
- * `paddock mod install [--layout <name>]` — the Herdr app mod
- * (`herdr/paddock/`). Writes files under the app's home and nothing else:
+ * `paddock mod install [--layout <name>] [--no-button | --button-only]` — the
+ * Herdr app mod (`herdr/paddock/`). Writes files under the app's home, and
+ * asks `herdr-app` which layout the window shows (and to copy Herdr's own);
  * no herdr socket, no port.
  */
 if (command === "mod") {
   if (args[0] !== "install" || args.length > 1) {
-    warn(`paddock mod: expected \`paddock mod install [--layout <name>]\`, got '${args.join(" ")}'`);
+    warn(`paddock mod: expected \`paddock mod install [--layout <name>] [--no-button | --button-only]\`, got '${args.join(" ")}'`);
     process.exit(2);
   }
   if (flags.has("--layout") && !values.get("--layout")) {
     warn("paddock: --layout needs the name of one of your Herdr app layouts");
     process.exit(1);
   }
+  if (flags.has("--no-button") && (flags.has("--button-only") || flags.has("--layout"))) {
+    warn("paddock: --no-button adds no button, so it takes neither --button-only nor --layout");
+    process.exit(2);
+  }
   process.exit(await installMod({
-    appHome: defaultAppHome(), bin: selfBinary(), layout: values.get("--layout"), log: say,
+    appHome: defaultAppHome(), bin: selfBinary(), layout: values.get("--layout"),
+    files: !flags.has("--button-only"), button: !flags.has("--no-button"),
+    app: herdrAppCli, log: say,
   }));
 }
 

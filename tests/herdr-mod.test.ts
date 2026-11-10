@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "@server/cli";
 import { addPaddock, PANEL_ID, TOGGLE_ID, type LayoutNode } from "@server/herdr-mod/layout";
-import { installMod, selfBinary } from "@server/herdr-mod/install";
+import { installMod, selfBinary, type HerdrAppControl } from "@server/herdr-mod/install";
 
 /**
  * `paddock mod install`: the Herdr app mod in `herdr/paddock/mods/paddock/`, copied
@@ -151,6 +151,104 @@ test("no app home: install says so and writes nothing", async () => {
   const log: string[] = [];
   expect(await installMod({ appHome: "/nonexistent/herdr-app", bin: null, log: (l) => log.push(l) })).toBe(1);
   expect(log[0]).toContain("no Herdr app home");
+});
+
+// ---- no --layout: the layout the window shows -------------------------------
+
+/** A Herdr app that shows `shown`; `clone` writes the copy the way the app does. */
+function fakeApp(home: string, shown: { name: string } | { error: string }) {
+  const calls: string[] = [];
+  const app: HerdrAppControl = {
+    async shownLayout() { calls.push("status"); return shown; },
+    async clone(name, as) {
+      calls.push(`clone ${name} ${as}`);
+      await mkdir(join(home, "layouts"), { recursive: true });
+      await writeFile(join(home, "layouts", `${as}.json`), JSON.stringify(mainLike()));
+    },
+    async switchTo(name) { calls.push(`switch ${name}`); },
+  };
+  return { app, calls };
+}
+
+test("no --layout: the button goes into the layout the window shows", async () => {
+  const home = await appHome(mainLike());
+  const { app } = fakeApp(home, { name: "mine" });
+  const log: string[] = [];
+  expect(await installMod({ appHome: home, bin: null, app, log: (l) => log.push(l), now: () => 7 })).toBe(0);
+  const tree = JSON.parse(await readFile(join(home, "layouts", "mine.json"), "utf8"));
+  expect(byId(tree, TOGGLE_ID)).not.toBeNull();
+  expect(byId(tree, PANEL_ID)).not.toBeNull();
+  expect(existsSync(join(home, "mods", "paddock", "main.js"))).toBe(true);
+});
+
+test("no --layout on Herdr's own layout: copies it as my-<name>, switches, and adds the button there", async () => {
+  const home = await appHome();
+  const { app, calls } = fakeApp(home, { name: "main" });
+  const log: string[] = [];
+  expect(await installMod({ appHome: home, bin: null, app, log: (l) => log.push(l) })).toBe(0);
+  expect(calls).toEqual(["status", "clone main my-main"]);
+  const tree = JSON.parse(await readFile(join(home, "layouts", "my-main.json"), "utf8"));
+  expect(byId(tree, TOGGLE_ID)).not.toBeNull();
+  expect(existsSync(join(home, "layouts", "main.json"))).toBe(false);
+  expect(log.join("\n")).toContain("replaces on every start");
+});
+
+test("no --layout on Herdr's own layout with a copy already there: switches to the copy, no second clone", async () => {
+  const home = await appHome();
+  await mkdir(join(home, "layouts"));
+  await writeFile(join(home, "layouts", "my-main.json"), JSON.stringify(mainLike()));
+  const { app, calls } = fakeApp(home, { name: "main" });
+  expect(await installMod({ appHome: home, bin: null, app, log: () => {} })).toBe(0);
+  expect(calls).toEqual(["status", "switch my-main"]);
+  expect(byId(JSON.parse(await readFile(join(home, "layouts", "my-main.json"), "utf8")), TOGGLE_ID)).not.toBeNull();
+});
+
+test("a clone whose file never appears fails, and writes no mod files", async () => {
+  const home = await appHome();
+  const app: HerdrAppControl = {
+    async shownLayout() { return { name: "main" }; },
+    async clone() {},
+    async switchTo() {},
+  };
+  const log: string[] = [];
+  expect(await installMod({ appHome: home, bin: null, app, log: (l) => log.push(l), cloneWaitMs: 100 })).toBe(1);
+  expect(log.join("\n")).toContain("never appeared");
+  expect(existsSync(join(home, "mods"))).toBe(false);
+});
+
+test("the app cannot say what it shows: the mod is installed, and the log says why there is no button and how to add it", async () => {
+  const home = await appHome();
+  const { app } = fakeApp(home, { error: "herdr-app is not on PATH" });
+  const log: string[] = [];
+  expect(await installMod({ appHome: home, bin: null, app, log: (l) => log.push(l) })).toBe(0);
+  expect(existsSync(join(home, "mods", "paddock", "main.js"))).toBe(true);
+  const out = log.join("\n");
+  expect(out).toContain("herdr-app is not on PATH");
+  expect(out).toContain("--button-only");
+});
+
+test("--button-only writes no mod files, only the layout", async () => {
+  const home = await appHome(mainLike());
+  const { app } = fakeApp(home, { name: "mine" });
+  expect(await installMod({ appHome: home, bin: null, files: false, app, log: () => {} })).toBe(0);
+  expect(existsSync(join(home, "mods"))).toBe(false);
+  expect(byId(JSON.parse(await readFile(join(home, "layouts", "mine.json"), "utf8")), TOGGLE_ID)).not.toBeNull();
+});
+
+test("--button-only with no way to know the layout fails, instead of doing nothing quietly", async () => {
+  const home = await appHome();
+  const { app } = fakeApp(home, { error: "the Herdr app shows no layout (is its window open?)" });
+  const log: string[] = [];
+  expect(await installMod({ appHome: home, bin: null, files: false, app, log: (l) => log.push(l) })).toBe(1);
+  expect(log.join("\n")).toContain("--layout");
+});
+
+test("--no-button installs the mod and never asks the app", async () => {
+  const home = await appHome();
+  const { app, calls } = fakeApp(home, { name: "mine" });
+  expect(await installMod({ appHome: home, bin: null, button: false, app, log: () => {} })).toBe(0);
+  expect(calls).toEqual([]);
+  expect(existsSync(join(home, "mods", "paddock", "main.js"))).toBe(true);
 });
 
 test("selfBinary names a compiled paddock, never bun", () => {

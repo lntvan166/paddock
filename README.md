@@ -121,6 +121,13 @@ which paddock does not qualify for (`docs/decisions.md`). Homebrew then owns the
 install: upgrade with `brew upgrade paddock`, and `paddock update` detects the
 keg and declines rather than desyncing it.
 
+Using the Herdr desktop app? One more command puts paddock's panel in it, with
+a button beside your tabs ([details](#from-the-herdr-app)):
+
+```bash
+paddock mod install
+```
+
 ### herdr version
 
 paddock talks to herdr over herdr's own socket protocol, and this release is
@@ -153,18 +160,23 @@ from its QR code, mute notifications, and see that it is healthy, beside your
 agents.
 
 ```bash
-paddock mod install --layout <your-layout>   # a button in the tab bar shows the panel
-paddock mod install                          # just the mod: open it with mod.open paddock
+paddock mod install                     # the mod, and a paddock button beside your tabs
+paddock mod install --layout <name>     # the button in another layout of yours
+paddock mod install --no-button         # just the mod: open it with mod.open paddock
 ```
+
+Run it with the app open: the button goes into the layout the window shows.
 
 The panel needs this paddock (0.16 or later; it offers to install one when
 there is none). Its Tailscale section needs Tailscale, and its phone link
 needs `cloudflared`; without them, those sections say so and the rest works.
 
 Herdr replaces its own layouts (`main`, `terminals`, `win98`) on every start,
-so `--layout` refuses them; clone one first (`herdr-app do layout.clone
-'{"name":"main","as":"my-main"}'`). The old layout file is kept beside the new
-one. The mod is in [`herdr/paddock/`](herdr/paddock/RECIPE.md).
+so when the window shows one of them, paddock copies it as `my-<name>`, adds
+the button there and switches to the copy (`--layout main` is refused for the
+same reason). The old layout file is kept beside the new one. Installed the mod
+from the Herdr gallery? Open it with `mod.open paddock` and press **Add the
+button**. The mod is in [`herdr/paddock/`](herdr/paddock/RECIPE.md).
 
 ## run it
 

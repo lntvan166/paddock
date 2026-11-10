@@ -14,6 +14,8 @@ import {
 } from "herdr";
 
 const PANEL = "paddock-panel";
+/** The first paddock whose `mod install` takes --button-only. */
+const BUTTON_ONLY_SINCE = "0.16.2";
 const STATE_KEY = "paddock.state"; // "running" | "stopped" | "unknown": the toggle's dot
 const POLL_SHOWN = 5000, POLL_HIDDEN = 30000;
 const TUNNEL_TIMES = [["30m", "30 min"], ["2h", "2 hours"], ["7d", "7 days"]];
@@ -34,6 +36,15 @@ function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) { const f = find(child, id); if (f) return f; }
   return null;
+}
+
+/** `a` is at least `b`, comparing x.y.z; a dev build (0.0.0-dev) counts as new enough. */
+function atLeast(a, b) {
+  if (typeof a !== "string") return false;
+  if (a.startsWith("0.0.0")) return true;
+  const x = a.split(/[.-]/).map(Number), y = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== y[i]) return (x[i] || 0) > y[i];
+  return true;
 }
 
 function ago(ms) {
@@ -446,7 +457,30 @@ export default class Paddock extends View {
       return [this.card(t, { headline: "paddock didn't answer", finding: this.statusError, main: again })];
     }
     if (!this.status) return [this.card(t, { headline: "Looking for paddock", finding: "Reading its status…", main: null })];
-    return [this.top(t), this.reach(t), this.notifications(t), this.about(t)].filter(Boolean);
+    return [this.top(t), this.buttonOffer(t), this.reach(t), this.notifications(t), this.about(t)].filter(Boolean);
+  }
+
+  /**
+   * Opened from the palette or the gallery, with no button in the layout: offer to add one. Without
+   * it the only way back to this panel is the command palette, which nobody remembers. paddock
+   * edits the layout (`mod install --button-only`), copying Herdr's own layouts first, since Herdr
+   * rewrites those on every start.
+   */
+  buttonOffer(t) {
+    if (find(layout(), PANEL)) return null;
+    // An older paddock ignores --button-only, and would copy ITS mod files over these.
+    const can = atLeast(this.status?.paddock?.version, BUTTON_ONLY_SINCE);
+    return group(t, "This window", [
+      setting(t, { id: "button", title: "Tab bar button", state: "not added",
+        desc: can
+          ? "A paddock button beside your tabs shows and hides this panel."
+          : `A paddock button beside your tabs shows and hides this panel. Adding it needs paddock ${BUTTON_ONLY_SINCE} or later.`,
+        body: this.busy ? null : actions(can
+          ? primary("add-button", "Add the button", t,
+            (_e, cx) => this.act(cx, "Adding the button", ["mod", "install", "--button-only"], 30000))
+          : primary("update-for-button", "Update paddock", t,
+            (_e, cx) => this.act(cx, "Updating paddock", ["update"], 300000))) }),
+    ]);
   }
 
   top(t) {

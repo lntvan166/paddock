@@ -49,8 +49,9 @@ export const USAGE = [
   "       paddock pair              the URL, code and QR of the running tunnel",
   "       paddock tailscale [off]   publish on your tailnet (Tailscale)",
   "                                 --login <name> allows that Tailscale user instead",
-  "       paddock mod install [--layout <name>]",
-  "                                 add paddock's panel to the Herdr desktop app",
+  "       paddock mod install [--layout <name>] [--no-button | --button-only]",
+  "                                 add paddock's panel to the Herdr desktop app, and its",
+  "                                 button to the layout the window shows (or <name>)",
   "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",
 ].join("\n");

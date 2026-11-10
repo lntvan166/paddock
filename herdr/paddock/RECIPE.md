@@ -12,11 +12,19 @@ panel offers to install it when it is missing). The Tailscale section also needs
 signed in; the phone link needs `cloudflared`. Without them those sections say so and link to
 the download; everything else works.
 
-Install it with paddock itself, which also wires it into a layout of yours:
+Install it with paddock itself, with the Herdr app open:
 
 ```sh
-paddock mod install --layout <your-layout>
+paddock mod install
 ```
+
+That puts the mod in place AND a paddock button beside your tabs, in the layout the window
+shows. When that is one of Herdr's own layouts (`main`, `terminals`, `win98`), which Herdr
+rewrites on every start, paddock copies it as `my-<name>` first and switches to the copy.
+`--layout <name>` picks another of your layouts; `--no-button` installs the mod alone.
+
+Installed it from the gallery instead? Open it once from the command palette
+(`mod.open paddock`) and press **Add the button**.
 
 ## What you see
 
