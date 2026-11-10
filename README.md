@@ -259,6 +259,23 @@ chrome, and it opens where you left off.
 
 [running locally →](docs/running-locally.md)
 
+## from the Herdr app
+
+If you use the Herdr desktop app, paddock has a panel for it: start and stop
+the dashboard, turn Tailscale on and off, open a quick tunnel and pair a phone
+from its QR code, mute notifications, and see that it is healthy, beside your
+agents.
+
+```bash
+paddock mod install --layout <your-layout>   # a button in the tab bar shows the panel
+paddock mod install                          # just the mod: open it with mod.open paddock
+```
+
+Herdr replaces its own layouts (`main`, `terminals`, `win98`) on every start,
+so `--layout` refuses them; clone one first (`herdr-app do layout.clone
+'{"name":"main","as":"my-main"}'`). The old layout file is kept beside the new
+one. The mod is in [`herdr-mod/paddock/`](herdr-mod/paddock/RECIPE.md).
+
 ## from another Claude Code session
 
 paddock can also be an MCP server, so a Claude Code session on another machine

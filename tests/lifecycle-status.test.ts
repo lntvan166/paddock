@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { parseArgs } from "@server/cli";
 import { defaultHealthCheck, runStatus } from "@server/lifecycle/commands";
 import { writeState, type Probe } from "@server/lifecycle/state";
+import { writeTunnelState } from "@server/tunnel/state";
+import { pairFact } from "@server/tunnel/pair";
 import { glyph } from "@server/term";
 import type { ServiceManager } from "@server/lifecycle/service/types";
 
@@ -312,4 +314,93 @@ test("defaultHealthCheck is bounded: a port that accepts and never answers reads
   const t0 = Date.now();
   expect(await defaultHealthCheck(8787, hang, 50)).toBe(false);
   expect(Date.now() - t0).toBeLessThan(1_000);
+});
+
+// ---- --json: the same facts, for the Herdr app mod -------------------------
+
+async function jsonStatus(o: Parameters<typeof runStatus>[0]) {
+  const printed: string[] = [];
+  const lines: string[] = [];
+  const code = await runStatus({ ...o, json: true, out: (t) => printed.push(t), log: (l) => lines.push(l) });
+  expect(printed, "exactly one JSON document").toHaveLength(1);
+  expect(lines, "no human lines mixed into the JSON").toEqual([]);
+  return { code, report: JSON.parse(printed[0]!) };
+}
+
+test("--json: nothing running is a stopped paddock, no service, tunnel or tailscale; exit code unchanged", async () => {
+  const { code, report } = await jsonStatus({ dir: await dir(), probe: probe(false, null) });
+  expect(code).toBe(1);
+  expect(report).toEqual({ paddock: { state: "stopped" }, service: null, tunnel: null, tailscale: null });
+});
+
+test("--json: a running paddock under an active service", async () => {
+  const d = await dir();
+  await writeState(d, s);
+  const { service } = svc("active");
+  const { code, report } = await jsonStatus({ dir: d, probe: probe(true, "paddock"), service });
+  expect(code).toBe(0);
+  expect(report.paddock).toEqual({ state: "running", pid: 4242, port: 8787, version: "0.4.0", startedAt: s.startedAt });
+  expect(report.service).toEqual({ kind: "systemd", state: "active", startsAt: "boot", logHint: "journalctl --user -u paddock" });
+});
+
+test("--json: an unreadable state is unknown with the error, not stopped", async () => {
+  const parent = await dir();
+  const blocker = join(parent, "blocker");
+  await writeFile(blocker, "not a directory");
+  const { report } = await jsonStatus({ dir: join(blocker, "child"), probe: probe(false, null) });
+  expect(report.paddock.state).toBe("unknown");
+  expect(report.paddock.error).toBeString();
+});
+
+test("--json: a running tunnel carries its URL and the pairing code the control socket gives", async () => {
+  const d = await dir();
+  await writeState(d, s);
+  await writeTunnelState(d, {
+    pid: 5151, args: "paddock tunnel", url: "https://quick-words.trycloudflare.com",
+    control: join(d, "tunnel.sock"), publishing: 8787, startedAt: 1000, until: null,
+  });
+  const asked: string[] = [];
+  const pair = { code: "ABCD-EFGH", expiresAt: 9000, link: "https://quick-words.trycloudflare.com/#ABCDEFGH", qr: ["10", "01"] };
+  const { report } = await jsonStatus({
+    dir: d, probe: probe(true, "paddock tunnel"),
+    pairInfo: async (control) => { asked.push(control); return pair; },
+  });
+  expect(asked).toEqual([join(d, "tunnel.sock")]);
+  expect(report.tunnel).toEqual({
+    state: "running", url: "https://quick-words.trycloudflare.com", pid: 5151, startedAt: 1000, publishing: 8787, pair,
+  });
+});
+
+test("--json: tailscale up, and tailscale down with why", async () => {
+  const up = await tsStatusJson({});
+  expect(up.tailscale).toEqual({ state: "up", url: `https://${TS_HOST}`, login: "operator@github", port: 8789 });
+  const down = await tsStatusJson({ health: "nothing answers on 127.0.0.1:8789" });
+  expect(down.tailscale.state).toBe("down");
+  expect(down.tailscale.detail).toContain("nothing answers");
+});
+
+async function tsStatusJson(o: { health?: true | string }) {
+  const d = await dir();
+  await writeState(d, s);
+  await writeFile(join(d, "tailscale.json"), JSON.stringify({ enabled: true, login: "operator@github", host: TS_HOST }));
+  const { report } = await jsonStatus({
+    dir: d, probe: probe(true, "paddock"), tailnetPort: 8789, find: () => TS_BIN,
+    run: async () => ({ code: 0, out: servedTo("http://127.0.0.1:8789"), err: "" }),
+    tailnetHealth: async () => o.health ?? true,
+  });
+  return report;
+}
+
+test("pairFact: the link carries the code in the fragment, and the QR encodes that link", async () => {
+  const fact = await pairFact("/path/to/tunnel.sock", async () => ({
+    ok: true, answer: { url: "https://quick-words.trycloudflare.com", code: "ABCDEFGH", expiresAt: 9000 },
+  }) as never);
+  expect(fact!.link).toBe("https://quick-words.trycloudflare.com/#ABCDEFGH");
+  expect(fact!.code).toBe("ABCD-EFGH");
+  expect(fact!.qr.length).toBeGreaterThan(20);
+  expect(fact!.qr.every((r) => /^[01]+$/.test(r) && r.length === fact!.qr.length)).toBe(true);
+});
+
+test("pairFact: a tunnel that does not answer gives null, not a guess", async () => {
+  expect(await pairFact("/path/to/tunnel.sock", async () => ({ ok: false, detail: "ECONNREFUSED" }) as never)).toBeNull();
 });

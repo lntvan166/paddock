@@ -108,3 +108,27 @@ export async function runPair(o: PairOpts): Promise<number> {
   }
   return 0;
 }
+
+/**
+ * A running tunnel's pairing code as data, for `paddock status --json`: the
+ * same link `runPair` prints and encodes (the code in the FRAGMENT, decision
+ * 22), and its QR as rows of "1" (dark) and "0" (light), quiet zone left to
+ * the renderer. Null when the tunnel does not answer on its control socket;
+ * `status` still reports the tunnel itself.
+ */
+export async function pairFact(
+  control: string,
+  ask: (socket: string) => Promise<Ask> = askControl,
+): Promise<{ code: string; expiresAt: number; link: string; qr: string[] } | null> {
+  const answer = await ask(control);
+  if (!answer.ok) return null;
+  const link = `${answer.answer.url}/#${answer.answer.code}`;
+  const m = qrMatrix(link);
+  const qr: string[] = [];
+  for (let r = 0; r < m.size; r++) {
+    let row = "";
+    for (let c = 0; c < m.size; c++) row += m.isDark(r, c) ? "1" : "0";
+    qr.push(row);
+  }
+  return { code: formatCode(answer.answer.code), expiresAt: answer.answer.expiresAt, link, qr };
+}

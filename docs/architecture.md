@@ -212,6 +212,14 @@ records the measurements they rest on.
 | `herdr-core/supervisor.ts` | Snapshot, then events, into the store under origin `core`. Logs a missing core once and retries; `firstAttempt()` is what boot waits on. |
 | `herdr-core/actions.ts` | `HerdrActions` for core ids. Dialog keys and option digits go only to a live `permission` or `question` prompt; `dialogRuns` splits a dialog key list into core key presses and text for `typeText`. |
 | `herdr-core/app-socket.ts` | The running app's command socket. Used only to rename spaces and tabs. |
+
+The Herdr app mod (`herdr-mod/paddock/`) is not part of the server: it is a gpui-kit panel the
+app runs, which drives paddock only through its CLI (`paddock status --json`, `local`, `stop`,
+`tailscale [off]`, `start --for`, `tunnel stop`, `update`) and the dashboard's own HTTP API on
+127.0.0.1. `src/server/herdr-mod/` installs it: the files are embedded in the binary, so the mod
+always matches the paddock that installed it, and `layout.ts` adds its button and panel to a
+layout (a pure function over the layout tree). `paddock status --json` is built by the same
+report functions as the human lines, so the two cannot disagree.
 | `herdr-core/tree.ts` | The app's spaces and tabs for the Spaces screen, named from the app's layout document, which is read and never written. |
 | `actions-by-origin.ts` | One `HerdrActions` over both backends, routed by id: a core id (`hc.…`) goes to the core, anything else to terminal herdr. Knows neither backend. |
 | `spaces-read.ts` | The Spaces read over both backends, each side failing on its own. Knows neither backend. |

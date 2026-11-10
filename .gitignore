@@ -22,7 +22,7 @@ dist-site/
 dist-app/
 build/
 *.tsbuildinfo
-paddock
+/paddock
 paddock-*
 
 # Release staging: the compiled binaries, their SHA256SUMS, and the rendered

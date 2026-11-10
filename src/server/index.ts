@@ -56,7 +56,10 @@ import { upstreamAlive } from "@server/tunnel/proxy";
 import { preflight, tunnelHint } from "@server/tunnel/preflight";
 import { runTunnel } from "@server/tunnel/run";
 import { runDetach } from "@server/tunnel/detach";
-import { runPair } from "@server/tunnel/pair";
+import { pairFact, runPair } from "@server/tunnel/pair";
+import { checkTunnelState } from "@server/tunnel/state";
+import { defaultAppHome, installMod, selfBinary } from "@server/herdr-mod/install";
+import { stopTunnel } from "@server/tunnel/stop";
 import { removeTunnelState } from "@server/tunnel/state";
 import { useColour } from "@server/term";
 import { VERSION } from "@server/version";
@@ -174,6 +177,8 @@ if (command === "status") {
   process.exit(await runStatus({
     dir: defaultConfigDir(), port: PORT, service: serviceManager({ configDir: defaultConfigDir() }),
     tailnetPort: TAILNET_PORT,
+    json: flags.has("--json"),
+    pairInfo: (control) => pairFact(control),
   }));
 }
 
@@ -213,6 +218,45 @@ if (command === "stop") {
  */
 if (command === "pair") {
   process.exit(await runPair({ dir: defaultConfigDir() }));
+}
+
+/**
+ * `paddock tunnel stop` — close the tunnel and nothing else: the dashboard
+ * and its service keep running (`paddock stop` takes all of them down). For
+ * the Herdr app mod's Close button. Same policy as `stop`'s tunnel half:
+ * SIGTERM, never SIGKILL (that would orphan cloudflared).
+ */
+if (command === "tunnel" && args[0] === "stop") {
+  if (args.length > 1) {
+    warn(`paddock tunnel stop: unknown argument '${args.slice(1).join(" ")}'`);
+    process.exit(2);
+  }
+  // stopTunnel is silent when there is none (`paddock stop` calls it every
+  // run); asked for directly, "nothing to close" is the answer.
+  if ((await checkTunnelState(defaultConfigDir())).kind === "none") {
+    say("no tunnel is running");
+    process.exit(0);
+  }
+  process.exit((await stopTunnel({ dir: defaultConfigDir(), log: say })).code);
+}
+
+/**
+ * `paddock mod install [--layout <name>]` — the Herdr app mod
+ * (`herdr-mod/paddock/`). Writes files under the app's home and nothing else:
+ * no herdr socket, no port.
+ */
+if (command === "mod") {
+  if (args[0] !== "install" || args.length > 1) {
+    warn(`paddock mod: expected \`paddock mod install [--layout <name>]\`, got '${args.join(" ")}'`);
+    process.exit(2);
+  }
+  if (flags.has("--layout") && !values.get("--layout")) {
+    warn("paddock: --layout needs the name of one of your Herdr app layouts");
+    process.exit(1);
+  }
+  process.exit(await installMod({
+    appHome: defaultAppHome(), bin: selfBinary(), layout: values.get("--layout"), log: say,
+  }));
 }
 
 /**

@@ -74,23 +74,23 @@ export async function tailnetHealth(
 export async function reportTailscale(
   o: { dir: string; tailnetHealth?: (port: number) => Promise<true | string> } & TailscaleHooks,
   log: (line: string) => void,
-): Promise<void> {
+): Promise<TailscaleFact | null> {
   const cfg = await readTailscaleConfig(o.dir, log);
-  if (cfg === null) return;
+  if (cfg === null) return null;
   const { port, run, find } = resolve(o);
 
   const up = await (o.tailnetHealth ?? ((p: number) => tailnetHealth(p)))(port);
   if (up !== true) {
     log(`${glyph("no")} tailscale — enabled but the listener is not up (${up})`);
     log("    the service binds it at startup and logs why it could not; `paddock local` restarts it");
-    return;
+    return { state: "down", detail: `the listener is not up (${up})`, login: cfg.login };
   }
 
   const bin = find();
   if (bin === null) {
     log(`${glyph("unknown")} tailscale — enabled, but the \`tailscale\` CLI was not found to check its serve config`);
     log(`    listener 127.0.0.1:${port} is up · allows ${cfg.login}`);
-    return;
+    return { state: "unknown", detail: "the `tailscale` CLI was not found to check its serve config", login: cfg.login };
   }
 
   // "Could not ask" is not "gone": a throw is reported as unknown, with why.
@@ -100,17 +100,23 @@ export async function reportTailscale(
   } catch (e) {
     log(`${glyph("unknown")} tailscale — could not read the serve config: ${message(e)}`);
     log("    `tailscale serve status` shows it");
-    return;
+    return { state: "unknown", detail: `could not read the serve config: ${message(e)}`, login: cfg.login };
   }
   if (!ownsServe(target, port)) {
     log(`${glyph("no")} tailscale — enabled but tailscale serve no longer points at it; run paddock tailscale`);
     log(target === null ? "    nothing is served on HTTPS 443" : `    HTTPS 443 serves ${target}`);
-    return;
+    return { state: "down", detail: "tailscale serve no longer points at it; run paddock tailscale", login: cfg.login };
   }
 
   log(`${glyph("yes")} tailscale — https://${cfg.host}`);
   log(`    allows ${cfg.login} · listener 127.0.0.1:${port}`);
+  return { state: "up", url: `https://${cfg.host}`, login: cfg.login, port };
 }
+
+/** What `reportTailscale` found, for `paddock status --json`. */
+export type TailscaleFact =
+  | { state: "up"; url: string; login: string; port: number }
+  | { state: "down" | "unknown"; detail: string; login: string };
 
 /**
  * `paddock stop`'s share: remove paddock's own 443 serve, keep the setting.

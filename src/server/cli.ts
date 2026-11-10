@@ -12,7 +12,7 @@
  */
 export type Command =
   | "serve" | "update" | "start" | "stop" | "status" | "doctor" | "tunnel"
-  | "pair" | "local" | "tailscale" | "help" | "agent" | "hub"
+  | "pair" | "local" | "tailscale" | "mod" | "help" | "agent" | "hub"
   | "unknown";
 
 export interface ParsedArgs {
@@ -30,7 +30,7 @@ export interface ParsedArgs {
 const RESERVED = new Set(["agent", "hub"]);
 
 /** The only flags that consume the token after them. */
-const VALUE_FLAGS = new Set(["--for", "--login"]);
+const VALUE_FLAGS = new Set(["--for", "--login", "--layout"]);
 
 export const USAGE = [
   "usage: paddock [--demo]          start the dashboard in the foreground",
@@ -49,6 +49,8 @@ export const USAGE = [
   "       paddock pair              the URL, code and QR of the running tunnel",
   "       paddock tailscale [off]   publish on your tailnet (Tailscale)",
   "                                 --login <name> allows that Tailscale user instead",
+  "       paddock mod install [--layout <name>]",
+  "                                 add paddock's panel to the Herdr desktop app",
   "       paddock help | --help     print this",
   "       paddock --version | -V    print the version",
 ].join("\n");
@@ -118,6 +120,7 @@ function commandFor(verb: string | null): Command {
   if (verb === "pair") return "pair";
   if (verb === "local") return "local";
   if (verb === "tailscale") return "tailscale";
+  if (verb === "mod") return "mod";
   if (verb === "help") return "help";
   if (RESERVED.has(verb)) return verb as Command;
   return "unknown";

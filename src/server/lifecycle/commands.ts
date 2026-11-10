@@ -61,9 +61,9 @@ async function reportUntracked(
   port: number,
   listener: Listener,
   log: (line: string) => void,
-): Promise<boolean> {
+): Promise<{ version: string } | null> {
   const found = await listener(port);
-  if (found === null) return false;
+  if (found === null) return null;
   log(`${glyph("unknown")} paddock ${found.version} — serving on 127.0.0.1:${port}, but NOT tracked`);
   log("  Nothing on disk describes it, so paddock cannot stop it. Its state");
   log("  file is gone: killed with SIGKILL, or removed by another paddock run");
@@ -71,7 +71,7 @@ async function reportUntracked(
   log("  Find it and stop it by hand:");
   log(`    ss -ltnp | grep :${port}                     # Linux`);
   log(`    lsof -nP -iTCP:${port} -sTCP:LISTEN          # macOS`);
-  return true;
+  return found;
 }
 
 export interface StatusOpts extends TailscaleHooks {
@@ -87,6 +87,47 @@ export interface StatusOpts extends TailscaleHooks {
   listener?: Listener;
   log?: (line: string) => void;
   now?: () => number;
+  /** `--json`: print one `StatusReport` instead of the lines. Same checks, same exit code. */
+  json?: boolean;
+  /** Where the JSON goes. Injected for tests. */
+  out?: (text: string) => void;
+  /** Asks a running tunnel for its pairing code (`--json` only). Injected for tests. */
+  pairInfo?: (control: string, url: string) => Promise<PairFact | null>;
+}
+
+/** A running tunnel's pairing code, its link and the link as QR rows ("1" dark, "0" light). */
+export interface PairFact { code: string; expiresAt: number; link: string; qr: string[] }
+
+/**
+ * `paddock status --json`: the facts `status` prints, for programs (the Herdr
+ * app mod in `herdr-mod/paddock/`). Built by the SAME report functions as the
+ * lines, so the two can never disagree: each one logs for a person and
+ * returns what it found.
+ */
+export interface StatusReport {
+  paddock:
+    | { state: "running"; pid: number; port: number; version: string; startedAt: number }
+    | { state: "untracked"; port: number; version: string }
+    | { state: "stopped" }
+    | { state: "unknown"; error: string };
+  /** The `paddock local` service; null when none is registered (or this platform has none). */
+  service: { kind: string; state: "active" | "failing"; startsAt: string | null; logHint: string } | null;
+  /** Null when no tunnel is running. */
+  tunnel:
+    | {
+      state: "running"; url: string; pid: number; startedAt: number;
+      /** The port of the paddock it publishes, or null when it serves its own dashboard. */
+      publishing: number | null;
+      /** Null when the tunnel did not answer for its code. */
+      pair: PairFact | null;
+    }
+    | { state: "unknown"; error: string }
+    | null;
+  /** Null when Tailscale publishing was never turned on. */
+  tailscale:
+    | { state: "up"; url: string; login: string; port: number }
+    | { state: "down" | "unknown"; detail: string; login: string }
+    | null;
 }
 
 /** Exit code: 0 running, 1 not. That is what makes it usable from a script. */
@@ -117,49 +158,43 @@ async function clearState(
 }
 
 export async function runStatus(o: StatusOpts): Promise<number> {
-  const log = o.log ?? say;
+  const log = o.json ? () => {} : (o.log ?? say);
   const now = (o.now ?? Date.now)();
-  const paddock = await reportPaddock(o, log, now);
-  await reportService(o.service, log);
+  const paddock = await reportPaddock({ ...o, log }, log, now);
+  const service = await reportService(o.service, log);
   const tunnel = await reportTunnel(o, log, now);
   // Reports only; it never changes the exit code. See tailscale/lifecycle.ts.
-  await reportTailscale(o, log);
+  const tailscale = await reportTailscale(o, log);
 
-  /**
-   * WHY A TUNNEL CAN MAKE THIS ZERO.
-   *
-   * A BACKSTOP, not the ordinary path — measured, having first written the
-   * opposite here. `paddock tunnel` DOES record paddock state: a detached run
-   * shows one pid under both lines. So normally the paddock half already
-   * answers and this changes nothing.
-   *
-   * It is still reachable, because `recordState` can decline — a conflicting
-   * record it will not overwrite, a command line it could not capture — and it
-   * says so rather than failing. A tunnel serving its own dashboard while
-   * unrecorded would otherwise make `status` report "✗ paddock — not running"
-   * in the one command whose exit code scripts read.
-   *
-   * A tunnel that PUBLISHES another paddock (`--publish-running`) serves no
-   * dashboard of its own, so it cannot stand in for one: there, the paddock
-   * line is the answer and this changes nothing.
-   */
-  if (paddock !== 0 && tunnel.serving) return 0;
-  return paddock;
+  if (o.json) {
+    let tunnelFact: StatusReport["tunnel"] = tunnel.fact;
+    if (tunnelFact?.state === "running" && tunnel.control !== null && o.pairInfo) {
+      tunnelFact = { ...tunnelFact, pair: await o.pairInfo(tunnel.control, tunnelFact.url) };
+    }
+    const report: StatusReport = { paddock: paddock.fact, service, tunnel: tunnelFact, tailscale };
+    (o.out ?? ((t: string) => process.stdout.write(t + "\n")))(JSON.stringify(report));
+  }
+  if (paddock.code !== 0 && tunnel.serving) return 0;
+  return paddock.code;
 }
 
 async function reportPaddock(
   o: StatusOpts,
   log: (line: string) => void,
   now: number,
-): Promise<number> {
+): Promise<{ code: number; fact: StatusReport["paddock"] }> {
   const got = await checkState(o.dir, o.probe);
+  const stopped = { code: 1, fact: { state: "stopped" } as const };
 
   switch (got.kind) {
-    case "none":
-      if (o.port !== undefined &&
-          await reportUntracked(o.port, o.listener ?? httpListener, log)) return 1;
+    case "none": {
+      if (o.port !== undefined) {
+        const found = await reportUntracked(o.port, o.listener ?? httpListener, log);
+        if (found) return { code: 1, fact: { state: "untracked", port: o.port, version: found.version } };
+      }
       log(`${glyph("no")} paddock — not running`);
-      return 1;
+      return stopped;
+    }
     case "unreadable":
       // ⚠ and not ✗, deliberately. "I could not read the state" and "nothing
       // is running" are different facts, and reporting the first as the second
@@ -168,21 +203,24 @@ async function reportPaddock(
       // an operator has. Exit non-zero: this is "don't know", which must not
       // look like success to a caller scripting on the exit code.
       log(`${glyph("unknown")} paddock — could not read state (${got.error})`);
-      return 1;
+      return { code: 1, fact: { state: "unknown", error: got.error } };
     case "stale":
       // Say it once. A crash left this behind and silently tidying it up hides
       // that anything happened.
       log(`${glyph("no")} paddock — not running (stale state for pid ${got.state.pid}, cleared)`);
       await clearState(o.dir, log);
-      return 1;
+      return stopped;
     case "mismatch":
       log(`${glyph("no")} paddock — not running (pid ${got.state.pid} is now: ${got.actual ?? "unknown"})`);
       await clearState(o.dir, log);
-      return 1;
+      return stopped;
     case "running":
       log(`${glyph("yes")} paddock ${got.state.version} — running`);
       log(`    pid ${got.state.pid} · port ${got.state.port} · up ${duration(now - got.state.startedAt)}`);
-      return 0;
+      return {
+        code: 0,
+        fact: { state: "running", pid: got.state.pid, port: got.state.port, version: got.state.version, startedAt: got.state.startedAt },
+      };
   }
 }
 
@@ -203,25 +241,26 @@ async function reportTunnel(
   o: StatusOpts,
   log: (line: string) => void,
   now: number,
-): Promise<{ serving: boolean }> {
+): Promise<{ serving: boolean; fact: StatusReport["tunnel"]; control: string | null }> {
   const got = await checkTunnelState(o.dir, o.probe, log);
+  const none = { serving: false, fact: null, control: null };
   switch (got.kind) {
     case "none":
-      return { serving: false };
+      return none;
     case "unreadable":
       log(`${glyph("unknown")} tunnel — could not read its state (${got.error})`);
-      return { serving: false };
+      return { serving: false, fact: { state: "unknown", error: got.error }, control: null };
     case "stale":
       log(`${glyph("no")} tunnel — not running (stale record for pid ${got.state.pid}, cleared)`);
       await clearTunnel(o.dir, log);
-      return { serving: false };
+      return none;
     case "mismatch":
       log(
         `${glyph("no")} tunnel — not running (pid ${got.state.pid} is now: ` +
           `${got.actual ?? "unknown"})`,
       );
       await clearTunnel(o.dir, log);
-      return { serving: false };
+      return none;
     case "running":
       log(`${glyph("yes")} tunnel — ${got.state.url}`);
       log(
@@ -232,7 +271,14 @@ async function reportTunnel(
           " · `paddock pair` for the code",
       );
       // Only a tunnel serving its OWN dashboard can stand in for a paddock.
-      return { serving: got.state.publishing === null };
+      return {
+        serving: got.state.publishing === null,
+        fact: {
+          state: "running", url: got.state.url, pid: got.state.pid, startedAt: got.state.startedAt,
+          publishing: got.state.publishing, pair: null,
+        },
+        control: got.state.control,
+      };
     default: {
       const _exhaustive: never = got;
       throw new Error(`paddock: unhandled tunnel state: ${JSON.stringify(_exhaustive)}`);
@@ -247,17 +293,19 @@ async function reportTunnel(
 async function reportService(
   service: ServiceChoice | undefined,
   log: (line: string) => void,
-): Promise<void> {
-  if (service === undefined || !service.ok) return;
+): Promise<StatusReport["service"]> {
+  if (service === undefined || !service.ok) return null;
   const m = service.manager;
   const got = await m.inspect();
-  if (got === "absent") return;
+  if (got === "absent") return null;
   if (got === "active") {
-    log(`    service: ${m.kind} · starts at ${await m.startsAt()} · output: ${m.logHint}`);
-    return;
+    const startsAt = await m.startsAt();
+    log(`    service: ${m.kind} · starts at ${startsAt} · output: ${m.logHint}`);
+    return { kind: m.kind, state: "active", startsAt, logHint: m.logHint };
   }
   log(`${glyph("no")} service — registered (${m.kind}) but not serving; it keeps retrying`);
   log(`    the usual cause is herdr not running · output: ${m.logHint}`);
+  return { kind: m.kind, state: "failing", startsAt: null, logHint: m.logHint };
 }
 
 /** `clearState`'s contract, for the tunnel's record. See its note. */
