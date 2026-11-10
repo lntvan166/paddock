@@ -271,6 +271,10 @@ paddock mod install --layout <your-layout>   # a button in the tab bar shows the
 paddock mod install                          # just the mod: open it with mod.open paddock
 ```
 
+The panel needs this paddock (0.16 or later; it offers to install one when
+there is none). Its Tailscale section needs Tailscale, and its phone link
+needs `cloudflared`; without them, those sections say so and the rest works.
+
 Herdr replaces its own layouts (`main`, `terminals`, `win98`) on every start,
 so `--layout` refuses them; clone one first (`herdr-app do layout.clone
 '{"name":"main","as":"my-main"}'`). The old layout file is kept beside the new

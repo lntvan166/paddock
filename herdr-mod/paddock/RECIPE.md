@@ -7,6 +7,11 @@ button in the tab bar shows and hides it.
 
 ![paddock](preview.png)
 
+**Needs:** [paddock](https://github.com/lntvan166/paddock) 0.16 or later on this machine (the
+panel offers to install it when it is missing). The Tailscale section also needs Tailscale,
+signed in; the phone link needs `cloudflared`. Without them those sections say so and link to
+the download; everything else works.
+
 Install it with paddock itself, which also wires it into a layout of yours:
 
 ```sh
@@ -36,6 +41,14 @@ small muted capitals:
 - **Health.** Small dots: the number of agents, terminal herdr, the Herdr app. The last
   notification error, if any, in `blocked`. A chip for the MCP bridge, and Update to x.y.z when
   a newer paddock is out.
+
+When paddock is missing, the panel is one section, "Not installed": the install command
+(Homebrew on macOS, else the install script) and Install paddock, which runs it in a pane below
+that waits for Enter; Check again reads it once more. A paddock without `status --json` shows
+"Too old" and Update paddock (`paddock update` in a pane). When `status --json` reports
+`tools.tailscale` or `tools.cloudflared` as null, that section's pill says "Needs Tailscale" or
+"Needs cloudflared" and its buttons are Get Tailscale / Get cloudflared (Install with Homebrew on
+macOS) and Check again.
 
 A failed action leaves a banner at the bottom, in `blocked`, with the command's last lines and a
 close button. The tab-bar button is 26px high: the mark, "paddock", and a 6px dot, green while
@@ -74,8 +87,8 @@ paddock runs.
 
 - It runs programs (`paddock`, the browser opener, `journalctl`) and talks to the paddock
   dashboard on 127.0.0.1. It reads no files but its own `config.json`.
-- Without `config.json` it runs `paddock` from PATH; an older release there has no
-  `status --json`, and the panel says so.
+- Without `config.json` (a copy from the gallery) it runs `paddock` from PATH, then
+  `~/.local/bin/paddock`; an older release has no `status --json`, and the panel says so.
 - `paddock stop` also removes the service and closes the tunnel and Tailscale serve. That is
   why Stop asks twice.
 - The QR is drawn as runs of `div`s per row, a few dozen elements, not one per module.

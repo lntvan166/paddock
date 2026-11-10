@@ -9,6 +9,8 @@ import {
 } from "@server/lifecycle/state";
 import { checkTunnelState, removeTunnelState, tunnelStateFile } from "@server/tunnel/state";
 import { stopTunnel } from "@server/tunnel/stop";
+import { findCloudflared } from "@server/tunnel/cloudflared";
+import { findTailscale } from "@server/tailscale/cli";
 import { duration, glyph, say } from "@server/term";
 import type { ServiceChoice } from "@server/lifecycle/service";
 import { ServiceError } from "@server/lifecycle/service/types";
@@ -91,6 +93,8 @@ export interface StatusOpts extends TailscaleHooks {
   json?: boolean;
   /** Where the JSON goes. Injected for tests. */
   out?: (text: string) => void;
+  /** Where `cloudflared` is (`--json` only: the quick tunnel needs it). Injected for tests. */
+  findCloudflared?: () => string | null;
   /** Asks a running tunnel for its pairing code (`--json` only). Injected for tests. */
   pairInfo?: (control: string, url: string) => Promise<PairFact | null>;
 }
@@ -128,6 +132,12 @@ export interface StatusReport {
     | { state: "up"; url: string; login: string; port: number }
     | { state: "down" | "unknown"; detail: string; login: string }
     | null;
+  /**
+   * The programs the optional features need, as paddock itself finds them (the
+   * same lookups `paddock tailscale` and `paddock tunnel` use), or null when
+   * missing: so a UI can say "needs Tailscale" before a button fails.
+   */
+  tools: { tailscale: string | null; cloudflared: string | null };
 }
 
 /** Exit code: 0 running, 1 not. That is what makes it usable from a script. */
@@ -171,7 +181,11 @@ export async function runStatus(o: StatusOpts): Promise<number> {
     if (tunnelFact?.state === "running" && tunnel.control !== null && o.pairInfo) {
       tunnelFact = { ...tunnelFact, pair: await o.pairInfo(tunnel.control, tunnelFact.url) };
     }
-    const report: StatusReport = { paddock: paddock.fact, service, tunnel: tunnelFact, tailscale };
+    const tools = {
+      tailscale: (o.find ?? (() => findTailscale()))(),
+      cloudflared: (o.findCloudflared ?? (() => findCloudflared()))(),
+    };
+    const report: StatusReport = { paddock: paddock.fact, service, tunnel: tunnelFact, tailscale, tools };
     (o.out ?? ((t: string) => process.stdout.write(t + "\n")))(JSON.stringify(report));
   }
   if (paddock.code !== 0 && tunnel.serving) return 0;

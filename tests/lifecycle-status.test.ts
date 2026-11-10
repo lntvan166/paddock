@@ -321,7 +321,10 @@ test("defaultHealthCheck is bounded: a port that accepts and never answers reads
 async function jsonStatus(o: Parameters<typeof runStatus>[0]) {
   const printed: string[] = [];
   const lines: string[] = [];
-  const code = await runStatus({ ...o, json: true, out: (t) => printed.push(t), log: (l) => lines.push(l) });
+  const code = await runStatus({
+    find: () => null, findCloudflared: () => "/usr/bin/cloudflared",
+    ...o, json: true, out: (t) => printed.push(t), log: (l) => lines.push(l),
+  });
   expect(printed, "exactly one JSON document").toHaveLength(1);
   expect(lines, "no human lines mixed into the JSON").toEqual([]);
   return { code, report: JSON.parse(printed[0]!) };
@@ -330,7 +333,10 @@ async function jsonStatus(o: Parameters<typeof runStatus>[0]) {
 test("--json: nothing running is a stopped paddock, no service, tunnel or tailscale; exit code unchanged", async () => {
   const { code, report } = await jsonStatus({ dir: await dir(), probe: probe(false, null) });
   expect(code).toBe(1);
-  expect(report).toEqual({ paddock: { state: "stopped" }, service: null, tunnel: null, tailscale: null });
+  expect(report).toEqual({
+    paddock: { state: "stopped" }, service: null, tunnel: null, tailscale: null,
+    tools: { tailscale: null, cloudflared: "/usr/bin/cloudflared" },
+  });
 });
 
 test("--json: a running paddock under an active service", async () => {
@@ -374,6 +380,7 @@ test("--json: a running tunnel carries its URL and the pairing code the control 
 test("--json: tailscale up, and tailscale down with why", async () => {
   const up = await tsStatusJson({});
   expect(up.tailscale).toEqual({ state: "up", url: `https://${TS_HOST}`, login: "operator@github", port: 8789 });
+  expect(up.tools.tailscale).toBe(TS_BIN); // the same lookup paddock tailscale uses
   const down = await tsStatusJson({ health: "nothing answers on 127.0.0.1:8789" });
   expect(down.tailscale.state).toBe("down");
   expect(down.tailscale.detail).toContain("nothing answers");

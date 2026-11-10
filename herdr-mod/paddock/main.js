@@ -9,7 +9,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import {
-  exec, run, theme, settings, layout, appHome, readTextFile, notify, shared, setShared,
+  exec, run, theme, settings, layout, appHome, home, readTextFile, notify, shared, setShared,
   closeOverlay, props as blockProps, window as hostWindow,
 } from "herdr";
 
@@ -17,6 +17,10 @@ const PANEL = "paddock-panel";
 const STATE_KEY = "paddock.state"; // "running" | "stopped" | "unknown": the toggle's dot
 const POLL_SHOWN = 5000, POLL_HIDDEN = 30000;
 const TUNNEL_TIMES = [["30m", "30 min"], ["2h", "2 hours"], ["7d", "7 days"]];
+const INSTALL_SCRIPT = "curl -fsSL https://trypaddock.vercel.app/install.sh | sh";
+const INSTALL_BREW = "brew install lntvan166/paddock/paddock";
+const TAILSCALE_DOWNLOAD = "https://tailscale.com/download";
+const CLOUDFLARED_DOWNLOAD = "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/";
 
 // ---- Small helpers ----
 
@@ -60,6 +64,17 @@ function untilMorning(now = Date.now()) {
 function failure(r) {
   const text = `${r.stderr ?? ""}\n${r.stdout ?? ""}`.trim().split("\n").filter((l) => l.trim()).slice(-4).join("\n");
   return text || `exited with code ${r.code}`;
+}
+
+/**
+ * Run a shell line in a new pane below, where the person sees it work. The pane waits for Enter
+ * before it closes (a program exiting closes its pane), so the output can be read.
+ */
+function inPane(line) {
+  run("pane.split", {
+    direction: "down",
+    argv: ["sh", "-c", `${line}; printf '\\n[%s] press Enter to close\\n' "$?"; read _`],
+  });
 }
 
 function opener() {
@@ -158,6 +173,7 @@ export default class Paddock extends View {
     this.bin = "paddock";
     this.status = null;       // `paddock status --json`
     this.statusError = null;  // why it could not be read
+    this.statusKind = null;   // "missing" (no paddock) | "old" (no status --json) | null
     this.health = null;       // GET /api/health
     this.settings = null;     // GET /api/settings
     this.apiError = null;
@@ -194,13 +210,25 @@ export default class Paddock extends View {
     if (this.refreshing) return;
     this.refreshing = true;
     try {
-      let r;
+      let r = null;
       try { r = await exec(this.bin, ["status", "--json"], { timeout: 15000 }); }
-      catch (e) { r = null; this.statusError = `could not run ${this.bin}: ${e.message ?? e}`; }
+      catch (e) {
+        // The install script puts paddock in ~/.local/bin, which a desktop session's PATH may lack.
+        const local = `${home()}/.local/bin/paddock`;
+        if (this.bin === "paddock") {
+          try { r = await exec(local, ["status", "--json"], { timeout: 15000 }); this.bin = local; }
+          catch { /* not there either: reported below */ }
+        }
+        if (!r) { this.statusKind = "missing"; this.statusError = `paddock is not installed here (${e.message ?? e})`; this.status = null; }
+      }
       if (r) {
         // The exit code says running or not; the JSON is on stdout either way.
-        try { this.status = JSON.parse(r.stdout.trim().split("\n").pop() ?? ""); this.statusError = null; }
-        catch { this.statusError = `${this.bin} status --json gave no JSON (paddock 0.16 or later is needed): ${failure(r)}`; }
+        try { this.status = JSON.parse(r.stdout.trim().split("\n").pop() ?? ""); this.statusError = null; this.statusKind = null; }
+        catch {
+          this.statusKind = "old"; this.status = null;
+          const v = /paddock (\S+)/.exec(r.stdout)?.[1];
+          this.statusError = `This paddock${v ? ` (${v})` : ""} is too old for the panel, which needs 0.16 or later.`;
+        }
       }
       const port = this.port();
       this.health = null; this.settings = null; this.apiError = null;
@@ -320,9 +348,25 @@ export default class Paddock extends View {
 
   sections(t, cx) {
     if (this.statusError && !this.status) {
-      return [section(t, "paddock", null, v_flex().gap(8)
-        .child(line(t, this.statusError, t.blocked))
-        .child(note(t, "Install or update paddock, then run `paddock mod install` again so the mod knows where it is.")))];
+      const mac = hostWindow().platform === "macos";
+      const again = button("check-again", "Check again", t, (_e, cx) => this.refresh(cx));
+      if (this.statusKind === "missing") {
+        return [section(t, "paddock", pill(t, "Not installed", false, true), v_flex().gap(10)
+          .child(line(t, "paddock is the phone dashboard this panel drives. Install it once:"))
+          .child(div().font_family(mono()).text_size(S().small).text_color(t.muted).child(mac ? INSTALL_BREW : INSTALL_SCRIPT))
+          .child(note(t, "It installs to ~/.local/bin, no sudo, checksum verified. The command runs in a pane below, so you see what it does."))
+          .child(row(
+            button("install", "Install paddock", t, () => inPane(mac ? INSTALL_BREW : INSTALL_SCRIPT), { primary: true }),
+            mac ? button("install-script", "Use the script instead", t, () => inPane(INSTALL_SCRIPT)) : null,
+            again,
+          )))];
+      }
+      if (this.statusKind === "old") {
+        return [section(t, "paddock", pill(t, "Too old", false, true), v_flex().gap(10)
+          .child(line(t, this.statusError, t.blocked))
+          .child(row(button("update-old", "Update paddock", t, () => inPane(`'${this.bin}' update`), { primary: true }), again)))];
+      }
+      return [section(t, "paddock", null, v_flex().gap(8).child(line(t, this.statusError, t.blocked)).child(row(again)))];
     }
     if (!this.status) return [section(t, "paddock", null, note(t, "Reading paddock status…"))];
     return [this.dashboard(t, cx), this.tailscale(t, cx), this.tunnel(t, cx), this.notifications(t, cx), this.healthSection(t, cx)]
@@ -371,7 +415,14 @@ export default class Paddock extends View {
   tailscale(t, cx) {
     const ts = this.status.tailscale, busy = Boolean(this.busy);
     let body;
-    if (ts === null) {
+    const hasTailscale = this.status.tools?.tailscale !== null; // unknown (older JSON) counts as present
+    if (ts === null && !hasTailscale) {
+      body = v_flex().gap(8)
+        .child(line(t, "Needs Tailscale on this machine, signed in."))
+        .child(note(t, "Publishes the dashboard on your tailnet at a stable https address, only to your Tailscale login."))
+        .child(row(button("ts-get", "Get Tailscale", t, () => this.open(TAILSCALE_DOWNLOAD)),
+          button("ts-recheck", "Check again", t, (_e, cx) => this.refresh(cx))));
+    } else if (ts === null) {
       body = v_flex().gap(8)
         .child(note(t, "Publishes the dashboard on your tailnet at a stable https address, only to your Tailscale login. Turning it on restarts paddock for a few seconds."))
         .child(row(busy ? null : button("ts-on", "Turn on", t, (_e, cx) => this.act(cx, "Tailscale on", ["tailscale"], 120000, true))));
@@ -392,14 +443,26 @@ export default class Paddock extends View {
           busy ? null : button("ts-off2", "Turn off", t, (_e, cx) => this.act(cx, "Tailscale off", ["tailscale", "off"], 60000, true)),
         ));
     }
-    const tsPill = ts === null ? pill(t, "Off", false) : ts.state === "up" ? pill(t, "On", true) : pill(t, "Broken", false, true);
+    const tsPill = ts === null ? pill(t, hasTailscale ? "Off" : "Needs Tailscale", false) : ts.state === "up" ? pill(t, "On", true) : pill(t, "Broken", false, true);
     return section(t, "Tailscale", tsPill, body);
   }
 
   tunnel(t, cx) {
     const tn = this.status.tunnel, busy = Boolean(this.busy);
     let body;
-    if (tn === null) {
+    const hasCloudflared = this.status.tools?.cloudflared !== null;
+    if (tn === null && !hasCloudflared) {
+      const mac = hostWindow().platform === "macos";
+      body = v_flex().gap(8)
+        .child(line(t, "Off: needs cloudflared on this machine."))
+        .child(note(t, "A quick tunnel is a public https link for a phone off your network, through Cloudflare, gated by a pairing code."))
+        .child(row(
+          mac
+            ? button("cf-install", "Install with Homebrew", t, () => inPane("brew install cloudflared"), { primary: true })
+            : button("cf-get", "Get cloudflared", t, () => this.open(CLOUDFLARED_DOWNLOAD), { primary: true }),
+          button("cf-recheck", "Check again", t, (_e, cx) => this.refresh(cx)),
+        ));
+    } else if (tn === null) {
       body = v_flex().gap(10)
         .child(line(t, "Off: no public link."))
         .child(note(t, "Opens a public https link for a phone off your network, gated by a pairing code. It closes by itself after the time you pick."))
@@ -426,7 +489,7 @@ export default class Paddock extends View {
           busy ? null : button("tunnel-close", "Close tunnel", t, (_e, cx) => this.act(cx, "Close the tunnel", ["tunnel", "stop"]), { danger: true }),
         ));
     }
-    const tnPill = tn === null ? pill(t, "Off", false) : tn.state === "running" ? pill(t, "On", true) : pill(t, "?", false, true);
+    const tnPill = tn === null ? pill(t, hasCloudflared ? "Off" : "Needs cloudflared", false) : tn.state === "running" ? pill(t, "On", true) : pill(t, "?", false, true);
     return section(t, "Phone link", tnPill, body);
   }
 
