@@ -472,3 +472,17 @@ test("every field you can type into clears the iOS zoom floor", async () => {
 
   expect(offenders, "these zoom the phone on focus").toEqual([]);
 });
+
+// Seen on a Linux desktop: generic `monospace` resolves to DejaVu Sans Mono,
+// which has no precomposed Vietnamese letters carrying two marks (ử U+1EED,
+// ế, ỗ). The browser then builds them from a fallback and the marks land
+// beside the letter ("thư'"), in every agent's terminal, TUI and app alike.
+// Installed faces that cover them are named before the generic family.
+test("--mono names a Vietnamese-capable face before the generic monospace", async () => {
+  const text = await Bun.file("src/web/styles.css").text();
+  const stack = /--mono:\s*([^;]+);/.exec(text)![1]!;
+  const faces = stack.split(",").map((s) => s.trim().replace(/"/g, ""));
+  expect(faces.at(-1)).toBe("monospace");
+  expect(faces.indexOf("JetBrains Mono")).toBeGreaterThan(-1);
+  expect(faces.indexOf("JetBrains Mono")).toBeLessThan(faces.indexOf("monospace"));
+});

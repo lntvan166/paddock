@@ -137,8 +137,13 @@
      build stamp fell through to generic `monospace` while the terminal — the
      one spelling that included Consolas — got a real monospace face, a
      visible mismatch between two things an operator reads side by side. This
-     is the longest of the three prior stacks. */
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+     is the longest of the three prior stacks.
+     The named faces after Consolas are for Linux, where generic `monospace`
+     is usually DejaVu Sans Mono: it lacks Vietnamese letters with two marks
+     (ử, ế, ỗ), so the browser composed them from a fallback and the marks
+     landed beside the letter. Each covers them and is only used if
+     installed; no webfont is fetched. */
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "JetBrains Mono", "Cascadia Mono", "Noto Sans Mono", monospace;
 
   /* ── The gutter ─────────────────────────────────────────────────────────
      Where a line of content starts, for every band that spans the screen.
