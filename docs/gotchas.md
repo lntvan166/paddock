@@ -453,6 +453,21 @@ one, recorded here so they are not reintroduced.
 
 ## Quick tunnels
 
+- **The URL is not the tunnel.** cloudflared prints the `trycloudflare.com`
+  URL before any edge connection exists and before the hostname resolves. A
+  QR scanned the moment it appeared opened error 1033, or an NXDOMAIN the
+  phone's resolver then cached. `startTunnel` returns only after a
+  `Registered tunnel connection` line, then waits (bounded, asking 1.1.1.1,
+  never the system resolver) for the name to resolve.
+
+- **A URL that never connects is QUIC being dropped.** cloudflared reaches the
+  edge over QUIC, UDP 7844, by default; asking for a URL is plain HTTPS, so a
+  network that drops UDP still gets a URL, and cloudflared retries the edge
+  for ever: the link never opens however long you wait. Seen on a friend's
+  machine while the same steps worked here. After 15s without a connection
+  the attempt is killed and retried with `--protocol http2` (TCP 443), which
+  gets a new URL; the first is never handed out.
+
 - **`Secure` cookies never arrive over `http://127.0.0.1:8788`.** The pairing
   cookie is `Secure`, so browsing the gated port directly can never pair — the
   port looks broken while behaving correctly. The pairing page detects a

@@ -33,6 +33,7 @@ async function stubs() {
     "#!/bin/sh\n" +
       `echo $$ > ${pidFile}\n` +
       'echo "INF |  https://stub-pubrun.trycloudflare.com  |" >&2\n' +
+      'echo "INF Registered tunnel connection connIndex=0" >&2\n' +
       "while :; do sleep 0.2; done\n",
   );
   await chmod(join(bin, "cloudflared"), 0o755);
@@ -63,6 +64,7 @@ test("the command starts, publishes, and tears down on SIGTERM", async () => {
         ...process.env,
         PATH: `${bin}:${process.env.PATH ?? ""}`,
         PADDOCK_CONFIG_DIR: cfg,
+        PADDOCK_TUNNEL_DNS_WAIT_MS: "0",
         PADDOCK_PORT: String(upstream.port),
         PADDOCK_TUNNEL_PORT: "0",
         // No colour and no tty: the display must not emit clear-screen writes

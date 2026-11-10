@@ -43,7 +43,9 @@ export interface DetachOpts {
 export async function runDetach(o: DetachOpts): Promise<number> {
   const log = o.log ?? say;
   const ask = o.ask ?? askControl;
-  const waitMs = o.waitMs ?? 30_000;
+  // The worst case of startTunnel: a URL and 15s for QUIC to connect, the same
+  // again over http2 (30s each), then up to 20s for the hostname to resolve.
+  const waitMs = o.waitMs ?? 130_000;
 
   const existing = await checkTunnelState(o.dir, o.probe, log);
   switch (existing.kind) {

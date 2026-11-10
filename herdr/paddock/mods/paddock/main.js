@@ -539,7 +539,7 @@ export default class Paddock extends View {
     }
     const hasCf = st.tools?.cloudflared !== null, hasTs = st.tools?.tailscale !== null;
     const next = hasCf
-      ? primary("open-tunnel-main", "Open a 2-hour link", t, (_e, cx) => this.act(cx, "Opening a public link", ["start", "--for", "2h"], 120000))
+      ? primary("open-tunnel-main", "Open a 2-hour link", t, (_e, cx) => this.act(cx, "Opening a public link", ["start", "--for", "2h"], 150000))
       : hasTs
         ? primary("ts-main", "Put it on my tailnet", t, (_e, cx) => this.act(cx, "Turning on Tailscale, restarts paddock", ["tailscale"], 120000, true))
         : primary("open-main", "Open dashboard", t, () => this.open(`http://127.0.0.1:${p.port}`));
@@ -593,7 +593,7 @@ export default class Paddock extends View {
     } else if (tn === null) {
       tnItem = setting(t, { id: "tn", title: "Public link", state: "off",
         desc: "Anyone with the pairing code. Closes by itself.",
-        control: toggle("tn-toggle", false, t, (_e, cx) => this.act(cx, "Opening a public link", ["start", "--for", this.tunnelFor], 120000), busy),
+        control: toggle("tn-toggle", false, t, (_e, cx) => this.act(cx, "Opening a public link", ["start", "--for", this.tunnelFor], 150000), busy),
         body: choices("for", TUNNEL_TIMES, this.tunnelFor, t, (k, cx) => { this.tunnelFor = k; cx.notify(); }) });
     } else if (tn.state === "unknown") {
       tnItem = setting(t, { id: "tn", title: "Public link", state: "unknown", desc: `Its state could not be read: ${tn.error}` });

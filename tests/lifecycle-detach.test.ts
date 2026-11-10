@@ -68,7 +68,7 @@ test("a detached child genuinely outlives the parent that started it", async () 
   const fakeBin = join(cfg, "bin");
   await Bun.write(join(fakeBin, ".keep"), "");
   const fake = join(fakeBin, "cloudflared");
-  await writeFile(fake, "#!/bin/sh\necho 'INF |  https://detach-test-only.trycloudflare.com  |' >&2\nexec sleep 600\n");
+  await writeFile(fake, "#!/bin/sh\necho 'INF |  https://detach-test-only.trycloudflare.com  |' >&2\necho 'INF Registered tunnel connection connIndex=0' >&2\nexec sleep 600\n");
   await chmod(fake, 0o755);
   const parent = Bun.spawn(["bun", "src/server/index.ts", "start", "--demo"], {
     env: {
@@ -76,6 +76,7 @@ test("a detached child genuinely outlives the parent that started it", async () 
       PATH: `${fakeBin}:${process.env.PATH}`,
       PADDOCK_PORT: String(port),
       PADDOCK_CONFIG_DIR: cfg,
+      PADDOCK_TUNNEL_DNS_WAIT_MS: "0",
       PADDOCK_NO_UPDATE_CHECK: "1",
       PADDOCK_NO_SERVICE: "1",
       PADDOCK_HERDR_SOCKET: join(cfg, "no-such-herdr.sock"),

@@ -604,6 +604,7 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_STATIC_DIR` | `dist` | Fallback UI directory — see the section above. |
 | `PADDOCK_TELEGRAM_TOKEN`, `PADDOCK_TELEGRAM_CHAT_ID` | unset | Seed `settings.json` on **first run only**. |
 | `PADDOCK_NO_UPDATE_CHECK` | unset | `1` disables the update check completely. |
+| `PADDOCK_TUNNEL_DNS_WAIT_MS` | `20000` | `paddock tunnel` only: after cloudflared registers its first connection, how long to wait for the quick tunnel's hostname to resolve (asked of 1.1.1.1, never the system resolver) before handing out the URL anyway, with a warning. `0` skips the lookup; the process tests set it, because their stub cloudflared's hostname exists nowhere. |
 | `PADDOCK_VERSION` | `0.0.0-dev` | Build-time only, injected by `bun build --define`. Not read at runtime. |
 
 ### Why a notification is never cleared remotely
