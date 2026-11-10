@@ -105,7 +105,7 @@ export const LIVE_CREATE_SENDERS: CreateSenders = {
   },
   createSpace: (opts) => createSpace(opts),
   createTab: (spaceId, opts) => createTab(spaceId, opts),
-  startAgent: (paneId, kind, name) => startAgent(paneId, kind, name),
+  startAgent: (paneId, kind, name, task) => startAgent(paneId, kind, name, task),
 };
 
 /**
@@ -204,6 +204,7 @@ export function CreateSheet({
   const [kinds, setKinds] = useState<string[]>([]);
   const [nameDraft, setNameDraft] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
+  const [task, setTask] = useState("");
   const [cwdDraft, setCwdDraft] = useState("");
   const [cwdEdited, setCwdEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -358,7 +359,7 @@ export function CreateSheet({
     // Reopens blank, never carrying a half-filled form or a stale error from
     // the last attempt — the same rule `RowActions` applies to an armed close.
     if (!next) {
-      setLabel(""); setKind(SHELL); setNameDraft(""); setNameEdited(false);
+      setLabel(""); setKind(SHELL); setNameDraft(""); setNameEdited(false); setTask("");
       setCwdDraft(""); setCwdEdited(false); setError(null);
       setBackends(null); setNewOrigin("herdr");
       // `kinds` too, and it was the one that got left out — which falsified the
@@ -389,11 +390,12 @@ export function CreateSheet({
       // cannot start a program inside an existing one), so `kind`/`name` go
       // with the create and nothing is launched after it.
       const startsWithCreate = isApp && kind !== SHELL;
+      const taskText = kind !== SHELL ? task.trim() : "";
       const opts: CreateBody = {
         label: typedLabel.trim() === "" ? undefined : typedLabel.trim(),
         cwd: cwd.trim() === "" ? undefined : cwd.trim(),
         ...(isSpace && isApp ? { origin: "core" as const } : {}),
-        ...(startsWithCreate ? { kind, name: name.trim() } : {}),
+        ...(startsWithCreate ? { kind, name: name.trim(), ...(taskText ? { task: taskText } : {}) } : {}),
       };
       const created = target.kind === "space"
         ? await senders.createSpace(opts)
@@ -415,7 +417,9 @@ export function CreateSheet({
       }
       // Started before the navigate, so `starting <kind>…` is already in the
       // store by the time the pane's screen mounts and reads it.
-      if (kind !== SHELL && !startsWithCreate) void launchAgent(created.paneId, kind, name.trim(), senders.startAgent);
+      if (kind !== SHELL && !startsWithCreate) {
+        void launchAgent(created.paneId, kind, name.trim(), senders.startAgent, taskText || undefined);
+      }
       navigate(paneHash(created.paneId));
       show(false);
     } catch (err) {
@@ -538,6 +542,22 @@ export function CreateSheet({
                 value={name}
                 autoComplete="off"
                 onChange={(e) => { setNameEdited(true); setNameDraft(e.target.value); }}
+              />
+            </label>
+          )}
+
+          {/* What the agent starts on, so a new agent from the phone is one
+              step instead of create-then-type. Shown in quick mode too: it is
+              the field that saves the most. Absent for a plain shell. */}
+          {kind !== SHELL && (
+            <label>
+              <span>Task (optional)</span>
+              <textarea
+                data-field="task"
+                value={task}
+                rows={3}
+                placeholder="What should it start on?"
+                onChange={(e) => setTask(e.target.value)}
               />
             </label>
           )}

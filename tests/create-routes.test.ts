@@ -822,3 +822,47 @@ test("a tab in an app space carries its harness to the core", async () => {
   expect(res.status).toBe(200);
   expect(calls.at(-1)).toBe(`createTab:hc.spA:${JSON.stringify({ harness: { kind: "codex", name: "flaky-test-fix" } })}`);
 });
+
+// ── A task at start: the agent begins on it, instead of an empty prompt ──
+//
+// herdr-core runs `argv: [kind, task]`: a template appends the task to its
+// opening instructions, a plain program takes it as its first argument (as
+// `claude "task"` starts with that prompt). Terminal herdr's `agent.start`
+// takes it the same way, through `args`.
+
+test("an app space created with a task carries it in its harness", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  const res = await post(app, "/api/spaces", { origin: "core", kind: "claude", name: "api-refactor", task: "  Split the auth module  " });
+  expect(res.status).toBe(200);
+  expect(calls.at(-1)).toBe(
+    `createSpace:${JSON.stringify({ origin: "core", harness: { kind: "claude", name: "api-refactor", task: "Split the auth module" } })}`,
+  );
+});
+
+test("a blank task is no task", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  await post(app, "/api/spaces/hc.spA/tabs", { kind: "codex", name: "flaky-test-fix", task: "   " });
+  expect(calls.at(-1)).toBe(`createTab:hc.spA:${JSON.stringify({ harness: { kind: "codex", name: "flaky-test-fix" } })}`);
+});
+
+test("a task that starts with a dash is refused: the program would read it as an option", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  const res = await post(app, "/api/spaces", { origin: "core", kind: "claude", name: "x", task: "--dangerously-skip-permissions" });
+  expect(res.status).toBe(400);
+  expect((await res.json() as any).detail).toContain("cannot start with");
+  const pane = await post(app, "/api/panes/w1:p2/agent", { kind: "claude", name: "x", task: "-p hi" });
+  expect(pane.status).toBe(400);
+  expect(calls.filter((c) => c.startsWith("create") || c.startsWith("startAgent"))).toEqual([]);
+});
+
+test("a task without an agent is refused", async () => {
+  const { app } = harness(async () => CORE_TREE);
+  expect((await post(app, "/api/spaces", { origin: "core", task: "do it" })).status).toBe(400);
+});
+
+test("starting a terminal herdr agent with a task passes it as its argument", async () => {
+  const { app, calls } = harness(async () => TREE);
+  const res = await post(app, "/api/panes/w1:p2/agent", { kind: "claude", name: "docs-cleanup", task: "Fix the broken links" });
+  expect(res.status).toBe(200);
+  expect(calls.at(-1)).toBe(`startAgent:w1:p2:claude:docs-cleanup:${JSON.stringify(["Fix the broken links"])}`);
+});

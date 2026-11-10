@@ -614,6 +614,8 @@ export interface CreateBody {
   origin?: Origin;
   kind?: string;
   name?: string;
+  /** What the agent starts on; the server refuses one that starts with "-". */
+  task?: string;
 }
 
 export async function createSpace(
@@ -643,9 +645,9 @@ export async function createTab(
  * `sendPaneText`'s "typed, but not run").
  */
 export async function startAgent(
-  paneId: string, kind: string, name: string, args?: string[], f: Fetch = fetch,
+  paneId: string, kind: string, name: string, task?: string, f: Fetch = fetch,
 ): Promise<StartAgentResult> {
-  return readJson<StartAgentResult>(paneUrl(paneId, "agent"), { kind, name, args }, f);
+  return readJson<StartAgentResult>(paneUrl(paneId, "agent"), { kind, name, ...(task ? { task } : {}) }, f);
 }
 
 /**

@@ -4512,6 +4512,18 @@ body {
   color: var(--fg-dim);
 }
 
+.create-form textarea {
+  min-height: 4.5rem;
+  padding: 0.6rem var(--pad-control);
+  background: var(--surface);
+  border: 1px solid var(--control);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px; /* the iOS zoom floor, as below */
+  resize: vertical;
+}
+
 .create-form input,
 .create-form select {
   min-height: 2.75rem;

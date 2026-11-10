@@ -322,14 +322,33 @@ function findSpace(tree: SpaceTree, id: string): Space | undefined {
  * `CreateOpts.harness`). `kind` absent means none; present, it needs a name,
  * with the same rules `/api/panes/:id/agent` applies.
  */
+/**
+ * The task an agent starts on, or none. Trimmed; blank is none. It reaches
+ * the program as an ARGUMENT (herdr-core `argv: [kind, task]`, terminal
+ * herdr's `agent.start` args), so one that starts with a dash would be read
+ * as an option (`--dangerously-skip-permissions`), not as the prompt: refused
+ * rather than quoted, since how each harness parses its argv is unmeasured.
+ */
+function normalizeTask(raw: unknown): { task?: string; err?: string } {
+  if (raw === undefined) return {};
+  if (typeof raw !== "string") return { err: "task must be a string" };
+  const task = raw.trim();
+  if (task === "") return {};
+  if (task.length > MAX_TEXT_LEN) return { err: "task must be within the length limit" };
+  if (task.startsWith("-")) return { err: "a task cannot start with \"-\": the agent would read it as an option" };
+  return { task };
+}
+
 function normalizeCreateHarness(
   body: Record<string, unknown>,
-): { harness?: { kind: string; name: string }; err?: string } {
-  if (body.kind === undefined) return {};
+): { harness?: { kind: string; name: string; task?: string }; err?: string } {
+  const { task, err: taskErr } = normalizeTask(body.task);
+  if (taskErr) return { err: taskErr };
+  if (body.kind === undefined) return task ? { err: "a task needs an agent to start on it" } : {};
   if (typeof body.kind !== "string" || body.kind.trim() === "") return { err: "kind must be a non-empty string" };
   if (typeof body.name !== "string" || body.name.trim() === "") return { err: "name must be a non-empty string" };
   if (body.name.length > MAX_LABEL_LEN) return { err: "name must be within the length limit" };
-  return { harness: { kind: body.kind, name: body.name } };
+  return { harness: { kind: body.kind, name: body.name, ...(task ? { task } : {}) } };
 }
 
 /** A harness at create time is the app's way; terminal herdr starts one in
@@ -2301,7 +2320,11 @@ export function createApp(deps: AppDeps) {
       ) {
         return c.json({ ok: false, detail: "args must be an array of strings" }, 400);
       }
-      const args = Array.isArray(rawArgs) ? (rawArgs as string[]) : undefined;
+      const { task, err: taskErr } = normalizeTask(body.task);
+      if (taskErr) return c.json({ ok: false, detail: taskErr }, 400);
+      // The task goes last, as the program's prompt argument.
+      const given = Array.isArray(rawArgs) ? (rawArgs as string[]) : undefined;
+      const args = task ? [...(given ?? []), task] : given;
       // Bounded by paddock's policy, like every other client value that
       // reaches a herdr parameter — see `MAX_ARGS`. Both refusals are here,
       // before the tree read, so neither can be confused with a 502.

@@ -68,7 +68,7 @@ export interface CreateOpts {
    * a program inside an existing terminal). Terminal herdr starts agents in
    * the new pane with `startAgent`; the create routes refuse this for it.
    */
-  harness?: { kind: string; name: string };
+  harness?: { kind: string; name: string; task?: string };
 }
 
 export type ReadSource = "detection" | "visible" | "recent_unwrapped";

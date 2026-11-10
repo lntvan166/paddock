@@ -102,7 +102,9 @@ test("quick mode asks for a name and a folder, and nothing already answered", as
   // decided by the time it opens: the picker (by which entry was tapped) and
   // the agent name (derived from the one name typed — see `nameSource`). A
   // second box showing a slug of the box above it is a repetition, not a
-  // decision.
+  // decision. The optional task is a decision nothing else answers, and the
+  // one that saves the most on a phone (create, then type the first prompt,
+  // becomes one step); left empty, the dial is as fast as before.
   const host = await render(
     <QuickAdd onChanged={() => {}} senders={senders} load={async () => TREE} />,
   );
@@ -114,7 +116,7 @@ test("quick mode asks for a name and a folder, and nothing already answered", as
 
   const labels = [...document.querySelectorAll(".create-form label span")]
     .map((n) => n.textContent?.trim());
-  expect(labels).toEqual(["Name", "Folder"]);
+  expect(labels).toEqual(["Name", "Task (optional)", "Folder"]);
 });
 
 test("the normal create flow still asks everything", async () => {

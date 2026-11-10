@@ -1,6 +1,6 @@
 import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
-import { click, render, selectOption, settle, unmount } from "./support/render";
+import { click, render, selectOption, settle, typeInto, unmount } from "./support/render";
 import { CreateSheet, type CreateSenders } from "@web/components/CreateSheet";
 import { Space } from "@web/components/Space";
 import { Spaces } from "@web/components/Spaces";
@@ -45,8 +45,8 @@ function recorder(b: { core: boolean; app: boolean; herdr?: boolean }) {
       calls.push(`createTab ${spaceId} ${JSON.stringify(opts)}`);
       return { ok: true, tabId: "hc.tbN", paneId: "hc.t9" };
     },
-    startAgent: async (paneId, kind, name) => {
-      calls.push(`startAgent ${paneId} ${kind} ${name}`);
+    startAgent: async (paneId, kind, name, task) => {
+      calls.push(`startAgent ${paneId} ${kind} ${name}${task ? ` task=${task}` : ""}`);
       return { ok: true, paneId };
     },
   };
@@ -189,4 +189,19 @@ test("with both backends up, terminal herdr stays the default", async () => {
   await click(sheet().querySelector("button[data-create-submit]"));
   await settle();
   expect(r.calls).toEqual([`createSpace ${JSON.stringify({})}`]);
+});
+
+// A task at start: the agent begins on it instead of an empty prompt.
+test("an app tab started with a task carries the task in its create", async () => {
+  const r = await openTabSheet({ core: true, app: true });
+  expect(sheet().querySelector('textarea[data-field="task"]')).toBeNull(); // a shell has no task
+  await selectOption(select("kind")!, "claude");
+  const task = sheet().querySelector<HTMLTextAreaElement>('textarea[data-field="task"]')!;
+  expect(task).not.toBeNull();
+  await typeInto(task, "Split the auth module");
+  await click(sheet().querySelector("button[data-create-submit]"));
+  await settle();
+  expect(r.calls).toEqual([
+    `createTab hc.spA ${JSON.stringify({ cwd: "/srv/api", kind: "claude", name: "api", task: "Split the auth module" })}`,
+  ]);
 });

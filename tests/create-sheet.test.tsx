@@ -61,8 +61,8 @@ function recorder(over: Partial<CreateSenders> = {}) {
       calls.push(`createTab ${spaceId} ${JSON.stringify(opts)}`);
       return { ok: true, tabId: `${spaceId}:t9`, paneId: `${spaceId}:p9` };
     },
-    startAgent: async (paneId, kind, name) => {
-      calls.push(`startAgent ${paneId} ${kind} ${name}`);
+    startAgent: async (paneId, kind, name, task) => {
+      calls.push(`startAgent ${paneId} ${kind} ${name}${task ? ` task=${task}` : ""}`);
       return { ok: true, paneId };
     },
     ...over,
@@ -725,5 +725,23 @@ test("the row variant says in words what a header's position says silently", asy
   expect(trigger.textContent).toContain("New tab");
   // The accessible name still carries the scope, exactly as the glyph's does.
   expect(trigger.getAttribute("aria-label")).toBe("New tab in api-refactor");
+  await unmount();
+});
+
+test("a terminal herdr agent started with a task gets it at start", async () => {
+  withTree(true);
+  const { senders, calls } = recorder();
+  const el = await render(
+    <Space spaceId="w1" onBack={() => {}} load={async () => TREE} createSenders={senders} navigate={() => {}} />,
+  );
+  await settle();
+  await click(el.querySelector('.tab-create [data-create="tab"]'));
+  await settle();
+  expect(sheet().querySelector('textarea[data-field="task"]')).toBeNull();
+  await choose("claude");
+  await typeInto(sheet().querySelector<HTMLTextAreaElement>('textarea[data-field="task"]')!, "Fix the broken links");
+  await click(submitButton());
+  await settle();
+  expect(calls).toContain("startAgent w1:p9 claude api-refactor task=Fix the broken links");
   await unmount();
 });

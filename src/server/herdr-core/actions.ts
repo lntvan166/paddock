@@ -251,9 +251,13 @@ export function createCoreActions(
   }
 
   /** With a harness, the new terminal IS the agent (`argv[0]` may name a
-   *  template); without one, the core's own shell. */
+   *  template); without one, the core's own shell. A task goes second: a
+   *  template appends it to its opening instructions, a plain program takes
+   *  it as its first argument. */
   function asProgram(o: CreateOpts): object {
-    return o.harness ? { argv: [o.harness.kind], name: o.harness.name } : {};
+    if (!o.harness) return {};
+    const { kind, name, task } = o.harness;
+    return { argv: task ? [kind, task] : [kind], name };
   }
 
   async function run(labels: Record<string, string>, cwd: string | undefined, extra: object = {}): Promise<CoreTerminal> {

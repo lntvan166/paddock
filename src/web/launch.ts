@@ -56,9 +56,9 @@ export const useLaunch = create<LaunchStore>((set) => ({
 /** Just the call the launch makes. Injected in tests for the same reason
  *  `RowSenders` is: no network, and a failure is a value rather than a throw
  *  that escapes an unmounted component. */
-export type StartSender = (paneId: string, kind: string, name: string) => Promise<StartAgentResult>;
+export type StartSender = (paneId: string, kind: string, name: string, task?: string) => Promise<StartAgentResult>;
 
-const LIVE_START: StartSender = (paneId, kind, name) => startAgent(paneId, kind, name);
+const LIVE_START: StartSender = (paneId, kind, name, task) => startAgent(paneId, kind, name, task);
 
 /**
  * Start an agent, reporting through the store rather than to a caller.
@@ -72,12 +72,12 @@ const LIVE_START: StartSender = (paneId, kind, name) => startAgent(paneId, kind,
  * one route change away from breaking it silently.
  */
 export async function launchAgent(
-  paneId: string, kind: string, name: string, send: StartSender = LIVE_START,
+  paneId: string, kind: string, name: string, send: StartSender = LIVE_START, task?: string,
 ): Promise<void> {
   const { setLaunch } = useLaunch.getState();
   setLaunch({ paneId, kind, phase: "starting", detail: null });
   try {
-    const res = await send(paneId, kind, name);
+    const res = await send(paneId, kind, name, task);
     if (res.ok === false) throw new Error(res.detail ?? "the agent did not start");
     // Cleared only if this launch is still the one being reported. A second
     // spawn started while the first was in flight owns the notice, and

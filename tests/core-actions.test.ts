@@ -457,3 +457,10 @@ test("the prompt parsers still get the plain text read, not the paint", async ()
   expect(await a.readPromptScreen("hc.t7")).toBe("Do you want to proceed?\n");
   expect(observed).toHaveLength(0);
 });
+
+test("a harness with a task runs it as argv [kind, task], so the agent starts on it", async () => {
+  const { a, calls } = actions((m) => (m === "terminal.run" ? terminal({ address: "t22" }) : {}));
+  await a.createSpace({ harness: { kind: "claude", name: "api-refactor", task: "Split the auth module" } });
+  expect(calls[0]!.params.argv).toEqual(["claude", "Split the auth module"]);
+  noForceAnywhere(calls);
+});
