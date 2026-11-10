@@ -299,8 +299,9 @@ export class HerdrStream {
    * `connected` is false for that window while herdr is running fine. Gating
    * actions on it turned an answer tapped in that window into a 503 "terminal
    * herdr is not running", and could stop a multi-step dialog walk half-done.
-   * This is what gates terminal herdr's actions; `connected` stays what
-   * health reports.
+   * This is what gates terminal herdr's actions, and what `/api/health`
+   * reports as `herdrConnected` (the create sheet read the flicker as herdr
+   * being down).
    */
   get up(): boolean {
     return this.reportedUp;

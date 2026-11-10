@@ -1142,8 +1142,11 @@ const appDeps = {
     hostId,
     agents: store.snapshot().length,
     clients: hub.clientCount,
-    // Demo mode has no herdr; otherwise this is the stream's own answer.
-    herdrConnected: DEMO ? true : (stream?.connected ?? false),
+    // Demo mode has no herdr; otherwise the stream's REPORTED state (`up`),
+    // not whether a socket happens to be open this instant: a routine
+    // resubscribe (every agent start or exit) has no socket for a moment,
+    // and the create sheet read that as terminal herdr not running.
+    herdrConnected: DEMO ? true : (stream?.up ?? false),
     lastEventAt: supervisor?.lastEventAt ?? (demo ? Date.now() : null),
     // A broken token fails every send silently otherwise; exposed here so it
     // is visible within seconds rather than never.

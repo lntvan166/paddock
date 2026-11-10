@@ -21,8 +21,8 @@
 ---
 
 <p align="center">
-  <img src="docs/images/01-agents.png" alt="The agent list, grouped by what needs attention" width="46%">
-  <img src="docs/images/02-blocked.png" alt="A blocked agent: its real options, with the reply field folded away so the transcript keeps the screen" width="46%">
+  <img src="docs/images/01-agents.png" alt="The agent list, grouped by what needs attention, with an app agent marked app" width="46%">
+  <img src="docs/images/02-blocked.png" alt="A blocked app agent: its real options, with the reply field folded away so the transcript keeps the screen" width="46%">
 </p>
 
 **watch and answer your coding agents from your phone.**
@@ -52,13 +52,13 @@ walk back and look.
 - **cheap to watch** — adaptive polling, and only changed lines on the wire
 
 <p align="center">
-  <img src="docs/images/03-terminal.png" alt="The same agent with the composer unfolded: options, the key row, quick keys and the reply field at once" width="46%">
+  <img src="docs/images/03-terminal.png" alt="A blocked agent with the composer unfolded: options, Keys, Quick and the reply field at once" width="46%">
   <img src="docs/images/07-compose.png" alt="The reply field, with slash-commands read from the project's own .claude" width="46%">
 </p>
 
 <p align="center">
   <img src="docs/images/08-file.png" alt="An HTML page an agent generated, opened on the phone" width="46%">
-  <img src="docs/images/04-spaces.png" alt="Every space and tab, with rename, close and create" width="46%">
+  <img src="docs/images/04-spaces.png" alt="Every space, terminal herdr and the Herdr app together, with rename, close and create" width="46%">
 </p>
 
 [**try the live demo →**](https://trypaddock.vercel.app/) — synthetic
