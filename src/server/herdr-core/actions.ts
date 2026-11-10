@@ -28,11 +28,11 @@ import {
 } from "@server/herdr/actions";
 import { OPEN_HERDR_TO_RENAME, type AppSocket } from "./app-socket";
 import type { CoreClient } from "./socket";
-import { paintToLines } from "./screen";
+import { LiveScreens } from "./live-screen";
 
 /** The slice of `CoreClient` these actions use, so a test can fake it. */
-/** `observePaint` is optional: without it, screens are read as plain text. */
-export type CoreRequester = Pick<CoreClient, "request"> & Partial<Pick<CoreClient, "observePaint">>;
+/** `observe` is optional: without it, screens are read as plain text. */
+export type CoreRequester = Pick<CoreClient, "request"> & Partial<Pick<CoreClient, "observe">>;
 
 /**
  * paddock's key names to herdr-core's (`hc keys --help`: "enter, esc, tab, up,
@@ -137,6 +137,8 @@ function toLines(text: string): string[] {
 export interface CoreActionsOptions {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  /** Injectable for tests; one per actions object otherwise. */
+  screens?: LiveScreens;
 }
 
 /**
@@ -166,20 +168,19 @@ export function createCoreActions(
 
   // One log line per distinct reason, not one per poll of an open terminal.
   const colourMisses = new Set<string>();
+  const screens = opts.screens ?? new LiveScreens({ history: HISTORY_LINES });
 
   /**
-   * The screen with its colours: an observer's first paint, at the
-   * terminal's own size, replayed (`screen.ts`). Null when the client cannot
-   * observe or the paint failed; the caller then reads plain text, and the
-   * reason is logged, once.
+   * The screen with its colours, from a live observer mirror
+   * (`live-screen.ts`): the first read attaches, later polls read the
+   * mirror. Null when the client cannot observe or the view failed; the
+   * caller then reads plain text, and the reason is logged, once.
    */
-  async function styled(id: string, history: number): Promise<string[] | null> {
+  async function styled(id: string, scrollback: boolean): Promise<string[] | null> {
     const c = client();
-    if (!c.observePaint) return null;
+    if (!c.observe) return null;
     try {
-      const t = await get(id);
-      const paint = await c.observePaint(rawCoreId(id), t.cols, t.rows, history);
-      return await paintToLines(paint, t.cols, t.rows, history);
+      return await screens.read({ request: c.request.bind(c), observe: c.observe.bind(c) }, rawCoreId(id), scrollback);
     } catch (e) {
       if (e instanceof BackendUnavailable) throw e;
       const why = e instanceof Error ? e.message : String(e);
@@ -275,13 +276,13 @@ export function createCoreActions(
       // (it is not, while working or blocked); the state is not needed here.
       const history = scrollback ? HISTORY_LINES : 0;
       const source = scrollback ? "recent_unwrapped" : "visible";
-      const coloured = await styled(target, history);
+      const coloured = await styled(target, scrollback);
       if (coloured) return { lines: coloured, source };
       return { lines: toLines(await read(target, history)), source };
     },
 
     async readPane(paneId) {
-      const coloured = await styled(paneId, HISTORY_LINES);
+      const coloured = await styled(paneId, true);
       return { lines: coloured ?? toLines(await read(paneId, HISTORY_LINES)), source: "recent_unwrapped" };
     },
 

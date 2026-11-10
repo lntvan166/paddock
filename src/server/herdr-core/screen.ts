@@ -75,20 +75,36 @@ function lineAt(term: Terminal, y: number, cell: Cell): string {
   return out;
 }
 
+/** A headless terminal sized like the one it mirrors. */
+export function mirrorTerminal(cols: number, rows: number, history: number): Terminal {
+  return new Terminal({ cols, rows, scrollback: Math.max(history, 0), allowProposedApi: true });
+}
+
+/**
+ * The terminal's lines as SGR text: the whole buffer (scrollback first) or
+ * only the screen, with no trailing empty rows either way.
+ */
+export function linesOf(term: Terminal, which: "screen" | "all"): string[] {
+  const buf = term.buffer.active;
+  const from = which === "screen" ? buf.baseY : 0;
+  const to = which === "screen" ? Math.min(buf.length, buf.baseY + term.rows) : buf.length;
+  const cell = buf.getNullCell();
+  const lines: string[] = [];
+  for (let y = from; y < to; y++) lines.push(lineAt(term, y, cell));
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
 /**
  * Replay a first paint and return its lines, oldest scrollback first, with no
  * trailing empty rows. `history` is how many scrollback lines the paint was
  * asked to carry.
  */
 export async function paintToLines(paint: Uint8Array, cols: number, rows: number, history = 0): Promise<string[]> {
-  const term = new Terminal({ cols, rows, scrollback: Math.max(history, 0), allowProposedApi: true });
+  const term = mirrorTerminal(cols, rows, history);
   try {
     await new Promise<void>((resolve) => term.write(paint, resolve));
-    const cell = term.buffer.active.getNullCell();
-    const lines: string[] = [];
-    for (let y = 0; y < term.buffer.active.length; y++) lines.push(lineAt(term, y, cell));
-    while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-    return lines;
+    return linesOf(term, "all");
   } finally {
     term.dispose();
   }

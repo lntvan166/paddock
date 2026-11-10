@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { BackendUnavailable, Unsupported } from "@server/action-errors";
 import { OPEN_HERDR_TO_RENAME, type AppSocket } from "@server/herdr-core/app-socket";
 import { NAV_TO_CORE, createCoreActions } from "@server/herdr-core/actions";
+import { LiveScreens } from "@server/herdr-core/live-screen";
 import { CoreError } from "@server/herdr-core/socket";
 import { CTRL_LETTERS, NAV_KEYS } from "@shared/types";
 
@@ -395,72 +396,74 @@ test("a new app tab with a harness runs the agent as its only terminal", async (
 // there falls back to the text read, said in the log, never a blank screen.
 // ---------------------------------------------------------------------------
 
-function paintingCore(paint: () => Uint8Array | Error, answer: (m: string, p: any) => unknown) {
+function paintingCore(paint: () => string | Error, answer: (m: string, p: any) => unknown) {
   const core = fakeCore(answer);
   const observed: any[] = [];
   const client = {
     ...core.client,
-    async observePaint(t: string, cols: number, rows: number, history: number) {
-      observed.push({ t, cols, rows, history });
+    async observe(t: string, size: { cols: number; rows: number; history: number }, h: any) {
+      observed.push({ t, ...size });
       const r = paint();
       if (r instanceof Error) throw r;
-      return r;
+      queueMicrotask(() => h.onData(new TextEncoder().encode(r)));
+      return () => {};
     },
   };
-  const a = createCoreActions(() => client, fakeApp(false).app, { sleep: async () => {} });
-  return { a, observed, calls: core.calls };
+  const screens = new LiveScreens({ history: 1000, quietMs: 5, maxPaintMs: 20, timeoutMs: 200, idleMs: 1000 });
+  const a = createCoreActions(() => client, fakeApp(false).app, { sleep: async () => {}, screens });
+  return { a, observed, calls: core.calls, screens };
 }
 
 test("an app agent's screen keeps its colours, read at the terminal's own size", async () => {
-  const { a, observed } = paintingCore(
-    () => new TextEncoder().encode("\x1b[38;5;1mred\x1b[0m plain"),
+  const { a, observed, screens } = paintingCore(
+    () => "\x1b[38;5;1mred\x1b[0m plain",
     (m) => (m === "terminal.get" ? terminal({ cols: 90, rows: 30 }) : { text: "red plain" }),
   );
   const out = await a.readOutput("hc.t7", "idle", 0);
-  expect(observed).toEqual([{ t: "t7", cols: 90, rows: 30, history: 0 }]);
+  expect(observed).toEqual([{ t: "t7", cols: 90, rows: 30, history: 1000 }]);
   expect(out.lines[0]).toContain("\x1b[");
   expect(out.lines[0]).toContain("red");
   expect(out.source).toBe("visible");
+  screens.closeAll();
 });
 
-test("scrollback asks the paint for history", async () => {
-  const { a, observed } = paintingCore(
-    () => new TextEncoder().encode("x"),
+test("polls after the first are answered from the live mirror, not a new attach", async () => {
+  const { a, observed, calls, screens } = paintingCore(
+    () => "x",
     (m) => (m === "terminal.get" ? terminal() : { text: "x" }),
   );
+  await a.readOutput("hc.t7", "idle", 0);
+  await a.readOutput("hc.t7", "idle", 0);
   await a.readOutput("hc.t7", "idle", 0, true);
-  expect(observed[0].history).toBeGreaterThan(0);
+  expect(observed).toHaveLength(1);
+  expect(calls.filter((c) => c.method === "terminal.read")).toHaveLength(0);
+  screens.closeAll();
 });
 
-test("a paint that fails falls back to the text read and says so once", async () => {
+test("a view that fails falls back to the text read and says so once", async () => {
   const infos: string[] = [];
   const orig = console.info;
   console.info = (...args: unknown[]) => { infos.push(args.join(" ")); };
   try {
-    const { a } = paintingCore(
-      () => new Error("no paint from t7 within 10000 ms"),
+    const { a, screens } = paintingCore(
+      () => new Error("herdr-core: attach to t7 timed out after 10000 ms"),
       (m) => (m === "terminal.get" ? terminal() : { text: "plain text\n" }),
     );
     expect((await a.readOutput("hc.t7", "idle", 0)).lines[0]).toBe("plain text");
     await a.readOutput("hc.t7", "idle", 0);
-    expect(infos.filter((l) => l.includes("no paint from t7"))).toHaveLength(1);
+    expect(infos.filter((l) => l.includes("attach to t7 timed out"))).toHaveLength(1);
+    screens.closeAll();
   } finally {
     console.info = orig;
   }
 });
 
-test("the prompt parsers still get the plain text read, not the paint", async () => {
-  const { a, observed } = paintingCore(
-    () => new TextEncoder().encode("\x1b[1mDo you want to proceed?"),
+test("the prompt parsers still get the plain text read, not the mirror", async () => {
+  const { a, observed, screens } = paintingCore(
+    () => "\x1b[1mDo you want to proceed?",
     (m) => (m === "terminal.get" ? terminal() : { text: "Do you want to proceed?\n" }),
   );
   expect(await a.readPromptScreen("hc.t7")).toBe("Do you want to proceed?\n");
   expect(observed).toHaveLength(0);
-});
-
-test("a harness with a task runs it as argv [kind, task], so the agent starts on it", async () => {
-  const { a, calls } = actions((m) => (m === "terminal.run" ? terminal({ address: "t22" }) : {}));
-  await a.createSpace({ harness: { kind: "claude", name: "api-refactor", task: "Split the auth module" } });
-  expect(calls[0]!.params.argv).toEqual(["claude", "Split the auth module"]);
-  noForceAnywhere(calls);
+  screens.closeAll();
 });

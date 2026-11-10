@@ -205,8 +205,9 @@ records the measurements they rest on.
 
 | Module | Responsibility |
 |---|---|
-| `herdr-core/socket.ts` | The core's socket: locating it, newline-delimited JSON-RPC requests, `events.subscribe`, and `observePaint` (a framed connection that attaches with `observe: true` and returns the first paint). Accepts protocol generation 1 only. |
-| `herdr-core/screen.ts` | Replays a first paint in a headless terminal (`@xterm/headless`) and reads it back as lines in the SGR `web/ansi.ts` parses. `terminal.read` is text only, so this is where app agents get their colours. An observer never types or resizes; a failed paint falls back to the text read, logged once per reason. The prompt parsers keep the text read. |
+| `herdr-core/socket.ts` | The core's socket: locating it, newline-delimited JSON-RPC requests, `events.subscribe`, and `observe` (a framed connection that attaches with `observe: true` and streams the first paint, live bytes and size changes). Accepts protocol generation 1 only. |
+| `herdr-core/live-screen.ts` | One live mirror per app terminal someone is reading: the first read attaches as an observer and replays the first paint, later polls read the mirror the stream keeps current. Closed after 30 s unread, at most 8, retired on a size change (the next read attaches again). |
+| `herdr-core/screen.ts` | The headless terminal (`@xterm/headless`) a mirror is, and its cells read back as lines in the SGR `web/ansi.ts` parses. `terminal.read` is text only, so this is where app agents get their colours. An observer never types or resizes (the core sizes a terminal by its real viewers only); a failed view falls back to the text read, logged once per reason. The prompt parsers keep the text read. |
 | `herdr-core/adapter.ts` | Core terminals and events into `Agent`. The only place core field names are mapped. |
 | `herdr-core/supervisor.ts` | Snapshot, then events, into the store under origin `core`. Logs a missing core once and retries; `firstAttempt()` is what boot waits on. |
 | `herdr-core/actions.ts` | `HerdrActions` for core ids. |

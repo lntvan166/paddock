@@ -30,6 +30,7 @@ export const CORE_GENERATION = 1;
 const FRAME_DATA = 0;
 const FRAME_CREDIT = 1;
 const FRAME_CLOSE = 2;
+const FRAME_RESIZE = 3;
 
 export class CoreError extends Error {
   kind: string;
@@ -214,36 +215,41 @@ export class CoreClient {
   }
 
   /**
-   * The first paint of `terminal`, as an observer: never types, never
-   * resizes (`observe: true`), so the operator's own view in the app is not
-   * touched. Its own framed connection, closed once the paint has gone quiet.
+   * Watch `terminal` as an observer: never types, never resizes
+   * (`observe: true`; the core sizes a terminal by its real viewers only), so
+   * the operator's own view in the app is not touched. Its own framed
+   * connection, kept open until the returned closer is called.
    *
    * Framed mode (herdr-core `wire.rs`): after the hello's reply LINE, every
    * message is `[channel u32 LE][kind u8][len u32 LE][payload]`. Channel 0
    * carries JSON-RPC; the attach answers with its own channel, which then
-   * carries the paint as DATA frames. CREDIT returns what was read, CLOSE
-   * ends the channel.
+   * carries the first paint and the live bytes as DATA, every DATA answered
+   * with CREDIT for what was read. With `resize_notifications` the core sends
+   * RESIZE (u16 cols, u16 rows) before the first paint and before each
+   * replacement paint.
    *
-   * The paint has no end marker, so it is taken as done after `QUIET_MS`
-   * with nothing new, or `MAX_PAINT_MS` after it started on a terminal that
-   * never stops printing (the screen then includes those updates, which is
-   * still the screen).
+   * Resolves once the attach is accepted. `onClose` fires once, for any end
+   * paddock did not ask for; closing via the returned function does not.
    */
-  observePaint(terminal: string, cols: number, rows: number, history: number): Promise<Uint8Array> {
-    const QUIET_MS = 40;
-    const MAX_PAINT_MS = 400;
+  observe(
+    terminal: string,
+    size: { cols: number; rows: number; history: number },
+    h: {
+      onData: (bytes: Uint8Array) => void;
+      onResize: (cols: number, rows: number) => void;
+      onClose: (reason: Error) => void;
+    },
+  ): Promise<() => void> {
     const path = this.path;
     const timeoutMs = this.timeoutMs;
-    return new Promise<Uint8Array>((resolve, reject) => {
+    return new Promise<() => void>((resolve, reject) => {
       let sock: Awaited<ReturnType<typeof Bun.connect>> | null = null;
       let buf = new Uint8Array(0);
       let framed = false;
       let channel: number | null = null;
-      const chunks: Uint8Array[] = [];
-      let settled = false;
-      let quiet: ReturnType<typeof setTimeout> | null = null;
-      let cap: ReturnType<typeof setTimeout> | null = null;
-      const deadline = setTimeout(() => fail(new Error(`herdr-core: no paint from ${terminal} within ${timeoutMs} ms`)), timeoutMs);
+      let accepted = false;
+      let over = false;
+      const timer = setTimeout(() => end(new Error(`herdr-core: attach to ${terminal} timed out after ${timeoutMs} ms`)), timeoutMs);
 
       const send = (ch: number, kind: number, payload: Uint8Array) => {
         const out = new Uint8Array(9 + payload.length);
@@ -254,50 +260,46 @@ export class CoreClient {
         out.set(payload, 9);
         sock?.write(out);
       };
-      const cleanup = () => {
-        settled = true;
-        clearTimeout(deadline);
-        if (quiet) clearTimeout(quiet);
-        if (cap) clearTimeout(cap);
+      /** The one way out: before the attach was accepted it rejects, after it tells `onClose`. */
+      const end = (reason: Error | null) => {
+        if (over) return;
+        over = true;
+        clearTimeout(timer);
         if (channel !== null) send(channel, FRAME_CLOSE, new Uint8Array(0));
         sock?.end();
-      };
-      const fail = (e: Error) => { if (settled) return; cleanup(); reject(e); };
-      const done = () => {
-        if (settled) return;
-        cleanup();
-        const total = chunks.reduce((n, c) => n + c.length, 0);
-        const out = new Uint8Array(total);
-        let at = 0;
-        for (const c of chunks) { out.set(c, at); at += c.length; }
-        resolve(out);
+        if (reason === null) return;
+        if (accepted) h.onClose(reason);
+        else reject(reason);
       };
 
       const onFrame = (ch: number, kind: number, payload: Uint8Array) => {
         if (ch === 0 && kind === FRAME_DATA) {
           let reply: Msg;
           try { reply = JSON.parse(new TextDecoder().decode(payload)); }
-          catch { fail(new Error("herdr-core sent a control frame that is not JSON")); return; }
+          catch { end(new Error("herdr-core sent a control frame that is not JSON")); return; }
           if (reply.id !== 1) return;
           if (reply.error) {
-            fail(new CoreError(reply.error.message, reply.error.data?.kind ?? "unknown", reply.error.data?.hint));
+            end(new CoreError(reply.error.message, reply.error.data?.kind ?? "unknown", reply.error.data?.hint));
             return;
           }
           channel = Number(reply.result?.channel);
+          accepted = true;
+          clearTimeout(timer);
+          resolve(() => end(null));
           return;
         }
         if (channel === null || ch !== channel) return;
         if (kind === FRAME_DATA) {
-          chunks.push(payload);
+          h.onData(payload);
           const credit = new Uint8Array(4);
           new DataView(credit.buffer).setUint32(0, payload.length, true);
           send(channel, FRAME_CREDIT, credit);
-          if (!cap) cap = setTimeout(done, MAX_PAINT_MS);
-          if (quiet) clearTimeout(quiet);
-          quiet = setTimeout(done, QUIET_MS);
+        } else if (kind === FRAME_RESIZE && payload.length === 4) {
+          const v = new DataView(payload.buffer, payload.byteOffset, 4);
+          h.onResize(v.getUint16(0, true), v.getUint16(2, true));
         } else if (kind === FRAME_CLOSE) {
-          if (chunks.length > 0) done();
-          else fail(new Error(`herdr-core closed the view of ${terminal} before painting it`));
+          const why = new TextDecoder().decode(payload);
+          end(new Error(`herdr-core ended the view of ${terminal}${why ? `: ${why}` : ""}`));
         }
       };
 
@@ -309,14 +311,14 @@ export class CoreClient {
           if (nl < 0) return;
           let hello: Msg;
           try { hello = JSON.parse(new TextDecoder().decode(buf.subarray(0, nl))); }
-          catch { fail(new Error("herdr-core answered the framed hello with something that is not JSON")); return; }
+          catch { end(new Error("herdr-core answered the framed hello with something that is not JSON")); return; }
           buf = buf.slice(nl + 1);
-          if (hello.error) { fail(new CoreError(hello.error.message, hello.error.data?.kind ?? "unknown")); return; }
+          if (hello.error) { end(new CoreError(hello.error.message, hello.error.data?.kind ?? "unknown")); return; }
           framed = true;
-          const req = { jsonrpc: "2.0", id: 1, method: "terminal.attach", params: { terminal, observe: true, cols, rows, history } };
-          send(0, FRAME_DATA, new TextEncoder().encode(JSON.stringify(req)));
+          const params = { terminal, observe: true, resize_notifications: true, ...size };
+          send(0, FRAME_DATA, new TextEncoder().encode(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "terminal.attach", params })));
         }
-        while (!settled && buf.length >= 9) {
+        while (!over && buf.length >= 9) {
           const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
           const ch = v.getUint32(0, true);
           const kind = buf[4]!;
@@ -332,14 +334,14 @@ export class CoreClient {
         unix: path,
         socket: {
           data(_s, chunk) { feed(new Uint8Array(chunk)); },
-          close() { fail(new Error(`herdr-core closed the connection before the paint of ${terminal}`)); },
-          error(s, e) { fail(new Error(`herdr-core socket error (${path}): ${e.message}`)); s.end(); },
+          close() { end(new Error(`herdr-core closed the view of ${terminal}`)); },
+          error(s, e) { end(new Error(`herdr-core socket error (${path}): ${e.message}`)); s.end(); },
         },
       }).then((s) => {
         sock = s;
-        if (settled) { s.end(); return; }
+        if (over) { s.end(); return; }
         s.write(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "hello", params: { framed: true, generation: CORE_GENERATION } }) + "\n");
-      }, (e: Error) => fail(new Error(`cannot connect to herdr-core at ${path}: ${e.message}`)));
+      }, (e: Error) => end(new Error(`cannot connect to herdr-core at ${path}: ${e.message}`)));
     });
   }
 

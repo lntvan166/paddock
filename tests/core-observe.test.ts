@@ -5,15 +5,16 @@ import { join } from "node:path";
 import { CoreClient, CoreError } from "@server/herdr-core/socket";
 
 /**
- * `observePaint`: one framed connection, `terminal.attach` with
- * `observe: true`, the first paint collected, then closed.
+ * `observe`: one framed connection, `terminal.attach` with `observe: true`
+ * and `resize_notifications: true`, kept open; every DATA credited.
  *
  * Framed mode is `[channel u32 LE][kind u8][len u32 LE][payload]` after the
  * hello's reply line (herdr-core `wire.rs`); channel 0 carries JSON-RPC, the
  * attach gets its own channel.
  */
 
-const DATA = 0, CREDIT = 1, CLOSE = 2;
+const DATA = 0, CREDIT = 1, CLOSE = 2, RESIZE = 3;
+const CH = 7;
 
 function frame(channel: number, kind: number, payload: Uint8Array | string): Uint8Array {
   const body = typeof payload === "string" ? new TextEncoder().encode(payload) : payload;
@@ -26,28 +27,36 @@ function frame(channel: number, kind: number, payload: Uint8Array | string): Uin
   return out;
 }
 
+const size = (cols: number, rows: number) => {
+  const b = new Uint8Array(4);
+  const v = new DataView(b.buffer);
+  v.setUint16(0, cols, true);
+  v.setUint16(2, rows, true);
+  return b;
+};
+
 let stop = () => {};
 afterEach(() => stop());
 
 interface FakeOpts {
-  /** Chunks of the first paint, sent as separate DATA frames. */
-  paint?: string[];
-  /** Reply to the attach with this error instead. */
   attachError?: { code: number; message: string; data?: { kind: string } };
-  /** Never send any paint. */
-  silent?: boolean;
+  /** Never answer the attach. */
+  mute?: boolean;
+  /** Sent right after the attach is accepted: RESIZE then these DATA chunks. */
+  paint?: string[];
+  cols?: number;
+  rows?: number;
 }
 
 async function fakeCore(opts: FakeOpts = {}) {
   const dir = await mkdtemp(join(tmpdir(), "paddock-observe-"));
   const path = join(dir, "core.sock");
-  const seen: { attach?: any; credits: number; closedChannel: boolean; ended: boolean } = {
-    credits: 0, closedChannel: false, ended: false,
-  };
+  const seen = { attach: undefined as any, credits: 0, closedChannel: false, ended: false };
+  let client: any = null;
   const server = Bun.listen({
     unix: path,
     socket: {
-      open(s) { (s as any).buf = new Uint8Array(0); (s as any).framed = false; },
+      open(s) { (s as any).buf = new Uint8Array(0); (s as any).framed = false; client = s; },
       close() { seen.ended = true; },
       data(s, chunk) {
         const st = s as any;
@@ -70,53 +79,108 @@ async function fakeCore(opts: FakeOpts = {}) {
           if (ch === 0 && kind === DATA) {
             const req = JSON.parse(new TextDecoder().decode(payload));
             seen.attach = req;
+            if (opts.mute) continue;
             if (opts.attachError) {
               s.write(frame(0, DATA, JSON.stringify({ jsonrpc: "2.0", id: req.id, error: opts.attachError })));
               continue;
             }
-            s.write(frame(0, DATA, JSON.stringify({ jsonrpc: "2.0", id: req.id, result: { channel: 7 } })));
-            if (!opts.silent) for (const c of opts.paint ?? ["hello"]) s.write(frame(7, DATA, c));
-          } else if (ch === 7 && kind === CREDIT) seen.credits++;
-          else if (ch === 7 && kind === CLOSE) seen.closedChannel = true;
+            s.write(frame(0, DATA, JSON.stringify({ jsonrpc: "2.0", id: req.id, result: { channel: CH } })));
+            s.write(frame(CH, RESIZE, size(opts.cols ?? 80, opts.rows ?? 24)));
+            for (const c of opts.paint ?? []) s.write(frame(CH, DATA, c));
+          } else if (ch === CH && kind === CREDIT) seen.credits++;
+          else if (ch === CH && kind === CLOSE) seen.closedChannel = true;
         }
       },
     },
   });
   stop = () => server.stop(true);
-  return { path, seen };
+  return {
+    path, seen,
+    push: (text: string) => client.write(frame(CH, DATA, text)),
+    resize: (cols: number, rows: number) => client.write(frame(CH, RESIZE, size(cols, rows))),
+    endView: (why: string) => client.write(frame(CH, CLOSE, why)),
+  };
 }
 
-test("observes without typing or resizing, at the terminal's own size, and returns the paint", async () => {
-  const { path, seen } = await fakeCore({ paint: ["\x1b[31mred", "\x1b[0m done"] });
-  const client = new CoreClient(path, 2000);
-  const paint = await client.observePaint("t7", 120, 40, 50);
-  expect(new TextDecoder().decode(paint)).toBe("\x1b[31mred\x1b[0m done");
-  expect(seen.attach.method).toBe("terminal.attach");
-  expect(seen.attach.params).toMatchObject({ terminal: "t7", observe: true, cols: 120, rows: 40, history: 50 });
+function recorder() {
+  const got = { data: "", resizes: [] as [number, number][], closes: [] as string[] };
+  return {
+    got,
+    h: {
+      onData: (b: Uint8Array) => { got.data += new TextDecoder().decode(b); },
+      onResize: (c: number, r: number) => { got.resizes.push([c, r]); },
+      onClose: (e: Error) => { got.closes.push(e.message); },
+    },
+  };
+}
+
+test("observes without typing or resizing, and asks to be told of size changes", async () => {
+  const core = await fakeCore({ paint: ["\x1b[31mred"], cols: 120, rows: 40 });
+  const { got, h } = recorder();
+  const close = await new CoreClient(core.path, 2000).observe("t7", { cols: 120, rows: 40, history: 50 }, h);
   await Bun.sleep(30);
-  // Credit returned for what was read, the channel closed, the socket ended.
-  expect(seen.credits).toBeGreaterThan(0);
-  expect(seen.closedChannel).toBe(true);
-  expect(seen.ended).toBe(true);
+  expect(core.seen.attach.method).toBe("terminal.attach");
+  expect(core.seen.attach.params).toMatchObject({
+    terminal: "t7", observe: true, resize_notifications: true, cols: 120, rows: 40, history: 50,
+  });
+  expect(got.resizes).toEqual([[120, 40]]);
+  expect(got.data).toBe("\x1b[31mred");
+  close();
 });
 
-test("an attach the core refuses rejects with its error, not an empty screen", async () => {
-  const { path } = await fakeCore({ attachError: { code: -32000, message: "no terminal t9", data: { kind: "not_found" } } });
-  const e = await new CoreClient(path, 2000).observePaint("t9", 80, 24, 0).catch((x) => x);
+test("the stream stays open: later output, and a size change, arrive as they happen", async () => {
+  const core = await fakeCore({ paint: ["a"] });
+  const { got, h } = recorder();
+  const close = await new CoreClient(core.path, 2000).observe("t7", { cols: 80, rows: 24, history: 0 }, h);
+  await Bun.sleep(20);
+  core.push("b");
+  core.resize(100, 30);
+  await Bun.sleep(30);
+  expect(got.data).toBe("ab");
+  expect(got.resizes.at(-1)).toEqual([100, 30]);
+  // Every DATA was credited, or the core would stop sending at its window.
+  expect(core.seen.credits).toBe(2);
+  close();
+});
+
+test("closing from paddock closes the channel and the socket, and is not reported as a loss", async () => {
+  const core = await fakeCore({ paint: ["a"] });
+  const { got, h } = recorder();
+  const close = await new CoreClient(core.path, 2000).observe("t7", { cols: 80, rows: 24, history: 0 }, h);
+  close();
+  await Bun.sleep(30);
+  expect(core.seen.closedChannel).toBe(true);
+  expect(core.seen.ended).toBe(true);
+  expect(got.closes).toEqual([]);
+});
+
+test("the core ending the view is reported once, with its reason", async () => {
+  const core = await fakeCore({ paint: ["a"] });
+  const { got, h } = recorder();
+  await new CoreClient(core.path, 2000).observe("t7", { cols: 80, rows: 24, history: 0 }, h);
+  core.endView('{"reason":"restarted"}');
+  await Bun.sleep(30);
+  expect(got.closes).toHaveLength(1);
+  expect(got.closes[0]).toContain("restarted");
+});
+
+test("an attach the core refuses rejects with its error", async () => {
+  const core = await fakeCore({ attachError: { code: -32000, message: "no terminal t9", data: { kind: "not_found" } } });
+  const e = await new CoreClient(core.path, 2000).observe("t9", { cols: 80, rows: 24, history: 0 }, recorder().h).catch((x) => x);
   expect(e).toBeInstanceOf(CoreError);
   expect(e.message).toBe("no terminal t9");
 });
 
-test("a core that never paints rejects within the timeout", async () => {
-  const { path } = await fakeCore({ silent: true });
+test("an attach never answered rejects within the timeout", async () => {
+  const core = await fakeCore({ mute: true });
   const started = Date.now();
-  const e = await new CoreClient(path, 300).observePaint("t7", 80, 24, 0).catch((x) => x);
-  expect(e).toBeInstanceOf(Error);
-  expect(e.message).toMatch(/no paint/);
+  const e = await new CoreClient(core.path, 200).observe("t7", { cols: 80, rows: 24, history: 0 }, recorder().h).catch((x) => x);
+  expect(e.message).toMatch(/timed out/);
   expect(Date.now() - started).toBeLessThan(1500);
 });
 
 test("no core at the path is a connect error", async () => {
-  const e = await new CoreClient("/nonexistent/core.sock", 300).observePaint("t7", 80, 24, 0).catch((x) => x);
+  const e = await new CoreClient("/nonexistent/core.sock", 300)
+    .observe("t7", { cols: 80, rows: 24, history: 0 }, recorder().h).catch((x) => x);
   expect(e.message).toMatch(/cannot connect to herdr-core/);
 });
