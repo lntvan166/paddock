@@ -51,9 +51,9 @@ import { isCoreId } from "@shared/origin";
 import type { HerdrAgentSession } from "@shared/herdr-api";
 
 /** Why a dialog route sent nothing to an app agent: paddock answers only its
- *  permission prompts (see `refuseCoreDialog`). */
+ *  permission prompts and question dialogs (see `refuseCoreDialog`). */
 export const CORE_DIALOG_REFUSED =
-  "this app agent is not showing a permission prompt; answer it in the Herdr app — nothing was sent";
+  "this app agent is not showing a permission prompt or a question; answer it in the Herdr app — nothing was sent";
 
 // Re-exported for call sites that imported this from here before the
 // contract moved to `@shared/types` — see `src/shared/types.ts` for the
@@ -1314,13 +1314,14 @@ export function createApp(deps: AppDeps) {
      * The live permission gate for the dialog routes, asked BEFORE any key.
      *
      * A herdr-core agent is answered from paddock only while it shows a
-     * permission prompt — the one dialog the probe measured. The core's
-     * `sendOptionKey` and `sendChars` refuse otherwise, but the dialog routes
-     * walk the cursor with arrows and Enter first (`sendNavKey`, which is not
-     * gated and must not be: the terminal pane uses it). So `/select` could
-     * commit an option of a question dialog, and `/type` or `/dialog-tab`
-     * moved the cursor before the character was refused. Enforced here, on the
-     * server, rather than trusted to the UI hiding the controls.
+     * permission prompt or a question dialog — the two the probes measured
+     * (an auth prompt is neither). The core's `sendOptionKey` and `sendChars`
+     * refuse otherwise, but the dialog routes walk the cursor with arrows and
+     * Enter first (`sendNavKey`, which is not gated and must not be: the
+     * terminal pane uses it). So `/select` could commit an option of an auth
+     * dialog, and `/type` or `/dialog-tab` moved the cursor before the
+     * character was refused. Enforced here, on the server, rather than
+     * trusted to the UI hiding the controls.
      *
      * Returns the 409 to send, or null to go on. Terminal herdr agents are
      * untouched: the parser alone decides for them, as before.
@@ -1429,7 +1430,7 @@ export function createApp(deps: AppDeps) {
       try {
         const parsed = parsePrompt(await actions.readPromptScreen(agent.agentId));
         // The backend may withhold one-tap buttons (a herdr-core agent shows
-        // them only on a live permission prompt). It can remove them, never
+        // them only on a live permission prompt or question). It can remove them, never
         // add them: the parser still decides whether there are any.
         if ((parsed.options !== null || parsed.dialog !== null) && !(await actions.promptAllowed(agent.agentId))) {
           return c.json({ ...parsed, options: null, dialog: null });

@@ -10,11 +10,14 @@
  *  - `terminal.send {force:true}` APPROVED a command when asked to answer "No"
  *    (the pasted digit is not a key press, and send's Enter commits the cursor
  *    row). No request in this file sends `force`, and none may.
- *  - an option digit is pressed only while the LIVE status is a blocked
- *    `permission` prompt (`promptAllowed` gates the buttons the same way);
- *  - text into a blocked dialog is unmeasured, so `sendReply` reads the live
- *    status first and refuses while blocked, and `sendChars` (dialog typing)
- *    is refused outright.
+ *  - an option digit or dialog key is pressed only while the LIVE status is
+ *    a blocked `permission` or `question` prompt (`promptAllowed` gates the
+ *    buttons the same way); `auth` and a missing kind get nothing;
+ *  - a question dialog (probe step 7) takes the same keys it does under
+ *    terminal herdr: arrows, digits, backspace; text with no key (`à`, `?`)
+ *    is typed through `CoreClient.typeText`, which never presses Enter;
+ *  - `sendReply` reads the live status first and refuses while blocked:
+ *    `terminal.send` presses Enter, and that Enter would answer the dialog.
  */
 import type { CoreListResult, CoreReadResult, CoreTerminal } from "@shared/herdr-core-api";
 import { coreId, rawCoreId } from "@shared/origin";
@@ -32,7 +35,8 @@ import { LiveScreens } from "./live-screen";
 
 /** The slice of `CoreClient` these actions use, so a test can fake it. */
 /** `observe` is optional: without it, screens are read as plain text. */
-export type CoreRequester = Pick<CoreClient, "request"> & Partial<Pick<CoreClient, "observe">>;
+/** `typeText` too: without it, a dialog takes only the characters that have a key. */
+export type CoreRequester = Pick<CoreClient, "request"> & Partial<Pick<CoreClient, "observe" | "typeText">>;
 
 /**
  * paddock's key names to herdr-core's (`hc keys --help`: "enter, esc, tab, up,
@@ -69,20 +73,59 @@ const ONE_DIGIT = /^[1-9]$/;
 /** Shown when a typed reply would land in a blocked dialog. */
 export const ANSWER_THE_OPTIONS = "this agent is waiting on a dialog: answer the dialog's options";
 
-/** Typing into an app agent's dialog (question free-text, notes). */
-export const CANNOT_TYPE_IN_DIALOG = "typing into an app agent's dialog isn't supported yet — answer in Herdr";
+/** A dialog key or option digit sent to anything but a live permission prompt or question. */
+export const NOT_AN_ANSWERABLE_PROMPT = "this app agent is not showing a permission prompt or a question; nothing was sent";
 
-/** An option digit offered or sent to anything but a live permission prompt. */
-export const NOT_A_PERMISSION_PROMPT = "this app agent is not showing a permission prompt; nothing was sent";
+/** What a dialog key list holding something that is not one key is refused with. */
+export const NOT_ONE_KEY = "is not one key";
 
 /**
- * One-tap answers need a live, blocked PERMISSION prompt. `status.kind` may
- * remove buttons, never add them: a question, an auth prompt, or a missing
- * kind all mean no buttons.
+ * Answers need a live, blocked PERMISSION prompt or QUESTION dialog, the two
+ * the probes measured. `status.kind` may remove buttons, never add them: an
+ * auth prompt or a missing kind means no buttons.
  */
-function isPermissionPrompt(t: CoreTerminal): boolean {
-  return t.state === "live" && t.status?.state === "blocked" && t.status.kind === "permission";
+function isAnswerablePrompt(t: CoreTerminal): boolean {
+  return t.state === "live" && t.status?.state === "blocked"
+    && (t.status.kind === "permission" || t.status.kind === "question");
 }
+
+/** A run of dialog input: key names for `terminal.keys`, or text to type. */
+type InputRun = { keys: string[] } | { text: string };
+
+/**
+ * The route's dialog key list (`sendChars`: one key name or one character
+ * each, as terminal herdr takes it) as runs for the core, checked in full
+ * before anything is sent. A key name goes as the core's key; a character
+ * with a MEASURED key (probe step 6) goes as that key, so digits stay key
+ * presses; any other printable character is typed as text. A word, a key
+ * name the closed set does not have, or a control character (one would be a
+ * key press nobody chose: `\r` commits the dialog) refuses the whole list.
+ */
+export function dialogRuns(chars: string[]): InputRun[] {
+  const runs: InputRun[] = [];
+  const push = (r: InputRun) => {
+    const last = runs.at(-1);
+    if (last && "keys" in r && "keys" in last) last.keys.push(...r.keys);
+    else if (last && "text" in r && "text" in last) last.text += r.text;
+    else runs.push(r);
+  };
+  for (const c of chars) {
+    if (Object.hasOwn(NAV_TO_CORE, c)) { push({ keys: [NAV_TO_CORE[c as NavKey]] }); continue; }
+    const points = [...c];
+    const cp = c.codePointAt(0) ?? 0;
+    if (points.length !== 1 || cp < 0x20 || (cp >= 0x7f && cp <= 0x9f)) {
+      throw new Unsupported(`${JSON.stringify(c)} ${NOT_ONE_KEY}; nothing was sent`);
+    }
+    if (c === " ") push({ keys: ["space"] });
+    else if (TYPED_AS_ITSELF.has(c)) push({ keys: [c] });
+    else if (c >= "A" && c <= "Z") push({ keys: [`shift+${c.toLowerCase()}`] });
+    else push({ text: c });
+  }
+  return runs;
+}
+
+/** Text with no key, and no typing connection to type it with. */
+export const CANNOT_TYPE_TEXT = "can't be typed into an app agent from this connection; nothing was sent";
 
 /**
  * Characters whose key name was measured to type exactly that character into
@@ -287,12 +330,16 @@ export function createCoreActions(
     },
 
     async readPromptScreen(target) {
-      // Raw, like terminal herdr's: the prompt parsers strip what they need.
-      return read(target, 0);
+      // WITH colour, like terminal herdr's: the parsers strip what they need,
+      // and a question dialog marks its current tab only with a background
+      // (measured: the plain read leaves every tab looking the same). The
+      // screen alone, from the live mirror; plain text if that fails.
+      const coloured = await styled(target, false);
+      return coloured ? coloured.join("\n") : read(target, 0);
     },
 
     async promptAllowed(target) {
-      return isPermissionPrompt(await get(target));
+      return isAnswerablePrompt(await get(target));
     },
 
     async sendOptionKey(target, key) {
@@ -300,10 +347,10 @@ export function createCoreActions(
         throw new Unsupported(`option ${JSON.stringify(key)} has no single key on an app terminal; use the arrow keys and Enter`);
       }
       // Gated on the LIVE status, at the moment of sending: a digit is pressed
-      // only into a permission prompt, the one dialog the probe measured. A
-      // question or auth dialog, or a prompt answered at the desk a moment
+      // only into a permission prompt or question dialog, the two the probes
+      // measured. An auth dialog, or a prompt answered at the desk a moment
       // ago, gets nothing. This also covers /dialog-key, which comes here.
-      if (!isPermissionPrompt(await get(target))) throw new Unsupported(NOT_A_PERMISSION_PROMPT);
+      if (!isAnswerablePrompt(await get(target))) throw new Unsupported(NOT_AN_ANSWERABLE_PROMPT);
       await press(target, key);
     },
 
@@ -320,13 +367,25 @@ export function createCoreActions(
       await send(target, text);
     },
 
-    async sendChars() {
-      // Refused OUTRIGHT, before any request. The only caller is the dialog
-      // typer. Text into a blocked dialog is unmeasured, and the only text
-      // call (`terminal.send`) presses Enter, so in the race where the store
-      // says blocked and the terminal no longer is, dialog text would be
-      // submitted to the agent as a prompt.
-      throw new Unsupported(CANNOT_TYPE_IN_DIALOG);
+    async sendChars(target, chars) {
+      // Every entry checked before the live status is even asked for, and
+      // the status before anything is sent: keys meant for a dialog that has
+      // closed would land in the agent's prompt.
+      const runs = dialogRuns(chars);
+      const t = await get(target);
+      if (!isAnswerablePrompt(t)) throw new Unsupported(NOT_AN_ANSWERABLE_PROMPT);
+      const c = client();
+      if (!c.typeText && runs.some((r) => "text" in r)) {
+        const missing = runs.flatMap((r) => ("text" in r ? [r.text] : [])).join("");
+        throw new Unsupported(`${JSON.stringify(missing)} ${CANNOT_TYPE_TEXT}`);
+      }
+      // In order, each awaited: `terminal.keys` answers once its keys are
+      // pressed, `typeText` once its text is in.
+      const raw = rawCoreId(target);
+      for (const r of runs) {
+        if ("keys" in r) await c.request("terminal.keys", { terminal: raw, keys: r.keys });
+        else await c.typeText!(raw, r.text, { cols: t.cols, rows: t.rows });
+      }
     },
 
     async sendPaneText(paneId, text) {

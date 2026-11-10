@@ -31,6 +31,7 @@ const FRAME_DATA = 0;
 const FRAME_CREDIT = 1;
 const FRAME_CLOSE = 2;
 const FRAME_RESIZE = 3;
+const FRAME_AUTOMATIC_INPUT = 6;
 
 export class CoreError extends Error {
   kind: string;
@@ -157,6 +158,118 @@ class Conn {
   }
 }
 
+interface FramedHandlers {
+  /** The hello was answered: the connection is framed now. */
+  ready(): void;
+  /** A JSON-RPC reply on channel 0. */
+  reply(msg: Msg): void;
+  /** A frame on any other channel. */
+  frame(channel: number, kind: number, payload: Uint8Array): void;
+  /** The reason given when the socket closes without being asked to. */
+  closed(): string;
+  /** Once, at the end: `null` when paddock ended it, else why it ended. */
+  ended(reason: Error | null): void;
+}
+
+interface Framed {
+  /** The attach's channel, once known: `end` closes it, `credit` credits it. */
+  channel: number | null;
+  request(id: number, method: string, params: object): void;
+  send(channel: number, kind: number, payload: Uint8Array): void;
+  credit(n: number): void;
+  end(reason: Error | null): void;
+}
+
+/**
+ * One framed connection (herdr-core `wire.rs`): the hello's reply comes as a
+ * LINE, then every message is `[channel u32 LE][kind u8][len u32 LE][payload]`,
+ * channel 0 carrying JSON-RPC. Used by the attaches, which each need a
+ * connection of their own.
+ */
+function framedConnection(path: string, h: FramedHandlers): Framed {
+  let sock: Awaited<ReturnType<typeof Bun.connect>> | null = null;
+  let buf = new Uint8Array(0);
+  let framed = false;
+  let over = false;
+
+  const wire: Framed = {
+    channel: null,
+    send(ch, kind, payload) {
+      const out = new Uint8Array(9 + payload.length);
+      const v = new DataView(out.buffer);
+      v.setUint32(0, ch, true);
+      out[4] = kind;
+      v.setUint32(5, payload.length, true);
+      out.set(payload, 9);
+      sock?.write(out);
+    },
+    request(id, method, params) {
+      wire.send(0, FRAME_DATA, new TextEncoder().encode(JSON.stringify({ jsonrpc: "2.0", id, method, params })));
+    },
+    credit(n) {
+      if (wire.channel === null) return;
+      const credit = new Uint8Array(4);
+      new DataView(credit.buffer).setUint32(0, n, true);
+      wire.send(wire.channel, FRAME_CREDIT, credit);
+    },
+    end(reason) {
+      if (over) return;
+      over = true;
+      if (wire.channel !== null) wire.send(wire.channel, FRAME_CLOSE, new Uint8Array(0));
+      sock?.end();
+      h.ended(reason);
+    },
+  };
+
+  const feed = (chunk: Uint8Array) => {
+    const next = new Uint8Array(buf.length + chunk.length);
+    next.set(buf); next.set(chunk, buf.length); buf = next;
+    if (!framed) {
+      const nl = buf.indexOf(10);
+      if (nl < 0) return;
+      let hello: Msg;
+      try { hello = JSON.parse(new TextDecoder().decode(buf.subarray(0, nl))); }
+      catch { wire.end(new Error("herdr-core answered the framed hello with something that is not JSON")); return; }
+      buf = buf.slice(nl + 1);
+      if (hello.error) { wire.end(new CoreError(hello.error.message, hello.error.data?.kind ?? "unknown")); return; }
+      framed = true;
+      h.ready();
+    }
+    while (!over && buf.length >= 9) {
+      const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const ch = v.getUint32(0, true);
+      const kind = buf[4]!;
+      const len = v.getUint32(5, true);
+      if (buf.length < 9 + len) return;
+      const payload = buf.slice(9, 9 + len);
+      buf = buf.slice(9 + len);
+      if (ch === 0 && kind === FRAME_DATA) {
+        let reply: Msg;
+        try { reply = JSON.parse(new TextDecoder().decode(payload)); }
+        catch { wire.end(new Error("herdr-core sent a control frame that is not JSON")); return; }
+        h.reply(reply);
+      } else if (ch !== 0) {
+        h.frame(ch, kind, payload);
+      }
+    }
+  };
+
+  Bun.connect({
+    unix: path,
+    socket: {
+      data(_s, chunk) { feed(new Uint8Array(chunk)); },
+      close() { wire.end(new Error(h.closed())); },
+      error(s, e) { wire.end(new Error(`herdr-core socket error (${path}): ${e.message}`)); s.end(); },
+    },
+  }).then((s) => {
+    sock = s;
+    if (over) { s.end(); return; }
+    s.write(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "hello", params: { framed: true, generation: CORE_GENERATION } }) + "\n");
+  }, (e: Error) => wire.end(new Error(`cannot connect to herdr-core at ${path}: ${e.message}`)));
+
+  return wire;
+}
+
 export class CoreClient {
   private conn: Promise<Conn> | null = null;
   private nextId = 1;
@@ -243,105 +356,107 @@ export class CoreClient {
     const path = this.path;
     const timeoutMs = this.timeoutMs;
     return new Promise<() => void>((resolve, reject) => {
-      let sock: Awaited<ReturnType<typeof Bun.connect>> | null = null;
-      let buf = new Uint8Array(0);
-      let framed = false;
       let channel: number | null = null;
       let accepted = false;
-      let over = false;
-      const timer = setTimeout(() => end(new Error(`herdr-core: attach to ${terminal} timed out after ${timeoutMs} ms`)), timeoutMs);
+      const timer = setTimeout(() => wire.end(new Error(`herdr-core: attach to ${terminal} timed out after ${timeoutMs} ms`)), timeoutMs);
 
-      const send = (ch: number, kind: number, payload: Uint8Array) => {
-        const out = new Uint8Array(9 + payload.length);
-        const v = new DataView(out.buffer);
-        v.setUint32(0, ch, true);
-        out[4] = kind;
-        v.setUint32(5, payload.length, true);
-        out.set(payload, 9);
-        sock?.write(out);
-      };
-      /** The one way out: before the attach was accepted it rejects, after it tells `onClose`. */
-      const end = (reason: Error | null) => {
-        if (over) return;
-        over = true;
-        clearTimeout(timer);
-        if (channel !== null) send(channel, FRAME_CLOSE, new Uint8Array(0));
-        sock?.end();
-        if (reason === null) return;
-        if (accepted) h.onClose(reason);
-        else reject(reason);
-      };
-
-      const onFrame = (ch: number, kind: number, payload: Uint8Array) => {
-        if (ch === 0 && kind === FRAME_DATA) {
-          let reply: Msg;
-          try { reply = JSON.parse(new TextDecoder().decode(payload)); }
-          catch { end(new Error("herdr-core sent a control frame that is not JSON")); return; }
+      const wire = framedConnection(path, {
+        ready: () => {
+          wire.request(1, "terminal.attach", { terminal, observe: true, resize_notifications: true, ...size });
+        },
+        reply: (reply) => {
           if (reply.id !== 1) return;
           if (reply.error) {
-            end(new CoreError(reply.error.message, reply.error.data?.kind ?? "unknown", reply.error.data?.hint));
+            wire.end(new CoreError(reply.error.message, reply.error.data?.kind ?? "unknown", reply.error.data?.hint));
             return;
           }
           channel = Number(reply.result?.channel);
+          wire.channel = channel;
           accepted = true;
           clearTimeout(timer);
-          resolve(() => end(null));
-          return;
-        }
-        if (channel === null || ch !== channel) return;
-        if (kind === FRAME_DATA) {
-          h.onData(payload);
-          const credit = new Uint8Array(4);
-          new DataView(credit.buffer).setUint32(0, payload.length, true);
-          send(channel, FRAME_CREDIT, credit);
-        } else if (kind === FRAME_RESIZE && payload.length === 4) {
-          const v = new DataView(payload.buffer, payload.byteOffset, 4);
-          h.onResize(v.getUint16(0, true), v.getUint16(2, true));
-        } else if (kind === FRAME_CLOSE) {
-          const why = new TextDecoder().decode(payload);
-          end(new Error(`herdr-core ended the view of ${terminal}${why ? `: ${why}` : ""}`));
-        }
-      };
-
-      const feed = (chunk: Uint8Array) => {
-        const next = new Uint8Array(buf.length + chunk.length);
-        next.set(buf); next.set(chunk, buf.length); buf = next;
-        if (!framed) {
-          const nl = buf.indexOf(10);
-          if (nl < 0) return;
-          let hello: Msg;
-          try { hello = JSON.parse(new TextDecoder().decode(buf.subarray(0, nl))); }
-          catch { end(new Error("herdr-core answered the framed hello with something that is not JSON")); return; }
-          buf = buf.slice(nl + 1);
-          if (hello.error) { end(new CoreError(hello.error.message, hello.error.data?.kind ?? "unknown")); return; }
-          framed = true;
-          const params = { terminal, observe: true, resize_notifications: true, ...size };
-          send(0, FRAME_DATA, new TextEncoder().encode(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "terminal.attach", params })));
-        }
-        while (!over && buf.length >= 9) {
-          const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-          const ch = v.getUint32(0, true);
-          const kind = buf[4]!;
-          const len = v.getUint32(5, true);
-          if (buf.length < 9 + len) return;
-          const payload = buf.slice(9, 9 + len);
-          buf = buf.slice(9 + len);
-          onFrame(ch, kind, payload);
-        }
-      };
-
-      Bun.connect({
-        unix: path,
-        socket: {
-          data(_s, chunk) { feed(new Uint8Array(chunk)); },
-          close() { end(new Error(`herdr-core closed the view of ${terminal}`)); },
-          error(s, e) { end(new Error(`herdr-core socket error (${path}): ${e.message}`)); s.end(); },
+          resolve(() => wire.end(null));
         },
-      }).then((s) => {
-        sock = s;
-        if (over) { s.end(); return; }
-        s.write(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "hello", params: { framed: true, generation: CORE_GENERATION } }) + "\n");
-      }, (e: Error) => end(new Error(`cannot connect to herdr-core at ${path}: ${e.message}`)));
+        frame: (ch, kind, payload) => {
+          if (channel === null || ch !== channel) return;
+          if (kind === FRAME_DATA) {
+            h.onData(payload);
+            wire.credit(payload.length);
+          } else if (kind === FRAME_RESIZE && payload.length === 4) {
+            const v = new DataView(payload.buffer, payload.byteOffset, 4);
+            h.onResize(v.getUint16(0, true), v.getUint16(2, true));
+          } else if (kind === FRAME_CLOSE) {
+            const why = new TextDecoder().decode(payload);
+            wire.end(new Error(`herdr-core ended the view of ${terminal}${why ? `: ${why}` : ""}`));
+          }
+        },
+        closed: () => `herdr-core closed the view of ${terminal}`,
+        ended: (reason) => {
+          clearTimeout(timer);
+          if (reason === null) return; // paddock closed it
+          if (accepted) h.onClose(reason);
+          else reject(reason);
+        },
+      });
+    });
+  }
+
+  /**
+   * Type `text` into `terminal` WITHOUT pressing Enter: the one thing no plain
+   * request does (`terminal.send` always submits; `terminal.keys` has no key
+   * for `à` or `?`). Measured on a Claude Code question dialog
+   * (docs/probes/2026-11-09-herdr-core.md, step 7).
+   *
+   * A typing attach of its own, built so it can never take the terminal's
+   * size from the operator's window (herdr-core `viewers.rs`): `observe:
+   * false` because an observer's input is dropped; `resumed: true` so the
+   * attach has never been "active", and the core sizes a terminal by its most
+   * recently active typing viewer; the terminal's own `cols`/`rows`, so even
+   * as the only viewer it sets the size the terminal already has; and the
+   * bytes as AUTOMATIC_INPUT, because DATA counts as a person typing and makes
+   * the attach active. A core whose attach does not take AUTOMATIC_INPUT is
+   * refused rather than typed at as a person.
+   *
+   * Resolves once the bytes are in: the core handles input frames as it reads
+   * them, so its answer to a request sent after them on the same connection
+   * comes after they were written.
+   */
+  typeText(terminal: string, text: string, size: { cols: number; rows: number }): Promise<void> {
+    const path = this.path;
+    const timeoutMs = this.timeoutMs;
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => wire.end(new Error(`herdr-core: typing into ${terminal} timed out after ${timeoutMs} ms`)), timeoutMs);
+
+      const wire = framedConnection(path, {
+        ready: () => {
+          wire.request(1, "terminal.attach", { terminal, observe: false, resumed: true, ...size, history: 0 });
+        },
+        reply: (reply) => {
+          if (reply.error) {
+            wire.end(new CoreError(reply.error.message, reply.error.data?.kind ?? "unknown", reply.error.data?.hint));
+            return;
+          }
+          if (reply.id === 1) {
+            wire.channel = Number(reply.result?.channel);
+            if (reply.result?.automatic_input !== true) {
+              wire.end(new Error(`herdr-core: this core's attach does not take automatic input; nothing was typed into ${terminal}`));
+              return;
+            }
+            wire.send(wire.channel, FRAME_AUTOMATIC_INPUT, new TextEncoder().encode(text));
+            wire.request(2, "terminal.get", { terminal });
+          } else if (reply.id === 2) {
+            wire.end(null);
+          }
+        },
+        // The first paint every attach is sent: not read, and not credited,
+        // so the core simply stops sending it.
+        frame: () => {},
+        closed: () => `herdr-core closed the connection while typing into ${terminal}`,
+        ended: (reason) => {
+          clearTimeout(timer);
+          if (reason === null) resolve();
+          else reject(reason);
+        },
+      });
     });
   }
 

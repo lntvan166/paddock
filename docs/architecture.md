@@ -205,12 +205,12 @@ records the measurements they rest on.
 
 | Module | Responsibility |
 |---|---|
-| `herdr-core/socket.ts` | The core's socket: locating it, newline-delimited JSON-RPC requests, `events.subscribe`, and `observe` (a framed connection that attaches with `observe: true` and streams the first paint, live bytes and size changes). Accepts protocol generation 1 only. |
+| `herdr-core/socket.ts` | The core's socket: locating it, newline-delimited JSON-RPC requests, `events.subscribe`, `observe` (a framed connection that attaches with `observe: true` and streams the first paint, live bytes and size changes) and `typeText` (a typing attach that can never resize: `resumed: true`, the terminal's own size, the text as AUTOMATIC_INPUT; types into a dialog without pressing Enter). Accepts protocol generation 1 only. |
 | `herdr-core/live-screen.ts` | One live mirror per app terminal someone is reading: the first read attaches as an observer and replays the first paint, later polls read the mirror the stream keeps current. Closed after 30 s unread, at most 8, retired on a size change (the next read attaches again). |
-| `herdr-core/screen.ts` | The headless terminal (`@xterm/headless`) a mirror is, and its cells read back as lines in the SGR `web/ansi.ts` parses. `terminal.read` is text only, so this is where app agents get their colours. An observer never types or resizes (the core sizes a terminal by its real viewers only); a failed view falls back to the text read, logged once per reason. The prompt parsers keep the text read. |
+| `herdr-core/screen.ts` | The headless terminal (`@xterm/headless`) a mirror is, and its cells read back as lines in the SGR `web/ansi.ts` parses. `terminal.read` is text only, so this is where app agents get their colours. An observer never types or resizes (the core sizes a terminal by its real viewers only); a failed view falls back to the text read, logged once per reason. The prompt parsers read the mirror's screen too: a question dialog marks its current tab only with a background. |
 | `herdr-core/adapter.ts` | Core terminals and events into `Agent`. The only place core field names are mapped. |
 | `herdr-core/supervisor.ts` | Snapshot, then events, into the store under origin `core`. Logs a missing core once and retries; `firstAttempt()` is what boot waits on. |
-| `herdr-core/actions.ts` | `HerdrActions` for core ids. |
+| `herdr-core/actions.ts` | `HerdrActions` for core ids. Dialog keys and option digits go only to a live `permission` or `question` prompt; `dialogRuns` splits a dialog key list into core key presses and text for `typeText`. |
 | `herdr-core/app-socket.ts` | The running app's command socket. Used only to rename spaces and tabs. |
 | `herdr-core/tree.ts` | The app's spaces and tabs for the Spaces screen, named from the app's layout document, which is read and never written. |
 | `actions-by-origin.ts` | One `HerdrActions` over both backends, routed by id: a core id (`hc.…`) goes to the core, anything else to terminal herdr. Knows neither backend. |

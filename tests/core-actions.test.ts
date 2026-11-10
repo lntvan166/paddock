@@ -29,6 +29,9 @@ function fakeCore(answer: (method: string, params: any) => unknown = () => ({}))
       if (r instanceof Error) throw r;
       return r as T;
     },
+    async typeText(terminal: string, text: string, size: { cols: number; rows: number }): Promise<void> {
+      calls.push({ method: "typeText", params: { terminal, text, ...size } });
+    },
   };
   return { calls, client };
 }
@@ -122,17 +125,60 @@ test("a reply to a core agent that is not blocked is sent without force", async 
   noForceAnywhere(calls);
 });
 
-test("typing into an app agent's dialog is refused outright, and nothing is sent", async () => {
-  // Not only while blocked: `terminal.send` presses Enter, so in the race
-  // where the store says blocked and the terminal no longer is, the dialog
-  // text would be submitted to the agent as a prompt.
-  for (const state of ["blocked", "idle", "working"]) {
-    const { a, calls } = actions(() => terminal({ status: { state, kind: "question" } }));
+const question = { state: "blocked", kind: "question", app: "claude-code" };
+
+test("typing into a dialog needs a live permission or question prompt; otherwise nothing is sent", async () => {
+  // `auth` is a login, not a question paddock knows; idle and working mean the
+  // dialog is gone, and keys meant for it would land in the agent's prompt.
+  for (const status of [{ state: "blocked", kind: "auth" }, { state: "blocked" }, { state: "idle" }, { state: "working" }, null]) {
+    const { a, calls } = actions(() => terminal({ status }));
     const err = await a.sendChars("hc.t7", ["o", "k"]).catch((e) => e);
-    expect(err).toBeInstanceOf(Unsupported);
-    expect(err.message).toContain("answer in Herdr");
-    expect(calls).toEqual([]);
+    expect(err, JSON.stringify(status)).toBeInstanceOf(Unsupported);
+    expect(calls.map((c) => c.method)).toEqual(["terminal.get"]);
   }
+});
+
+test("dialog keys go as core keys, measured characters as keys, the rest typed as text, in order", async () => {
+  // Probe step 7: arrows, backspace and digits are key presses (a digit on an
+  // option row toggles it, on the text row it is text, as in terminal herdr);
+  // `à` and `?` have no key, and are typed through the typing attach.
+  const { a, calls } = actions(() => terminal({ status: question, cols: 90, rows: 30 }));
+  await a.sendChars("hc.t7", ["right", "backspace", "c", "h", "à", "o", " ", "?", "7", "Z"]);
+  expect(calls).toEqual([
+    { method: "terminal.get", params: { terminal: "t7" } },
+    { method: "terminal.keys", params: { terminal: "t7", keys: ["right", "backspace", "c", "h"] } },
+    { method: "typeText", params: { terminal: "t7", text: "à", cols: 90, rows: 30 } },
+    { method: "terminal.keys", params: { terminal: "t7", keys: ["o", "space"] } },
+    { method: "typeText", params: { terminal: "t7", text: "?", cols: 90, rows: 30 } },
+    { method: "terminal.keys", params: { terminal: "t7", keys: ["7", "shift+z"] } },
+  ]);
+  noForceAnywhere(calls);
+});
+
+test("characters with no key in a row are typed as ONE run", async () => {
+  const { a, calls } = actions(() => terminal({ status: question }));
+  await a.sendChars("hc.t7", [..."chào bạn?"].filter((c) => !/[a-z ]/.test(c)));
+  expect(calls.filter((c) => c.method === "typeText").map((c) => c.params.text)).toEqual(["àạ?"]);
+});
+
+test("a word, a control character or an unknown key name is refused before anything is sent", async () => {
+  // A word is not a key (terminal herdr refuses it too). A control byte typed
+  // as text would be a key press nobody chose: "\r" commits the dialog.
+  for (const bad of [["ok"], ["\r"], ["\u001b"], ["\u007f"], ["\u0085"], ["f5"]]) {
+    const { a, calls } = actions(() => terminal({ status: question }));
+    const err = await a.sendChars("hc.t7", ["a", ...bad]).catch((e) => e);
+    expect(err, JSON.stringify(bad)).toBeInstanceOf(Unsupported);
+    expect(calls, JSON.stringify(bad)).toEqual([]);
+  }
+});
+
+test("without a typing connection, text with no key is refused and nothing is sent", async () => {
+  const core = fakeCore(() => terminal({ status: question }));
+  const { typeText: _, ...noTyping } = core.client;
+  const a = createCoreActions(() => noTyping, fakeApp(false).app, { sleep: async () => {} });
+  const err = await a.sendChars("hc.t7", ["o", "à"]).catch((e) => e);
+  expect(err).toBeInstanceOf(Unsupported);
+  expect(core.calls.filter((c) => c.method !== "terminal.get")).toEqual([]);
 });
 
 test("reads drop the trailing CR and report an empty screen as no lines", async () => {
@@ -300,9 +346,8 @@ test("harness kinds are the core's usable templates", async () => {
   expect(await a.harnessKinds()).toEqual(["claude"]);
 });
 
-test("an option digit is pressed only on a live permission prompt", async () => {
+test("an option digit is pressed only on a live permission prompt or question", async () => {
   const cases: Record<string, unknown>[] = [
-    { state: "blocked", kind: "question" },
     { state: "blocked", kind: "auth" },
     { state: "blocked" },
     { state: "idle", kind: "permission" },
@@ -314,10 +359,16 @@ test("an option digit is pressed only on a live permission prompt", async () => 
   }
 });
 
-test("promptAllowed is true only for a blocked permission prompt", async () => {
+test("an option digit on a question dialog is one key press", async () => {
+  const { a, calls } = actions((m) => (m === "terminal.get" ? terminal({ status: question }) : { turn: 1 }));
+  await a.sendOptionKey("hc.t7", "2");
+  expect(calls.at(-1)).toEqual({ method: "terminal.keys", params: { terminal: "t7", keys: ["2"] } });
+});
+
+test("promptAllowed is true only for a blocked permission prompt or question", async () => {
   const at = async (status: unknown) => actions(() => terminal({ status })).a.promptAllowed("hc.t7");
   expect(await at(permission)).toBe(true);
-  expect(await at({ state: "blocked", kind: "question" })).toBe(false);
+  expect(await at(question)).toBe(true);
   expect(await at({ state: "blocked", kind: "auth" })).toBe(false);
   expect(await at({ state: "blocked" })).toBe(false);
   expect(await at(null)).toBe(false);
@@ -458,12 +509,19 @@ test("a view that fails falls back to the text read and says so once", async () 
   }
 });
 
-test("the prompt parsers still get the plain text read, not the mirror", async () => {
-  const { a, observed, screens } = paintingCore(
-    () => "\x1b[1mDo you want to proceed?",
-    (m) => (m === "terminal.get" ? terminal() : { text: "Do you want to proceed?\n" }),
+test("the prompt parsers get the mirror's screen, colours kept: the current question tab is only a background", async () => {
+  // Measured on a live question dialog: the plain text read leaves no way to
+  // tell which tab is current; terminal herdr's prompt read keeps colour for
+  // the same reason.
+  const { a, observed, calls, screens } = paintingCore(
+    () => "older line\r\n\x1b[48;5;4m Scope \x1b[0m Language",
+    (m) => (m === "terminal.get" ? terminal({ rows: 1 }) : { text: "plain\n" }),
   );
-  expect(await a.readPromptScreen("hc.t7")).toBe("Do you want to proceed?\n");
-  expect(observed).toHaveLength(0);
+  const screen = await a.readPromptScreen("hc.t7");
+  expect(screen).toContain("\x1b[");
+  expect(screen).toContain("Scope");
+  expect(screen).not.toContain("older line"); // the screen, not the scrollback
+  expect(observed).toHaveLength(1);
+  expect(calls.filter((c) => c.method === "terminal.read")).toHaveLength(0);
   screens.closeAll();
 });

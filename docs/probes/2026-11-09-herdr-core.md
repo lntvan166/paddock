@@ -292,3 +292,51 @@ before anything is sent (`Unsupported`, naming the characters), because a
 bare `A` would silently type `a` and the refused symbols have no measured key
 at all. Typing a command that needs `|`, `_`, `:` or `~` into an app shell is
 therefore not offered from the phone yet.
+
+## Step 7 — a question dialog (2026-11-10)
+
+Measured before app agents' question dialogs were answered from paddock. A
+throwaway, UNLABELLED Claude Code terminal (`hc run --bg --no-parent
+--no-notify --name <probe> -- claude` in a `mktemp -d` folder; invisible to
+the app, killed and removed afterwards) was asked to call AskUserQuestion
+with two questions, the first multi-select with three options, the second
+single-select. Same core (0.1.19), Claude Code 2.1. One key or one write per
+step, the screen read after each.
+
+The status while it waited:
+
+```json
+{"app":"claude-code","kind":"question","msg":"answer: Which areas should this project cover? (…)","state":"blocked"}
+```
+
+`msg` names the FIRST question and did not change as the tabs moved.
+
+| Step | Result |
+|---|---|
+| `parseAskDialog` on the plain `terminal.read` | dialog, options and cursor right; **no tab marked current** (the current tab is only a background colour) |
+| `parseAskDialog` on the observer mirror's screen (`screen.ts`) | the same, with the current tab marked |
+| `terminal.keys ["2"]`, cursor on option 1 (multi) | option 2 checked; cursor stays on 1 |
+| `terminal.keys ["down"]` ×3, one per call | cursor 1→2→3→4 (the "Type something" row) |
+| typing attach, AUTOMATIC_INPUT `chào ?` | the row reads `chào ?`, and is checked; size stayed 200×120 |
+| `terminal.keys ["7"]` on the text row, then `["backspace"]` | `7` typed as text, then erased |
+| AUTOMATIC_INPUT `7`, then `terminal.keys ["backspace"]` | the same |
+| `left` ×2, AUTOMATIC_INPUT `X` | inserted at the caret: `chàoX ?` |
+| `right` ×20 | caret at the end, text and tab unchanged; `Z` then lands last |
+| `up` (to option 3), then `right` | the second question's tab, single-select, cursor on 1 |
+| `terminal.keys ["2"]` | picked option 2 and moved to the Submit tab |
+| `terminal.keys ["enter"]` on "Submit answers" | Claude received `Backend API, chàoX ?Z` and `Go` |
+
+The typing attach is `terminal.attach {observe:false, resumed:true, cols,
+rows, history:0}` at the terminal's own size, the text as one AUTOMATIC_INPUT
+frame (kind 6), then a `terminal.get` on the same connection whose answer
+means the bytes are in (herdr-core handles input frames as it reads them),
+then CLOSE. Why each part, from herdr-core's `viewers.rs`: an observer's
+input is dropped; `resumed` leaves the attach never "active", and the core
+sizes a terminal by its most recently active typing viewer; AUTOMATIC_INPUT
+does not count as a person typing, which DATA would, making the attach
+active.
+
+What this decides: a `question` status opens the same dialog controls as
+under terminal herdr. Keys with a measured name go through `terminal.keys`;
+any other printable character is typed through the typing attach. The
+prompt read is the mirror's screen, with colour.

@@ -203,12 +203,12 @@ function coreWithKind(kind: string | undefined) {
   return {
     ...recorder("core", []),
     readPromptScreen: async () => PERMISSION,
-    promptAllowed: async () => kind === "permission",
+    promptAllowed: async () => kind === "permission" || kind === "question",
   } as HerdrActions;
 }
 
-test("/prompt offers one-tap options for a core agent only on a permission prompt", async () => {
-  for (const kind of ["question", "auth", undefined]) {
+test("/prompt offers one-tap options for a core agent only on a permission prompt or question", async () => {
+  for (const kind of ["auth", undefined]) {
     const post = route(actionsByOrigin(recorder("herdr", []), coreWithKind(kind)));
     const body = await (await post("/api/agents/hc.t7/prompt", {})).json();
     expect(body.options, String(kind)).toBeNull();
@@ -228,11 +228,12 @@ test("/prompt for a herdr agent is unchanged", async () => {
 });
 
 /**
- * A core backend showing a QUESTION dialog (not a permission prompt), that
- * records every key it is asked to send. The live gate says no; the dialog
- * routes must ask it before moving a cursor or typing a character.
+ * A core backend whose screen parses as a dialog while its live status says
+ * no (an auth prompt, or a dialog answered at the desk a moment ago), that
+ * records every key it is asked to send. The dialog routes must ask the live
+ * gate before moving a cursor or typing a character.
  */
-function coreQuestionDialog(log: string[]) {
+function coreRefusedDialog(log: string[]) {
   const screen = [
     "Which deploy target should I use?",
     "",
@@ -262,12 +263,12 @@ const DIALOG_ROUTES: [string, object][] = [
 ];
 
 for (const [path, body] of DIALOG_ROUTES) {
-  test(`/${path} for a core agent is refused by the live permission gate, with nothing sent`, async () => {
+  test(`/${path} for a core agent is refused by the live gate, with nothing sent`, async () => {
     const log: string[] = [];
-    const post = route(actionsByOrigin(recorder("herdr", []), coreQuestionDialog(log)));
+    const post = route(actionsByOrigin(recorder("herdr", []), coreRefusedDialog(log)));
     const res = await post(`/api/agents/hc.t7/${path}`, body);
     expect(res.status).toBe(409);
-    expect((await res.json()).detail).toContain("not showing a permission prompt");
+    expect((await res.json()).detail).toContain("not showing a permission prompt or a question");
     expect(log).toEqual(["core:promptAllowed"]);
   });
 }
