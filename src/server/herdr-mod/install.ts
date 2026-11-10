@@ -1,6 +1,6 @@
 /**
  * `paddock mod install [--layout <name>]`: put the paddock mod into the Herdr
- * desktop app (`herdr-mod/paddock/` in this repo), and optionally add its
+ * desktop app (`herdr/paddock/` in this repo), and optionally add its
  * button and panel to one of the person's layouts.
  *
  * The mod files are embedded in the binary, so the mod always matches the
@@ -16,11 +16,11 @@ import { basename, join } from "node:path";
 // File imports: Bun hands back a path into the binary's embedded files. TypeScript sees a
 // JavaScript module with no declarations, hence the expected errors.
 // @ts-expect-error -- a `type: "file"` import is a path, not a module
-import mainJs from "../../../herdr-mod/paddock/main.js" with { type: "file" };
-import modJson from "../../../herdr-mod/paddock/mod.json" with { type: "file" };
-import markSvg from "../../../herdr-mod/paddock/mark.svg" with { type: "file" };
-import closeSvg from "../../../herdr-mod/paddock/close.svg" with { type: "file" };
-import spinnerSvg from "../../../herdr-mod/paddock/spinner.svg" with { type: "file" };
+import mainJs from "../../../herdr/paddock/mods/paddock/main.js" with { type: "file" };
+import modJson from "../../../herdr/paddock/mods/paddock/mod.json" with { type: "file" };
+import markSvg from "../../../herdr/paddock/mods/paddock/mark.svg" with { type: "file" };
+import closeSvg from "../../../herdr/paddock/mods/paddock/close.svg" with { type: "file" };
+import spinnerSvg from "../../../herdr/paddock/mods/paddock/spinner.svg" with { type: "file" };
 import { addPaddock, SHIPPED_LAYOUTS, type LayoutNode } from "./layout";
 
 const FILES: Record<string, string> = {

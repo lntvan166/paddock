@@ -8,7 +8,7 @@ import { addPaddock, PANEL_ID, TOGGLE_ID, type LayoutNode } from "@server/herdr-
 import { installMod, selfBinary } from "@server/herdr-mod/install";
 
 /**
- * `paddock mod install`: the Herdr app mod in `herdr-mod/paddock/`, copied
+ * `paddock mod install`: the Herdr app mod in `herdr/paddock/mods/paddock/`, copied
  * into the app's home, and optionally a button and panel added to one of the
  * person's layouts. Everything here runs against a temporary app home: the
  * operator's own Herdr app is never touched by a test.
@@ -120,7 +120,7 @@ test("install copies the mod and names the binary it should run", async () => {
   expect((await readdir(dir)).sort()).toEqual(["close.svg", "config.json", "main.js", "mark.svg", "mod.json", "spinner.svg"]);
   expect(JSON.parse(await readFile(join(dir, "config.json"), "utf8"))).toEqual({ bin: "/path/to/paddock" });
   // The copy is the repo's file, byte for byte.
-  expect(await readFile(join(dir, "main.js"), "utf8")).toBe(await readFile("herdr-mod/paddock/main.js", "utf8"));
+  expect(await readFile(join(dir, "main.js"), "utf8")).toBe(await readFile("herdr/paddock/mods/paddock/main.js", "utf8"));
 });
 
 test("install with --layout adds the panel and keeps the old file beside it", async () => {

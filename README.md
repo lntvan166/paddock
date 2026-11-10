@@ -164,7 +164,7 @@ needs `cloudflared`; without them, those sections say so and the rest works.
 Herdr replaces its own layouts (`main`, `terminals`, `win98`) on every start,
 so `--layout` refuses them; clone one first (`herdr-app do layout.clone
 '{"name":"main","as":"my-main"}'`). The old layout file is kept beside the new
-one. The mod is in [`herdr-mod/paddock/`](herdr-mod/paddock/RECIPE.md).
+one. The mod is in [`herdr/paddock/`](herdr/paddock/RECIPE.md).
 
 ## run it
 

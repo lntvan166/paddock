@@ -104,7 +104,7 @@ export interface PairFact { code: string; expiresAt: number; link: string; qr: s
 
 /**
  * `paddock status --json`: the facts `status` prints, for programs (the Herdr
- * app mod in `herdr-mod/paddock/`). Built by the SAME report functions as the
+ * app mod in `herdr/paddock/`). Built by the SAME report functions as the
  * lines, so the two can never disagree: each one logs for a person and
  * returns what it found.
  */

@@ -242,7 +242,7 @@ if (command === "tunnel" && args[0] === "stop") {
 
 /**
  * `paddock mod install [--layout <name>]` — the Herdr app mod
- * (`herdr-mod/paddock/`). Writes files under the app's home and nothing else:
+ * (`herdr/paddock/`). Writes files under the app's home and nothing else:
  * no herdr socket, no port.
  */
 if (command === "mod") {
