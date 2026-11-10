@@ -18,7 +18,7 @@ const TREE: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [
     {
-      spaceId: "w1", label: "schema-migration", tabCount: 2, paneCount: 3,
+      spaceId: "w1", label: "schema-migration", origin: "herdr", tabCount: 2, paneCount: 3,
       tabs: [
         { tabId: "w1:t1", label: "migrate-up", panes: [
           { paneId: "w1:p1", harness: "codex", name: "schema-migration", title: "t", cwd: "/srv/project", state: "working" },
@@ -30,7 +30,7 @@ const TREE: SpaceTree = {
       ],
     },
     {
-      spaceId: "w2", label: "docs-cleanup", tabCount: 1, paneCount: 1,
+      spaceId: "w2", label: "docs-cleanup", origin: "herdr", tabCount: 1, paneCount: 1,
       tabs: [{ tabId: "w2:t1", label: null, panes: [
         { paneId: "w2:p1", harness: "claude", name: "docs-cleanup", title: "t", cwd: "/srv/project", state: "blocked" },
       ] }],
@@ -83,7 +83,7 @@ test("a space that exists but has zero tabs renders empty, distinguishably from 
   const EMPTY: SpaceTree = {
     readAt: 1_700_000_000_000,
     spaces: [
-      { spaceId: "w5", label: "flaky-test-fix", tabCount: 0, paneCount: 0, tabs: [] },
+      { spaceId: "w5", label: "flaky-test-fix", origin: "herdr", tabCount: 0, paneCount: 0, tabs: [] },
     ],
   };
   const host = await render(<Space spaceId="w5" onBack={() => {}} load={load(EMPTY)} />);

@@ -4,6 +4,7 @@ import type { Space } from "@shared/types";
 import { RowActions, type RenameTarget, type RowSenders } from "@web/components/RowActions";
 import { spaceState } from "@web/components/space-sort";
 import { NO_AGENT, StateMarker } from "@web/components/ui/StateMarker";
+import { OriginMark } from "@web/components/ui/OriginMark";
 
 /**
  * One space, as a row in the list.
@@ -53,6 +54,10 @@ export function SpaceRow({ space, onChanged, senders }: {
             shows one — see `ui/StateMarker.tsx`. */}
         <StateMarker state={state} />
         <span className="space-name">{label}</span>
+        {/* The quiet mark an app agent's row carries, for the same reason:
+            it says where the space lives. Terminal herdr spaces carry none,
+            so a TUI-only list is unchanged. */}
+        {space.origin === "core" && <OriginMark />}
         {/* Colour is never the only channel: StatusDot is aria-hidden, and this
             palette spends red and green on the two states that matter most. */}
         <span className="space-state">{state ?? NO_AGENT}</span>

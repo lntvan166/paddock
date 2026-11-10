@@ -12,7 +12,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state: "blocked", workspaceId: "w1",
     workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
@@ -20,12 +20,14 @@ function agent(over: Partial<Agent> = {}): Agent {
  *  the route derives FROM the screen rather than that it read one. */
 function harness(a: Agent = agent(), screen?: string[]) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([a], NOW);
+  store.replaceAll([a], NOW, "herdr");
   const calls: string[] = [];
   const actions = {
     // The line count is recorded, not just the call: it is the only
     // client-supplied value that reaches a herdr parameter, so what arrives
     // here is the thing under test.
+    async markSeen() {},
+    async promptAllowed() { return true; },
     async readOutput(_t: string, _s: Agent["state"], lines?: number) {
       calls.push(`readOutput:${lines}`);
       return { lines: screen ?? ["out"], source: "visible" as const };
@@ -52,7 +54,7 @@ function harness(a: Agent = agent(), screen?: string[]) {
   const hub = new Hub({ now: () => NOW });
   const app = createApp({
     store, hub, actions, now: () => NOW,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null }),
   });
   return { app, store, calls };
 }
@@ -231,10 +233,10 @@ test("ack marks a done agent and is refused for others", async () => {
 // was the one broken in the mode the README takes screenshots from.
 test("ack works with no herdr actions wired up at all, as in --demo", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent({ state: "done" })], NOW);
+  store.replaceAll([agent({ state: "done" })], NOW, "herdr");
   const app = createApp({
     store, hub: new Hub({ now: () => NOW }), now: () => NOW,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null }),
   });
   const res = await post(app, "/api/agents/w1:p1/ack");
   expect(res.status).toBe(200);
@@ -246,10 +248,10 @@ test("ack works with no herdr actions wired up at all, as in --demo", async () =
 // call, and a 404 is honest where a synthetic success would not be.
 test("the herdr-backed routes stay absent with no actions", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app = createApp({
     store, hub: new Hub({ now: () => NOW }), now: () => NOW,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null }),
   });
   for (const route of ["output", "prompt", "answer"]) {
     expect((await post(app, `/api/agents/w1:p1/${route}`, { key: "1" })).status).toBe(404);
@@ -258,10 +260,12 @@ test("the herdr-backed routes stay absent with no actions", async () => {
 
 test("a failed action reports ok:false rather than throwing", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app2 = createApp({
     store, hub: new Hub({ now: () => NOW }),
     actions: {
+      async markSeen() {},
+      async promptAllowed() { return true; },
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
       async readPromptScreen() { return ""; },
@@ -276,7 +280,7 @@ test("a failed action reports ok:false rather than throwing", async () => {
       async startAgent() {}, async harnessKinds() { return ["claude"]; },
       async sendPaneText() {}, async sendPaneKey() {},
     },
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null }),
   });
   const res = await post(app2, "/api/agents/w1:p1/answer", { key: "1" });
   expect(res.status).toBe(502);
@@ -377,10 +381,12 @@ test("an unknown agent is refused before any key is sent", async () => {
 
 test("a failed key reports ok:false with no lines, never a blanked screen", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app2 = createApp({
     store, hub: new Hub({ now: () => NOW }),
     actions: {
+      async markSeen() {},
+      async promptAllowed() { return true; },
       async readOutput() { return { lines: ["kept"], source: "visible" as const }; },
       async readPane() { return { lines: ["kept"], source: "recent_unwrapped" as const }; },
       async readPromptScreen() { return ""; },
@@ -395,7 +401,7 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
       async startAgent() {}, async harnessKinds() { return ["claude"]; },
       async sendPaneText() {}, async sendPaneKey() {},
     },
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null }),
   });
   const res = await post(app2, "/api/agents/w1:p1/key", { key: "enter" });
   expect(res.status).toBe(502);

@@ -46,6 +46,7 @@ dev: node_modules
 
 types:
 	bun run scripts/gen-herdr-types.ts
+	bun run scripts/gen-core-types.ts
 
 # Redraw every icon from assets/logo.svg. Deliberately NOT part of `make build`:
 # the rasters are committed so the server can ship them and GitHub can render the

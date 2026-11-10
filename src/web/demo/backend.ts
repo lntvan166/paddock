@@ -1,7 +1,9 @@
-import type { Agent, AgentState, HealthBody, ServerMessage, SettingsView } from "@shared/types";
+import type { Agent, AgentState, HealthBody, ServerMessage, SettingsView, Space } from "@shared/types";
+import { isCoreId } from "@shared/origin";
 import { diffScreens, digestOf } from "@shared/screen";
 import { DEMO_JOURNAL_AGENT_ID, DEMO_JOURNAL_LINES } from "@shared/demo-history";
 import {
+  APP_DEMO_OPTIONS,
   blockedScreen, DEMO_OPTIONS, DONE_SCREEN, IDLE_DOCS_SCREEN, SCREENS, WORKING_SCREEN,
 } from "@web/demo/screens";
 
@@ -55,7 +57,80 @@ const agents: Agent[] = SEED.map((s) => ({
   // shared with `server/demo.ts` (the CLI's `--demo` backend) so both hosts
   // tell the same invented story rather than two that could drift.
   hasJournal: s.id === DEMO_JOURNAL_AGENT_ID,
+  origin: "herdr",
+  turn: null,
+  seen: null,
 }));
+
+/**
+ * Two agents from the Herdr app (origin "core"), in one app space with two
+ * tabs — the same story `server/demo.ts` tells for `paddock --demo`. Invented.
+ * Their ids are core ids (`hc.…`), and every write to one is REFUSED below:
+ * the TUI half simulates its keys and replies, the app half does not, so a
+ * screenshot never shows an app answer that no code path produced.
+ */
+const APP_SPACE = { spaceId: "hc.docs-site", label: "docs-site" };
+const APP_SEED: Array<{ id: string; name: string; task: string; state: AgentState; ageMs: number; harness: string; turn: number; seen: number; tab: { tabId: string; label: string } }> = [
+  { id: "hc.t1", name: "release-notes", task: "Build the docs site", state: "blocked", ageMs: 90_000, harness: "claude", turn: 2, seen: 2, tab: { tabId: "hc.tab-build", label: "build" } },
+  { id: "hc.t2", name: "changelog-sync", task: "Sync the changelog with merged work", state: "working", ageMs: 30_000, harness: "codex", turn: 5, seen: 4, tab: { tabId: "hc.tab-notes", label: "notes" } },
+];
+for (const s of APP_SEED) {
+  agents.push({
+    hostId: HOST_ID,
+    agentId: s.id,
+    name: s.name,
+    task: s.task,
+    state: s.state,
+    workspaceId: APP_SPACE.spaceId,
+    workspaceLabel: APP_SPACE.label,
+    cwd: "/work/demo-docs",
+    harness: s.harness,
+    stateSince: Date.now() - s.ageMs, stateSinceExact: true,
+    updatedAt: Date.now(),
+    acknowledgedAt: null,
+    hasJournal: false,
+    origin: "core",
+    turn: s.turn,
+    seen: s.seen,
+  });
+}
+const appTabOf = new Map(APP_SEED.map((s) => [s.id, s.tab]));
+
+/**
+ * The space tree, derived from the agents: one space per TUI agent (each sits
+ * in its own, which is what `workspaceId` already says), and the app's agents
+ * grouped into their space, one tab each.
+ */
+function spacesFrom(list: Agent[]): Space[] {
+  const pane = (a: Agent) => ({
+    paneId: a.agentId,
+    harness: a.harness,
+    name: a.name,
+    title: null,
+    // Tilde-ised, like `toSpaceTree` does — the create sheet's folder
+    // field round-trips this form, so a raw path would come back wrong.
+    cwd: a.origin === "core" ? "~/work/demo-docs" : "~/work/demo",
+    state: a.state,
+  });
+  const tui: Space[] = list.filter((a) => a.origin === "herdr").map((a) => ({
+    spaceId: a.workspaceId,
+    label: a.name,
+    origin: a.origin,
+    tabCount: 1,
+    paneCount: 1,
+    tabs: [{ tabId: `${a.workspaceId}:t1`, label: null, panes: [pane(a)] }],
+  }));
+  const app = list.filter((a) => a.origin === "core");
+  if (app.length === 0) return tui;
+  return [...tui, {
+    spaceId: APP_SPACE.spaceId,
+    label: APP_SPACE.label,
+    origin: "core",
+    tabCount: app.length,
+    paneCount: app.length,
+    tabs: app.map((a) => ({ ...appTabOf.get(a.agentId)!, panes: [pane(a)] })),
+  }];
+}
 
 /**
  * A settings view with nothing configured.
@@ -107,6 +182,10 @@ function demoHealth(): HealthBody {
     latestKnown: null,
     managedBy: null,
     herdrProtocol: 20,
+    // The demo shows app agents, so its core is connected and its app open —
+    // the same story `herdrConnected: true` tells. Writes are still refused.
+    core: { connected: true, lastEventAt: Date.now(), generation: 1, version: null, detail: null },
+    app: { running: true },
     schemaWarning: null,
   };
 }
@@ -216,34 +295,11 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
    * mounted now, so the error was there whether or not anyone opened Spaces.
    *
    * Derived rather than hand-written, so the two screens cannot disagree about
-   * how many agents exist. Each seeded agent sits in its own space, which is
-   * what `workspaceId` already says.
+   * how many agents exist — see `spacesFrom`.
    */
   if (path.endsWith("/api/spaces")) {
     if (method === "POST") return refuse();
-    return json({
-      readAt: Date.now(),
-      spaces: agents.map((a) => ({
-        spaceId: a.workspaceId,
-        label: a.name,
-        tabCount: 1,
-        paneCount: 1,
-        tabs: [{
-          tabId: `${a.workspaceId}:t1`,
-          label: null,
-          panes: [{
-            paneId: a.agentId,
-            harness: a.harness,
-            name: a.name,
-            title: null,
-            // Tilde-ised, like `toSpaceTree` does — the create sheet's folder
-            // field round-trips this form, so a raw path would come back wrong.
-            cwd: "~/work/demo",
-            state: a.state,
-          }],
-        }],
-      })),
-    });
+    return json({ readAt: Date.now(), spaces: spacesFrom(agents) });
   }
 
   /**
@@ -280,6 +336,11 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
   const route = m[2]!;
   const agent = agents.find((a) => a.agentId === id);
   if (!agent) return json({ ok: false, detail: "unknown agent" }, 404);
+
+  // An app agent answers reads only. Its prompt, screen, commands and history
+  // render; every write — an answer, a key, a reply, Dismiss, the open mark —
+  // is refused in the same words `paddock --demo` uses.
+  if (isCoreId(id) && !APP_READS.has(route)) return refuse();
 
   if (route === "output") {
     const lines = liveScreen(id);
@@ -323,6 +384,14 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
 
   if (route === "prompt") {
     if (agent.state !== "blocked") return json({ question: null, options: null, selected: null, raw: "" });
+    if (agent.origin === "core") {
+      return json({
+        question: "Do you want to proceed?",
+        options: APP_DEMO_OPTIONS,
+        selected: `1. ${APP_DEMO_OPTIONS[0]!.label}`,
+        raw: liveScreen(id).join("\n"),
+      });
+    }
     return json({
       question: "Do you want to proceed?",
       options: DEMO_OPTIONS.map((o, i) => ({ ...o, selected: i === cursor })),
@@ -389,6 +458,9 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
     });
   }
 
+  // A TUI agent has nothing to write (an app agent was refused above).
+  if (route === "opened") return new Response(null, { status: 204 });
+
   if (route === "ack") {
     if (agent.state !== "done" || agent.acknowledgedAt !== null) {
       return json({ ok: false, detail: "not a fresh done agent" }, 409);
@@ -400,6 +472,9 @@ function handle(url: string, body: Record<string, unknown>, method: string): Res
 
   return json({ ok: false, detail: "not found" }, 404);
 }
+
+/** The routes an app agent answers in the demo: reads, nothing else. */
+const APP_READS = new Set(["output", "prompt", "commands", "history"]);
 
 /** Answering moves the agent on, exactly as a real one would. */
 function answer(agent: Agent): void {

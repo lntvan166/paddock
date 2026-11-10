@@ -274,6 +274,9 @@ export class HerdrStream {
   // Set when this open()'s close handler has already reported a disconnect,
   // so a failure that lands in both places is reported once, not twice.
   private downReported = false;
+  // What `up` returns: the last state this stream reported, kept across a
+  // routine reopen's teardown. See `up`.
+  private reportedUp = false;
   // Resolved/rejected when the events.subscribe acknowledgement frame
   // arrives. `open()` awaits this so callers only see it resolve once the
   // subscription genuinely started — see the comment in `open()` below for
@@ -284,6 +287,23 @@ export class HerdrStream {
 
   get connected(): boolean {
     return this.socket !== null;
+  }
+
+  /**
+   * Whether terminal herdr is up, as the stream last REPORTED it: true from a
+   * successful open() until a disconnect nobody asked for, a reopen that
+   * failed, or close().
+   *
+   * Not the same as `connected`. A routine resubscribe (every agent start or
+   * exit) tears the old socket down before the new one is acknowledged, so
+   * `connected` is false for that window while herdr is running fine. Gating
+   * actions on it turned an answer tapped in that window into a 503 "terminal
+   * herdr is not running", and could stop a multi-step dialog walk half-done.
+   * This is what gates terminal herdr's actions; `connected` stays what
+   * health reports.
+   */
+  get up(): boolean {
+    return this.reportedUp;
   }
 
   /**
@@ -310,7 +330,11 @@ export class HerdrStream {
    */
   async open(subs: Subscription[]): Promise<void> {
     const replacingLiveStream = this.socket !== null;
+    // close() also clears `up`; a routine reopen is not a disconnect, so
+    // what was reported before it stands until this open() says otherwise.
+    const wasUp = this.reportedUp;
     this.close();
+    this.reportedUp = wasUp;
     this.wantOpen = true;
     this.downReported = false;
     this.buffer = "";
@@ -350,7 +374,7 @@ export class HerdrStream {
             if (this.wantOpen) {
               console.error("herdr: event stream closed unexpectedly");
               this.downReported = true;
-              this.opts.onStateChange?.(false);
+              this.report(false);
             }
             // If the socket closed before the subscribe ack arrived, settle
             // open()'s promise instead of leaving the caller's `await` hanging
@@ -382,12 +406,12 @@ export class HerdrStream {
       if (replacingLiveStream && !this.downReported) {
         this.downReported = true;
         console.error("herdr: could not re-open the event stream", err);
-        this.opts.onStateChange?.(false);
+        this.report(false);
       }
       throw err;
     }
 
-    this.opts.onStateChange?.(true);
+    this.report(true);
   }
 
   /**
@@ -422,8 +446,15 @@ export class HerdrStream {
     ack?.reject(err);
   }
 
+  /** Record and announce a state change. The only writer of `reportedUp` besides close(). */
+  private report(up: boolean): void {
+    this.reportedUp = up;
+    this.opts.onStateChange?.(up);
+  }
+
   close(): void {
     this.wantOpen = false;
+    this.reportedUp = false;
     // Settle a still-pending open() rather than leaving it to hang forever:
     // close() can race an in-flight open() (e.g. open() called again before
     // the first one's ack arrived).

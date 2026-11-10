@@ -3,6 +3,7 @@ import { createApp } from "@server/routes";
 import { AgentStore } from "@server/state/store";
 import { Hub } from "@server/ws/hub";
 import type { Agent, SpaceTree } from "@shared/types";
+import type { Origin } from "@shared/origin";
 
 // ── The §3 invariant, guarded ────────────────────────────────────────────
 //
@@ -43,14 +44,14 @@ function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state: "working", workspaceId: "w1",
     workspaceLabel: "example-space", cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
 const TREE: SpaceTree = {
   readAt: NOW,
   spaces: [{
-    spaceId: "w1", label: "example-space", tabCount: 1, paneCount: 2,
+    spaceId: "w1", label: "example-space", origin: "herdr", tabCount: 1, paneCount: 2,
     tabs: [{
       tabId: "w1:t1", label: "docs-cleanup",
       panes: [
@@ -84,9 +85,9 @@ class RecordingStore extends AgentStore {
     return super.remove(agentId);
   }
 
-  replaceAll(incoming: Agent[], now: number) {
+  replaceAll(incoming: Agent[], now: number, origin: Origin) {
     this.writes.push(`replaceAll:${incoming.length}`);
-    return super.replaceAll(incoming, now);
+    return super.replaceAll(incoming, now, origin);
   }
 
   applyEvent(agentId: string, mutate: (prev: Agent) => Agent) {
@@ -120,7 +121,7 @@ class RecordingHub extends Hub {
 
 function harness() {
   const store = new RecordingStore("dev-box");
-  store.replaceAll([agent()], NOW); // setup, not a route call — cleared below
+  store.replaceAll([agent()], NOW, "herdr"); // setup, not a route call — cleared below
   const hub = new RecordingHub({ now: () => NOW });
 
   const actionCalls: string[] = [];
@@ -130,6 +131,8 @@ function harness() {
     now: () => NOW,
     readTree: async () => TREE,
     actions: {
+      async markSeen() {},
+      async promptAllowed() { return true; },
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
       async readPromptScreen() { return ""; },
@@ -160,7 +163,7 @@ function harness() {
     },
     health: () => ({
       ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW,
-      lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null,
+      lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null,
       schemaWarning: null,
     }),
   });

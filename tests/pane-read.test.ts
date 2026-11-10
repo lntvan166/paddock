@@ -26,7 +26,7 @@ const NOW = 1_700_000_000_000;
 const TREE: SpaceTree = {
   readAt: NOW,
   spaces: [{
-    spaceId: "w1", label: "example-space", tabCount: 1, paneCount: 2,
+    spaceId: "w1", label: "example-space", origin: "herdr", tabCount: 1, paneCount: 2,
     tabs: [{
       tabId: "w1:t1", label: null,
       panes: [
@@ -51,6 +51,8 @@ function harness(
     now: () => NOW,
     readTree,
     actions: {
+      async markSeen() {},
+      async promptAllowed() { return true; },
       async readOutput() { return { lines: [], source: "visible" as const }; },
       readPane,
       async readPromptScreen() { return ""; },
@@ -73,7 +75,7 @@ function harness(
     },
     health: () => ({
       ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: true, lastEventAt: NOW,
-      lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null,
+      lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null,
       schemaWarning: null,
     }),
   });

@@ -26,7 +26,7 @@ test("the tree is derived from the agents, not written out by hand", () => {
   // Two hand-written fixtures drift, and the drift shows as a dashboard and a
   // Spaces screen disagreeing about how many agents exist — in a screenshot.
   const branch = src.slice(src.indexOf('path.endsWith("/api/spaces")'));
-  expect(branch.slice(0, 800)).toContain("agents.map(");
+  expect(branch.slice(0, 800)).toContain("spacesFrom(agents)");
 });
 
 test("a create is refused, not quietly resolved", () => {
@@ -68,4 +68,53 @@ test("the method is threaded through, since /api/spaces is both a read and a wri
   // break the screen or fake a create.
   expect(src).toContain("function handle(url: string, body: Record<string, unknown>, method: string)");
   expect(src).toContain('method === "POST"');
+});
+
+// ── behaviour: the app half of the browser demo ─────────────────────────────
+//
+// These EXECUTE the backend, unlike the source checks above, restoring the
+// globals it replaces so no other file inherits a fake `fetch`.
+
+const SENTENCE = "this is the demo — paddock has no herdr here, so nothing was sent";
+
+async function withDemo(f: () => Promise<void>): Promise<void> {
+  const savedFetch = globalThis.fetch;
+  const savedWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
+  try {
+    const { installDemoBackend } = await import("@web/demo/backend");
+    installDemoBackend();
+    await f();
+  } finally {
+    globalThis.fetch = savedFetch;
+    (globalThis as { WebSocket?: unknown }).WebSocket = savedWebSocket;
+  }
+}
+
+test("the browser demo's Spaces has one app space, docs-site, with two tabs", async () => {
+  await withDemo(async () => {
+    const tree = await (await fetch("/api/spaces")).json() as {
+      spaces: { spaceId: string; label: string; origin: string; tabCount: number; tabs: { tabId: string; label: string | null; panes: { paneId: string }[] }[] }[];
+    };
+    const app = tree.spaces.filter((s) => s.origin === "core");
+    expect(app.map((s) => s.label)).toEqual(["docs-site"]);
+    expect(app[0]!.tabs.map((t) => t.label)).toEqual(["build", "notes"]);
+    expect(app[0]!.tabCount).toBe(2);
+    // The TUI half is unchanged: still one space per TUI agent.
+    expect(tree.spaces.filter((s) => s.origin === "herdr")).toHaveLength(6);
+  });
+});
+
+test("every browser-demo write to a core id is refused with the demo message", async () => {
+  await withDemo(async () => {
+    for (const route of ["answer", "key", "text", "ack", "opened", "dialog-key", "type", "name", "select", "note", "image"]) {
+      const res = await fetch(`/api/agents/hc.t1/${route}`, { method: "POST", body: JSON.stringify({ key: "1", text: "x" }) });
+      expect(res.status, `${route} on an app agent was not refused`).toBe(409);
+      expect(((await res.json()) as { detail: string }).detail).toBe(SENTENCE);
+    }
+    // Reads still answer, so the blocked app agent's card and terminal render.
+    const prompt = await (await fetch("/api/agents/hc.t1/prompt", { method: "POST", body: "{}" })).json() as { options: unknown[] | null };
+    expect(prompt.options?.length).toBe(3);
+    const out = await fetch("/api/agents/hc.t1/output", { method: "POST", body: "{}" });
+    expect(out.status).toBe(200);
+  });
 });

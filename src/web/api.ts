@@ -1,6 +1,7 @@
+import type { Origin } from "@shared/origin";
 import type {
   ActionResult, AgentCommand, CloseSpaceResult, CloseTabResult, CreateSpaceResult, CreateTabResult,
-  HarnessesResult, HistoryResult, KeyResult, NavKey, OutputResult,
+  HarnessesResult, HealthBody, HistoryResult, KeyResult, NavKey, OutputResult,
   PaneOutput, ParsedPrompt, RenderMode, SpaceTree, StartAgentResult,
 } from "@shared/types";
 
@@ -320,6 +321,22 @@ export const acknowledge = (id: string, f: Fetch = fetch) =>
   act(url(id, "ack"), {}, f);
 
 /**
+ * Tell the server the operator opened this agent's terminal, so a herdr-core
+ * agent's `herdr.seen` can follow. A background courtesy: it resolves with the
+ * outcome and never throws, and the caller logs a refusal rather than showing
+ * it. `204` is success; a refusal carries the server's `detail`.
+ */
+export async function markOpened(id: string, f: Fetch = fetch): Promise<ActionResult> {
+  try {
+    const res = await request(url(id, "opened"), {}, f);
+    if (res.ok) return { ok: true };
+    return { ok: false, detail: (await detailFrom(res)) ?? `request failed: ${res.status}` };
+  } catch (err) {
+    return { ok: false, detail: String(err) };
+  }
+}
+
+/**
  * Send a navigation key and take back the screen it produced.
  *
  * Uses the action convention, not the read convention: a rejected key is a
@@ -586,8 +603,21 @@ export async function closeSpace(id: string, f: Fetch = fetch): Promise<CloseSpa
  * over-length label/cwd, or herdr declining) rejects with the server's
  * `detail` for the caller to render.
  */
+/**
+ * What a create sends. `origin` picks the backend of a new SPACE (absent:
+ * terminal herdr). `kind`/`name` start an agent AS the new terminal, which
+ * only an app space does — terminal herdr starts it in the new pane after.
+ */
+export interface CreateBody {
+  label?: string;
+  cwd?: string;
+  origin?: Origin;
+  kind?: string;
+  name?: string;
+}
+
 export async function createSpace(
-  opts: { label?: string; cwd?: string } = {}, f: Fetch = fetch,
+  opts: CreateBody = {}, f: Fetch = fetch,
 ): Promise<CreateSpaceResult> {
   return readJson<CreateSpaceResult>("/api/spaces", opts, f);
 }
@@ -595,7 +625,7 @@ export async function createSpace(
 /** Create a tab in an existing space. Same shape as `createSpace`, one
  *  level down. */
 export async function createTab(
-  spaceId: string, opts: { label?: string; cwd?: string } = {}, f: Fetch = fetch,
+  spaceId: string, opts: CreateBody = {}, f: Fetch = fetch,
 ): Promise<CreateTabResult> {
   return readJson<CreateTabResult>(spaceUrl(spaceId, "tabs"), opts, f);
 }
@@ -624,6 +654,17 @@ export async function startAgent(
  * there is no payload to keep out of an access log, and a non-2xx response
  * rejects rather than resolving with a value shaped like success.
  */
+/** The server's health, read for what the create sheet offers: whether
+ *  herdr-core is connected, and whether the Herdr app is up to name things. */
+export async function fetchHealth(f: Fetch = fetch): Promise<HealthBody> {
+  const res = await f("/api/health", { method: "GET" });
+  if (!res.ok) {
+    const detail = await detailFrom(res);
+    throw new RequestFailed(res.status, detail ?? `request failed: ${res.status}`);
+  }
+  return (await res.json()) as HealthBody;
+}
+
 export async function fetchHarnessKinds(f: Fetch = fetch): Promise<HarnessesResult> {
   const res = await f("/api/harnesses", { method: "GET" });
   if (!res.ok) {

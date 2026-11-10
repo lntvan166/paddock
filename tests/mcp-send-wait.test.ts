@@ -19,7 +19,7 @@ function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "schema-migration",
     task: "Add the orders index", state: "idle", workspaceId: "w1",
     workspaceLabel: null, cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: true, ...over,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: true, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
@@ -27,12 +27,12 @@ function agent(over: Partial<Agent> = {}): Agent {
 function world(start: Partial<Agent> = {}, actionsOver: Partial<HerdrActions> = {}) {
   const store = new AgentStore("dev-box");
   const watch = new AgentWatch();
-  store.replaceAll([agent(start)], NOW);
+  store.replaceAll([agent(start)], NOW, "herdr");
   const sent: string[] = [];
   let lines: string[] = [];
   const setState = (state: Agent["state"]) => {
     const cur = store.snapshot()[0]!;
-    watch.observe(store.replaceAll([{ ...cur, state }], NOW));
+    watch.observe(store.replaceAll([{ ...cur, state }], NOW, "herdr"));
   };
   const actions = {
     async readOutput() { return { lines: ["screen line"], source: "visible" as const }; },
@@ -171,7 +171,7 @@ test("never_started after the grace", async () => {
 
 test("removal ends the wait", async () => {
   const w = world({ state: "working" });
-  later(20, () => w.watch.observe(w.store.replaceAll([], NOW)));
+  later(20, () => w.watch.observe(w.store.replaceAll([], NOW, "herdr")));
   const t0 = Date.now();
   const r = await w.call("wait_for_agent", { id: "w1:p1", cursor: TAG, wait_seconds: 1 });
   expect(r).toEqual({ ok: false, error: "agent is gone" });
@@ -186,7 +186,7 @@ test("a malformed cursor is refused", async () => {
 });
 
 test("no-journal agent: waiting on a working send is refused before sending", async () => {
-  const w = world({ state: "working", hasJournal: false });
+  const w = world({ state: "working", hasJournal: false, origin: "herdr", turn: null, seen: null });
   const r = await w.call("send_message", { id: "w1:p1", text: "go", wait_seconds: 10 });
   expect(r.ok).toBe(false);
   expect(r.error).toContain("no journal");
@@ -194,7 +194,7 @@ test("no-journal agent: waiting on a working send is refused before sending", as
 });
 
 test("no-journal agent: finished on the state edge, from the screen", async () => {
-  const w = world({ hasJournal: false });
+  const w = world({ hasJournal: false, origin: "herdr", turn: null, seen: null });
   later(20, () => w.setState("working"));
   later(50, () => w.setState("idle"));
   const r = await w.call("send_message", { id: "w1:p1", text: "go", wait_seconds: 1 });

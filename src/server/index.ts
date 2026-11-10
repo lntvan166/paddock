@@ -1,8 +1,8 @@
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@server/routes";
-import { createDemoSource, DemoSource, DEMO_HOST_ID, demoJournalPage, demoSessionFor } from "@server/demo";
+import { createDemoSource, DemoSource, DEMO_HOST_ID, demoJournalPage, demoSessionFor, seedDemo } from "@server/demo";
 import { demoActions, demoTree } from "@server/demo-actions";
 import {
   HerdrStream,
@@ -11,7 +11,7 @@ import {
   request,
   type Subscription,
 } from "@server/herdr/socket";
-import { connectWithWait, resolveWaitMs } from "@server/herdr/await-start";
+import { connectWithWait, mayRunWithoutHerdr, resolveWaitMs } from "@server/herdr/await-start";
 import { readAgentCommands } from "@server/commands/read";
 import { claudeHomes } from "@server/journal/files";
 import { saveImage } from "@server/uploads/store";
@@ -22,6 +22,8 @@ import { toSpaceTree } from "@server/herdr/tree";
 import { AgentStore } from "@server/state/store";
 import { PresenceStore } from "@server/state/presence";
 import { Supervisor } from "@server/supervisor";
+import { CoreSupervisor } from "@server/herdr-core/supervisor";
+import { CoreClient, locateCoreSocket } from "@server/herdr-core/socket";
 import { createJournalReader, defaultRoots, type JournalReader } from "@server/journal/read";
 import { shapeMessage, shapeSummary } from "@server/herdr/shape";
 import { Hub } from "@server/ws/hub";
@@ -62,6 +64,11 @@ import { runDoctor } from "@server/doctor";
 import { detectManagedBy, runUpdate } from "@server/update";
 import { noUpdateCheckRequested, scheduleUpdateChecks } from "@server/update-check";
 import { say, warn } from "@server/term";
+import { createAppSocket } from "@server/herdr-core/app-socket";
+import { createCoreActions, requireCore } from "@server/herdr-core/actions";
+import { mergeTrees, readCoreSpaces } from "@server/herdr-core/tree";
+import { actionsByOrigin, requireHerdr } from "@server/actions-by-origin";
+import { createSpacesReader } from "@server/spaces-read";
 import { BootLog } from "@server/boot-log";
 import {
   errorCode,
@@ -694,6 +701,21 @@ presence.onChange((agentId) => notifier.reconsider(agentId));
 let herdrProtocol: number | null = null;
 
 let supervisor: Supervisor | null = null;
+// Is the Herdr app up (its command socket accepts)? `health()` is synchronous,
+// so a probe every few seconds feeds it; never longer than that, because the
+// app is opened and closed by hand.
+let appRunning = false;
+// Also the core actions' route to the app (space and tab names). Null in demo.
+const appSocket = DEMO ? null : createAppSocket();
+if (appSocket) {
+  const probe = () => { void appSocket.available().then((up) => { appRunning = up; }); };
+  probe();
+  setInterval(probe, 3000).unref();
+}
+
+// herdr-core (the Herdr app's runtime): optional, absent in --demo. It feeds the
+// same store; a missing core is a logged state, never an error.
+let coreSupervisor: CoreSupervisor | null = null;
 let demo: DemoSource | null = null;
 // Demo has no herdr to act on, so the herdr-backed action routes stay unset
 // and 404 honestly rather than pretending to answer a synthetic agent. `/ack`
@@ -728,7 +750,7 @@ if (DEMO) {
   // one call, so an edit cannot make the herdr branch look like this one by
   // accident; see `index-wiring.ts`.
   demo = createDemoSource({ store, onDelta: deltaSink(hub, null, watch) });
-  store.replaceAll(demo.snapshot(), Date.now());
+  seedDemo(store, demo.snapshot(), Date.now());
   // Reads answer, writes refuse. `demoTree` is read fresh on every call so its
   // `readAt` is the moment it was asked — the Spaces screen renders "as of 3s
   // ago" from that, and a frozen timestamp would age visibly on screen.
@@ -756,16 +778,38 @@ if (DEMO) {
     },
   });
   stream = herdrStream;
-  actions = createActions(socketPath);
+  // One object over both backends: core ids (`hc.…`) go to herdr-core, the
+  // rest to terminal herdr. The core side asks the supervisor for its live
+  // client on every call, so a core that is down is a 503 naming it, and a
+  // reconnect needs no rewiring.
+  actions = actionsByOrigin(
+    // Guarded like the core: a terminal herdr that is not running is a 503
+    // naming it (and app-only harness kinds fall back to the core's), not a
+    // socket error per call. The stream is what knows whether it is up —
+    // `up`, not `connected`, which is false during every routine resubscribe.
+    requireHerdr(createActions(socketPath), () => herdrStream.up),
+    createCoreActions(requireCore(() => coreSupervisor?.connection() ?? null), appSocket!),
+  );
   const client = {
     request: <T,>(method: string, params?: object) => request<T>(socketPath, method, params),
     openStream: (subs: Subscription[]) => herdrStream.open(subs),
   };
-  readTree = async () => toSpaceTree(
-    (await client.request<{ snapshot: HerdrSessionSnapshot }>("session.snapshot", {})).snapshot,
-    Date.now(),
-    { home: process.env.HOME },
-  );
+  // Both backends' spaces, terminal herdr's first. Each side fails on its own
+  // (`spaces-read.ts`): a terminal herdr that is not running still shows the
+  // app's spaces, and a core that is not connected adds nothing, so a
+  // TUI-only setup reads exactly what it read before.
+  // The live core client is looked up per read, because the core comes and goes.
+  readTree = createSpacesReader({
+    herdr: async () => {
+      const snap = await client.request<{ snapshot: HerdrSessionSnapshot }>("session.snapshot", {});
+      return toSpaceTree(snap.snapshot, Date.now(), { home: process.env.HOME });
+    },
+    core: () => {
+      const core = coreSupervisor?.connection() ?? null;
+      return core ? readCoreSpaces(core, process.env.HOME) : Promise.resolve(null);
+    },
+    merge: mergeTrees,
+  });
   supervisor = new Supervisor({
     client,
     store,
@@ -852,36 +896,115 @@ if (DEMO) {
     onFatal: () => process.exit(1),
   });
 
+  // herdr-core is optional and never blocks boot for long: the supervisor logs
+  // its own state, so a missing app costs one INFO line. Started BEFORE the
+  // herdr wait when its socket is on disk, so boot knows whether paddock can
+  // run on the app alone (`mayRunWithoutHerdr`). With no core socket at all,
+  // the herdr path below runs exactly as it did before there was a core.
+  const coreSocketPath = () => locateCoreSocket(process.env, process.getuid?.() ?? 0, (p) => existsSync(p));
+  const startCore = (): CoreSupervisor => {
+    if (coreSupervisor) return coreSupervisor;
+    coreSupervisor = new CoreSupervisor({
+      connect: () => {
+        const path = coreSocketPath();
+        return path ? new CoreClient(path) : null;
+      },
+      store,
+      onDelta: deltaSink(hub, notifier, watch),
+    });
+    coreSupervisor.start();
+    return coreSupervisor;
+  };
+  /** Is a core connected? Starts it when its socket is there; bounded, because
+   *  a core that accepts and never answers must not hold boot for the request
+   *  timeout. */
+  const coreConnected = async (): Promise<boolean> => {
+    const path = coreSocketPath();
+    if (!coreSupervisor && (path === null || !existsSync(path))) return false;
+    const sup = startCore();
+    await Promise.race([sup.firstAttempt(), Bun.sleep(3_000)]);
+    return sup.connection() !== null;
+  };
+  const coreFirst = await coreConnected();
+
   // Bounded wait rather than a bare try/catch: a herdr that is not up YET is
   // not the same failure as a herdr answering with an incompatible protocol,
   // and this used to exit for both. See `herdr/await-start.ts` for which
   // failures are waited on and why the wait has a ceiling.
+  //
+  // With a core already connected there is no wait: paddock has something to
+  // serve, and a herdr that starts later is picked up in the background.
   const waitMs = resolveWaitMs(process.env);
+  const connectHerdr = async () => {
+    const check = await checkProtocol(socketPath);
+    // Before `start()`, so a shape message printed during it names the
+    // protocol actually answering rather than "0".
+    herdrProtocol = check.kind === "newer" ? check.herdr : HERDR_PROTOCOL;
+    if (check.kind === "newer") {
+      // Reported once, at INFO: this is the ordinary case now, not a problem.
+      // herdr bumps its protocol often and mostly additively, and the fields
+      // paddock reads are verified against live data below.
+      console.info(
+        `herdr protocol ${check.herdr} is newer than this paddock (built for ${check.paddock});` +
+          " verifying the fields paddock reads against agent.list",
+      );
+    }
+
+    // `!` for the same reason the keeper's refresh() above uses it: assigned
+    // unconditionally at construction, but inside a closure TS cannot see it.
+    await supervisor!.start();
+    return check.kind === "newer" ? check.herdr : HERDR_PROTOCOL;
+  };
   const started = await connectWithWait({
     socketPath,
-    budgetMs: waitMs,
-    connect: async () => {
-      const check = await checkProtocol(socketPath);
-      if (check.kind === "newer") {
-        // Reported once, at INFO: this is the ordinary case now, not a problem.
-        // herdr bumps its protocol often and mostly additively, and the fields
-        // paddock reads are verified against live data below.
-        console.info(
-          `herdr protocol ${check.herdr} is newer than this paddock (built for ${check.paddock});` +
-            " verifying the fields paddock reads against agent.list",
-        );
-      }
-
-      // `!` for the same reason the keeper's refresh() above uses it: assigned
-      // unconditionally at construction, but inside a closure TS cannot see it.
-      await supervisor!.start();
-      return check.kind === "newer" ? check.herdr : HERDR_PROTOCOL;
-    },
+    budgetMs: coreFirst ? 0 : waitMs,
+    connect: connectHerdr,
     onWaiting: (_err, pathKind) =>
       warn(herdrWaitingMessage(socketPath, pathKind, waitMs)),
   });
 
-  if (started.kind !== "ready") {
+  if (started.kind !== "ready" && mayRunWithoutHerdr(started, coreFirst || (await coreConnected()))) {
+    // App only: terminal herdr is absent and the core is up. Said once, at
+    // INFO, with the reason — the spec's "either backend may be absent".
+    // Settings → Connection shows herdr as not connected.
+    console.info(
+      `paddock: terminal herdr is not running (${socketPath}: ${(started.err as Error)?.message ?? String(started.err)});` +
+        " running with herdr-core only — terminal herdr is picked up when it starts",
+    );
+    // Picked up later, with no wait ceiling and no per-attempt log: the
+    // absence was said above. A herdr that then appears WRONG (a protocol
+    // mismatch, a path that is not a socket) is said once and left alone —
+    // exiting would take the app's agents down with it.
+    void connectWithWait({ socketPath, budgetMs: Number.POSITIVE_INFINITY, connect: connectHerdr }).then((later) => {
+      if (later.kind === "ready") {
+        herdrProtocol = later.protocol;
+        // The boot-time shape rule, applied late: rendering every agent in one
+        // wrong state is worse than not showing them. At boot that is an exit;
+        // here the app's agents are already being served, so terminal herdr is
+        // refused instead — its agents removed, its stream closed, and no retry
+        // until paddock restarts. `onShapeChange` has already printed the
+        // detail, and `health.schemaWarning` keeps saying it.
+        if (supervisor!.shape.kind === "broken") {
+          console.error(
+            "paddock: refusing to show terminal herdr — herdr's agent.list does not match what paddock reads;" +
+              " still running with herdr-core only (restart paddock after fixing it)",
+          );
+          keeper?.stop();
+          supervisor!.stop();
+          herdrStream.close();
+          deltaSink(hub, notifier, watch)(store.removeOrigin("herdr"));
+          return;
+        }
+        console.info("paddock: terminal herdr is up; showing both backends");
+        return;
+      }
+      const { err, pathKind } = later;
+      if (err instanceof ProtocolMismatchError) warn(err.message);
+      else if (isDiagnosableHerdrFailure(err, pathKind)) warn(herdrUnreachableMessage(socketPath, err, pathKind));
+      else console.error(err);
+      console.info("paddock: still running with herdr-core only");
+    });
+  } else if (started.kind !== "ready") {
     // Unchanged reporting: a mismatch speaks for itself, a diagnosable
     // failure gets the sentence built for it, and anything else keeps its
     // stack. `gaveUp` lands here too — after the wait, an absent herdr is
@@ -899,26 +1022,31 @@ if (DEMO) {
       warn(herdrUnreachableMessage(socketPath, err, pathKind));
     else console.error(err);
     process.exit(1);
-  }
-  herdrProtocol = started.protocol;
+  } else {
+    herdrProtocol = started.protocol;
 
-  // The startup half of the shape check. `start()` has just reconciled, so
-  // this verdict is about real data. Refusing here is deliberate: rendering
-  // every agent in one wrong state, or every row under the same label, is
-  // worse than not starting, because the operator would act on it.
-  //
-  // Never waited on: this is a LIVE herdr giving a real answer, and it will
-  // give the same one in a minute.
-  const shape = supervisor.shape;
-  if (shape.kind === "broken") {
-    // Worded for BOTH causes. A verdict can be broken because a required
-    // field is gone OR because agent_status carries a value outside the
-    // generated enum, and "missing fields" would misdescribe the second —
-    // sending the operator to look for an absent key that is right there.
-    console.error(
-      "paddock: refusing to start — herdr's agent.list does not match what paddock reads",
-    );
-    process.exit(1);
+    // A core whose socket was not there at boot may still come: the
+    // supervisor retries on its own, as it always has.
+    startCore();
+
+    // The startup half of the shape check. `start()` has just reconciled, so
+    // this verdict is about real data. Refusing here is deliberate: rendering
+    // every agent in one wrong state, or every row under the same label, is
+    // worse than not starting, because the operator would act on it.
+    //
+    // Never waited on: this is a LIVE herdr giving a real answer, and it will
+    // give the same one in a minute.
+    const shape = supervisor.shape;
+    if (shape.kind === "broken") {
+      // Worded for BOTH causes. A verdict can be broken because a required
+      // field is gone OR because agent_status carries a value outside the
+      // generated enum, and "missing fields" would misdescribe the second —
+      // sending the operator to look for an absent key that is right there.
+      console.error(
+        "paddock: refusing to start — herdr's agent.list does not match what paddock reads",
+      );
+      process.exit(1);
+    }
   }
 }
 
@@ -1024,6 +1152,15 @@ const appDeps = {
     latestKnown,
     managedBy,
     herdrProtocol: DEMO ? HERDR_PROTOCOL : herdrProtocol,
+    // The demo shows the app's agents, so it reports a connected core and a
+    // running app, the same way it reports `herdrConnected: true`: the screen
+    // describes the demo's story. Every write in it is still refused.
+    core: DEMO
+      ? { connected: true, lastEventAt: Date.now(), generation: 1, version: null, detail: null }
+      : (coreSupervisor?.health() ?? {
+        connected: false, lastEventAt: null, generation: null, version: null, detail: "not started",
+      }),
+    app: { running: DEMO ? true : appRunning },
     // Read from the supervisor rather than cached here, for the same reason
     // herdrConnected reads the stream: a copy can go stale and then lie.
     schemaWarning: shapeSummary(supervisor?.shape ?? { kind: "unknown" }),
@@ -1224,6 +1361,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     // open — but a timer that fires against a torn-down store would report
     // about an agent nobody is watching any more.
     notifier.dispose();
+    coreSupervisor?.stop();
     // The sweep timer is unref'd too, but a stale-viewer entry surviving this
     // process's own shutdown would answer `viewers()` on a socket that no
     // longer exists.

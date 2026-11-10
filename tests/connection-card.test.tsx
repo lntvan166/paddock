@@ -6,7 +6,7 @@ import { render, textsOf, unmount } from "./support/render";
 
 afterEach(async () => { await unmount(); });
 
-const LABELS = ["Endpoint", "Secure context", "herdr", "Last event", "Protocol", "Server version"];
+const LABELS = ["Endpoint", "Secure context", "herdr", "herdr-core", "Herdr app", "Last event", "Protocol", "Server version"];
 
 test("every diagnostics row is rendered before the data arrives", async () => {
   // A row that appears when its data lands GROWS the card and shoves
@@ -35,4 +35,29 @@ test("the running version is in the Updates subtitle", async () => {
 test("values are monospace, because a build id is not prose", async () => {
   const host = await render(<InfoSection health={null} />);
   expect((host.querySelector(".dl-value") as HTMLElement).className).toContain("dl-value");
+});
+
+test("connection card shows herdr-core as not running when absent", async () => {
+  const core = { connected: false, lastEventAt: null, generation: null, version: null, detail: "no herdr-core socket found" };
+  const host = await render(<InfoSection health={{ version: "0.8.5", herdrConnected: true, core } as never} />);
+  const rows = Array.from(host.querySelectorAll(".dl-row")).map((r) => r.textContent ?? "");
+  const row = rows.find((r) => r.startsWith("herdr-core")) ?? "";
+  expect(row).toContain("Not running");
+  expect(row).toContain("no herdr-core socket found");
+});
+
+test("connection card shows herdr-core as connected", async () => {
+  const core = { connected: true, lastEventAt: 1, generation: 1, version: "1.0.0", detail: null };
+  const host = await render(<InfoSection health={{ version: "0.8.5", herdrConnected: true, core } as never} />);
+  const rows = Array.from(host.querySelectorAll(".dl-row")).map((r) => r.textContent ?? "");
+  expect(rows.find((r) => r.startsWith("herdr-core"))).toContain("Connected");
+});
+
+test("connection card shows the Herdr app as running or not running", async () => {
+  for (const [app, text] of [[{ running: true }, "Running"], [{ running: false }, "Not running"]] as const) {
+    const host = await render(<InfoSection health={{ version: "0.8.5", herdrConnected: true, core: null, app } as never} />);
+    const rows = Array.from(host.querySelectorAll(".dl-row")).map((r) => r.textContent ?? "");
+    expect(rows.find((r) => r.startsWith("Herdr app"))).toBe(`Herdr app${text}`);
+    await unmount();
+  }
 });

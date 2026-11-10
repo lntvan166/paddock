@@ -8,7 +8,7 @@ function space(spaceId: string, states: (Space["tabs"][number]["panes"][number][
     name: null, title: null, cwd: "/srv/project", state,
   }));
   return {
-    spaceId, label: spaceId, tabCount: 1, paneCount: panes.length,
+    spaceId, label: spaceId, origin: "herdr", tabCount: 1, paneCount: panes.length,
     tabs: [{ tabId: `${spaceId}:t1`, label: null, panes }],
   };
 }

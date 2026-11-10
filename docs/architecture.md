@@ -185,6 +185,95 @@ before any of `herdr/`, `state/store.ts` or `ws/hub.ts` is even constructed —
 the detached child it spawns does. Nothing in `herdr/`, `state/store.ts` or
 `ws/hub.ts` imports `lifecycle/` or knows it exists.
 
+## Second backend: herdr-core
+
+The Herdr desktop app runs its terminals in a separate runtime, herdr-core,
+with its own socket and its own API. paddock reads both: terminal herdr's
+agents and the app's agents land in one store, one Agents list and one Spaces
+screen. Either backend may be absent. With only terminal herdr, paddock reads
+and renders exactly what it did before. With only the app, paddock boots and
+runs on the core alone, and picks terminal herdr up if it starts later. A
+terminal herdr that is wrong when it appears is refused rather than rendered.
+That covers a protocol mismatch, a path that is not a socket, and an
+`agent.list` whose shape is broken. paddock keeps running on the app and does
+not retry until it restarts. At boot, the same faults are still fatal.
+Settings → Connection and `/api/health` report each backend on its own.
+Decision 37 records the choices; `docs/probes/2026-11-09-herdr-core.md`
+records the measurements they rest on.
+
+### Modules
+
+| Module | Responsibility |
+|---|---|
+| `herdr-core/socket.ts` | The core's socket: locating it, newline-delimited JSON-RPC requests, `events.subscribe`. Accepts protocol generation 1 only. |
+| `herdr-core/adapter.ts` | Core terminals and events into `Agent`. The only place core field names are mapped. |
+| `herdr-core/supervisor.ts` | Snapshot, then events, into the store under origin `core`. Logs a missing core once and retries; `firstAttempt()` is what boot waits on. |
+| `herdr-core/actions.ts` | `HerdrActions` for core ids. |
+| `herdr-core/app-socket.ts` | The running app's command socket. Used only to rename spaces and tabs. |
+| `herdr-core/tree.ts` | The app's spaces and tabs for the Spaces screen, named from the app's layout document, which is read and never written. |
+| `actions-by-origin.ts` | One `HerdrActions` over both backends, routed by id: a core id (`hc.…`) goes to the core, anything else to terminal herdr. Knows neither backend. |
+| `spaces-read.ts` | The Spaces read over both backends, each side failing on its own. Knows neither backend. |
+| `paths.ts` | paddock's tilde convention (`tildeise`, `expandHome`), which both trees apply. |
+
+### Dependency direction
+
+The rule above holds per backend:
+
+```
+herdr/socket      → herdr/adapter      ┐
+                                       ├→ state/store → ws/hub → web/
+herdr-core/socket → herdr-core/adapter ┘
+```
+
+Only `src/server/herdr/` knows terminal herdr exists, and only
+`src/server/herdr-core/` knows herdr-core and the app socket exist. Neither
+imports the other's tree, socket or adapter. Core actions implement terminal
+herdr's `HerdrActions` interface, which is the contract both backends share.
+`actions-by-origin.ts` and `spaces-read.ts` sit at the composition root's level:
+they take both backends as arguments and route between them. Ids never cross.
+`hc.` can never start a terminal herdr id, so `routes.ts` and the UI need no
+branch to tell them apart. Every `Agent` and `Space` carries `origin`, and the
+UI reads that, never a core field name.
+
+### The seen label
+
+For app agents, Ready follows herdr's shared rule instead of paddock's own
+acknowledge flag. An agent that is not blocked, errored or working is Ready
+while `turn > herdr.seen`. paddock writes `herdr.seen` only on a deliberate
+act: Dismiss (`/ack`), and opening the agent's terminal (`/opened`, once, at
+the tap). It never writes the label from presence. A tab left open on a desk
+must not clear "done" for every herdr client, which is the same reasoning that
+keeps presence suppression per-device. At settle time the notifier skips an
+app agent whose `herdr.seen` has reached its turn, because someone has already
+seen it at the desk.
+
+### What is refused for app agents, and why
+
+Each refusal is a message the operator reads, never a quiet no-op:
+
+- **One-tap answers outside a live permission prompt.** Buttons need a
+  parsed, digit-answered prompt *and* a live `status.kind` of `permission`.
+  The answer is one `terminal.keys` call with one digit. `kind` may remove
+  buttons and never adds them. Dialog typing (`sendChars`) is refused
+  outright, and text into a blocked agent is refused, because neither is
+  measured.
+- **`terminal.send` with `force`.** It is never sent. In the probe it
+  approved a command when asked to answer "No".
+- **Renaming an app agent.** Neither the core nor the app has a call that
+  renames a running terminal.
+- **Renaming a space or tab with the app closed.** Names belong to the app's
+  layout document, which paddock never writes. Renames go through the
+  running app's socket, and with the app closed the answer is "Open Herdr to
+  rename app spaces".
+- **Shell characters with no measured key name.** Text typed at an app shell
+  goes through `terminal.keys` one key at a time, using only key names the
+  probe measured. Anything else is refused and the message names the
+  characters.
+
+Both demos show two app agents in one app space, and refuse every write to
+them with the demo's own message. `tests/demo-actions.test.ts` asserts this
+for each write on the interface, using core ids.
+
 ## Actions transport
 
 Reading a pane, answering a blocked agent, typing at a shell and browsing the
@@ -497,6 +586,7 @@ here. `.env.example` is the copy an operator edits.
 | `PADDOCK_TAILNET_PORT` | `8789` | The `paddock local` service only, and only when `tailscale.json` enables it: the loopback port `tailscale serve` forwards to. Always bound to `127.0.0.1`, whatever `PADDOCK_HOST` says, and every request on it must carry the allowed `Tailscale-User-Login`. `PADDOCK_PORT` never reads that header. A port already in use warns and the dashboard keeps serving. Set it before `paddock local`, which captures it into the service, and give `paddock tailscale` the same value. |
 | `PADDOCK_HOST_ID` | `local` | The label for this machine in the header. |
 | `PADDOCK_HERDR_SOCKET` | `$HOME/.config/herdr/herdr.sock` | Where herdr's socket is. |
+| `PADDOCK_HC_SOCKET` | unset | Where the herdr-core (Herdr desktop app) socket is. When unset it is found in order: `HC_SOCKET`, `$XDG_RUNTIME_DIR/herdr-core/default.sock`, `/run/user/<uid>/herdr-core/default.sock`, `$XDG_STATE_HOME/herdr-core/default/default.sock` (default `~/.local/state`). A missing core is not fatal. |
 | `PADDOCK_HERDR_WAIT_MS` | `60000` | How long a paddock started BEFORE herdr waits for the socket to appear, in ms. `0` refuses immediately, which is what paddock did before the wait existed. Only a missing or unserved socket is waited on — a wrong path, an unreadable one, or a protocol mismatch still fails at once. Anything unparseable falls back to the default rather than to `0`. |
 | `PADDOCK_SERVICE` | unset | Set by the unit `paddock local` writes — `systemd` or `launchd` — never by hand. Recorded as `managedBy` in `paddock.state.json`, so `stop` removes the service through its manager instead of signalling a supervised process, and `local` may replace its own instance. Any other value is ignored. |
 | `PADDOCK_NO_SERVICE` | unset | `1` turns the `paddock local` service off entirely: `local` refuses, `stop` and `status` never ask systemd/launchd. For a container with no user session, and set by every test that spawns paddock — no test may reach a real service manager. |

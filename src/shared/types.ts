@@ -1,3 +1,4 @@
+import type { Origin } from "@shared/origin";
 import type { ScreenPatch } from "@shared/screen";
 
 export type NotifyTrigger = "blocked" | "done";
@@ -86,7 +87,11 @@ export interface InlineKeyboard {
   inline_keyboard: { text: string; url: string }[][];
 }
 
-export type AgentState = "blocked" | "done" | "working" | "idle";
+/**
+ * `error` exists only for core agents: herdr-core reports a failed run, which
+ * terminal herdr has no word for. It is never answerable.
+ */
+export type AgentState = "blocked" | "done" | "working" | "idle" | "error";
 
 export interface Agent {
   hostId: string;
@@ -161,6 +166,15 @@ export interface Agent {
    * agent with nothing to notice.
    */
   hasJournal: boolean;
+  /** Which backend the agent comes from. The terminal herdr adapter sets "herdr". */
+  origin: Origin;
+  /**
+   * Core agents only: the agent's turn counter, and the last turn the operator
+   * saw (`herdr.seen`). Both null for a herdr agent, and `seen` is null for a
+   * core agent nobody has opened yet.
+   */
+  turn: number | null;
+  seen: number | null;
 }
 
 /**
@@ -690,6 +704,24 @@ export interface HealthBody {
   clients: number;
   herdrConnected: boolean;
   /**
+   * The herdr-core backend (the Herdr desktop app's runtime). Optional in the
+   * world, required here for the usual reason: a dropped field must be a type
+   * error. `detail` is why it is not connected ("demo", "no herdr-core socket
+   * found", ...) and `null` when it is.
+   */
+  core: {
+    connected: boolean;
+    lastEventAt: number | null;
+    generation: number | null;
+    version: string | null;
+    detail: string | null;
+  };
+  /**
+   * The Herdr desktop app itself (its command socket answers), which is what
+   * renaming a space or tab needs. `null` in demo, where there is no app.
+   */
+  app: { running: boolean } | null;
+  /**
    * Epoch ms of the last herdr event. Exposed deliberately: a stuck event stream
    * is otherwise invisible, which is how a comparable system dropped every
    * event while reporting success.
@@ -752,7 +784,13 @@ export const SECTION_ORDER = ["needs-you", "ready-unseen", "working", "idle"] as
 export type Section = (typeof SECTION_ORDER)[number];
 
 export function sectionFor(agent: Agent): Section {
-  if (agent.state === "blocked") return "needs-you";
+  if (agent.state === "blocked" || agent.state === "error") return "needs-you";
+  // A core agent carries its own read marker: ready when it has taken a turn
+  // the operator has not seen. Without a marker it falls through to the
+  // terminal rule below.
+  if (agent.origin === "core" && agent.seen !== null && agent.state !== "working") {
+    return agent.turn !== null && agent.turn > agent.seen ? "ready-unseen" : "idle";
+  }
   // A finish and a block are different urgencies: one wants a decision before
   // work continues, the other is news nobody has read. They shared `needs-you`
   // until now, which let unread news compete with a decision. Once
@@ -793,8 +831,11 @@ export interface SpaceTree {
 }
 
 export interface Space {
-  spaceId: string;              // herdr workspace_id
+  spaceId: string;              // herdr workspace_id, or `hc.<id>` for an app space
   label: string | null;
+  /** Which backend holds it: terminal herdr, or the Herdr app (herdr-core).
+   *  An app space carries the quiet `app` mark, as an app agent does. */
+  origin: Origin;
   tabCount: number;
   paneCount: number;
   tabs: Tab[];

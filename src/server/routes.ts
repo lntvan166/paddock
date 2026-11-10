@@ -2,7 +2,8 @@ import { Hono, type Context } from "hono";
 import { statSync, type Stats } from "node:fs";
 import { compress } from "hono/compress";
 import { resolveReadLines, type HerdrActions, type HostPath } from "@server/herdr/actions";
-import { expandHome } from "@server/herdr/tree";
+import { BackendUnavailable, Unsupported } from "@server/action-errors";
+import { expandHome } from "@server/paths";
 import { addNote, moveDialogTab, selectByCursor, toggleDialogOption, typeIntoFreeText } from "@server/herdr/dialog-type";
 import { parsePrompt } from "@server/herdr/prompt-parse";
 import { sendTelegram } from "@server/notify/telegram";
@@ -35,6 +36,7 @@ import { errorCode } from "@server/startup-errors";
 import type { FileStore } from "@server/files/store";
 import {
   isNavKey,
+  type Agent,
   type AgentCommand,
   type HealthBody,
   type NotifyTrigger,
@@ -45,7 +47,13 @@ import {
   type TreePane,
 } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
+import { isCoreId } from "@shared/origin";
 import type { HerdrAgentSession } from "@shared/herdr-api";
+
+/** Why a dialog route sent nothing to an app agent: paddock answers only its
+ *  permission prompts (see `refuseCoreDialog`). */
+export const CORE_DIALOG_REFUSED =
+  "this app agent is not showing a permission prompt; answer it in the Herdr app — nothing was sent";
 
 // Re-exported for call sites that imported this from here before the
 // contract moved to `@shared/types` — see `src/shared/types.ts` for the
@@ -309,6 +317,25 @@ function findSpace(tree: SpaceTree, id: string): Space | undefined {
  * because a client-supplied value reaching a herdr parameter is governed
  * by paddock's own policy either way (same reasoning as `MAX_READ_LINES`).
  */
+/**
+ * A harness to start AS the new terminal (herdr-core only — see
+ * `CreateOpts.harness`). `kind` absent means none; present, it needs a name,
+ * with the same rules `/api/panes/:id/agent` applies.
+ */
+function normalizeCreateHarness(
+  body: Record<string, unknown>,
+): { harness?: { kind: string; name: string }; err?: string } {
+  if (body.kind === undefined) return {};
+  if (typeof body.kind !== "string" || body.kind.trim() === "") return { err: "kind must be a non-empty string" };
+  if (typeof body.name !== "string" || body.name.trim() === "") return { err: "name must be a non-empty string" };
+  if (body.name.length > MAX_LABEL_LEN) return { err: "name must be within the length limit" };
+  return { harness: { kind: body.kind, name: body.name } };
+}
+
+/** A harness at create time is the app's way; terminal herdr starts one in
+ *  the new pane, through `/api/panes/:id/agent`. */
+const HARNESS_ONLY_FOR_APP = "an agent can be started with the create only in an app space; start it in the new pane instead";
+
 function normalizeCreateBody(
   body: Record<string, unknown>,
   home: string | undefined,
@@ -697,7 +724,7 @@ export interface AppDeps {
   /**
    * The operator's home directory, so a tilde-ised `cwd` coming BACK from the
    * client can be expanded before it reaches herdr — see `expandHome` in
-   * `tree.ts`, which is the same value `toSpaceTree` uses to tilde-ise it on
+   * `paths.ts`, which is the same value `toSpaceTree` uses to tilde-ise it on
    * the way out. Optional and absent in tests that do not exercise a path: an
    * absent home leaves the value untouched, which is the same thing
    * `tildeise` does.
@@ -723,6 +750,25 @@ export interface AppDeps {
  */
 function detailOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * The status for an action that threw.
+ *
+ * Two refusals are not backend failures and must not read as one:
+ *  - `BackendUnavailable` — the backend that owns this id is not running
+ *    ("herdr-core is not running"). 503: the request was fine, the service
+ *    behind it is down.
+ *  - `Unsupported` — the action cannot be done here ("herdr can't rename a
+ *    running app terminal", "Open Herdr to rename app spaces"). 409, the
+ *    status every other deliberate refusal in this file uses; its message is
+ *    written for the operator and relayed verbatim.
+ * Everything else is the 502 it always was.
+ */
+function failStatus(err: unknown): 409 | 502 | 503 {
+  if (err instanceof BackendUnavailable) return 503;
+  if (err instanceof Unsupported) return 409;
+  return 502;
 }
 
 /**
@@ -863,11 +909,73 @@ export function createApp(deps: AppDeps) {
   // a Dismiss button whose POST fell through to the `/api/*` 404, so the card
   // reported "Could not dismiss." forever, in the mode the README says
   // screenshots come from.
-  app.post("/api/agents/:id/ack", (c) => {
-    const delta = deps.store.acknowledge(c.req.param("id"), now());
+  /**
+   * Write `herdr.seen` for a core agent — the ONE place paddock does.
+   *
+   * Only Dismiss and an open reach here, both deliberate acts. Presence never
+   * does (it is per-device and a left-open tab is not a person watching), and
+   * nothing repeats it while a terminal stays open.
+   *
+   * The store is not edited: the core announces the label and the supervisor
+   * applies it, so every client, paddock included, learns `seen` the same way.
+   *
+   * A core agent with no `turn` has nothing to mark — there is no turn to
+   * claim to have seen, and inventing one would write a lie into a label the
+   * Herdr app also reads. Succeeds without writing.
+   */
+  async function markCoreSeen(agent: Agent): Promise<void> {
+    if (agent.turn === null) return;
+    if (!deps.actions) throw new Unsupported("this paddock has no herdr-core connection to write to");
+    await deps.actions.markSeen(agent.agentId, agent.turn);
+  }
+
+  app.post("/api/agents/:id/ack", async (c) => {
+    const id = c.req.param("id");
+    const agent = deps.store.snapshot().find((a) => a.agentId === id);
+    if (agent?.origin === "core") {
+      // Refused, not "ok": `markCoreSeen` writes nothing for an agent with no
+      // turn, and a 200 there was a Dismiss that did nothing while saying it
+      // worked. The card does not offer Dismiss for such an agent; this is the
+      // server saying so to any client that asks anyway. `/opened` keeps its
+      // quiet 204 — it is a background courtesy, not a control.
+      if (agent.turn === null) {
+        return c.json({ ok: false, detail: "this app agent has no turn to mark seen yet; nothing was written" }, 409);
+      }
+      try {
+        await markCoreSeen(agent);
+      } catch (err) {
+        const detail = detailOf(err);
+        warn(`ack: could not mark ${id} seen: ${detail}`);
+        return c.json({ ok: false, detail }, failStatus(err));
+      }
+      return c.json({ ok: true });
+    }
+    const delta = deps.store.acknowledge(id, now());
     if (!delta) return c.json({ ok: false, detail: "not a fresh done agent" }, 409);
     deps.hub.queue(delta); // reaches every other open browser
     return c.json({ ok: true });
+  });
+
+  /**
+   * The operator opened this agent's terminal. POST-only, and the client
+   * sends it once per navigation INTO an agent.
+   *
+   * A background courtesy: 204 for everything that has nothing to write (a
+   * herdr agent, a shell pane, an unknown id, a core agent with no turn), so
+   * the client has exactly one failure to log.
+   */
+  app.post("/api/agents/:id/opened", async (c) => {
+    const id = c.req.param("id");
+    const agent = deps.store.snapshot().find((a) => a.agentId === id);
+    if (agent?.origin !== "core") return c.body(null, 204);
+    try {
+      await markCoreSeen(agent);
+    } catch (err) {
+      const detail = detailOf(err);
+      warn(`opened: could not mark ${id} seen: ${detail}`);
+      return c.json({ ok: false, detail }, failStatus(err));
+    }
+    return c.body(null, 204);
   });
 
   /**
@@ -1184,6 +1292,31 @@ export function createApp(deps: AppDeps) {
     const actions = deps.actions;
 
     /**
+     * The live permission gate for the dialog routes, asked BEFORE any key.
+     *
+     * A herdr-core agent is answered from paddock only while it shows a
+     * permission prompt — the one dialog the probe measured. The core's
+     * `sendOptionKey` and `sendChars` refuse otherwise, but the dialog routes
+     * walk the cursor with arrows and Enter first (`sendNavKey`, which is not
+     * gated and must not be: the terminal pane uses it). So `/select` could
+     * commit an option of a question dialog, and `/type` or `/dialog-tab`
+     * moved the cursor before the character was refused. Enforced here, on the
+     * server, rather than trusted to the UI hiding the controls.
+     *
+     * Returns the 409 to send, or null to go on. Terminal herdr agents are
+     * untouched: the parser alone decides for them, as before.
+     */
+    async function refuseCoreDialog(c: Context, agentId: string): Promise<Response | null> {
+      if (!isCoreId(agentId)) return null;
+      try {
+        if (await actions.promptAllowed(agentId)) return null;
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
+      }
+      return c.json({ ok: false, detail: CORE_DIALOG_REFUSED, lines: [], source: "" }, 409);
+    }
+
+    /**
      * The MCP bridge — see docs/design/2026-10-24-mcp-bridge-design.md.
      *
      * NEVER on the gated quick-tunnel app (`deps.pairing`): that listener has
@@ -1267,7 +1400,7 @@ export function createApp(deps: AppDeps) {
         }
         return c.json({ ...out, digest });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, failStatus(err));
       }
     });
 
@@ -1275,9 +1408,16 @@ export function createApp(deps: AppDeps) {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
       try {
-        return c.json(parsePrompt(await actions.readPromptScreen(agent.agentId)));
+        const parsed = parsePrompt(await actions.readPromptScreen(agent.agentId));
+        // The backend may withhold one-tap buttons (a herdr-core agent shows
+        // them only on a live permission prompt). It can remove them, never
+        // add them: the parser still decides whether there are any.
+        if ((parsed.options !== null || parsed.dialog !== null) && !(await actions.promptAllowed(agent.agentId))) {
+          return c.json({ ...parsed, options: null, dialog: null });
+        }
+        return c.json(parsed);
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, failStatus(err));
       }
     });
 
@@ -1330,7 +1470,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1357,6 +1497,9 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: `dir must be "left" or "right"` }, 400);
       }
 
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
+
       try {
         const outcome = await moveDialogTab(agent.agentId, dir, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
@@ -1369,7 +1512,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1415,6 +1558,9 @@ export function createApp(deps: AppDeps) {
         }, 400);
       }
 
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
+
       try {
         const outcome = await typeIntoFreeText(agent.agentId, chars, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
@@ -1423,7 +1569,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, dialog: parsed.dialog });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1460,6 +1606,9 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: `key must be an option digit, e.g. "2"` }, 400);
       }
 
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
+
       try {
         // NOT a bare `sendOptionKey`: a digit is a toggle only while the cursor
         // is off the free-text row. Parked on it, the digit is TEXT — measured
@@ -1473,7 +1622,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, dialog: parsed.dialog });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1522,6 +1671,9 @@ export function createApp(deps: AppDeps) {
       // moving keeps answering rather than silently doing half the action.
       const commit = body.commit !== false;
 
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
+
       try {
         const outcome = await selectByCursor(agent.agentId, key, commit, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
@@ -1530,7 +1682,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1565,6 +1717,9 @@ export function createApp(deps: AppDeps) {
         }, 400);
       }
 
+      const gate = await refuseCoreDialog(c, agent.agentId);
+      if (gate) return gate;
+
       try {
         const outcome = await addNote(agent.agentId, chars, mode, { ...actions, settle });
         if (!outcome.ok) return c.json({ ok: false, detail: outcome.detail }, 409);
@@ -1574,7 +1729,7 @@ export function createApp(deps: AppDeps) {
         const parsed = parsePrompt(out.lines.join("\n"));
         return c.json({ ok: true, ...out, selected: parsed.selected, notes: parsed.notes });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1610,7 +1765,7 @@ export function createApp(deps: AppDeps) {
         const out = await actions.readOutput(agent.agentId, agent.state);
         return c.json({ ok: true, ...out });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, 502);
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
       }
     });
 
@@ -1667,7 +1822,7 @@ export function createApp(deps: AppDeps) {
         // what someone debugging this needs. The RESPONSE gets the readable
         // one, because that is what an operator sees.
         warn(`agents: could not rename \`${agent.agentId}\`: ${detailOf(err)}`);
-        return c.json({ ok: false, detail: renameDetail(err) }, 502);
+        return c.json({ ok: false, detail: renameDetail(err) }, failStatus(err));
       }
     });
 
@@ -1705,7 +1860,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not read pane \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1772,7 +1927,7 @@ export function createApp(deps: AppDeps) {
           } catch (err) {
             const detail = err instanceof Error ? err.message : String(err);
             warn(`panes: typed into \`${id}\` but could not run it: ${detail}`);
-            return c.json({ ok: false, detail: `typed, but not run: ${detail}` }, 502);
+            return c.json({ ok: false, detail: `typed, but not run: ${detail}` }, failStatus(err));
           }
         }
         // Settle, then read, then return the screen the command produced.
@@ -1794,7 +1949,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not send text to pane \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1832,7 +1987,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`panes: could not send key to pane \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1882,7 +2037,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`tabs: could not rename \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1912,7 +2067,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`spaces: could not rename \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1954,7 +2109,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`tabs: could not close \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -1993,7 +2148,7 @@ export function createApp(deps: AppDeps) {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         warn(`spaces: could not close \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(err));
       }
     });
 
@@ -2017,16 +2172,31 @@ export function createApp(deps: AppDeps) {
     app.post("/api/spaces", async (c) => {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
 
-      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c), deps.home);
+      const body = await jsonBody(c);
+      const { label, cwd, err } = normalizeCreateBody(body, deps.home);
       if (err) return c.json({ ok: false, detail: err }, 400);
+      // Which backend the new space goes to. Absent is terminal herdr, which
+      // is what every caller before the app backend meant.
+      const origin = body.origin;
+      if (origin !== undefined && origin !== "herdr" && origin !== "core") {
+        return c.json({ ok: false, detail: "origin must be \"herdr\" or \"core\"" }, 400);
+      }
+      const { harness, err: harnessErr } = normalizeCreateHarness(body);
+      if (harnessErr) return c.json({ ok: false, detail: harnessErr }, 400);
+      if (harness && origin !== "core") return c.json({ ok: false, detail: HARNESS_ONLY_FOR_APP }, 400);
 
       try {
-        const created = await actions.createSpace({ label, cwd });
+        if (harness && !(await actions.harnessKinds()).includes(harness.kind)) {
+          return c.json({ ok: false, detail: `unsupported kind: ${harness.kind}` }, 400);
+        }
+        const created = await actions.createSpace({
+          label, cwd, ...(origin !== undefined ? { origin } : {}), ...(harness ? { harness } : {}),
+        });
         return c.json({ ok: true, ...created });
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         warn(`spaces: could not create a space: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(e));
       }
     });
 
@@ -2048,19 +2218,27 @@ export function createApp(deps: AppDeps) {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
       const id = c.req.param("id");
 
-      const { label, cwd, err } = normalizeCreateBody(await jsonBody(c), deps.home);
+      const body = await jsonBody(c);
+      const { label, cwd, err } = normalizeCreateBody(body, deps.home);
       if (err) return c.json({ ok: false, detail: err }, 400);
+      const { harness, err: harnessErr } = normalizeCreateHarness(body);
+      if (harnessErr) return c.json({ ok: false, detail: harnessErr }, 400);
 
       try {
         const tree = await deps.readTree();
         const space = findSpace(tree, id);
         if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
-        const created = await actions.createTab(id, { label, cwd });
+        // The backend is the space's own; the id routes the create there.
+        if (harness && space.origin !== "core") return c.json({ ok: false, detail: HARNESS_ONLY_FOR_APP }, 400);
+        if (harness && !(await actions.harnessKinds()).includes(harness.kind)) {
+          return c.json({ ok: false, detail: `unsupported kind: ${harness.kind}` }, 400);
+        }
+        const created = await actions.createTab(id, { label, cwd, ...(harness ? { harness } : {}) });
         return c.json({ ok: true, ...created });
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         warn(`spaces: could not create a tab in \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(e));
       }
     });
 
@@ -2161,14 +2339,14 @@ export function createApp(deps: AppDeps) {
           warn(`panes: agent did not start in \`${id}\`: ${detail}`);
           return c.json(
             { ok: false, detail: `shell exists, but the agent did not start: ${detail}`, paneId: id },
-            502,
+            failStatus(e),
           );
         }
         return c.json({ ok: true, paneId: id });
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         warn(`panes: could not start an agent in \`${id}\`: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(e));
       }
     });
 
@@ -2185,7 +2363,7 @@ export function createApp(deps: AppDeps) {
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         warn(`harnesses: could not read installed kinds: ${detail}`);
-        return c.json({ ok: false, detail }, 502);
+        return c.json({ ok: false, detail }, failStatus(e));
       }
     });
 
@@ -2226,7 +2404,7 @@ export function createApp(deps: AppDeps) {
         await actions.waitUntilUnblocked(agent.agentId);
         return c.json({ ok: true });
       } catch (err) {
-        return c.json({ ok: false, detail: detailOf(err) }, 502);
+        return c.json({ ok: false, detail: detailOf(err) }, failStatus(err));
       }
     });
   }

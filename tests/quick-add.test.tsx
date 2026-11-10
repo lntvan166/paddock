@@ -140,7 +140,7 @@ test("the folder picker is offered the tree's own folders", async () => {
   const tree = {
     readAt: 0,
     spaces: [{
-      spaceId: "w1", label: "api refactor", tabCount: 1, paneCount: 1,
+      spaceId: "w1", label: "api refactor", origin: "herdr" as const, tabCount: 1, paneCount: 1,
       tabs: [{ tabId: "w1:t1", label: null, panes: [
         { paneId: "w1:p1", harness: "claude", name: "api-refactor", title: null,
           cwd: "~/project", state: "idle" as const },

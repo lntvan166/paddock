@@ -9,7 +9,7 @@ const NOW = 1_700_000_000_000;
 const health = () => ({
   ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true,
   lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null,
-  herdrProtocol: null, schemaWarning: null,
+  herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null,
 });
 
 function agent(over: Partial<Agent> = {}): Agent {
@@ -17,13 +17,13 @@ function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "docs-cleanup",
     task: "Tidy the README", state: "working", workspaceId: "w1",
     workspaceLabel: "docs", cwd: "/srv/project", harness: "claude", stateSince: NOW, stateSinceExact: true, updatedAt: NOW,
-    acknowledgedAt: null, hasJournal: true, ...over,
+    acknowledgedAt: null, hasJournal: true, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
 function harness(page: JournalPage = { lines: ["you · 13:04", "hi", ""], source: "journal", hasMore: true, cursor: "120", detail: null }) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const calls: unknown[] = [];
   const app = createApp({
     store, now: () => NOW, health, hub: new Hub({ now: () => NOW }),
@@ -94,7 +94,7 @@ test("the route exists with no actions dep — it never touches herdr", async ()
   // filesystem read on a herdr dependency is the /ack mistake: the one
   // feature that works without herdr being the one broken in --demo.
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app = createApp({
     store, now: () => NOW, health, hub: new Hub({ now: () => NOW }),
     sessionFor: () => null,
@@ -148,7 +148,7 @@ test("a miss is reported once per agent, and again after the journal recovers", 
     detail: "session log not found — compacted, rotated or removed",
   };
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent({ agentId: "w9:p9" })], NOW);
+  store.replaceAll([agent({ agentId: "w9:p9" })], NOW, "herdr");
   const app = createApp({
     store, now: () => NOW, health, hub: new Hub({ now: () => NOW }),
     sessionFor: () => ({ agent: "claude", kind: "id", source: "herdr:claude", value: "u1" }),
@@ -183,7 +183,7 @@ test("the miss set cannot grow without bound", async () => {
   // about exactly like the first.
   const store = new AgentStore("dev-box");
   const many = Array.from({ length: 400 }, (_, i) => agent({ agentId: `wb:p${i}` }));
-  store.replaceAll(many, NOW);
+  store.replaceAll(many, NOW, "herdr");
   const app = createApp({
     store, now: () => NOW, health, hub: new Hub({ now: () => NOW }),
     sessionFor: () => ({ agent: "claude", kind: "id", source: "herdr:claude", value: "u1" }),

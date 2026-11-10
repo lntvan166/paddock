@@ -8,7 +8,7 @@ import type { AgentState, Space, SpaceTree } from "@shared/types";
  * how two screens come to disagree about the same space.
  */
 const SEVERITY: Record<AgentState, number> = {
-  blocked: 0, working: 1, done: 2, idle: 3,
+  blocked: 0, error: 0, working: 1, done: 2, idle: 3,
 };
 
 /**
@@ -21,7 +21,7 @@ const SEVERITY: Record<AgentState, number> = {
  * stability note on `sortSpaces`.
  */
 const BUCKET: Record<AgentState, number> = {
-  blocked: 0, working: 1, done: 2, idle: 2,
+  blocked: 0, error: 0, working: 1, done: 2, idle: 2,
 };
 const NO_AGENT_BUCKET = 3;
 

@@ -1167,3 +1167,52 @@ session does not silently re-litigate them.
     after review ("monotone"), and the accent fills the primary actions again
     (Send, the create dial, switched-on toggles, the selected segment) as
     well as marking selection. Links and Back stay ink.
+
+37. **Two backends: terminal herdr and herdr-core.**
+    The Herdr desktop app runs its terminals in herdr-core, which has its own
+    socket and API and shares no state with terminal herdr. paddock reads
+    both into one store. Ids are namespaced (`hc.` for the core) so the two
+    never meet, and every `Agent` and `Space` carries `origin`. Either backend
+    may be absent. With only terminal herdr, nothing changes. With only the
+    app, paddock boots and runs on the core alone. An *absent* terminal herdr
+    with a live core is not fatal. At boot, a terminal herdr that is present
+    and wrong is still fatal, core or no core: a protocol mismatch, a path that
+    is not a socket, or an `agent.list` whose shape is broken. After an
+    app-only boot, paddock keeps trying to reach terminal herdr in the
+    background. If a herdr that appears then is wrong, it is refused rather
+    than ending the process, because the app's agents are already on screen.
+    A mismatch or a bad path is warned once. A broken `agent.list` shape gets
+    the refusal line, terminal herdr's agents are removed and its stream is
+    closed, so none of them is rendered. In neither case is it retried until
+    paddock restarts. See
+    `docs/architecture.md` "Second backend: herdr-core" and
+    `docs/probes/2026-11-09-herdr-core.md`.
+
+    **`herdr.seen` is written only on Dismiss or when an agent is opened.**
+    App agents follow herdr's shared Ready rule (`turn > herdr.seen`, idle
+    included), so dismissing on the phone clears "done" in the app too, and
+    the reverse. Writing the label from presence was rejected: a tab left open
+    on a desk would clear "done" for every herdr client. That is the same
+    reasoning that kept presence suppression per-device.
+
+    **An app prompt is answered only with `terminal.keys`, one digit, on a
+    live `kind=permission` prompt.** The probe measured that path end to end.
+    `terminal.send` with `force` is never used: asked to answer "No", it
+    approved the command, because a pasted digit is not a key press and send's
+    Enter commits the cursor row. `status.kind` may remove one-tap buttons and
+    never adds them. Dialog typing, and text into a blocked agent, are refused
+    because they are unmeasured.
+
+    **Renames go through the running app; app agents cannot be renamed.**
+    Space and tab names live in the app's layout document, which paddock reads
+    and never writes. A rename is sent to the running app's command socket
+    (the channel `herdr-app do` uses). With the app closed, Rename says "Open
+    Herdr to rename app spaces". The design assumed an agent rename call that
+    does not exist: neither herdr-core nor the app can rename a running
+    terminal. An app agent's Rename says so instead of acting.
+
+    **Keys typed into an app shell are limited to measured key names.** The
+    core types a shell character only through `terminal.keys`, and only some
+    key names were measured to type themselves (a bare uppercase name types
+    the lowercase letter; most symbols are refused as unknown keys). Text with
+    an unmeasured character is refused and the message names those characters.

@@ -39,6 +39,8 @@ function Row({
 export function InfoSection({ health }: { health: HealthBody | null }) {
   const secure = window.isSecureContext;
   const herdrOk = health ? health.herdrConnected : null;
+  const core = health?.core ?? null;
+  const app = health?.app ?? null;
 
   return (
     <>
@@ -67,6 +69,17 @@ export function InfoSection({ health }: { health: HealthBody | null }) {
           label="herdr"
           value={herdrOk === null ? null : herdrOk ? "Connected" : "Disconnected"}
           valueClassName={herdrOk === null ? undefined : herdrOk ? "ok" : "warn"}
+        />
+        {/* Always rendered, like every row: absent is a state worth showing. */}
+        <Row
+          label="herdr-core"
+          value={core === null ? null : core.connected ? "Connected" : `Not running${core.detail ? ` (${core.detail})` : ""}`}
+          valueClassName={core === null ? undefined : core.connected ? "ok" : undefined}
+        />
+        <Row
+          label="Herdr app"
+          value={app === null ? null : app.running ? "Running" : "Not running"}
+          valueClassName={app === null ? undefined : app.running ? "ok" : undefined}
         />
         <Row
           label="Last event"

@@ -43,6 +43,10 @@ function runServer(args: string[], env: Record<string, string> = {}) {
       // TOLD, and the bounded wait for an absent herdr would otherwise cost a
       // full budget per test. Overridable by a caller that wants the wait.
       PADDOCK_HERDR_WAIT_MS: "0",
+      // Never the developer's real Herdr app: with a live core, an absent
+      // herdr runs on the app alone (tests/app-only-boot.test.ts) instead of
+      // exiting with the explanation this file asserts.
+      PADDOCK_HC_SOCKET: join(CONFIG, "no-such-core.sock"),
       ...env,
     },
     stdout: "pipe",

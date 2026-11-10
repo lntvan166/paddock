@@ -23,3 +23,18 @@ test("the state is still carried as text, because colour is never the only chann
   const host = await render(<AgentRow agent={agent({ state: "blocked" })} now={0} />);
   expect(host.querySelector(".state-word")?.textContent).toBe("Blocked");
 });
+
+test("a core agent's row carries the app mark", async () => {
+  const host = await render(<AgentRow agent={agent({ origin: "core", agentId: "hc.t1" })} now={0} />);
+  expect(host.querySelector(".origin-mark")?.textContent).toBe("app");
+});
+
+test("a herdr agent's row carries none", async () => {
+  const host = await render(<AgentRow agent={agent()} now={0} />);
+  expect(host.querySelector(".origin-mark")).toBeNull();
+});
+
+test("an error agent reads Error", async () => {
+  const host = await render(<AgentRow agent={agent({ state: "error" })} now={0} />);
+  expect(host.querySelector(".state-word")?.textContent).toBe("Error");
+});

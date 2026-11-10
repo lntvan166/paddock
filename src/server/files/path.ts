@@ -1,4 +1,4 @@
-import { expandHome } from "@server/herdr/tree";
+import { expandHome } from "@server/paths";
 
 /**
  * A path as the operator's terminal spelled it, turned into one the filesystem

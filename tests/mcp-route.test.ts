@@ -16,15 +16,15 @@ async function deps(enabled: boolean, over: Partial<AppDeps> = {}): Promise<AppD
   store.replaceAll([{
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor", task: "Extract auth middleware", state: "idle",
     workspaceId: "w1", workspaceLabel: null, cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false,
-  }], NOW);
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null,
+  }], NOW, "herdr");
   const settings = new SettingsStore(await mkdtemp(join(tmpdir(), "paddock-mcp-route-")), {});
   await settings.load();
   if (enabled) await settings.patch({ bridge: { enabled: true } });
   const actions = { async sendReply() {}, async readOutput() { return { lines: [], source: "visible" } } } as unknown as HerdrActions;
   return {
     store, hub: new Hub({ now: () => NOW }), settings, actions, watch: new AgentWatch(), now: () => NOW,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null }),
     ...over,
   };
 }

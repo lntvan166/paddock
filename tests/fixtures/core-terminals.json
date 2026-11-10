@@ -1,0 +1,28 @@
+{
+  "reporting": {
+    "address": "t7", "argv": ["claude"], "cols": 120, "rows": 40, "created_ms": 1700000000000,
+    "cwd": "/path/to/project", "labels": {"herdr.space": "sp1", "herdr.tab": "tab1", "where": "api-space / 1"},
+    "name": "api-refactor", "screen": "exact", "state": "live", "reported": true,
+    "status": {"app": "claude-code", "state": "working", "msg": "editing handlers", "title": "Refactor"},
+    "status_ms": 1700000005000, "title": "claude", "turn": 3
+  },
+  "shell": {
+    "address": "t8", "argv": ["zsh"], "cols": 80, "rows": 24, "created_ms": 1700000000000,
+    "cwd": "/path/to/project", "labels": {"herdr.space": "sp1"}, "screen": "exact", "state": "live", "status": null
+  },
+  "subAgent": {
+    "address": "t9", "argv": ["claude"], "cols": 80, "rows": 24, "created_ms": 1700000000000,
+    "cwd": "/path/to/project", "labels": {"herdr.space": "sp1"}, "parent": "t7", "name": "docs-cleanup",
+    "screen": "exact", "state": "live", "status": {"app": "claude-code", "state": "idle"}, "status_ms": 1700000001000
+  },
+  "unnamed": {
+    "address": "t10", "argv": ["claude"], "cols": 80, "rows": 24, "created_ms": 1700000000000,
+    "cwd": "/path/to/flaky-test-fix", "labels": {"herdr.space": "sp1"}, "screen": "exact", "state": "live",
+    "status": {"app": "claude-code", "state": "idle"}, "status_ms": 1700000001000
+  },
+  "finished": {
+    "address": "t11", "argv": ["claude"], "cols": 80, "rows": 24, "created_ms": 1700000000000,
+    "cwd": "/path/to/project", "labels": {"herdr.space": "sp1"}, "name": "schema-migration", "screen": "exact",
+    "state": "finished", "status": null
+  }
+}

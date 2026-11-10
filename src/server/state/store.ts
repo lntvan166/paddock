@@ -1,3 +1,4 @@
+import type { Origin } from "@shared/origin";
 import { carryAcknowledged, compareAgents, type Agent } from "@shared/types";
 
 export interface Delta {
@@ -31,7 +32,10 @@ function differs(a: Agent, b: Agent): boolean {
     a.task !== b.task ||
     a.state !== b.state ||
     a.workspaceLabel !== b.workspaceLabel ||
-    a.cwd !== b.cwd
+    a.cwd !== b.cwd ||
+    // Core agents only (null for herdr): sectionFor reads `turn > seen`.
+    a.turn !== b.turn ||
+    a.seen !== b.seen
   );
 }
 
@@ -58,8 +62,12 @@ export class AgentStore {
    * Reconcile against a full listing. `stateSince` from the incoming rows is
    * only adopted when the state actually changed, so a reconcile never resets
    * elapsed time for an agent that has been sitting in one state.
+   *
+   * Only agents of `origin` are replaced; the other backend's agents are
+   * neither listed as removed nor touched. Required, so a caller cannot wipe
+   * the other backend by omission.
    */
-  replaceAll(incoming: Agent[], now: number): Delta {
+  replaceAll(incoming: Agent[], now: number, origin: Origin): Delta {
     const upserted: Agent[] = [];
     const seen = new Set<string>();
 
@@ -90,12 +98,22 @@ export class AgentStore {
     }
 
     const removedIds: string[] = [];
-    for (const id of this.agents.keys()) {
-      if (!seen.has(id)) removedIds.push(id);
+    for (const [id, a] of this.agents) {
+      if (a.origin === origin && !seen.has(id)) removedIds.push(id);
     }
     for (const id of removedIds) this.agents.delete(id);
 
     return { upserted, removedIds };
+  }
+
+  /** Drop every agent of one origin, e.g. when that backend goes away. */
+  removeOrigin(origin: Origin): Delta {
+    const removedIds: string[] = [];
+    for (const [id, a] of this.agents) {
+      if (a.origin === origin) removedIds.push(id);
+    }
+    for (const id of removedIds) this.agents.delete(id);
+    return { upserted: [], removedIds };
   }
 
   applyEvent(agentId: string, mutate: (prev: Agent) => Agent): Agent | null {

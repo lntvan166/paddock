@@ -28,7 +28,7 @@ function harness(over: Record<string, unknown> = {}) {
     workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
     stateSince: 0, stateSinceExact: false, updatedAt: 0, acknowledgedAt: null,
     hasJournal: false,
-  } as Agent], 0);
+  } as Agent], 0, "herdr");
 
   const app = createApp({
     store, hub: new Hub(), health: () => ({}) as never,

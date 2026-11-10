@@ -1,8 +1,9 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
-import type { ActionResult, Agent } from "@shared/types";
+import { sectionFor, type ActionResult, type Agent } from "@shared/types";
 import { acknowledge } from "@web/api";
 import { elapsedLabel } from "@web/components/elapsed";
 import { IconTile } from "@web/components/ui/IconTile";
+import { OriginMark } from "@web/components/ui/OriginMark";
 import { StateWord } from "@web/components/ui/StateWord";
 
 /**
@@ -12,6 +13,11 @@ import { StateWord } from "@web/components/ui/StateWord";
  * an answer, which is the opposite of what Needs you is for.
  */
 export function showAcknowledge(agent: Agent): boolean {
+  // A core agent's read marker is `herdr.seen`, not `acknowledgedAt`: Dismiss
+  // is offered exactly while the agent sits in Ready, and goes away when the
+  // label event raises `seen` to its turn. With no turn there is nothing for
+  // Dismiss to write, so it is not offered (the server refuses it too).
+  if (agent.origin === "core") return agent.turn !== null && sectionFor(agent) === "ready-unseen";
   return agent.state === "done" && agent.acknowledgedAt === null;
 }
 
@@ -100,7 +106,10 @@ export function AgentCard({
           surfaceVar="--surface"
         />
       </header>
-      <p className="row-task card-indent">{agent.task}</p>
+      <p className="row-task card-indent">
+        {agent.origin === "core" ? <OriginMark /> : null}
+        {agent.task}
+      </p>
       {children}
       {showAcknowledge(agent) && (
         <div className="card-foot-row card-indent">

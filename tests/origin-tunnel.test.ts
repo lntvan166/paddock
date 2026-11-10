@@ -29,7 +29,7 @@ const NAMED_HOST = "paddock.example.com";
 const health = () => ({
   ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true,
   lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null,
-  herdrProtocol: null, schemaWarning: null,
+  herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null,
 });
 
 function agent(): Agent {
@@ -37,7 +37,7 @@ function agent(): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "docs-cleanup",
     task: "Tidy the README", state: "done", workspaceId: "w1",
     workspaceLabel: "docs", cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null,
   };
 }
 
@@ -50,7 +50,7 @@ function agent(): Agent {
  */
 function harness(publicHosts: readonly string[] = []) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const pairing = new Pairing({ now: () => NOW });
   // The SAME thunk reaches the app's write middleware and the listener's `/ws`
   // upgrade, exactly as `index.ts` hands it to both. Passing it to only one is

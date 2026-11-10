@@ -41,7 +41,7 @@ function app(settings: SettingsStore) {
   const store = new AgentStore("dev-box");
   return createApp({
     store, hub: new Hub({ now: () => 0 }), settings, now: () => 0,
-    health: () => ({ ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: true, lastEventAt: 0, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, schemaWarning: null }),
+    health: () => ({ ok: true, hostId: "dev-box", agents: 0, clients: 0, herdrConnected: true, lastEventAt: 0, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null }),
   });
 }
 

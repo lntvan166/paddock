@@ -14,13 +14,13 @@ function agent(over: Partial<Agent> = {}): Agent {
     task: "Tidy the README", state: "blocked", workspaceId: "w1",
     workspaceLabel: "docs", cwd: "/srv/project", harness: "claude",
     stateSince: NOW, stateSinceExact: true, updatedAt: NOW,
-    acknowledgedAt: null, hasJournal: false, ...over,
+    acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
 function harness(save?: (bytes: Uint8Array) => Promise<SavedImage | { refused: string }>) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const seen: number[] = [];
   const app = createApp({
     store,

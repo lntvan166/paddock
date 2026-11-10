@@ -7,7 +7,7 @@ import {
 } from "@server/herdr/actions";
 import { HERDR_TIMEOUT_MS } from "@server/herdr/socket";
 import { createApp } from "@server/routes";
-import { expandHome } from "@server/herdr/tree";
+import { expandHome } from "@server/paths";
 
 /**
  * A cwd as `CreateOpts` requires it — minted through the ONE function allowed
@@ -247,14 +247,14 @@ function agent(over: Partial<Agent> = {}): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state: "working", workspaceId: "w1",
     workspaceLabel: "example-space", cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
 const TREE: SpaceTree = {
   readAt: NOW,
   spaces: [{
-    spaceId: "w1", label: "example-space", tabCount: 1, paneCount: 1,
+    spaceId: "w1", label: "example-space", origin: "herdr", tabCount: 1, paneCount: 1,
     tabs: [{
       tabId: "w1:t1", label: "docs-cleanup",
       panes: [
@@ -281,7 +281,7 @@ function harness(
   const calls: string[] = [];
   let readTreeCalls = 0;
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const countedReadTree = readTree
     ? async () => { readTreeCalls++; return readTree(); }
     : undefined;
@@ -292,6 +292,8 @@ function harness(
     readTree: countedReadTree,
     home: overrides.home,
     actions: {
+      async markSeen() {},
+      async promptAllowed() { return true; },
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
       async readPromptScreen() { return ""; },
@@ -328,7 +330,7 @@ function harness(
     },
     health: () => ({
       ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true, lastEventAt: NOW,
-      lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null,
+      lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null, herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null,
       schemaWarning: null,
     }),
   });
@@ -653,7 +655,7 @@ test("a tilde-ised cwd is EXPANDED before it reaches herdr, in both create route
   // Measured on a live herd: `workspace.create {cwd: "~/Documents/…"}` is
   // neither expanded nor refused — the new pane came up in the HOME directory
   // with nothing anywhere saying the folder the operator picked had been
-  // ignored. The tilde is paddock's own invention (`tildeise` in `tree.ts`, so
+  // ignored. The tilde is paddock's own invention (`tildeise` in `paths.ts`, so
   // a username never crosses the wire) and the create sheet's quick picks are
   // the tree's own tilde-ised cwds coming back, so paddock has to undo what
   // paddock did.
@@ -763,4 +765,60 @@ test("a RELATIVE cwd is refused, the same as a tilde paddock cannot resolve", as
   // can never be relabelled a 502, and herdr is never asked.
   expect(calls).toEqual([]);
   expect(readTreeCallCount()).toBe(0);
+});
+
+// ── Task 10: app spaces (herdr-core) through the same two routes ─────────
+
+const CORE_TREE: SpaceTree = {
+  readAt: NOW,
+  spaces: [...TREE.spaces, {
+    spaceId: "hc.spA", label: "api", origin: "core", tabCount: 1, paneCount: 1,
+    tabs: [{ tabId: "hc.tbA", label: null, panes: [
+      { paneId: "hc.t3", harness: null, name: null, title: null, cwd: "/srv/api", state: null },
+    ] }],
+  }],
+};
+
+test("a new space with origin core goes to the core, with its harness", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  const res = await post(app, "/api/spaces", { origin: "core", kind: "claude", name: "api-refactor", cwd: "/srv/api" });
+  expect(res.status).toBe(200);
+  expect(calls).toEqual([
+    "harnessKinds",
+    `createSpace:${JSON.stringify({ cwd: "/srv/api", origin: "core", harness: { kind: "claude", name: "api-refactor" } })}`,
+  ]);
+});
+
+test("a new space with no origin still goes to terminal herdr, unchanged", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  await post(app, "/api/spaces", { label: "docs-cleanup" });
+  expect(calls).toEqual([`createSpace:${JSON.stringify({ label: "docs-cleanup" })}`]);
+});
+
+test("an unknown origin is refused 400 and nothing is created", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  const res = await post(app, "/api/spaces", { origin: "mainframe" });
+  expect(res.status).toBe(400);
+  expect(calls).toEqual([]);
+});
+
+test("a harness at create time is refused for terminal herdr, which starts agents in its own pane", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  expect((await post(app, "/api/spaces", { kind: "claude", name: "x" })).status).toBe(400);
+  expect((await post(app, "/api/spaces/w1/tabs", { kind: "claude", name: "x" })).status).toBe(400);
+  expect(calls.filter((c) => c.startsWith("create"))).toEqual([]);
+});
+
+test("a harness at create time needs a name and an installed kind", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  expect((await post(app, "/api/spaces", { origin: "core", kind: "claude" })).status).toBe(400);
+  expect((await post(app, "/api/spaces", { origin: "core", kind: "nope", name: "x" })).status).toBe(400);
+  expect(calls.filter((c) => c.startsWith("create"))).toEqual([]);
+});
+
+test("a tab in an app space carries its harness to the core", async () => {
+  const { app, calls } = harness(async () => CORE_TREE);
+  const res = await post(app, "/api/spaces/hc.spA/tabs", { kind: "codex", name: "flaky-test-fix" });
+  expect(res.status).toBe(200);
+  expect(calls.at(-1)).toBe(`createTab:hc.spA:${JSON.stringify({ harness: { kind: "codex", name: "flaky-test-fix" } })}`);
 });

@@ -8,7 +8,7 @@ const agent = (over: Partial<Agent> = {}): Agent => ({
   hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
   task: "Extract auth middleware", state: "working", workspaceId: "w1",
   workspaceLabel: null, cwd: "/srv/project", harness: "claude", stateSince: NOW, stateSinceExact: true,
-  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, ...over,
+  updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
 });
 
 /**
@@ -244,4 +244,36 @@ test("with no public URL the message is text only, and never carries the task", 
   const m = composeMessage(agent({ task: "pasted-secret-in-title" }), "done", null);
   expect(m.text).toBe("api-refactor is done");
   expect(JSON.stringify(m)).not.toContain("pasted-secret");
+});
+
+test("a core agent in error triggers the blocked notification, on the blocked settle window", async () => {
+  // Spec: `error` is "needs you" and triggers the blocked notification.
+  const h = harness({ settleMs: { blocked: 5_000, done: 10_000 } });
+  const core = (state: Agent["state"]) => agent({ agentId: "hc.t7", origin: "core", turn: 2, seen: 1, state });
+  h.n.observe({ upserted: [core("working")], removedIds: [] });
+  h.n.observe({ upserted: [core("error")], removedIds: [] });
+  await h.advance(4_999);
+  expect(h.sent).toEqual([]);
+  await h.advance(2);
+  expect(h.sent).toEqual(["api-refactor is in error"]);
+});
+
+test("error follows the blocked trigger's switch: unticking blocked silences it", async () => {
+  const h = harness({ triggers: ["done"] });
+  const core = (state: Agent["state"]) => agent({ agentId: "hc.t7", origin: "core", turn: 2, seen: 1, state });
+  h.n.observe({ upserted: [core("working")], removedIds: [] });
+  h.n.observe({ upserted: [core("error")], removedIds: [] });
+  await h.advance(60_000);
+  expect(h.sent).toEqual([]);
+});
+
+test("an error that clears inside the settle window sends nothing", async () => {
+  const h = harness();
+  const core = (state: Agent["state"]) => agent({ agentId: "hc.t7", origin: "core", turn: 2, seen: 1, state });
+  h.n.observe({ upserted: [core("working")], removedIds: [] });
+  h.n.observe({ upserted: [core("error")], removedIds: [] });
+  await h.advance(2_000);
+  h.n.observe({ upserted: [core("working")], removedIds: [] });
+  await h.advance(60_000);
+  expect(h.sent).toEqual([]);
 });

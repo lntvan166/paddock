@@ -43,7 +43,7 @@ afterEach(async () => {
 const treeWith = (harness: string | null): SpaceTree => ({
   readAt: 1_700_000_000_000,
   spaces: [{
-    spaceId: "w9", label: "docs-cleanup", tabCount: 1, paneCount: 1,
+    spaceId: "w9", label: "docs-cleanup", origin: "herdr", tabCount: 1, paneCount: 1,
     tabs: [{
       tabId: "w9:t1", label: null, panes: [{
         paneId: "w9:p1", harness, name: harness === null ? null : "docs-cleanup",

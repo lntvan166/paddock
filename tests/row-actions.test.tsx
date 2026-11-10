@@ -26,7 +26,7 @@ import type { SpaceTree } from "@shared/types";
 const FLAT: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [{
-    spaceId: "w1", label: "api-refactor", tabCount: 1, paneCount: 1,
+    spaceId: "w1", label: "api-refactor", origin: "herdr", tabCount: 1, paneCount: 1,
     tabs: [{ tabId: "w1:t1", label: null, panes: [
       { paneId: "w1:p1", harness: "claude", name: "api-refactor", title: "api-refactor", cwd: "/srv/project", state: "working" },
     ] }],
@@ -37,7 +37,7 @@ const FLAT: SpaceTree = {
 const STRUCTURED: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [{
-    spaceId: "w2", label: "schema-migration", tabCount: 2, paneCount: 2,
+    spaceId: "w2", label: "schema-migration", origin: "herdr", tabCount: 2, paneCount: 2,
     tabs: [
       { tabId: "w2:t1", label: "migrate-up", panes: [{ paneId: "w2:p1", harness: "codex", name: "schema-migration", title: "m", cwd: "/srv/project", state: "working" }] },
       { tabId: "w2:t2", label: null, panes: [{ paneId: "w2:p2", harness: "claude", name: "schema-migration-2", title: "b", cwd: "/srv/project", state: "idle" }] },
@@ -50,7 +50,7 @@ const STRUCTURED: SpaceTree = {
 const SHELL: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [{
-    spaceId: "w3", label: "docs-cleanup", tabCount: 1, paneCount: 1,
+    spaceId: "w3", label: "docs-cleanup", origin: "herdr", tabCount: 1, paneCount: 1,
     tabs: [{ tabId: "w3:t1", label: null, panes: [
       { paneId: "w3:p1", harness: null, name: null, title: "bash", cwd: "/srv/project/scratch", state: null },
     ] }],
@@ -62,7 +62,7 @@ const SHELL: SpaceTree = {
 const SPLIT: SpaceTree = {
   readAt: 1_700_000_000_000,
   spaces: [{
-    spaceId: "w4", label: "flaky-test-fix", tabCount: 1, paneCount: 2,
+    spaceId: "w4", label: "flaky-test-fix", origin: "herdr", tabCount: 1, paneCount: 2,
     tabs: [{ tabId: "w4:t1", label: "run-it-again", panes: [
       { paneId: "w4:p1", harness: "claude", name: "flaky-test-fix", title: "t", cwd: "/srv/project", state: "working" },
       { paneId: "w4:p2", harness: null, name: null, title: "bash", cwd: "/srv/project", state: null },

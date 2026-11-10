@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { DEMO_BLOCKED_AGENT_ID, DEMO_HOST_ID, DemoSource, createDemoSource, demoAgents, demoJournalPage, demoSessionFor } from "@server/demo";
+import { DEMO_BLOCKED_AGENT_ID, DEMO_BLOCKED_APP_AGENT_ID, DEMO_HOST_ID, DemoSource, createDemoSource, demoAgents, seedDemo, demoJournalPage, demoSessionFor } from "@server/demo";
 import { AgentStore } from "@server/state/store";
 import type { Agent, HistoryResult } from "@shared/types";
 import { installDemoBackend } from "@web/demo/backend";
+import { isCoreId } from "@shared/origin";
 import { fetchHistory } from "@web/api";
 
 const NOW = 1_700_000_000_000;
@@ -13,6 +14,8 @@ const NOW = 1_700_000_000_000;
 const INVENTED_NAMES = new Set([
   "schema-migration", "lint-config", "api-refactor",
   "perf-audit", "docs-cleanup", "flaky-test-fix",
+  // The two app agents (origin "core"), in the app space `docs-site`.
+  "release-notes", "changelog-sync",
 ]);
 
 test("demo data covers every displayed state", () => {
@@ -35,6 +38,49 @@ test("demo cwd is not a real home directory", () => {
 
 test("demo agents all belong to the demo host", () => {
   for (const a of demoAgents(NOW)) expect(a.hostId).toBe(DEMO_HOST_ID);
+});
+
+// ── the app's agents in the CLI demo (origin "core") ─────────────────────────
+
+test("the CLI demo has two invented app agents, one blocked, in the app space docs-site", () => {
+  const app = demoAgents(NOW).filter((a) => a.origin === "core");
+  expect(app.map((a) => a.name).sort()).toEqual(["changelog-sync", "release-notes"]);
+  for (const a of app) {
+    expect(isCoreId(a.agentId), `${a.agentId} is not a core id`).toBe(true);
+    expect(a.workspaceId).toBe("hc.docs-site");
+    expect(a.workspaceLabel).toBe("docs-site");
+  }
+  expect(app.find((a) => a.agentId === DEMO_BLOCKED_APP_AGENT_ID)?.state).toBe("blocked");
+});
+
+test("a tick never moves the blocked app agent either", () => {
+  // Same reason the blocked TUI agent is pinned: the app's permission prompt
+  // is the screen the app half of the demo exists for.
+  const src = new DemoSource({ onDelta: () => {}, now: () => NOW });
+  for (let i = 0; i < 40; i++) src.tick();
+  expect(src.snapshot().find((a) => a.agentId === DEMO_BLOCKED_APP_AGENT_ID)?.state).toBe("blocked");
+});
+
+test("each demo tick reaches the store under each agent's own origin", () => {
+  // The sink was typed to the literal "herdr", so the app's agents could only
+  // have reached the store filed as terminal herdr's — and a later herdr-only
+  // replace would have removed them.
+  const origins: string[] = [];
+  const store = new AgentStore(DEMO_HOST_ID);
+  const src = createDemoSource({
+    store: {
+      replaceAll: (incoming, now, origin) => {
+        origins.push(origin);
+        for (const a of incoming) expect(a.origin).toBe(origin);
+        return store.replaceAll(incoming, now, origin);
+      },
+    },
+    onDelta: () => {},
+    now: () => NOW,
+  });
+  src.tick();
+  expect(origins.sort()).toEqual(["core", "herdr"]);
+  expect(store.snapshot().filter((a) => a.origin === "core")).toHaveLength(2);
 });
 
 // ── the CLI demo's /history answers (server/demo.ts, `paddock --demo`) ──────
@@ -119,7 +165,7 @@ test("a demo tick is reflected in the STORE, not just pushed at browsers", () =>
   const store = new AgentStore(DEMO_HOST_ID);
   let ticks = 0;
   const src = createDemoSource({ store, onDelta: () => { ticks++; }, now: () => NOW });
-  store.replaceAll(src.snapshot(), NOW);
+  seedDemo(store, src.snapshot(), NOW);
 
   // NOT `snapshot()[0]`, which is the pinned blocked agent: `tick()` skips it
   // on purpose so the demo always has a permission prompt on screen, and an
@@ -141,7 +187,7 @@ test("the delta browsers receive in demo mode is the store's own", () => {
   const store = new AgentStore(DEMO_HOST_ID);
   const deltas: { upserted: Agent[]; removedIds: string[] }[] = [];
   const src = createDemoSource({ store, onDelta: (d) => deltas.push(d), now: () => NOW });
-  store.replaceAll(src.snapshot(), NOW);
+  seedDemo(store, src.snapshot(), NOW);
 
   src.tick();
 

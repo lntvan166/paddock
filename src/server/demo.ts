@@ -1,4 +1,5 @@
 import type { Agent, AgentState } from "@shared/types";
+import type { Origin } from "@shared/origin";
 import type { HerdrAgentSession } from "@shared/herdr-api";
 import { DEMO_JOURNAL_AGENT_ID, DEMO_JOURNAL_LINES } from "@shared/demo-history";
 
@@ -8,6 +9,13 @@ export const DEMO_HOST_ID = "demo-box";
  *  prompt, and `tick()` below leaves it alone so the prompt is always there to
  *  be answered — see the note in `tick`. */
 export const DEMO_BLOCKED_AGENT_ID = "d1:p1";
+
+/** The app's blocked agent (origin "core"), pinned for the same reason. */
+export const DEMO_BLOCKED_APP_AGENT_ID = "hc.t1";
+
+/** The demo's one app space. Both of its agents live here, one per tab. */
+export const DEMO_APP_SPACE_ID = "hc.docs-site";
+export const DEMO_APP_SPACE_LABEL = "docs-site";
 
 /**
  * Synthetic agents for `--demo`. Names are INVENTED — this is the only mode used
@@ -25,7 +33,43 @@ const SEED: Array<{ id: string; name: string; task: string; state: AgentState; a
   { id: "d6:p1", name: "flaky-test-fix", task: "Stabilise the upload suite", state: "idle", ageMs: 3_600_000, harness: "codex" },
 ];
 
+/**
+ * Two agents from the Herdr app (herdr-core), so the demo shows the app half
+ * of the product: the "app" mark, an app space, and an app permission prompt.
+ * Invented like the rest. `turn` and `seen` are what a core agent carries;
+ * the working one has a turn the operator has not seen yet.
+ */
+const APP_SEED: Array<{ id: string; name: string; task: string; state: AgentState; ageMs: number; harness: string; turn: number; seen: number }> = [
+  { id: DEMO_BLOCKED_APP_AGENT_ID, name: "release-notes", task: "Build the docs site", state: "blocked", ageMs: 90_000, harness: "claude", turn: 2, seen: 2 },
+  { id: "hc.t2", name: "changelog-sync", task: "Sync the changelog with merged work", state: "working", ageMs: 30_000, harness: "codex", turn: 5, seen: 4 },
+];
+
 export function demoAgents(now: number): Agent[] {
+  return [...tuiAgents(now), ...appAgents(now)];
+}
+
+function appAgents(now: number): Agent[] {
+  return APP_SEED.map((s) => ({
+    hostId: DEMO_HOST_ID,
+    agentId: s.id,
+    name: s.name,
+    task: s.task,
+    state: s.state,
+    workspaceId: DEMO_APP_SPACE_ID,
+    workspaceLabel: DEMO_APP_SPACE_LABEL,
+    cwd: "/srv/demo-docs",
+    harness: s.harness,
+    stateSince: now - s.ageMs, stateSinceExact: true,
+    updatedAt: now,
+    acknowledgedAt: null,
+    hasJournal: false,
+    origin: "core" as const,
+    turn: s.turn,
+    seen: s.seen,
+  }));
+}
+
+function tuiAgents(now: number): Agent[] {
   return SEED.map((s) => ({
     hostId: DEMO_HOST_ID,
     agentId: s.id,
@@ -46,6 +90,9 @@ export function demoAgents(now: number): Agent[] {
     // drift. `index.ts` wires this agent's `/history` answer in the DEMO
     // branch; this flag is only the client-facing hint (decision 18).
     hasJournal: s.id === DEMO_JOURNAL_AGENT_ID,
+    origin: "herdr",
+    turn: null,
+    seen: null,
   }));
 }
 
@@ -110,7 +157,21 @@ interface DemoDelta {
  * dependency the wrong way down `herdr → store → hub → web`.
  */
 export interface DemoStoreSink {
-  replaceAll(incoming: Agent[], now: number): DemoDelta;
+  replaceAll(incoming: Agent[], now: number, origin: Origin): DemoDelta;
+}
+
+/**
+ * Put the demo's agents in the store, each backend's under its own origin —
+ * the way the two real supervisors do. One replace per origin, deltas joined.
+ */
+export function seedDemo(store: DemoStoreSink, agents: Agent[], now: number): DemoDelta {
+  const out: DemoDelta = { upserted: [], removedIds: [] };
+  for (const origin of ["herdr", "core"] as const) {
+    const d = store.replaceAll(agents.filter((a) => a.origin === origin), now, origin);
+    out.upserted.push(...d.upserted);
+    out.removedIds.push(...d.removedIds);
+  }
+  return out;
 }
 
 /**
@@ -136,7 +197,7 @@ export function createDemoSource(opts: {
     // The delta forwarded to browsers is the STORE's, not the demo array's,
     // so what a browser is told and what a later /api/agents reports are the
     // same computation.
-    onDelta: () => opts.onDelta(opts.store.replaceAll(source.snapshot(), now())),
+    onDelta: () => opts.onDelta(seedDemo(opts.store, source.snapshot(), now())),
   });
   return source;
 }
@@ -189,7 +250,10 @@ export class DemoSource {
     // It is also what makes the README's blocked screenshot reproducible: the
     // shot has to catch a state that is on screen, and racing a timer for it
     // is how an image ends up hand-staged.
-    const movable = this.agents.filter((a) => a.agentId !== DEMO_BLOCKED_AGENT_ID);
+    // The app's blocked agent is pinned the same way, for the same reason.
+    const movable = this.agents.filter(
+      (a) => a.agentId !== DEMO_BLOCKED_AGENT_ID && a.agentId !== DEMO_BLOCKED_APP_AGENT_ID,
+    );
     const target = movable[this.cursor % movable.length]!;
     const state = rotation[this.cursor % rotation.length]!;
     const now = this.now();

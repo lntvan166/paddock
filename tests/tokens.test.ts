@@ -110,6 +110,7 @@ test("the state palette is traffic-light, and never paints a state in the tap co
   expect(map).toContain('working: "var(--warn)"');
   expect(map).toContain('done: "var(--ok)"');
   expect(map).toContain('idle: "var(--fg-dim)"');
+  expect(map).toContain('error: "var(--danger)"');
   expect(map).not.toContain("--accent");
 });
 

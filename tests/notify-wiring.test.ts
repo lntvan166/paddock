@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { buildPushSender, deltaSink } from "@server/index-wiring";
+import { Notifier, type TimerHandle } from "@server/notify/notifier";
 import type { Delta } from "@server/state/store";
 import type { Agent } from "@shared/types";
 
@@ -16,7 +17,7 @@ const agent = (state: Agent["state"]): Agent => ({
   stateSince: 0, stateSinceExact: true,
   updatedAt: 0,
   acknowledgedAt: null,
-  hasJournal: false,
+  hasJournal: false, origin: "herdr", turn: null, seen: null,
 });
 // The hub/notifier split is covered by `deltaSink` at the foot of this file.
 // `fanOut` used to live in `notifier.ts` and be tested here; it was retired
@@ -179,4 +180,73 @@ test("the hub is served first, so a notifier cannot delay a screen", () => {
   )({ upserted: [], removedIds: [] });
 
   expect(order).toEqual(["hub", "notifier"]);
+});
+
+// herdr-core agents: `herdr.seen >= turn` means somebody already looked, in the
+// Herdr app or here. Decided when the settle window ends, on the newest row.
+function seenHarness() {
+  const sent: string[] = [];
+  const timers = new Map<number, () => void>();
+  let id = 1;
+  const n = new Notifier({
+    settings: { current: () => ({
+      telegram: { token: "1:A", chatId: "555" },
+      notify: { telegram: true, triggers: ["blocked", "done"], settleMs: { blocked: 5_000, done: 10_000 },
+        mutedUntil: null, cooldownMs: 0 },
+      publicUrl: null,
+    }) } as never,
+    send: async (text: string) => { sent.push(text); return { ok: true, detail: null }; },
+    now: () => 0,
+    setTimer: (fn) => { const k = id++; timers.set(k, fn); return k as unknown as TimerHandle; },
+    clearTimer: (h) => { timers.delete(h as unknown as number); },
+  });
+  const settle = async () => {
+    for (const [k, fn] of [...timers]) { timers.delete(k); fn(); }
+    await Bun.sleep(1);
+  };
+  return { n, sent, settle };
+}
+const coreAgent = (over: Partial<Agent> = {}): Agent => ({
+  ...agent("working"), agentId: "core:t1", origin: "core", turn: 4, seen: 1, ...over,
+});
+
+test("notifier skips a core agent whose seen is at or past its turn", async () => {
+  for (const seen of [4, 9]) {
+    const h = seenHarness();
+    h.n.observe({ upserted: [coreAgent()], removedIds: [] });
+    h.n.observe({ upserted: [coreAgent({ state: "done", seen })], removedIds: [] });
+    await h.settle();
+    expect(h.sent).toEqual([]);
+  }
+});
+
+test("notifier announces a core agent whose seen is behind its turn, or has no turn", async () => {
+  const h = seenHarness();
+  h.n.observe({ upserted: [coreAgent()], removedIds: [] });
+  h.n.observe({ upserted: [coreAgent({ state: "done" })], removedIds: [] });
+  await h.settle();
+  expect(h.sent).toEqual(["docs-cleanup is done"]);
+
+  const g = seenHarness();
+  g.n.observe({ upserted: [coreAgent({ turn: null, seen: null })], removedIds: [] });
+  g.n.observe({ upserted: [coreAgent({ state: "done", turn: null, seen: null })], removedIds: [] });
+  await g.settle();
+  expect(g.sent).toEqual(["docs-cleanup is done"]);
+});
+
+test("a seen label that lands during the settle window silences the send", async () => {
+  const h = seenHarness();
+  h.n.observe({ upserted: [coreAgent()], removedIds: [] });
+  h.n.observe({ upserted: [coreAgent({ state: "done" })], removedIds: [] });
+  h.n.observe({ upserted: [coreAgent({ state: "done", seen: 4 })], removedIds: [] });
+  await h.settle();
+  expect(h.sent).toEqual([]);
+});
+
+test("a herdr agent is announced whatever its seen and turn", async () => {
+  const h = seenHarness();
+  h.n.observe({ upserted: [agent("working")], removedIds: [] });
+  h.n.observe({ upserted: [{ ...agent("done"), turn: 1, seen: 5 }], removedIds: [] });
+  await h.settle();
+  expect(h.sent).toEqual(["docs-cleanup is done"]);
 });

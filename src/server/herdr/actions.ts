@@ -1,3 +1,4 @@
+import type { HostPath } from "@server/paths";
 import { request } from "@server/herdr/socket";
 import type {
   HerdrAgentManifests, HerdrAgentPrompted, HerdrAgentPromptParams,
@@ -6,6 +7,8 @@ import type {
   HerdrWorkspaceCreated,
 } from "@shared/herdr-api";
 import { ctrlChar, isCtrlKey, type AgentState, type NavKey } from "@shared/types";
+import type { Origin } from "@shared/origin";
+import { Unsupported } from "@server/action-errors";
 
 /**
  * Whether this key has to travel as text, and the byte it becomes.
@@ -44,32 +47,9 @@ export function keyForChar(ch: string): string {
   return ch === " " ? "space" : ch;
 }
 
-/**
- * A path herdr can actually chdir into: absolute, and with paddock's own
- * tilde already undone.
- *
- * Both halves are enforced, which was not always true: `expandHome` once
- * guaranteed only the second, refusing a tilde it could not resolve while
- * forwarding `./relative` — so the sentence above was false in writing about
- * the word "absolute". It now refuses anything that is not absolute after
- * expansion, and this doc is a promise again rather than an aspiration.
- *
- * A BRAND, not a validation helper — the only way to obtain one is
- * `expandHome` in `tree.ts`, which is the single function that casts into it.
- * That is the whole point. `tree.ts` tilde-ises every cwd on the way out so a
- * username never crosses the wire, the create sheet offers those tilde-ised
- * cwds back as quick picks, and herdr was measured to neither expand nor
- * refuse a `~` — it silently starts the pane in the home directory instead.
- * The first fix for that put the expansion in one route and left nothing
- * forcing the next route to call it. This does: a future `pane.split` or any
- * other cwd-accepting route cannot assign a raw client string here, so it
- * cannot compile without going through the expansion.
- *
- * `HostPath` is assignable to `string`, so every consumer of `opts.cwd` —
- * including a test fake typed `(opts: {cwd?: string})` — is unaffected. Only
- * the direction that matters is blocked.
- */
-export type HostPath = string & { readonly __hostPath: unique symbol };
+// `HostPath` lives in `@server/paths` beside `expandHome`, the one function
+// that casts into it; re-exported here because `CreateOpts` is its consumer.
+export type { HostPath };
 
 /** The `{label?, cwd?}` a create route forwards to `createSpace`/`createTab`.
  *  Both fields are already normalised by the ROUTE before this is called: an
@@ -79,6 +59,16 @@ export type HostPath = string & { readonly __hostPath: unique symbol };
 export interface CreateOpts {
   label?: string;
   cwd?: HostPath;
+  /** Which backend a new SPACE goes to. A space has no id yet to route by, so
+   *  `actionsByOrigin` reads this; absent means terminal herdr, as before. */
+  origin?: Origin;
+  /**
+   * herdr-core only: start this harness AS the new terminal, so a new app
+   * space or tab holds the agent and nothing beside it (the core cannot start
+   * a program inside an existing terminal). Terminal herdr starts agents in
+   * the new pane with `startAgent`; the create routes refuse this for it.
+   */
+  harness?: { kind: string; name: string };
 }
 
 export type ReadSource = "detection" | "visible" | "recent_unwrapped";
@@ -476,6 +466,19 @@ export interface HerdrActions {
    * `AgentStartParams.kind` is a plain string in protocol 20, not an enum.
    */
   harnessKinds(): Promise<string[]>;
+  /**
+   * Record that the operator has seen this agent's latest turn — the shared
+   * `herdr.seen` label every herdr-core client reads. Written only on a
+   * deliberate act (Dismiss, or opening the agent), never from presence.
+   * Terminal herdr has no shared seen state and refuses.
+   */
+  markSeen(target: string, turn: number): Promise<void>;
+  /**
+   * May one-tap answer buttons be offered for this agent's prompt? A read.
+   * Terminal herdr: always (the parser alone decides, as before). herdr-core:
+   * only while the live status is a blocked `permission` prompt.
+   */
+  promptAllowed(target: string): Promise<boolean>;
 }
 
 /** Binds the socket path once so routes can take an injectable object. */
@@ -725,6 +728,16 @@ export function createActions(socketPath: string): HerdrActions {
     async harnessKinds() {
       const res = await request<HerdrAgentManifests>(socketPath, "server.agent_manifests", {});
       return res.manifests.map((m) => m.agent);
+    },
+
+    async promptAllowed() {
+      return true;
+    },
+
+    async markSeen() {
+      // Refused, not a quiet no-op: a resolved promise would tell the caller
+      // the label was written. paddock's own acknowledge model covers these.
+      throw new Unsupported("terminal herdr has no shared seen state");
     },
   };
 }

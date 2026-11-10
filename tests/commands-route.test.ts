@@ -12,14 +12,14 @@ function agent(over: Partial<Agent> = {}): Agent {
     task: "Extract auth middleware", state: "blocked", workspaceId: "w1",
     workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
     stateSince: NOW, stateSinceExact: true, updatedAt: NOW,
-    acknowledgedAt: null, hasJournal: false, ...over,
+    acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null, ...over,
   };
 }
 
 /** Records the cwd it was asked about — the thing under test. */
 function harness(a: Agent = agent(), commands: AgentCommand[] = []) {
   const store = new AgentStore("dev-box");
-  store.replaceAll([a], NOW);
+  store.replaceAll([a], NOW, "herdr");
   const asked: string[] = [];
   const app = createApp({
     store,
@@ -78,7 +78,7 @@ test("an agent with no cwd is served an empty list, not a read of the root", asy
 
 test("a reader that throws is an empty list, not a broken reply field", async () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app = createApp({
     store,
     hub: new Hub(),
@@ -100,7 +100,7 @@ test("a reader that throws is an empty list, not a broken reply field", async ()
 test("with no reader configured the route still answers, emptily", async () => {
   // `--demo` omits it, the same way it omits `actions` and `journal`.
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const app = createApp({ store, hub: new Hub(), health: () => ({}) as never });
 
   const res = await app.request("/api/agents/w1:p1/commands", { method: "POST" });

@@ -179,3 +179,18 @@ export async function connectWithWait(
     }
   }
 }
+
+/**
+ * May paddock run without terminal herdr, on herdr-core alone?
+ *
+ * Only when herdr is ABSENT — the bounded wait gave up on a socket that is not
+ * there, or one nobody serves — and a core is connected. Everything `fatal`
+ * stays fatal even with a core: a protocol mismatch, a path that is not a
+ * socket, unreadable permissions, an error paddock cannot diagnose. Those are
+ * a herdr that IS there and wrong, and running quietly on the app would hide
+ * the one thing the operator has to fix. And an absent herdr with no core is
+ * exactly the failure it always was.
+ */
+export function mayRunWithoutHerdr(outcome: StartOutcome, coreConnected: boolean): boolean {
+  return coreConnected && outcome.kind === "gaveUp";
+}

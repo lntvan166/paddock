@@ -22,7 +22,7 @@ const NOW = 1_700_000_000_000;
 const health = () => ({
   ok: true, hostId: "dev-box", agents: 1, clients: 0, herdrConnected: true,
   lastEventAt: NOW, lastNotifyError: null, version: "0.0.0-dev", latestKnown: null, managedBy: null,
-  herdrProtocol: null, schemaWarning: null,
+  herdrProtocol: null, core: { connected: false, lastEventAt: null, generation: null, version: null, detail: null }, app: null, schemaWarning: null,
 });
 
 function agent(state: Agent["state"] = "blocked"): Agent {
@@ -30,15 +30,17 @@ function agent(state: Agent["state"] = "blocked"): Agent {
     hostId: "dev-box", agentId: "w1:p1", name: "api-refactor",
     task: "Extract auth middleware", state, workspaceId: "w1",
     workspaceLabel: "api work", cwd: "/srv/project", harness: "claude",
-    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false,
+    stateSince: NOW, stateSinceExact: true, updatedAt: NOW, acknowledgedAt: null, hasJournal: false, origin: "herdr", turn: null, seen: null,
   };
 }
 
 function harness(state: Agent["state"] = "blocked") {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent(state)], NOW);
+  store.replaceAll([agent(state)], NOW, "herdr");
   const calls: string[] = [];
   const actions = {
+    async markSeen() {},
+    async promptAllowed() { return true; },
     async readOutput() { calls.push("readOutput"); return { lines: ["out"], source: "visible" as const }; },
     async readPane() { calls.push("readPane"); return { lines: ["out"], source: "recent_unwrapped" as const }; },
     async readPromptScreen() { calls.push("readPromptScreen"); return ""; },

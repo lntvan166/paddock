@@ -19,50 +19,50 @@ function agent(over: Partial<Agent> = {}): Agent {
     stateSinceExact: true,
     updatedAt: NOW,
     acknowledgedAt: null,
-    hasJournal: false,
+    hasJournal: false, origin: "herdr", turn: null, seen: null,
     ...over,
   };
 }
 
 test("replaceAll reports newly added agents as upserted", () => {
   const store = new AgentStore("dev-box");
-  const d = store.replaceAll([agent()], NOW);
+  const d = store.replaceAll([agent()], NOW, "herdr");
   expect(d.upserted).toHaveLength(1);
   expect(d.removedIds).toEqual([]);
 });
 
 test("replaceAll reports no upserts when nothing changed", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
-  const d = store.replaceAll([agent()], NOW + 1000);
+  store.replaceAll([agent()], NOW, "herdr");
+  const d = store.replaceAll([agent()], NOW + 1000, "herdr");
   expect(d.upserted).toEqual([]);
 });
 
 test("replaceAll preserves the original stateSince for an unchanged state", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
-  store.replaceAll([agent({ stateSince: NOW + 9000 })], NOW + 9000);
+  store.replaceAll([agent()], NOW, "herdr");
+  store.replaceAll([agent({ stateSince: NOW + 9000 })], NOW + 9000, "herdr");
   expect(store.snapshot()[0]!.stateSince).toBe(NOW);
 });
 
 test("replaceAll reports a state change as an upsert and restamps stateSince", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
-  const d = store.replaceAll([agent({ state: "blocked", stateSince: NOW + 2000 })], NOW + 2000);
+  store.replaceAll([agent()], NOW, "herdr");
+  const d = store.replaceAll([agent({ state: "blocked", stateSince: NOW + 2000 })], NOW + 2000, "herdr");
   expect(d.upserted).toHaveLength(1);
   expect(d.upserted[0]!.stateSince).toBe(NOW + 2000);
 });
 
 test("replaceAll reports disappeared agents as removed", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent(), agent({ agentId: "w2:p1", name: "docs-cleanup" })], NOW);
-  const d = store.replaceAll([agent()], NOW + 1000);
+  store.replaceAll([agent(), agent({ agentId: "w2:p1", name: "docs-cleanup" })], NOW, "herdr");
+  const d = store.replaceAll([agent()], NOW + 1000, "herdr");
   expect(d.removedIds).toEqual(["w2:p1"]);
 });
 
 test("applyEvent mutates a known agent and returns it", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const out = store.applyEvent("w1:p1", (p) => ({ ...p, state: "blocked" }));
   expect(out!.state).toBe("blocked");
 });
@@ -74,7 +74,7 @@ test("applyEvent returns null for an unknown agent", () => {
 
 test("remove drops the agent and reports it as removed", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   const d = store.remove("w1:p1");
   expect(d!.removedIds).toEqual(["w1:p1"]);
   expect(store.snapshot()).toEqual([]);
@@ -82,7 +82,7 @@ test("remove drops the agent and reports it as removed", () => {
 
 test("removing an already-gone agent returns null, so no empty delta is sent", () => {
   const store = new AgentStore("dev-box");
-  store.replaceAll([agent()], NOW);
+  store.replaceAll([agent()], NOW, "herdr");
   store.remove("w1:p1");
   expect(store.remove("w1:p1")).toBeNull();
 });
@@ -96,6 +96,7 @@ test("snapshot sorts needs-you first, then working, then idle", () => {
       agent({ agentId: "c", name: "blocked-one", state: "blocked" }),
     ],
     NOW,
+    "herdr",
   );
   expect(store.snapshot().map((a) => a.name)).toEqual(["blocked-one", "working-one", "idle-one"]);
 });
@@ -108,6 +109,7 @@ test("snapshot orders needs-you by most recent state change first", () => {
       agent({ agentId: "b", name: "newer", state: "blocked", stateSince: NOW + 5000 }),
     ],
     NOW,
+    "herdr",
   );
   expect(store.snapshot().map((a) => a.name)).toEqual(["newer", "older"]);
 });
@@ -122,18 +124,49 @@ test("an age paddock never witnessed stays marked as a bound, and a real one is 
 
   // First sight, straight off agent.list: a floor, not a fact.
   const fresh = { ...agent({ state: "idle" }), stateSince: NOW, stateSinceExact: false };
-  store.replaceAll([fresh], NOW);
+  store.replaceAll([fresh], NOW, "herdr");
   expect(store.snapshot()[0]!.stateSinceExact).toBe(false);
 
   // A reconcile that sees the SAME state must not promote it — nothing was
   // witnessed, and a repeated listing is not evidence of a transition.
-  store.replaceAll([{ ...fresh, stateSince: NOW + 60_000 }], NOW + 60_000);
+  store.replaceAll([{ ...fresh, stateSince: NOW + 60_000 }], NOW + 60_000, "herdr");
   expect(store.snapshot()[0]!.stateSinceExact, "a repeated listing is not a transition").toBe(false);
   expect(store.snapshot()[0]!.stateSince, "and it does not reset the floor either").toBe(NOW);
 
   // A reconcile that catches a real change is an observation, so the stamp
   // becomes the real one.
-  store.replaceAll([{ ...fresh, state: "blocked" }], NOW + 120_000);
+  store.replaceAll([{ ...fresh, state: "blocked" }], NOW + 120_000, "herdr");
   expect(store.snapshot()[0]!.stateSinceExact).toBe(true);
   expect(store.snapshot()[0]!.stateSince).toBe(NOW + 120_000);
+});
+
+test("replacing core agents keeps herdr agents", () => {
+  const store = new AgentStore("dev-box");
+  store.replaceAll([agent()], NOW, "herdr");
+  const core = agent({ agentId: "hc.t1", name: "schema-migration", origin: "core" });
+  const d = store.replaceAll([core], NOW, "core");
+  expect(d.upserted.map((a) => a.agentId)).toEqual(["hc.t1"]);
+  expect(d.removedIds).toEqual([]);
+  const d2 = store.replaceAll([], NOW + 1000, "core");
+  expect(d2.removedIds).toEqual(["hc.t1"]);
+  expect(store.snapshot().map((a) => a.agentId)).toEqual(["w1:p1"]);
+});
+
+test("removeOrigin drops only that origin and reports them as removed", () => {
+  const store = new AgentStore("dev-box");
+  store.replaceAll([agent()], NOW, "herdr");
+  store.replaceAll([agent({ agentId: "hc.t1", origin: "core" })], NOW, "core");
+  const d = store.removeOrigin("core");
+  expect(d).toEqual({ upserted: [], removedIds: ["hc.t1"] });
+  expect(store.snapshot().map((a) => a.agentId)).toEqual(["w1:p1"]);
+  expect(store.removeOrigin("core")).toEqual({ upserted: [], removedIds: [] });
+});
+
+test("replaceAll reports a core agent whose only change is turn or seen", () => {
+  const store = new AgentStore("dev-box");
+  const base = agent({ agentId: "hc.t1", origin: "core", turn: 1, seen: null });
+  store.replaceAll([base], NOW, "core");
+  expect(store.replaceAll([{ ...base, turn: 2 }], NOW, "core").upserted.map((a) => a.agentId)).toEqual(["hc.t1"]);
+  expect(store.replaceAll([{ ...base, turn: 2, seen: 2 }], NOW, "core").upserted.map((a) => a.agentId)).toEqual(["hc.t1"]);
+  expect(store.replaceAll([{ ...base, turn: 2, seen: 2 }], NOW, "core").upserted).toEqual([]);
 });
