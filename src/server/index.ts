@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@server/routes";
 import { createDemoSource, DemoSource, DEMO_HOST_ID, demoJournalPage, demoSessionFor, seedDemo } from "@server/demo";
@@ -621,6 +621,29 @@ let latestKnown: string | null = null;
 const bootLog = new BootLog();
 
 /**
+ * Where the dashboard keeps its data: settings, push subscriptions, the
+ * update-check cache, uploads.
+ *
+ * In `--demo`, a fresh EMPTY directory, removed on exit. The demo used to read
+ * the operator's real `~/.config/paddock`: its Settings screen showed their
+ * Telegram chat id, their own domain and how many phones get pushes, and the
+ * demo is where README screenshots come from (CLAUDE.md). It also WROTE there:
+ * toggling a notification in the demo changed the real settings.json. A demo
+ * is synthetic end to end, its settings included.
+ *
+ * NOT the state record (`paddock.state.json`, below): that says which paddock
+ * runs on which port, so `status` and `stop` can find a demo like any other,
+ * and two paddocks never fight over a port unseen.
+ */
+const CONFIG_DIR = DEMO ? mkdtempSync(join(tmpdir(), "paddock-demo-")) : defaultConfigDir();
+if (DEMO) {
+  process.on("exit", () => {
+    try { rmSync(CONFIG_DIR, { recursive: true, force: true }); }
+    catch (e) { console.error(`paddock: could not remove the demo's config dir ${CONFIG_DIR}: ${(e as Error).message}`); }
+  });
+}
+
+/**
  * Set once the banner has printed WITHOUT an update result in hand, so a result
  * arriving later still reaches the terminal. Null means "already announced, or
  * too early to" — the banner reads it, the update callback clears it.
@@ -632,7 +655,7 @@ const updateChecks = scheduleUpdateChecks(
   // A factory: `now` must be fresh on every tick, or the 24h cache never looks
   // expired. See scheduleUpdateChecks.
   () => ({
-    dir: defaultConfigDir(),
+    dir: CONFIG_DIR,
     current: VERSION,
     now: Date.now(),
     disabled: noUpdateCheckRequested(),
@@ -668,7 +691,9 @@ const hub = new Hub({
   spaces: () => readTree !== undefined,
 });
 
-const settings = new SettingsStore(defaultConfigDir());
+// No environment in --demo: PADDOCK_TELEGRAM_* would seed the demo with the
+// operator's real bot, and its Settings screen would show it.
+const settings = new SettingsStore(CONFIG_DIR, DEMO ? {} : process.env);
 await settings.load();
 // Never log settings.error's cause verbatim if that ever changes to include
 // file contents — today it is only "unreadable" / "not valid JSON" messages,
@@ -682,7 +707,7 @@ if (settings.error) console.error(`[settings] ${settings.error}`);
  * file should see it on the terminal they are already looking at, not only
  * after opening a screen they have no reason to open.
  */
-const push = await PushStore.load(defaultConfigDir());
+const push = await PushStore.load(CONFIG_DIR);
 if (push.error) console.error(`[push] ${push.error}`);
 
 /**
@@ -1193,7 +1218,7 @@ const appDeps = {
   // worked. Absent, the route says "not configured" and means it.
   saveImage: DEMO
     ? undefined
-    : (bytes: Uint8Array) => saveImage(defaultConfigDir(), bytes, Date.now()),
+    : (bytes: Uint8Array) => saveImage(CONFIG_DIR, bytes, Date.now()),
   // Omitted in DEMO for the reason the two above are, and more sharply: a demo
   // must never serve a real file off the operator's disk, and README
   // screenshots are taken in this mode.

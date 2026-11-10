@@ -451,6 +451,19 @@ one, recorded here so they are not reintroduced.
   not the policy is correct, so it cannot tell a working gate from a missing
   one. See `docs/deploy-cloudflare.md` for the check and the expected result.
 
+## The demo read the operator's real config
+
+`paddock --demo` loaded `PADDOCK_CONFIG_DIR` like a real run. Its Settings
+screen showed the operator's Telegram chat id, their own domain and their push
+device count, and `--demo` is where screenshots come from. It also wrote there:
+a toggle in the demo changed the real `settings.json`. Found while
+taking a gallery screenshot, which only came out clean because the config dir
+had been pointed at an empty folder by hand. `--demo` now runs on its own
+empty temporary directory for its data and ignores `PADDOCK_TELEGRAM_*`;
+`tests/demo-config-process.test.ts` starts the binary to prove it. The state
+record (`paddock.state.json`) still goes to the real dir on purpose: it is
+how `status` and `stop` find a running paddock, a demo included.
+
 ## Quick tunnels
 
 - **The URL is not the tunnel.** cloudflared prints the `trycloudflare.com`
