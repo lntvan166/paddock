@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ActionResult, Agent, AgentCommand, NavKey, ParsedPrompt } from "@shared/types";
+import { displayState, type ActionResult, type Agent, type AgentCommand, type NavKey, type ParsedPrompt } from "@shared/types";
 import {
   answerWithKey, moveDialogTab, selectOption, sendDialogKey, sendNote, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
   sendText, uploadImage,
@@ -855,8 +855,8 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                 </span>
               )
             : <>
-                <StatusDot state={agent.state} />
-                <span className="sr-only">{agent.state}</span>
+                <StatusDot state={displayState(agent)} />
+                <span className="sr-only">{displayState(agent)}</span>
               </>}
         </>
       }

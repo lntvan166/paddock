@@ -38,3 +38,26 @@ test("an error agent reads Error", async () => {
   const host = await render(<AgentRow agent={agent({ state: "error" })} now={0} />);
   expect(host.querySelector(".state-word")?.textContent).toBe("Error");
 });
+
+// A finish the operator has already read sits in Idle, and its row has to say
+// so: the core keeps reporting `done` after `herdr.seen` reaches the turn, and
+// a row reading "Finished" under an Idle header told the operator three agents
+// still had news after they had opened every one.
+test("a core agent whose turn has been seen reads Idle, not Finished", async () => {
+  const host = await render(
+    <AgentRow agent={agent({ origin: "core", agentId: "hc.t1", state: "done", turn: 3, seen: 3 })} now={0} />,
+  );
+  expect(host.querySelector(".state-word")?.textContent).toBe("Idle");
+});
+
+test("a core agent with an unseen turn still reads Finished", async () => {
+  const host = await render(
+    <AgentRow agent={agent({ origin: "core", agentId: "hc.t1", state: "done", turn: 4, seen: 3 })} now={0} />,
+  );
+  expect(host.querySelector(".state-word")?.textContent).toBe("Finished");
+});
+
+test("a dismissed herdr finish reads Idle", async () => {
+  const host = await render(<AgentRow agent={agent({ state: "done", acknowledgedAt: 1 })} now={0} />);
+  expect(host.querySelector(".state-word")?.textContent).toBe("Idle");
+});

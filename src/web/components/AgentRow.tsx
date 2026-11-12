@@ -1,4 +1,4 @@
-import type { Agent } from "@shared/types";
+import { displayState, type Agent } from "@shared/types";
 import { elapsedLabel } from "@web/components/elapsed";
 import { IconTile } from "@web/components/ui/IconTile";
 import { StatusDot } from "@web/components/ui/StatusDot";
@@ -66,7 +66,7 @@ export function AgentRow({
       {/* The state READ, not decoded: word and dot above the age, in one
           trailing column so every row's figures end on the same edge. */}
       <span className="row-trail">
-        <StateWord state={agent.state} surfaceVar="--surface" />
+        <StateWord state={displayState(agent)} surfaceVar="--surface" />
         <span className="ident row-meta">{elapsedLabel(now - agent.stateSince, agent.stateSinceExact)}</span>
       </span>
     </div>

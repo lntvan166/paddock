@@ -802,6 +802,20 @@ export function sectionFor(agent: Agent): Section {
 }
 
 /**
+ * The state a row SHOWS, which must agree with the section it sits in.
+ *
+ * `done` is "finished and not yet read". Once read — a core agent's
+ * `herdr.seen` reached its turn, or a herdr agent was dismissed — `sectionFor`
+ * files it under Idle, but the raw state stays `done` (herdr-core keeps
+ * reporting it). Rendering the raw state put "Finished" under an Idle header,
+ * so agents the operator had already opened still read as having news.
+ */
+export function displayState(agent: Agent): AgentState {
+  if (agent.state === "done" && sectionFor(agent) === "idle") return "idle";
+  return agent.state;
+}
+
+/**
  * THE triage display order (spec §6): section, then most-recently-changed
  * first, then name as a stable tie-break.
  *
