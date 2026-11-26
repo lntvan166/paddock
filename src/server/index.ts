@@ -1,4 +1,5 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "@server/routes";
@@ -1204,6 +1205,31 @@ const appDeps = {
   hub,
   actions,
   readTree,
+  // Not in --demo, for the reason `files` is absent there.
+  remoteFiles: DEMO ? undefined : {
+    read: async (machine: string, path: string, cwd: string | null) => {
+      const core = coreSupervisor?.connection() ?? null;
+      if (!core) throw new Error("herdr-core is not running");
+      const res = await core.request<{ text: string }>("file.read", { path, cwd, on: machine });
+      return res.text;
+    },
+    // A private folder per file, under the system temp dir: the original
+    // name is kept for the viewer, and two files with one name never meet.
+    stage: async (name: string, text: string) => {
+      const dir = await mkdtemp(join(tmpdir(), "paddock-remote-"));
+      const path = join(dir, name);
+      await writeFile(path, text, { mode: 0o600 });
+      return path;
+    },
+  },
+  // Not in --demo: there is no core there, and its machines would be the
+  // operator's real hostnames.
+  machines: DEMO ? undefined : async () => {
+    const core = coreSupervisor?.connection() ?? null;
+    if (!core) return null;
+    const res = await core.request<{ machines: { name: string; host: string; state: string; since_ms?: number | null; why?: string | null }[] }>("machine.list", {});
+    return res.machines.map((m) => ({ name: m.name, host: m.host, state: m.state, sinceMs: m.since_ms ?? null, why: m.why ?? null }));
+  },
   /**
    * Re-read herdr now, for the one route that needs it.
    *

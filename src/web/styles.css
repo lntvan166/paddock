@@ -2559,6 +2559,10 @@ body {
   scrollbar-color: var(--border) transparent;
 }
 
+/* Settings → Machines: one row per added machine, as the Connection card's. */
+.machine-list { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.machine-host { color: var(--fg-dim); font-size: var(--t-xs); }
+
 /* Text typed at the desk and not sent: what it is, and the one thing to do
    about it. One line, clipped; the full draft goes into the field on Pull. */
 .term-draft {

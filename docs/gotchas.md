@@ -587,3 +587,39 @@ The traps, each of which a hand-written fixture hid:
   person's: only DATA frames move the core's draft counter, and only a
   person's Enter, Ctrl+C or Ctrl+U reset it. paddock's Esc Esc therefore
   clears the box without ending the core's wait; the send waits it out.
+## Images, files and Stop on app agents
+
+Measured on a live Claude Code through herdr-core 0.1.22:
+
+| What | Measured |
+|---|---|
+| `terminal.put` | Writes the bytes beside the terminal, ON ITS MACHINE, in a folder removed with the terminal; returns the path there. 8 MB raw per put. Types nothing. |
+| A bracketed paste of an image path ALONE | Becomes `[Image #N]`, an attached image, after Claude Code reads the file: ~100 ms for an image it had seen, well past 400 ms for a new one |
+| The same path inside a sentence | Stays a path (the agent may still open it itself) |
+| `terminal.interrupt` | Sends Esc to a program that reports status (Claude Code), Ctrl+C otherwise, and answers `stopped` / `exited` / `still_working` / `unknown` |
+| `file.read` with `on` | Reads a TEXT file on an added machine; `~/` and a missing `cwd` mean that machine's home |
+
+What paddock does with it:
+
+- **Images go to the agent's machine.** `/image` saves the upload (which
+  checks it is an image), then, for an app agent, `terminal.put`s it and
+  returns THAT path. A failed put to another machine fails; on this machine
+  the local copy is still a path the agent can open, so it is kept and said.
+- **The reply field holds `[Image #N]` at the caret**, Claude Code's own
+  label, never a path. The server delivers a reply with images as parts: the
+  words, each image path pasted alone where its token was, then the last
+  words through `terminal.send` (which presses Enter behind the core's
+  gates). After each image it WAITS for the box's chip count to rise: a fixed
+  400 ms let Enter overtake a new image, the prompt went without it, and the
+  chip landed in the box afterwards. No chip within 5 s stops short of Enter,
+  leaving what was typed in the input. Other harnesses get the paths inline.
+- **Bun's `socket.write` writes what fits and returns the count.** Both of
+  paddock's core connections ignored it, so a 240 KB `terminal.put` line was
+  cut short and the core waited for the rest until the request timed out,
+  while `hc put` of the same file returned at once. `socketWriter` keeps the
+  tail and writes it on `drain`.
+- **Stop is `terminal.interrupt`.** It used to send Ctrl+C, which clears
+  Claude Code's input, and a second press quits it.
+- **A path from another machine's agent is read there**, staged locally, and
+  served sandboxed like any file. Images and binaries cannot be read that way
+  and are refused by name.

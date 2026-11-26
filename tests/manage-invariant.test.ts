@@ -133,6 +133,8 @@ function harness() {
     actions: {
       async markSeen() {},
       async clearDraft() {},
+      async putImage() { return "/there/image.png"; },
+      async interrupt() { return { key: "esc", outcome: "stopped" as const }; },
       async promptAllowed() { return true; },
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },

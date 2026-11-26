@@ -41,6 +41,18 @@ export function InfoSection({ health }: { health: HealthBody | null }) {
   const herdrOk = health ? health.herdrConnected : null;
   const core = health?.core ?? null;
   const app = health?.app ?? null;
+  // Terminal herdr is ONE of two backends. Down while herdr-core serves the
+  // agents is an app-only setup working as intended, so it reads "Not
+  // running" like the core's own row; only both down is a warning.
+  const coreUp = core?.connected === true;
+  // The newest event from EITHER backend. This row is the liveness check
+  // (a silent break shows here within seconds), and reading terminal
+  // herdr's alone showed "—" on every app-only install.
+  const lastEvent = Math.max(health?.lastEventAt ?? 0, core?.lastEventAt ?? 0) || null;
+  const protocol = [
+    health?.herdrProtocol ?? null,
+    core?.generation != null ? `herdr-core gen ${core.generation}` : null,
+  ].filter((p): p is string => p !== null).join(" · ") || null;
 
   return (
     <>
@@ -67,13 +79,15 @@ export function InfoSection({ health }: { health: HealthBody | null }) {
         />
         <Row
           label="herdr"
-          value={herdrOk === null ? null : herdrOk ? "Connected" : "Disconnected"}
-          valueClassName={herdrOk === null ? undefined : herdrOk ? "ok" : "warn"}
+          value={herdrOk === null ? null : herdrOk ? "Connected" : coreUp ? "Not running" : "Disconnected"}
+          valueClassName={herdrOk === null ? undefined : herdrOk ? "ok" : coreUp ? undefined : "warn"}
         />
         {/* Always rendered, like every row: absent is a state worth showing. */}
         <Row
           label="herdr-core"
-          value={core === null ? null : core.connected ? "Connected" : `Not running${core.detail ? ` (${core.detail})` : ""}`}
+          value={core === null ? null : core.connected
+            ? `Connected${core.version ? ` · ${core.version}` : ""}`
+            : `Not running${core.detail ? ` (${core.detail})` : ""}`}
           valueClassName={core === null ? undefined : core.connected ? "ok" : undefined}
         />
         <Row
@@ -83,9 +97,9 @@ export function InfoSection({ health }: { health: HealthBody | null }) {
         />
         <Row
           label="Last event"
-          value={health?.lastEventAt ? new Date(health.lastEventAt).toLocaleTimeString() : null}
+          value={lastEvent ? new Date(lastEvent).toLocaleTimeString() : null}
         />
-        <Row label="Protocol" value={health?.herdrProtocol ?? null} />
+        <Row label="Protocol" value={protocol} />
         {/* Server-only, deliberately: `health.version` comes from
             `/api/health` (the server); `BUILD.commit` is the vite `define`
             baked into the RUNNING BUNDLE (the client). Concatenating them

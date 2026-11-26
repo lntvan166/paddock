@@ -97,6 +97,22 @@ export interface SettingsPatch {
  */
 export type MachineScope = "local" | "all";
 
+/**
+ * A machine the Herdr app added, as herdr-core's `machine.list` reports it:
+ * what paddock calls it (`build-box` in `build-box/t7`), its hostname, and
+ * its line now. `GET /api/machines`'s success body is `{ machines: [...] }`.
+ */
+export interface MachineInfo {
+  name: string;
+  host: string;
+  /** connecting, connected, needs_login or unreachable. */
+  state: string;
+  /** Since when it is not connected, ms since the epoch. */
+  sinceMs: number | null;
+  /** The core's reason, when it is not connected. */
+  why: string | null;
+}
+
 export function isMachineScope(v: unknown): v is MachineScope {
   return v === "local" || v === "all";
 }

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Unsupported } from "@server/action-errors";
 import {
-  createCoreActions, DRAFT_BUSY, DRAFT_CHANGED, DRAFT_NOT_CLAUDE, DRAFT_NOT_CLEARED, INPUT_COVERED, SEND_TIMEOUT_MS,
+  createCoreActions, DRAFT_BUSY, DRAFT_CHANGED, DRAFT_NOT_CLAUDE, DRAFT_NOT_CLEARED, IMAGE_NOT_ATTACHED, INPUT_COVERED, SEND_TIMEOUT_MS,
 } from "@server/herdr-core/actions";
 import type { AppSocket } from "@server/herdr-core/app-socket";
 import type { LiveScreens } from "@server/herdr-core/live-screen";
@@ -126,4 +126,79 @@ test("a reply goes out on a connection of its own, with the long send timeout", 
   const a = createCoreActions(() => client as never, app, { sleep: async () => {}, screens: fake as unknown as LiveScreens });
   await a.sendReply("hc.t7", "xin chào");
   expect(alone).toEqual([{ method: "terminal.send", params: { terminal: "t7", text: "xin chào" }, timeoutMs: SEND_TIMEOUT_MS }]);
+});
+
+/** A box holding one chip per image path among the pastes so far. */
+const chipsFor = (typed: string[]) => {
+  const n = typed.filter((p) => p.includes("/there/")).length;
+  return boxed("❯\u00a0" + (n === 0 ? "" : Array.from({ length: n }, (_, i) => `[Image #${i + 1}]`).join(" ")));
+};
+
+test("a reply with images goes in as parts: each path pasted alone where its token was, then Enter", async () => {
+  const typed: string[] = [];
+  const sent: string[] = [];
+  const client = {
+    async request<T>(method: string, params: any = {}): Promise<T> {
+      if (method === "terminal.get") return { address: "t7", cols: 80, rows: 24, labels: {}, status: { state: "idle", app: "claude-code" } } as T;
+      if (method === "terminal.send") { sent.push(params.text); return {} as T; }
+      throw new Error(`unexpected ${method}`);
+    },
+    async typeText(_t: string, text: string) { typed.push(text); },
+    async observe() { return () => {}; },
+  };
+  // The box shows a chip for each image path pasted, as Claude Code does.
+  const fake = { read: async () => chipsFor(typed), closeAll() {} };
+  const app: AppSocket = { async available() { return false; }, async renameSpace() {}, async renameTab() {} };
+  const a = createCoreActions(() => client as never, app, { sleep: async () => {}, screens: fake as unknown as LiveScreens });
+
+  await a.sendReply("hc.t7", "so sánh [Image #1] với ảnh cũ", ["/there/a.png"]);
+  const P = (s: string) => `\x1b[200~${s}\x1b[201~`;
+  expect(typed).toEqual([P("so sánh "), P("/there/a.png")]);
+  // The last words go through `send`, which presses Enter behind the gates.
+  expect(sent).toEqual([" với ảnh cũ"]);
+});
+
+test("a reply ending on an image still submits; another harness gets the paths inline", async () => {
+  const typed: string[] = [];
+  const sent: string[] = [];
+  const mk = (app: string) => ({
+    async request<T>(method: string, params: any = {}): Promise<T> {
+      if (method === "terminal.get") return { address: "t7", cols: 80, rows: 24, labels: {}, status: { state: "idle", app } } as T;
+      if (method === "terminal.send") { sent.push(params.text); return {} as T; }
+      throw new Error(`unexpected ${method}`);
+    },
+    async typeText(_t: string, text: string) { typed.push(text); },
+    async observe() { return () => {}; },
+  });
+  const fake = { read: async () => chipsFor(typed), closeAll() {} };
+  const app: AppSocket = { async available() { return false; }, async renameSpace() {}, async renameTab() {} };
+  const claude = createCoreActions(() => mk("claude-code") as never, app, { sleep: async () => {}, screens: fake as unknown as LiveScreens });
+  await claude.sendReply("hc.t7", "xem [Image #1]", ["/there/a.png"]);
+  expect(sent).toEqual([" "]);
+
+  typed.length = 0; sent.length = 0;
+  const codex = createCoreActions(() => mk("codex") as never, app, { sleep: async () => {}, screens: fake as unknown as LiveScreens });
+  await codex.sendReply("hc.t7", "xem [Image #1] nhé", ["/there/a.png"]);
+  expect(typed).toEqual([]);
+  expect(sent).toEqual(["xem /there/a.png nhé"]);
+});
+
+test("an image that never becomes a chip stops the reply short of Enter, and says so", async () => {
+  // Measured: a fixed pause let Enter overtake a new image, and the prompt
+  // went without it while the chip landed in the box afterwards.
+  const sent: string[] = [];
+  const client = {
+    async request<T>(method: string, params: any = {}): Promise<T> {
+      if (method === "terminal.get") return { address: "t7", cols: 80, rows: 24, labels: {}, status: { state: "idle", app: "claude-code" } } as T;
+      if (method === "terminal.send") { sent.push(params.text); return {} as T; }
+      throw new Error(`unexpected ${method}`);
+    },
+    async typeText() {},
+    async observe() { return () => {}; },
+  };
+  const fake = { read: async () => EMPTY, closeAll() {} };
+  const app: AppSocket = { async available() { return false; }, async renameSpace() {}, async renameTab() {} };
+  const a = createCoreActions(() => client as never, app, { sleep: async () => {}, screens: fake as unknown as LiveScreens });
+  await expect(a.sendReply("hc.t7", "xem [Image #1] nhé", ["/there/a.png"])).rejects.toThrow(IMAGE_NOT_ATTACHED);
+  expect(sent).toEqual([]);
 });

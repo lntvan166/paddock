@@ -101,3 +101,46 @@ test("an empty body is refused", async () => {
 
   expect(res.status).toBe(400);
 });
+
+// An app agent gets its image ON ITS MACHINE (herdr-core's `terminal.put`):
+// a path on paddock's disk means nothing to an agent the Herdr app added over
+// SSH. Invented ids: `hc.t7` here, `hc.build-box/t9` on another machine.
+function coreHarness(put: (target: string, name: string, bytes: Uint8Array) => Promise<string>) {
+  const store = new AgentStore("dev-box");
+  store.replaceAll([
+    agent({ agentId: "hc.t7", origin: "core" }),
+    agent({ agentId: "hc.build-box/t9", origin: "core" }),
+  ], NOW, "core");
+  const puts: string[] = [];
+  const app = createApp({
+    store,
+    hub: new Hub(),
+    health: () => ({}) as never,
+    saveImage: async () => stored,
+    actions: { async putImage(t: string, n: string, b: Uint8Array) { puts.push(`${t}:${n}:${b.length}`); return put(t, n, b); } } as never,
+  });
+  // Encoded as the client encodes it: a remote id carries a `/`.
+  const send = (id: string) => app.request(`/api/agents/${encodeURIComponent(id)}/image`, { method: "POST", body: PNG });
+  return { send, puts };
+}
+
+test("an app agent's image is put beside its terminal, and THAT path comes back", async () => {
+  const h = coreHarness(async (t) => `/srv/remote-state/herdr-core/default/files/${t}/x.png`);
+  const res = await h.send("hc.build-box/t9");
+  expect(await res.json()).toEqual({ ok: true, path: "/srv/remote-state/herdr-core/default/files/hc.build-box/t9/x.png", name: stored.name });
+  expect(h.puts).toEqual([`hc.build-box/t9:${stored.name}:${PNG.length}`]);
+});
+
+test("a failed put to ANOTHER machine fails, rather than return a path that machine cannot open", async () => {
+  const h = coreHarness(async () => { throw new Error("line lost"); });
+  const res = await h.send("hc.build-box/t9");
+  const body = await res.json();
+  expect(body.ok).toBe(false);
+  expect(body.detail).toContain("could not send the image to that machine");
+});
+
+test("a failed put on THIS machine keeps paddock's own copy, which the agent can open", async () => {
+  const h = coreHarness(async () => { throw new Error("core restarting"); });
+  const res = await h.send("hc.t7");
+  expect(await res.json()).toEqual({ ok: true, path: stored.path, name: stored.name });
+});

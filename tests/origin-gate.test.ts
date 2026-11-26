@@ -41,6 +41,8 @@ function harness(state: Agent["state"] = "blocked") {
   const actions = {
     async markSeen() {},
     async clearDraft() {},
+    async putImage() { return "/there/image.png"; },
+    async interrupt() { return { key: "esc", outcome: "stopped" as const }; },
     async promptAllowed() { return true; },
     async readOutput() { calls.push("readOutput"); return { lines: ["out"], source: "visible" as const }; },
     async readPane() { calls.push("readPane"); return { lines: ["out"], source: "recent_unwrapped" as const }; },

@@ -136,3 +136,20 @@ export function sameDraft(a: string, b: string): boolean {
   const norm = (s: string) => s.split("\n").map((l) => l.trimEnd()).join("\n").replace(/\n+$/, "");
   return norm(a) === norm(b);
 }
+
+/**
+ * The plain text in Claude Code's input box, whatever is in it (chips,
+ * colour and all), or null when there is no box. For counting what landed:
+ * `readClaudeDraft` refuses a box holding an `[Image #N]` chip, which is
+ * exactly what a reply with images needs to wait for.
+ */
+export function claudeBoxText(screen: string[]): string | null {
+  const found = findBox(screen);
+  if (!found) return null;
+  return screen.slice(found.start, found.end).map((l) => plain(l)).join("\n");
+}
+
+/** How many `[Image #N]` chips the box shows. */
+export function countImageChips(boxText: string): number {
+  return (boxText.match(/\[Image #\d+\]/g) ?? []).length;
+}

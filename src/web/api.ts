@@ -347,6 +347,19 @@ export async function markOpened(id: string, f: Fetch = fetch): Promise<ActionRe
  * screen — an empty `lines` on a failed key means "no new screen", never "the
  * pane is empty".
  */
+/** Stop: the server picks the key, and says what it saw (`outcome`). */
+export async function interruptAgent(
+  id: string, f: Fetch = fetch,
+): Promise<KeyResult & { outcome?: "stopped" | "exited" | "still_working" | "unknown" }> {
+  try {
+    const res = await request(url(id, "interrupt"), {}, f);
+    return (await res.json()) as KeyResult & { outcome?: "stopped" | "exited" | "still_working" | "unknown" };
+  } catch (err) {
+    if (err instanceof SyntaxError) return { ok: false, detail: SEND_NO_ANSWER, lines: [], source: "" };
+    return { ok: false, detail: String(err), lines: [], source: "" };
+  }
+}
+
 export async function sendKey(id: string, key: NavKey, f: Fetch = fetch): Promise<KeyResult> {
   try {
     const res = await request(url(id, "key"), { key }, f);
@@ -470,11 +483,15 @@ export const SEND_NO_ANSWER =
 
 export async function sendText(
   id: string, text: string, f: Fetch = fetch,
-  /** The desk draft this reply replaces (see `HerdrActions.clearDraft`). */
-  opts: { replaceDraft?: string } = {},
+  /** The desk draft this reply replaces (see `HerdrActions.clearDraft`), and
+   *  the attached images' paths, named in `text` by `[Image #N]`. */
+  opts: { replaceDraft?: string; images?: string[] } = {},
 ): Promise<KeyResult> {
   try {
-    const res = await request(url(id, "text"), opts.replaceDraft === undefined ? { text } : { text, replaceDraft: opts.replaceDraft }, f);
+    const body: Record<string, unknown> = { text };
+    if (opts.replaceDraft !== undefined) body.replaceDraft = opts.replaceDraft;
+    if (opts.images && opts.images.length > 0) body.images = opts.images;
+    const res = await request(url(id, "text"), body, f);
     return (await res.json()) as KeyResult;
   } catch (err) {
     // A body that is not JSON is an error page from in front of paddock,

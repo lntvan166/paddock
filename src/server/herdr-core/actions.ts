@@ -33,7 +33,8 @@ import { OPEN_HERDR_TO_RENAME, type AppSocket } from "./app-socket";
 import type { CoreClient } from "./socket";
 import { LiveScreens } from "./live-screen";
 import { inScope, toHarness } from "./adapter";
-import { claudeInputVisible, readClaudeDraft, sameDraft } from "@shared/draft";
+import { claudeBoxText, claudeInputVisible, countImageChips, readClaudeDraft, sameDraft } from "@shared/draft";
+import { inlinePaths, replyParts } from "@shared/image-tokens";
 
 /** The slice of `CoreClient` these actions use, so a test can fake it. */
 /** `observe` is optional: without it, screens are read as plain text. */
@@ -82,6 +83,30 @@ export const DRAFT_NOT_CLAUDE = "only Claude Code's input box can be read; the r
 export const DRAFT_BUSY = "the agent is not idle, so its input box was left alone; the reply was not sent";
 export const DRAFT_CHANGED = "the unsent text at the desk changed since it was pulled in; the reply was not sent";
 export const DRAFT_NOT_CLEARED = "the unsent text at the desk could not be cleared; the reply was not sent";
+
+/**
+ * After pasting an image's path, how long to wait for Claude Code to turn it
+ * into an `[Image #N]` chip, and how often to look. Waited on, not slept: it
+ * read the file and inserted the chip in ~100 ms for an image it had seen
+ * and well past 400 ms for a new one, when a fixed sleep let Enter go first
+ * and the chip landed in the box after the prompt had gone without it.
+ */
+const IMAGE_ATTACH_MS = 5_000;
+const IMAGE_POLL_MS = 100;
+
+/** A reply with images stopped short of Enter because one did not attach. */
+export const IMAGE_NOT_ATTACHED =
+  "an image did not attach in time, so the reply was not submitted; what was typed is still in the agent's input";
+/** Between two text parts: enough for a paste to land in order. */
+const PART_PASTE_MS = 80;
+
+/** How long `terminal.interrupt` watches for the agent to stop, in seconds. */
+const INTERRUPT_WATCH_S = 5;
+
+/** herdr-core's own cap on one `terminal.put` (schema: "at most 8 MB raw"). */
+export const MAX_PUT_BYTES = 8 * 1024 * 1024;
+/** A put to another machine crosses its SSH line; a screenshot takes seconds. */
+const PUT_TIMEOUT_MS = 60_000;
 
 /** See `send`: past herdr-core's default draft wait, under the edge's idle cut. */
 export const SEND_TIMEOUT_MS = 75_000;
@@ -409,7 +434,7 @@ export function createCoreActions(
       await press(paneId, NAV_TO_CORE[key]);
     },
 
-    async sendReply(target, text) {
+    async sendReply(target, text, images = []) {
       // Refuse typing into a blocked dialog, from the LIVE status, not the store.
       const t = await get(target);
       if (t.status?.state === "blocked") throw new Unsupported(ANSWER_THE_OPTIONS);
@@ -418,11 +443,77 @@ export function createCoreActions(
       // paste plus Enter vanished into it while this reported success. When
       // the coloured screen cannot be read, the send goes ahead as it always
       // did; it is the check that is skipped, not the send.
-      if (toHarness(t.status?.app) === "claude") {
+      const claude = toHarness(t.status?.app) === "claude";
+      if (claude) {
         const coloured = await styled(target, false);
         if (coloured && !claudeInputVisible(coloured)) throw new Unsupported(INPUT_COVERED);
       }
-      await send(target, text);
+      const c = client();
+      if (images.length === 0 || !claude || !c.typeText) {
+        // One paste: every path where its token was. The images still reach
+        // the agent, as paths it opens itself.
+        await send(target, inlinePaths(text, images));
+        return;
+      }
+      // Claude Code: each image's path pasted ALONE becomes `[Image #N]`
+      // (measured), so the reply goes in as parts, the image where its token
+      // was, and the last part goes through `send`, which presses Enter
+      // behind the core's own gates. Bracketed, as a paste: unbracketed text
+      // with a newline in it would submit early.
+      const parts = replyParts(text, images);
+      const last = parts.at(-1)!;
+      const lead = "text" in last ? parts.slice(0, -1) : parts;
+      const raw = rawCoreId(target);
+      const chips = async () => {
+        const coloured = await styled(target, false);
+        const text = coloured ? claudeBoxText(coloured) : null;
+        return text === null ? null : countImageChips(text);
+      };
+      for (const p of lead) {
+        const before = "image" in p ? await chips() : null;
+        const piece = "image" in p ? p.image : p.text;
+        await c.typeText(raw, `\x1b[200~${piece}\x1b[201~`, { cols: t.cols, rows: t.rows });
+        if (!("image" in p)) { await sleep(PART_PASTE_MS); continue; }
+        // Wait for the chip. Without a readable box (no colour), the count
+        // cannot be taken, and the reply stops here rather than risk Enter
+        // overtaking the image.
+        let attached = false;
+        for (let waited = 0; waited < IMAGE_ATTACH_MS; waited += IMAGE_POLL_MS) {
+          await sleep(IMAGE_POLL_MS);
+          const now = await chips();
+          if (before !== null && now !== null && now > before) { attached = true; break; }
+        }
+        if (!attached) throw new Error(IMAGE_NOT_ATTACHED);
+      }
+      // A reply ending on an image still needs something to submit with.
+      await send(target, "text" in last ? last.text : " ");
+    },
+
+    async interrupt(target) {
+      const c = client();
+      const params = { terminal: rawCoreId(target), timeout: INTERRUPT_WATCH_S };
+      // Its own connection: the core watches for the effect for up to
+      // `timeout` seconds before it answers, and the shared one would wait.
+      const res = c.requestAlone
+        ? await c.requestAlone<{ key: string; outcome: string }>("terminal.interrupt", params, (INTERRUPT_WATCH_S + 5) * 1000)
+        : await c.request<{ key: string; outcome: string }>("terminal.interrupt", params);
+      const known = ["stopped", "exited", "still_working", "unknown"] as const;
+      const outcome = (known as readonly string[]).includes(res.outcome) ? res.outcome as typeof known[number] : "unknown";
+      return { key: res.key, outcome };
+    },
+
+    async putImage(target, name, bytes) {
+      if (bytes.length > MAX_PUT_BYTES) {
+        throw new Unsupported(`images sent to an app agent are limited to ${MAX_PUT_BYTES / (1024 * 1024)} MB`);
+      }
+      const c = client();
+      const params = { terminal: rawCoreId(target), name, data: Buffer.from(bytes).toString("base64") };
+      // Its own connection, like `send`: a put to another machine can take
+      // seconds, and the shared connection serves one call at a time.
+      const res = c.requestAlone
+        ? await c.requestAlone<{ path: string }>("terminal.put", params, PUT_TIMEOUT_MS)
+        : await c.request<{ path: string }>("terminal.put", params);
+      return res.path;
     },
 
     async clearDraft(target, expected) {

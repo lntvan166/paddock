@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { displayState, type ActionResult, type Agent, type AgentCommand, type NavKey, type ParsedPrompt } from "@shared/types";
 import {
-  answerWithKey, moveDialogTab, selectOption, sendDialogKey, sendNote, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, openFile, sendKey,
+  answerWithKey, moveDialogTab, selectOption, sendDialogKey, sendNote, typeIntoDialog, fetchCommands, fetchHistory, fetchOutput, fetchPrompt, interruptAgent, openFile, sendKey,
   sendText, uploadImage,
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
 import { fileHash } from "@shared/route";
 import { readClaudeDraft } from "@shared/draft";
+import { dropImageToken, imageToken, insertImageToken } from "@shared/image-tokens";
 import { AskDialogView } from "@web/components/AskDialogView";
 import { CommandList } from "@web/components/CommandList";
 import { QuickActions, QuickToggle } from "@web/components/QuickActions";
@@ -256,6 +257,23 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
    * would send nothing for it.
    */
   const [attached, setAttached] = useState<Attachment[]>([]);
+  // Read by the upload's failure path, which runs after awaits and must find
+  // the chip by identity in the CURRENT list, not the one it started with.
+  const attachedRef = useRef(attached);
+  attachedRef.current = attached;
+
+  /**
+   * Remove attachment `token` and its `[Image #N]` from the field, counting
+   * the later tokens down so each still names its chip.
+   */
+  const detach = (token: object) => {
+    const i = attachedRef.current.findIndex((a) => a.token === token);
+    if (i === -1) return;
+    const gone = attachedRef.current[i]!;
+    if (gone.thumb) URL.revokeObjectURL(gone.thumb);
+    setAttached((prev) => prev.filter((a) => a.token !== token));
+    setReply((prev) => dropImageToken(prev, i + 1));
+  };
   const attachRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -415,6 +433,25 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
    * that jumps two rows on one tap is worse than one that responds a beat
    * later — especially when the next tap is Enter.
    */
+  /**
+   * Stop, through the server's interrupt: it picks the key (Esc for Claude
+   * Code, where Ctrl+C clears the input and a second one QUITS it) and says
+   * what happened, which is shown rather than assumed.
+   */
+  const stop = async () => {
+    setBusy(true);
+    setFeedback(null);
+    const res = await interruptAgent(agent.agentId);
+    if (res.ok) {
+      pane.current?.apply(res.lines);
+      if (res.outcome === "still_working") setFeedback({ ok: false, detail: "Still working after the stop key." });
+      else if (res.outcome === "exited") setFeedback({ ok: false, detail: "The agent's program exited." });
+    } else {
+      setFeedback({ ok: false, detail: res.detail ?? "Stop failed." });
+    }
+    setBusy(false);
+  };
+
   const press = async (key: NavKey) => {
     setBusy(true);
     setFeedback(null);
@@ -484,7 +521,26 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
    */
   const attach = async (files: ArrayLike<File> | null) => {
     if (!files || files.length === 0) return;
-    for (const file of Array.from(files)) {
+    const list = Array.from(files);
+    // Every token goes in NOW, at the caret, before any upload: where the
+    // operator was typing is where the image belongs, and an upload that
+    // takes seconds must not move it. `[Image #N]` is Claude Code's own label
+    // for a pasted image, and how the reply is delivered
+    // (`@shared/image-tokens`): the image lands in the prompt right here.
+    let text = reply;
+    // The field's own caret, read now: tapping the attach control blurs the
+    // field, but the browser keeps where its caret was, and the `caret`
+    // state only follows the events React saw.
+    let at = replyRef.current?.selectionStart ?? caret;
+    list.forEach((_, k) => {
+      const put = insertImageToken(text, at, attached.length + k + 1);
+      text = put.text;
+      at = put.caret;
+    });
+    setReply(text);
+    setCaret(at);
+    setPendingCaret(at);
+    for (const file of list) {
       // A camera capture often arrives with no filename; a Photo Library pick
       // usually has one. Numbered by position so two chips are never ambiguous.
       const label = file.name || `[image ${attached.length + 1}]`;
@@ -500,9 +556,8 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
         setFeedback(null);
       } catch (err) {
         // Withdrawn, not left pending: a chip that never resolves would block
-        // Send forever with no way back.
-        if (thumb) URL.revokeObjectURL(thumb);
-        setAttached((prev) => prev.filter((a) => a.token !== token));
+        // Send forever with no way back. Its token goes with it.
+        detach(token);
         setFeedback({ ok: false, detail: err instanceof Error ? err.message : "Upload failed." });
       }
     }
@@ -612,17 +667,20 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
     // `sendText`, NOT `answerWithText`. The latter answers a prompt and is
     // refused with a 409 the moment the agent stops being blocked — which is
     // three states out of four, and was why this box always failed.
-    // Paths first, then the words. The agent needs the path before it can be
-    // told what to do with the image, and this is the only place the two are
-    // ever joined — the field itself never held a path.
-    const composed = [...attached.map((a) => a.path ?? ""), text]
-      .filter((p) => p !== "")
-      .join(" ");
+    // The words keep their `[Image #N]` tokens and the paths travel beside
+    // them: the server pastes each image where its token is
+    // (`@shared/image-tokens`). Words with no token left in them (the
+    // operator deleted it, or sent images alone) still carry every image:
+    // an untokened image leads the reply.
+    const images = attached.map((a) => a.path ?? "").filter((p) => p !== "");
+    const words = text.trim() === "" && images.length > 0
+      ? images.map((_, i) => imageToken(i + 1)).join(" ")
+      : text;
     // Only the field's own send replaces a pulled draft; a quick reply is a
     // separate message and leaves the field (and the pull) as they were.
     const replaceDraft = source === "field" && pulled ? pulled.draft : undefined;
     const slow = setTimeout(() => setSendHeld(true), HELD_AFTER_MS);
-    const res = await sendText(agent.agentId, composed, fetch, { replaceDraft });
+    const res = await sendText(agent.agentId, words, fetch, { replaceDraft, images });
     clearTimeout(slow);
     setSendHeld(false);
     if (res.ok) {
@@ -1210,7 +1268,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               type="button"
               className="term-stop"
               disabled={busy}
-              onClick={() => void press("ctrl-c")}
+              onClick={() => void stop()}
             >
               <span aria-hidden="true" className="term-stop-glyph">■</span>
               Stop
@@ -1256,7 +1314,8 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               {attached.map((a, i) => (
                 <span className="term-att" key={a.label + String(i)} data-pending={a.path === null ? "" : undefined}>
                   {a.thumb && <img className="term-att-thumb" src={a.thumb} alt="" />}
-                  <span className="term-att-name">{a.label}</span>
+                  {/* The number its `[Image #N]` in the field uses. */}
+                  <span className="term-att-name"><span className="term-att-n">#{i + 1}</span> {a.label}</span>
                   {a.path === null ? (
                     <span className="term-att-spin" role="status" aria-label="Uploading" />
                   ) : (
@@ -1268,10 +1327,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
                       // already knows would find.
                       aria-label={`Remove ${a.label}`}
                       onPointerDown={(e) => { e.preventDefault(); }}
-                      onClick={() => {
-                        if (a.thumb) URL.revokeObjectURL(a.thumb);
-                        setAttached((prev) => prev.filter((_, at) => at !== i));
-                      }}
+                      onClick={() => detach(a.token)}
                     >
                       <CloseIcon className="close-glyph" />
                     </button>

@@ -33,6 +33,41 @@ const FRAME_CLOSE = 2;
 const FRAME_RESIZE = 3;
 const FRAME_AUTOMATIC_INPUT = 6;
 
+/**
+ * Ordered writes to a Bun socket that never lose a tail.
+ *
+ * Bun's `socket.write` writes what fits in the kernel buffer and RETURNS the
+ * count; the rest is the caller's to write on `drain`. Both writers here
+ * ignored that count, so any message larger than the buffer was cut short
+ * and the core waited forever for the rest of its line: measured as
+ * `terminal.put` of a 179 KB screenshot (240 KB of base64 in one JSON line)
+ * timing out, while `hc put` of the same file returned at once. A long
+ * paste through a typing attach had the same exposure.
+ */
+export function socketWriter() {
+  let sock: { write(data: Uint8Array): number } | null = null;
+  const pending: Uint8Array[] = [];
+  const flush = () => {
+    while (sock && pending.length > 0) {
+      const head = pending[0]!;
+      const n = sock.write(head);
+      if (n < head.length) {
+        pending[0] = head.subarray(Math.max(n, 0));
+        return; // the rest goes on `drain`
+      }
+      pending.shift();
+    }
+  };
+  return {
+    attach(s: { write(data: Uint8Array): number }) { sock = s; flush(); },
+    write(data: Uint8Array) { pending.push(data); flush(); },
+    /** Call from the socket's `drain` handler. */
+    drain: flush,
+    /** Bytes accepted but not yet handed to the socket (for tests). */
+    queued: () => pending.reduce((n, p) => n + p.length, 0),
+  };
+}
+
 export class CoreError extends Error {
   kind: string;
   hint?: string;
@@ -93,6 +128,7 @@ type Msg = {
 class Conn {
   private sock: Awaited<ReturnType<typeof Bun.connect>> | null = null;
   private buf = "";
+  private out = socketWriter();
   /** One decoder per connection: a multi-byte character can straddle two chunks. */
   private decoder = new TextDecoder();
   closed = false;
@@ -108,6 +144,7 @@ class Conn {
         unix: path,
         socket: {
           data(_s, chunk) { c.feed(c.decoder.decode(chunk, { stream: true })); },
+          drain() { c.out.drain(); },
           close() { c.shut(new Error(`herdr-core connection closed (${path})`)); },
           // Ended, not just marked shut: whoever owned this connection forgets
           // it in `onClose`, so nothing would ever close the fd otherwise.
@@ -117,6 +154,7 @@ class Conn {
     } catch (e) {
       throw new Error(`cannot connect to herdr-core at ${path}: ${(e as Error).message}`);
     }
+    c.out.attach(c.sock);
     return c;
   }
 
@@ -142,7 +180,7 @@ class Conn {
   }
 
   send(msg: object) {
-    this.sock!.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n");
+    this.out.write(new TextEncoder().encode(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n"));
   }
 
   private shut(reason: Error) {
@@ -188,6 +226,7 @@ interface Framed {
  */
 function framedConnection(path: string, h: FramedHandlers): Framed {
   let sock: Awaited<ReturnType<typeof Bun.connect>> | null = null;
+  const writer = socketWriter();
   let buf = new Uint8Array(0);
   let framed = false;
   let over = false;
@@ -201,7 +240,7 @@ function framedConnection(path: string, h: FramedHandlers): Framed {
       out[4] = kind;
       v.setUint32(5, payload.length, true);
       out.set(payload, 9);
-      sock?.write(out);
+      writer.write(out);
     },
     request(id, method, params) {
       wire.send(0, FRAME_DATA, new TextEncoder().encode(JSON.stringify({ jsonrpc: "2.0", id, method, params })));
@@ -258,13 +297,16 @@ function framedConnection(path: string, h: FramedHandlers): Framed {
     unix: path,
     socket: {
       data(_s, chunk) { feed(new Uint8Array(chunk)); },
+      drain() { writer.drain(); },
       close() { wire.end(new Error(h.closed())); },
       error(s, e) { wire.end(new Error(`herdr-core socket error (${path}): ${e.message}`)); s.end(); },
     },
   }).then((s) => {
     sock = s;
     if (over) { s.end(); return; }
+    // The hello first, then anything queued while connecting.
     s.write(JSON.stringify({ jsonrpc: "2.0", id: 0, method: "hello", params: { framed: true, generation: CORE_GENERATION } }) + "\n");
+    writer.attach(s);
   }, (e: Error) => wire.end(new Error(`cannot connect to herdr-core at ${path}: ${e.message}`)));
 
   return wire;

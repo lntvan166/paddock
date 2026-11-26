@@ -9,6 +9,7 @@ import type {
 import { ctrlChar, isCtrlKey, type AgentState, type NavKey } from "@shared/types";
 import type { Origin } from "@shared/origin";
 import { Unsupported } from "@server/action-errors";
+import { inlinePaths } from "@shared/image-tokens";
 
 /**
  * Whether this key has to travel as text, and the byte it becomes.
@@ -342,7 +343,11 @@ export interface HerdrActions {
    * would turn a closed set into an open one.
    */
   sendChars(target: string, chars: string[]): Promise<void>;
-  sendReply(target: string, text: string): Promise<void>;
+  /**
+   * `images` are paths on the agent's machine (`putImage`), named in `text`
+   * by `[Image #N]` tokens (`@shared/image-tokens`). Omitted: a plain reply.
+   */
+  sendReply(target: string, text: string, images?: string[]): Promise<void>;
   /**
    * Clear Claude Code's input box, which must hold exactly `expected` (an
    * unsent draft typed at the desk), so a reply can REPLACE it rather than be
@@ -353,6 +358,24 @@ export interface HerdrActions {
    * nothing is sent. See `@shared/draft` for the measured shapes.
    */
   clearDraft(target: string, expected: string): Promise<void>;
+  /**
+   * Put an image beside the agent's terminal, ON ITS MACHINE, and return the
+   * path it landed at as that machine sees it. A path on paddock's own disk
+   * means nothing to an agent the Herdr app added over SSH; herdr-core's
+   * `terminal.put` writes it where the agent runs, in a folder removed with
+   * the terminal. Terminal herdr has no such call: it refuses with
+   * `Unsupported`, and the caller keeps paddock's local copy, which is on the
+   * agent's machine because terminal herdr has no other.
+   */
+  putImage(target: string, name: string, bytes: Uint8Array): Promise<string>;
+  /**
+   * Stop what the agent is doing, and say what was seen. herdr-core's
+   * `terminal.interrupt` picks the key itself (Esc for a program that reports
+   * status, as Claude Code does; Ctrl+C otherwise) and never escalates.
+   * Terminal herdr has no such call: it sends Ctrl+C, what Stop always sent,
+   * and reports `unknown`.
+   */
+  interrupt(target: string): Promise<{ key: string; outcome: "stopped" | "exited" | "still_working" | "unknown" }>;
   /**
    * Type into a pane with no agent — the mirror of `sendReply`'s
    * `agent.prompt`, for a shell. Parameter is `pane_id`, not `target`: the
@@ -626,10 +649,20 @@ export function createActions(socketPath: string): HerdrActions {
       } satisfies HerdrAgentSendKeysParams);
     },
 
-    async sendReply(target, text) {
+    async sendReply(target, text, images = []) {
+      // One prompt: every image's path where its token was.
       await request<HerdrAgentPrompted>(socketPath, "agent.prompt", {
-        target, text,
+        target, text: inlinePaths(text, images),
       } satisfies HerdrAgentPromptParams);
+    },
+
+    async interrupt(target) {
+      await this.sendNavKey(target, "ctrl-c");
+      return { key: "ctrl+c", outcome: "unknown" as const };
+    },
+
+    async putImage() {
+      throw new Unsupported("terminal herdr runs on this machine; the image stays where paddock saved it");
     },
 
     async clearDraft() {

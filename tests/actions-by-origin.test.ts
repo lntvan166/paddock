@@ -40,6 +40,8 @@ const BY_ID: [string, (a: HerdrActions, id: string) => Promise<unknown>][] = [
   ["sendChars", (a, id) => a.sendChars(id, ["a"])],
   ["sendReply", (a, id) => a.sendReply(id, "hi")],
   ["clearDraft", (a, id) => a.clearDraft(id, "half a thought")],
+  ["putImage", (a, id) => a.putImage(id, "a.png", new Uint8Array([1]))],
+  ["interrupt", (a, id) => a.interrupt(id)],
   ["sendPaneText", (a, id) => a.sendPaneText(id, "ls")],
   ["sendPaneKey", (a, id) => a.sendPaneKey(id, "up")],
   ["waitUntilUnblocked", (a, id) => a.waitUntilUnblocked(id)],

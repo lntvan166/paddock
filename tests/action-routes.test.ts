@@ -32,6 +32,8 @@ function harness(a: Agent = agent(), screen?: string[]) {
       if (d === "changed at the desk") throw new Unsupported("the unsent text at the desk changed");
       calls.push(`clear:${d}`);
     },
+    async putImage() { return "/there/image.png"; },
+    async interrupt() { return { key: "esc", outcome: "stopped" as const }; },
     async promptAllowed() { return true; },
     async readOutput(_t: string, _s: Agent["state"], lines?: number) {
       calls.push(`readOutput:${lines}`);
@@ -271,6 +273,8 @@ test("a failed action reports ok:false rather than throwing", async () => {
     actions: {
       async markSeen() {},
       async clearDraft() {},
+      async putImage() { return "/there/image.png"; },
+      async interrupt() { return { key: "esc", outcome: "stopped" as const }; },
       async promptAllowed() { return true; },
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
@@ -418,6 +422,8 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
     actions: {
       async markSeen() {},
       async clearDraft() {},
+      async putImage() { return "/there/image.png"; },
+      async interrupt() { return { key: "esc", outcome: "stopped" as const }; },
       async promptAllowed() { return true; },
       async readOutput() { return { lines: ["kept"], source: "visible" as const }; },
       async readPane() { return { lines: ["kept"], source: "recent_unwrapped" as const }; },

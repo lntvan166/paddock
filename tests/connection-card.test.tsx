@@ -61,3 +61,35 @@ test("connection card shows the Herdr app as running or not running", async () =
     await unmount();
   }
 });
+
+// An app-only setup: terminal herdr is not running, herdr-core serves every
+// agent. Measured on the operator's own card: "herdr Disconnected" in the
+// warning colour, and "Last event" and "Protocol" blank, on a healthy box.
+const APP_ONLY = {
+  version: "0.17.4", herdrConnected: false, lastEventAt: null, herdrProtocol: null,
+  core: { connected: true, lastEventAt: 1_700_000_000_000, generation: 1, version: "0.1.22", detail: null },
+  app: { running: true },
+};
+const rowsOf = (host: HTMLElement) => Array.from(host.querySelectorAll(".dl-row"));
+const row = (host: HTMLElement, label: string) => rowsOf(host).find((r) => r.querySelector(".dl-label")?.textContent === label)!;
+
+test("with herdr-core serving, terminal herdr being down is not a warning", async () => {
+  const host = await render(<InfoSection health={APP_ONLY as never} />);
+  const herdr = row(host, "herdr");
+  expect(herdr.textContent).toContain("Not running");
+  expect(herdr.querySelector(".dl-value")!.className).not.toContain("warn");
+});
+
+test("with neither backend up, terminal herdr's row still warns", async () => {
+  const host = await render(<InfoSection health={{ ...APP_ONLY, core: { ...APP_ONLY.core, connected: false } } as never} />);
+  const herdr = row(host, "herdr");
+  expect(herdr.textContent).toContain("Disconnected");
+  expect(herdr.querySelector(".dl-value")!.className).toContain("warn");
+});
+
+test("Last event and Protocol read herdr-core too, not terminal herdr alone", async () => {
+  const host = await render(<InfoSection health={APP_ONLY as never} />);
+  expect(row(host, "Last event").textContent).not.toContain("—");
+  expect(row(host, "Protocol").textContent).toContain("herdr-core gen 1");
+  expect(row(host, "herdr-core").textContent).toContain("0.1.22");
+});

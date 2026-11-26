@@ -42,13 +42,14 @@ import {
   type HealthBody,
   type NotifyTrigger,
   type SettingsPatch,
+  type MachineInfo,
   type Space,
   type SpaceTree,
   type Tab,
   type TreePane,
 } from "@shared/types";
 import { diffScreens, digestOf } from "@shared/screen";
-import { isCoreId } from "@shared/origin";
+import { isCoreId, rawCoreId } from "@shared/origin";
 import type { HerdrAgentSession } from "@shared/herdr-api";
 
 /** Why a dialog route sent nothing to an app agent: paddock answers only its
@@ -741,6 +742,19 @@ export interface AppDeps {
    * from fake agents.
    */
   readTree?: () => Promise<SpaceTree>;
+  /** The machines the Herdr app added (herdr-core `machine.list`), or null
+   *  while no core is connected. Absent: the route 404s. */
+  machines?: () => Promise<MachineInfo[] | null>;
+  /**
+   * A text file on a machine the Herdr app added (herdr-core `file.read` with
+   * `on`), and a local copy of it for the viewer to serve. Absent: a path
+   * from such an agent's transcript is refused rather than read off THIS
+   * disk, where the same path names a different file or none.
+   */
+  remoteFiles?: {
+    read(machine: string, path: string, cwd: string | null): Promise<string>;
+    stage(name: string, text: string): Promise<string>;
+  };
   /**
    * Ask the supervisor to re-read herdr now, rather than at the next healing
    * pass. Used by the agent rename route, and deliberately by nothing else.
@@ -785,6 +799,10 @@ export interface AppDeps {
  * `String` remains the fallback for a thrown non-Error, which is the case
  * `err.message` cannot serve.
  */
+/** Images on one reply, and the longest path one may have. */
+const MAX_REPLY_IMAGES = 10;
+const MAX_IMAGE_PATH = 4096;
+
 function detailOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -1119,8 +1137,29 @@ export function createApp(deps: AppDeps) {
       }, 413);
     }
 
-    const saved = await deps.saveImage(new Uint8Array(await c.req.arrayBuffer()));
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    // Saved here first either way: it is what checks the bytes are an image
+    // and names the file, and it keeps the copy the attachment chip shows.
+    const saved = await deps.saveImage(bytes);
     if ("refused" in saved) return c.json({ ok: false, detail: saved.refused }, 400);
+
+    // An app agent gets the image ON ITS MACHINE (herdr-core's
+    // `terminal.put`): a path on this disk is nothing to an agent the Herdr
+    // app added over SSH. Terminal herdr refuses (`Unsupported`), and its
+    // agents are on this machine, so the local path is the right one.
+    if (deps.actions && isCoreId(agent.agentId)) {
+      try {
+        const there = await deps.actions.putImage(agent.agentId, saved.name, bytes);
+        return c.json({ ok: true, path: there, name: saved.name });
+      } catch (err) {
+        // On this machine the local copy still works, and is said; on another
+        // machine it would be a path the agent cannot open, so that fails.
+        if (rawCoreId(agent.agentId).includes("/")) {
+          return c.json({ ok: false, detail: `could not send the image to that machine: ${detailOf(err)}` }, failStatus(err));
+        }
+        console.info(`image: kept on this machine for ${agent.agentId} (${detailOf(err)})`);
+      }
+    }
     return c.json({ ok: true, path: saved.path, name: saved.name });
   });
 
@@ -1161,6 +1200,41 @@ export function createApp(deps: AppDeps) {
      * as it did before any of this existed.
      */
     const agentId = typeof body.agentId === "string" ? body.agentId : "";
+
+    // A path an agent on ANOTHER machine printed names a file on that
+    // machine. Read it there (text only: `file.read` reads text), stage a
+    // copy here, and serve that, sandboxed like any other.
+    const remote = isCoreId(agentId) && rawCoreId(agentId).includes("/")
+      ? deps.store.snapshot().find((a) => a.agentId === agentId) ?? null
+      : null;
+    if (remote) {
+      if (!deps.remoteFiles) return c.json({ ok: false, detail: "files on another machine cannot be opened here" }, 404);
+      const machine = rawCoreId(agentId).split("/")[0]!;
+      const raw = asked.trim().replace(/^file:\/\//, "");
+      if (raw === "") return c.json({ ok: false, detail: "a path is required" }, 400);
+      // `~/` is THAT machine's home: `file.read` with `on` and no `cwd`
+      // starts there. A relative path is the agent's own working directory.
+      const where = raw.startsWith("~/") ? { path: raw.slice(2), cwd: null }
+        : raw.startsWith("/") ? { path: raw, cwd: null }
+        : { path: raw, cwd: remote.cwd };
+      const kind = kindFor(where.path);
+      if (kind.render !== "text" && !/\.(html?|svg)$/i.test(where.path)) {
+        return c.json({ ok: false, detail: `${basenameOf(where.path)} is on ${machine}, and only text files can be opened from another machine` }, 415);
+      }
+      let text: string;
+      try {
+        text = await deps.remoteFiles.read(machine, where.path, where.cwd);
+      } catch (err) {
+        return c.json({ ok: false, detail: `could not read ${raw} on ${machine}: ${detailOf(err)}` }, 502);
+      }
+      const ceiling = deps.maxFileBytes ?? MAX_FILE_BYTES;
+      if (new TextEncoder().encode(text).length > ceiling) {
+        return c.json({ ok: false, detail: `that file is over the ${Math.floor(ceiling / (1024 * 1024))} MB limit` }, 413);
+      }
+      const local = await deps.remoteFiles.stage(basenameOf(where.path), text);
+      return c.json({ ok: true, id: deps.files.issue(local), name: basenameOf(where.path), render: kind.render });
+    }
+
     const base = agentId === ""
       ? undefined
       : deps.store.snapshot().find((a) => a.agentId === agentId)?.cwd;
@@ -1474,6 +1548,37 @@ export function createApp(deps: AppDeps) {
      * `isNavKey`: a closed allowlist of nine names, checked here rather than
      * trusted to the UI, so no control sequence can be smuggled through.
      */
+    /**
+     * Stop. The backend picks the key (`HerdrActions.interrupt`): for an app
+     * agent, herdr-core's `terminal.interrupt`, which sends Esc to a program
+     * that reports status (Claude Code: Ctrl+C there clears the input, and a
+     * second one quits it) and says whether the agent stopped.
+     */
+    /** What each added machine's line is doing, for Settings → Machines. */
+    app.get("/api/machines", async (c) => {
+      if (!deps.machines) return c.json({ ok: false, detail: "not available" }, 404);
+      try {
+        const machines = await deps.machines();
+        if (machines === null) return c.json({ ok: false, detail: "herdr-core is not running" }, 503);
+        return c.json({ machines });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err) }, 502);
+      }
+    });
+
+    app.post("/api/agents/:id/interrupt", async (c) => {
+      const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
+      if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
+      try {
+        const res = await actions.interrupt(agent.agentId);
+        await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
+        const out = await actions.readOutput(agent.agentId, agent.state);
+        return c.json({ ok: true, key: res.key, outcome: res.outcome, ...out });
+      } catch (err) {
+        return c.json({ ok: false, detail: detailOf(err), lines: [], source: "" }, failStatus(err));
+      }
+    });
+
     app.post("/api/agents/:id/key", async (c) => {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
@@ -1806,9 +1911,19 @@ export function createApp(deps: AppDeps) {
         return c.json({ ok: false, detail: "replaceDraft must be a non-empty string within the length limit" }, 400);
       }
 
+      // Attached images: paths on the agent's machine, as `/image` returned
+      // them, named in `text` by `[Image #N]` (`@shared/image-tokens`).
+      const images = body.images;
+      if (images !== undefined && !(
+        Array.isArray(images) && images.length <= MAX_REPLY_IMAGES &&
+        images.every((p) => typeof p === "string" && p !== "" && p.length <= MAX_IMAGE_PATH)
+      )) {
+        return c.json({ ok: false, detail: `images must be up to ${MAX_REPLY_IMAGES} non-empty paths` }, 400);
+      }
+
       try {
         if (typeof replaceDraft === "string") await actions.clearDraft(agent.agentId, replaceDraft);
-        await actions.sendReply(agent.agentId, text);
+        await actions.sendReply(agent.agentId, text, (images as string[] | undefined) ?? []);
         await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
         const out = await actions.readOutput(agent.agentId, agent.state);
         return c.json({ ok: true, ...out });

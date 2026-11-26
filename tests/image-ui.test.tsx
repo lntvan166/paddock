@@ -67,7 +67,8 @@ test("choosing an image uploads it and shows its own name", async () => {
   await choose(host, png("screenshot.png"));
 
   expect(calls.filter((c) => c.url.includes("/image"))).toHaveLength(1);
-  expect(textsOf(host, ".term-att-name")).toEqual(["screenshot.png"]);
+  // Numbered as its `[Image #1]` in the field is.
+  expect(textsOf(host, ".term-att-name")).toEqual(["#1 screenshot.png"]);
 });
 
 test("an unnamed capture is numbered instead", async () => {
@@ -77,25 +78,27 @@ test("an unnamed capture is numbered instead", async () => {
 
   await choose(host, new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "", { type: "image/png" }));
 
-  expect(textsOf(host, ".term-att-name")).toEqual(["[image 1]"]);
+  expect(textsOf(host, ".term-att-name")).toEqual(["#1 [image 1]"]);
 });
 
-test("the path is not in the field — it is composed at send", async () => {
-  // The whole reason the attachment is state rather than text: the operator
-  // reads a name, the agent receives a path.
+test("the field holds a token where the image goes, never the path; the path travels beside it", async () => {
+  // The operator reads `[Image #1]` (Claude Code's own label for a pasted
+  // image); the agent receives the image there. A path in the field would be
+  // a string the operator could break by editing it.
   const { host, calls } = await mount();
   await choose(host, png("shot.png"));
 
   const field = host.querySelector<HTMLInputElement>("#term-reply-input")!;
-  expect(field.value, "the field stays the operator's").toBe("");
+  expect(field.value).toBe("[Image #1] ");
+  expect(field.value).not.toContain(UPLOADED.path);
 
   await click(host.querySelector(".term-reply button[type=submit]"));
 
-  const sent = calls.find((c) => c.url.includes("/text"))?.body as { text: string };
-  expect(sent.text).toBe(UPLOADED.path);
+  const sent = calls.find((c) => c.url.includes("/text"))?.body as { text: string; images: string[] };
+  expect(sent).toEqual({ text: "[Image #1]", images: [UPLOADED.path] });
 });
 
-test("words are sent after the path, not instead of it", async () => {
+test("words typed over the token do not drop the image: it still travels, and leads", async () => {
   const { host, calls } = await mount();
   await choose(host, png("shot.png"));
   const field = host.querySelector<HTMLInputElement>("#term-reply-input")!;
@@ -103,8 +106,36 @@ test("words are sent after the path, not instead of it", async () => {
 
   await click(host.querySelector(".term-reply button[type=submit]"));
 
+  // No token names it, so the server puts it ahead of the words.
+  const sent = calls.find((c) => c.url.includes("/text"))?.body as { text: string; images: string[] };
+  expect(sent).toEqual({ text: "the left one", images: [UPLOADED.path] });
+});
+
+test("an image goes in at the caret, between the words around it", async () => {
+  const { host, calls } = await mount();
+  const field = host.querySelector<HTMLTextAreaElement>("#term-reply-input")!;
+  await typeInto(field, "compare this with that");
+  // The caret after "compare this", as a tap there leaves it.
+  field.setSelectionRange(12, 12);
+  await choose(host, png("shot.png"));
+
+  expect(field.value).toBe("compare this [Image #1] with that");
+  await click(host.querySelector(".term-reply button[type=submit]"));
   const sent = calls.find((c) => c.url.includes("/text"))?.body as { text: string };
-  expect(sent.text).toBe(`${UPLOADED.path} the left one`);
+  expect(sent.text).toBe("compare this [Image #1] with that");
+});
+
+test("removing a chip takes its token out and counts the later ones down", async () => {
+  const { host } = await mount();
+  await choose(host, png("a.png"));
+  await choose(host, png("b.png"));
+  const field = host.querySelector<HTMLTextAreaElement>("#term-reply-input")!;
+  expect(field.value).toBe("[Image #1] [Image #2] ");
+
+  await click(host.querySelector(".term-att-x"));
+
+  expect(field.value).toBe("[Image #1] ");
+  expect(textsOf(host, ".term-att-name")).toEqual(["#1 b.png"]);
 });
 
 test("an attachment can be removed before sending", async () => {
@@ -157,7 +188,7 @@ test("an upload in flight is visible, and cannot be removed or sent", async () =
 
   await choose(host, png("slow.png"));
 
-  expect(textsOf(host, ".term-att-name")).toEqual(["slow.png"]);
+  expect(textsOf(host, ".term-att-name")).toEqual(["#1 slow.png"]);
   expect(host.querySelector(".term-att-spin"), "says it is working").not.toBeNull();
   expect(host.querySelector(".term-att-x"), "cannot be cancelled mid-flight").toBeNull();
   // The correctness half: composing now would send an empty path for a file
@@ -213,7 +244,7 @@ test("pasting a screenshot attaches it, without touching the picker", async () =
   await settle();
 
   expect(calls.filter((c) => c.url.includes("/image"))).toHaveLength(1);
-  expect(textsOf(host, ".term-att-name")).toEqual(["Screenshot.png"]);
+  expect(textsOf(host, ".term-att-name")).toEqual(["#1 Screenshot.png"]);
   expect(ev.defaultPrevented, "the filename must not also be typed into the field").toBe(true);
 });
 
