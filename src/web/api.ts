@@ -464,9 +464,13 @@ export async function sendDialogKey(id: string, key: string, f: Fetch = fetch): 
  * 409 once the agent stops being blocked. Pointing the terminal's reply box at
  * `/answer` is what made it fail in three states out of four.
  */
-export async function sendText(id: string, text: string, f: Fetch = fetch): Promise<KeyResult> {
+export async function sendText(
+  id: string, text: string, f: Fetch = fetch,
+  /** The desk draft this reply replaces (see `HerdrActions.clearDraft`). */
+  opts: { replaceDraft?: string } = {},
+): Promise<KeyResult> {
   try {
-    const res = await request(url(id, "text"), { text }, f);
+    const res = await request(url(id, "text"), opts.replaceDraft === undefined ? { text } : { text, replaceDraft: opts.replaceDraft }, f);
     return (await res.json()) as KeyResult;
   } catch (err) {
     return { ok: false, detail: String(err), lines: [], source: "" };

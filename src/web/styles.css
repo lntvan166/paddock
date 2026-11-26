@@ -2527,6 +2527,109 @@ body {
   color: var(--fg-dim);
 }
 
+/* THE FOOT READS AS THE TERMINAL'S OWN PROMPT.
+   Reported from use: the reply box sat as a second, light input under a dark
+   pane that already shows the agent's `❯` line, and read as two places to
+   type. Typing INTO the pane was considered and refused: per-key forwarding
+   breaks an IME (Telex/VNI compose before they commit), costs a round trip
+   per character, and loses the one-shot send that refuses to type over an
+   open dialog. So the mechanics stay, and the look joins the pane.
+
+   Every band under the transcript (the Keys row, the keypad, quick replies,
+   the command list, attachments, the composer) re-points the theme's tokens
+   at the terminal's ink, locally. The pane is dark in EVERY theme, so a
+   themed `--fg`/`--surface` would be dark-on-dark under a light one; scoping
+   the tokens rather than restyling each control keeps every rule below it,
+   shadcn's included (`@theme inline` reads these at the element), correct
+   without a second copy. `--accent` is NOT re-pointed: Send, Enter and the
+   panel marks keep paddock's rust, which reads on the dark ground. */
+.term-controls, .term-keys, .term-quick, .term-cmds, .term-atts, .term-draft, .term-reply {
+  --bg: var(--term-bg);
+  --surface: color-mix(in srgb, var(--term-fg) 7%, var(--term-bg));
+  --fg: var(--term-fg);
+  --fg-dim: color-mix(in srgb, var(--term-fg) 62%, var(--term-bg));
+  --border: color-mix(in srgb, var(--term-fg) 22%, var(--term-bg));
+  --control: color-mix(in srgb, var(--term-fg) 30%, var(--term-bg));
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --muted: var(--surface);
+  --input: var(--border);
+  background: var(--term-bg);
+  color: var(--fg);
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Text typed at the desk and not sent: what it is, and the one thing to do
+   about it. One line, clipped; the full draft goes into the field on Pull. */
+.term-draft {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem var(--gutter);
+  border-top: 1px solid var(--border);
+  font-size: var(--t-md);
+}
+.term-draft-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+.term-draft-label { font-family: inherit; color: var(--fg-dim); }
+.term-draft-act {
+  flex: none;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Where Claude Code draws its prompt box: one rule in the terminal's ink. */
+.term-reply {
+  border-top: 1px solid var(--border);
+  padding-top: 0.25rem;
+}
+/* Focus is the shared ring (one ring, never removed: see the
+   `:focus-visible` rule), which here boxes the line being typed, much as
+   Claude Code boxes its own prompt. The rule above it does not also turn
+   accent: two signals for one focus is the thing that rule forbids. */
+
+/* On the field's FIRST line, as Claude Code puts it: the row aligns its
+   children to the bottom (the buttons stay by the thumb as the field grows),
+   so the mark opts out, and its 44px line box centres it on the field's
+   first 24px line inside 10px of padding. */
+.term-prompt-mark {
+  flex: none;
+  align-self: flex-start;
+  line-height: 2.75rem;
+  font-family: var(--mono);
+  font-size: 16px;
+  color: var(--accent);
+  user-select: none;
+}
+
+.term-reply input, .term-reply .term-reply-field {
+  border: 0;
+  background: transparent;
+  font-family: var(--mono);
+  /* 16px stays: below it iOS zooms on focus. */
+  font-size: 16px;
+  /* Not 0: the shared focus ring draws 2px outside the field, and with no
+     inset the first letter sat on it. */
+  padding-left: 0.4rem;
+  caret-color: var(--accent);
+}
+.term-reply input::placeholder, .term-reply .term-reply-field::placeholder { color: var(--fg-dim); opacity: 1; }
+.term-reply .term-attach { background: transparent; }
+
 /* Label kept for screen readers; the placeholder carries it visually. */
 .sr-only {
   position: absolute;

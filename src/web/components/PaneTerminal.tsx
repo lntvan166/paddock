@@ -14,7 +14,7 @@ import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pan
 import { applyPatch, digestOf } from "@shared/screen";
 import { RATE_MS, readPrefs, type KeypadPref, type RatePref } from "@web/prefs";
 import { RequestFailed } from "@web/api";
-import { onScreen, requestScreenResync } from "@web/store";
+import { onScreen as onPushedScreen, requestScreenResync } from "@web/store";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
 import { CtrlCompose } from "@web/components/ui/CtrlCompose";
@@ -334,6 +334,9 @@ export interface PaneTerminalProps {
    * polls exactly as before.
    */
   streamId?: string;
+  /** Told every screen the pane shows, whatever brought it (poll, push or an
+   *  action's reply). For an owner that reads something off the screen. */
+  onScreen?: (lines: string[]) => void;
   /** herdr's `pane_id`. The same string as an agent id, because they are the
    *  same thing at two moments. */
   paneId: string;
@@ -414,8 +417,13 @@ export function PaneTerminal({
   sendText: onSendText, sendKey: onSendKey,
   onOpenPath,
   streamId,
+  onScreen,
   ref,
 }: PaneTerminalProps) {
+  // Latest callback in a ref: `apply` must not be rebuilt (and the poll torn
+  // down) because an owner passed a new function.
+  const onScreenRef = useRef(onScreen);
+  onScreenRef.current = onScreen;
   /**
    * Publish `--kb-inset` for as long as a terminal is on screen.
    *
@@ -586,6 +594,7 @@ export function PaneTerminal({
       mergeSnapshot(historyFor(paneId) ?? { settled: [], gaps: 0 }, lines),
     );
     setOutput(lines);
+    onScreenRef.current?.(lines);
     setError(null);
     setStalled(false);
     // Back to the floor, for the same reason `onVisible` below resets it: an
@@ -783,7 +792,7 @@ export function PaneTerminal({
   useEffect(() => {
     if (!streamId) return;
     pushedAtRef.current = 0;
-    const off = onScreen(streamId, (f) => {
+    const off = onPushedScreen(streamId, (f) => {
       pushedAtRef.current = Date.now();
       // Mid-action the route's own settled screen is about to land; a frame
       // applied now would only be replaced, and its base may be stale.
@@ -1289,6 +1298,7 @@ export function PaneTerminal({
             }}
           >
             <label className="sr-only" htmlFor="term-reply-input">Type a command</label>
+            <span className="term-prompt-mark" aria-hidden="true">$</span>
             <Input
               id="term-reply-input"
               value={shellReply}

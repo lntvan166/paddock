@@ -39,6 +39,7 @@ export function actionsByOrigin(
     sendNavKey: async (target, key) => by(target).sendNavKey(target, key),
     sendChars: async (target, chars) => by(target).sendChars(target, chars),
     sendReply: async (target, text) => by(target).sendReply(target, text),
+    clearDraft: async (target, expected) => by(target).clearDraft(target, expected),
     sendPaneText: async (paneId, text) => by(paneId).sendPaneText(paneId, text),
     sendPaneKey: async (paneId, key) => by(paneId).sendPaneKey(paneId, key),
     waitUntilUnblocked: async (target, timeoutMs) => by(target).waitUntilUnblocked(target, timeoutMs),

@@ -39,6 +39,7 @@ const BY_ID: [string, (a: HerdrActions, id: string) => Promise<unknown>][] = [
   ["sendNavKey", (a, id) => a.sendNavKey(id, "up")],
   ["sendChars", (a, id) => a.sendChars(id, ["a"])],
   ["sendReply", (a, id) => a.sendReply(id, "hi")],
+  ["clearDraft", (a, id) => a.clearDraft(id, "half a thought")],
   ["sendPaneText", (a, id) => a.sendPaneText(id, "ls")],
   ["sendPaneKey", (a, id) => a.sendPaneKey(id, "up")],
   ["waitUntilUnblocked", (a, id) => a.waitUntilUnblocked(id)],

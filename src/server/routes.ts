@@ -1790,14 +1790,24 @@ export function createApp(deps: AppDeps) {
       const agent = deps.store.snapshot().find((a) => a.agentId === c.req.param("id"));
       if (!agent) return c.json({ ok: false, detail: "unknown agent" }, 404);
 
-      const text = (await jsonBody(c)).text;
+      const body = await jsonBody(c);
+      const text = body.text;
       // The only unbounded client-supplied STRING that reaches a herdr
       // parameter, so it is bounded here for the same reason `lines` is.
       if (typeof text !== "string" || text.trim() === "" || text.length > MAX_TEXT_LEN) {
         return c.json({ ok: false, detail: "text must be a non-empty string within the length limit" }, 400);
       }
+      // The desk draft this reply REPLACES, as the operator pulled it into
+      // the field. Absent: the reply is sent as before (appended to whatever
+      // is in the agent's box). Present: the box must still hold exactly
+      // this, and is cleared first — see `HerdrActions.clearDraft`.
+      const replaceDraft = body.replaceDraft;
+      if (replaceDraft !== undefined && (typeof replaceDraft !== "string" || replaceDraft.trim() === "" || replaceDraft.length > MAX_TEXT_LEN)) {
+        return c.json({ ok: false, detail: "replaceDraft must be a non-empty string within the length limit" }, 400);
+      }
 
       try {
+        if (typeof replaceDraft === "string") await actions.clearDraft(agent.agentId, replaceDraft);
         await actions.sendReply(agent.agentId, text);
         await new Promise((r) => setTimeout(r, KEY_SETTLE_MS));
         const out = await actions.readOutput(agent.agentId, agent.state);

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { DEFAULT_READ_LINES, MAX_READ_LINES } from "@server/herdr/actions";
 import { createApp } from "@server/routes";
+import { Unsupported } from "@server/action-errors";
 import { AgentStore } from "@server/state/store";
 import { Hub } from "@server/ws/hub";
 import type { Agent } from "@shared/types";
@@ -27,6 +28,10 @@ function harness(a: Agent = agent(), screen?: string[]) {
     // client-supplied value that reaches a herdr parameter, so what arrives
     // here is the thing under test.
     async markSeen() {},
+    async clearDraft(_t: string, d: string) {
+      if (d === "changed at the desk") throw new Unsupported("the unsent text at the desk changed");
+      calls.push(`clear:${d}`);
+    },
     async promptAllowed() { return true; },
     async readOutput(_t: string, _s: Agent["state"], lines?: number) {
       calls.push(`readOutput:${lines}`);
@@ -265,6 +270,7 @@ test("a failed action reports ok:false rather than throwing", async () => {
     store, hub: new Hub({ now: () => NOW }),
     actions: {
       async markSeen() {},
+      async clearDraft() {},
       async promptAllowed() { return true; },
       async readOutput() { return { lines: [], source: "visible" as const }; },
       async readPane() { return { lines: [], source: "recent_unwrapped" as const }; },
@@ -330,6 +336,31 @@ test("typed text to an unknown agent is refused before anything is sent", async 
   expect(calls.filter((c) => c.startsWith("reply:"))).toEqual([]);
 });
 
+test("a reply that replaces a desk draft clears the draft FIRST, then sends", async () => {
+  const { app, calls } = harness(agent({ state: "idle" }));
+  const res = await post(app, "/api/agents/w1:p1/text", { text: "half a thought, finished", replaceDraft: "half a thought" });
+  expect(res.status).toBe(200);
+  expect(calls.filter((c) => c.startsWith("clear:") || c.startsWith("reply:")))
+    .toEqual(["clear:half a thought", "reply:half a thought, finished"]);
+});
+
+test("a draft that cannot be cleared sends nothing, and says why", async () => {
+  const { app, calls } = harness(agent({ state: "idle" }));
+  const res = await post(app, "/api/agents/w1:p1/text", { text: "mine", replaceDraft: "changed at the desk" });
+  expect(res.status).toBe(409);
+  expect((await res.json()).detail).toContain("changed");
+  expect(calls.filter((c) => c.startsWith("reply:"))).toEqual([]);
+});
+
+test("a malformed replaceDraft is refused before anything is touched", async () => {
+  const { app, calls } = harness(agent({ state: "idle" }));
+  for (const replaceDraft of ["", "   ", 5, null, {}, "x".repeat(10_001)]) {
+    const res = await post(app, "/api/agents/w1:p1/text", { text: "mine", replaceDraft });
+    expect(res.status).toBe(400);
+  }
+  expect(calls.filter((c) => c.startsWith("clear:") || c.startsWith("reply:"))).toEqual([]);
+});
+
 test("a nav key is sent, and the screen it produced comes back with it", async () => {
   const { app, calls } = harness();
   const res = await post(app, "/api/agents/w1:p1/key", { key: "down" });
@@ -386,6 +417,7 @@ test("a failed key reports ok:false with no lines, never a blanked screen", asyn
     store, hub: new Hub({ now: () => NOW }),
     actions: {
       async markSeen() {},
+      async clearDraft() {},
       async promptAllowed() { return true; },
       async readOutput() { return { lines: ["kept"], source: "visible" as const }; },
       async readPane() { return { lines: ["kept"], source: "recent_unwrapped" as const }; },

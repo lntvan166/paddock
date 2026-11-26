@@ -344,6 +344,16 @@ export interface HerdrActions {
   sendChars(target: string, chars: string[]): Promise<void>;
   sendReply(target: string, text: string): Promise<void>;
   /**
+   * Clear Claude Code's input box, which must hold exactly `expected` (an
+   * unsent draft typed at the desk), so a reply can REPLACE it rather than be
+   * appended to it. Refuses rather than guesses: a harness other than Claude
+   * Code, a working or blocked agent (Esc would interrupt or answer), a draft
+   * that no longer matches, or a screen it cannot read. Verified by reading
+   * the box again: an input that is not empty afterwards is an error, and
+   * nothing is sent. See `@shared/draft` for the measured shapes.
+   */
+  clearDraft(target: string, expected: string): Promise<void>;
+  /**
    * Type into a pane with no agent — the mirror of `sendReply`'s
    * `agent.prompt`, for a shell. Parameter is `pane_id`, not `target`: the
    * agent-side methods take `target`, and the two are not interchangeable —
@@ -620,6 +630,13 @@ export function createActions(socketPath: string): HerdrActions {
       await request<HerdrAgentPrompted>(socketPath, "agent.prompt", {
         target, text,
       } satisfies HerdrAgentPromptParams);
+    },
+
+    async clearDraft() {
+      // Measured through herdr-core only. Terminal herdr's key path was not
+      // probed for the double Esc, and a key whose effect is guessed is what
+      // CLAUDE.md forbids.
+      throw new Unsupported("replacing a desk draft is available for app agents only");
     },
 
     async sendPaneText(paneId, text) {

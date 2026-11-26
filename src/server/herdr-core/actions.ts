@@ -32,7 +32,8 @@ import {
 import { OPEN_HERDR_TO_RENAME, type AppSocket } from "./app-socket";
 import type { CoreClient } from "./socket";
 import { LiveScreens } from "./live-screen";
-import { inScope } from "./adapter";
+import { inScope, toHarness } from "./adapter";
+import { readClaudeDraft, sameDraft } from "@shared/draft";
 
 /** The slice of `CoreClient` these actions use, so a test can fake it. */
 /** `observe` is optional: without it, screens are read as plain text. */
@@ -72,6 +73,19 @@ export const NAV_TO_CORE: Record<NavKey, string> = {
 const ONE_DIGIT = /^[1-9]$/;
 
 /** Shown when a typed reply would land in a blocked dialog. */
+/** The draft refusals, named so the route and the UI can say what happened. */
+export const DRAFT_NOT_CLAUDE = "only Claude Code's input box can be read; the reply was not sent";
+export const DRAFT_BUSY = "the agent is not idle, so its input box was left alone; the reply was not sent";
+export const DRAFT_CHANGED = "the unsent text at the desk changed since it was pulled in; the reply was not sent";
+export const DRAFT_NOT_CLEARED = "the unsent text at the desk could not be cleared; the reply was not sent";
+
+/** See `send`: past herdr-core's default draft wait, under the edge's idle cut. */
+export const SEND_TIMEOUT_MS = 75_000;
+
+/** How long, and how often, to look for the cleared input after the keys. */
+const DRAFT_CLEAR_POLLS = 10;
+const DRAFT_CLEAR_POLL_MS = 150;
+
 export const ANSWER_THE_OPTIONS = "this agent is waiting on a dialog: answer the dialog's options";
 
 /** A dialog key or option digit sent to anything but a live permission prompt or question. */
@@ -272,7 +286,16 @@ export function createCoreActions(
 
   async function send(id: string, text: string): Promise<void> {
     // No `force`, ever: see the file header.
-    await call("terminal.send", { terminal: rawCoreId(id), text });
+    //
+    // Its own, longer timeout. The core HOLDS a send while a person's draft
+    // is fresh (`draft_wait`, 60 s after their last key at the desk, then a
+    // 3 s quiet pause), and keeps holding it after the caller gives up: with
+    // the default 10 s the phone said "failed" and the message landed a
+    // minute later anyway, so a retry sent it twice. Measured on a live core;
+    // see docs/gotchas.md, "A draft in Claude Code's input". 75 s is past the
+    // default wait and under Cloudflare's ~100 s idle cut. A `draft_wait`
+    // configured above ~70 s still outlasts it.
+    await client().request("terminal.send", { terminal: rawCoreId(id), text }, { timeoutMs: SEND_TIMEOUT_MS });
   }
 
   /** Live terminals carrying `key=value`. Filtered here too, so a core that
@@ -386,6 +409,42 @@ export function createCoreActions(
     async sendReply(target, text) {
       await refuseIfBlocked(target);
       await send(target, text);
+    },
+
+    async clearDraft(target, expected) {
+      const t = await get(target);
+      if (toHarness(t.status?.app) !== "claude") throw new Unsupported(DRAFT_NOT_CLAUDE);
+      // Esc interrupts a working agent and answers a dialog: only an agent
+      // waiting for input may be sent it.
+      const state = t.status?.state;
+      if (state !== "idle" && state !== "done") throw new Unsupported(DRAFT_BUSY);
+
+      const box = async () => {
+        const coloured = await styled(target, false);
+        // The ANSI screen only: on plain text the dim suggestion an empty box
+        // shows reads exactly like a typed draft.
+        if (!coloured) throw new Unsupported(DRAFT_NOT_CLEARED);
+        return readClaudeDraft(coloured);
+      };
+      const before = await box();
+      if (before.kind !== "text" || !sameDraft(before.text, expected)) throw new Unsupported(DRAFT_CHANGED);
+
+      // TWO Escs in ONE call, measured: Claude Code clears the whole box only
+      // on the second Esc within its double-press window ("esc again to
+      // clear"), and two separate calls land too far apart. Sent only after
+      // the box was read as holding text, because the same pair on an EMPTY
+      // box opens Rewind.
+      await call("terminal.keys", { terminal: rawCoreId(target), keys: ["esc", "esc"] });
+
+      for (let i = 0; i < DRAFT_CLEAR_POLLS; i++) {
+        await sleep(DRAFT_CLEAR_POLL_MS);
+        const after = await box();
+        if (after.kind === "empty") return;
+      }
+      // Whatever is on screen now is not a cleared box. One Esc cancels a menu
+      // the pair may have opened, and is harmless on an idle input.
+      await call("terminal.keys", { terminal: rawCoreId(target), keys: ["esc"] });
+      throw new Error(DRAFT_NOT_CLEARED);
     },
 
     async sendChars(target, chars) {

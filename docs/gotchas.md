@@ -520,3 +520,46 @@ test. Its load-bearing assertion is that the cloudflared child is dead after the
 parent is signalled — asserted separately from the state file's removal, because
 the shutdown handler removes that itself, so a tidy config dir is not evidence
 the child was reaped.
+
+## A draft in Claude Code's input
+
+A reply sent while text sits unsent in Claude Code's own input box (typed at
+the desk) is appended to it by the terminal: two messages fused into one.
+herdr-core delays the send while a person's draft is fresh (`draft_wait`, 60 s
+after their last key), then pastes anyway. paddock therefore shows such a
+draft above the reply field and lets the operator pull it in, so the reply
+REPLACES it (`@shared/draft`, `HerdrActions.clearDraft`, `POST /text`'s
+`replaceDraft`). Measured on a live Claude Code through herdr-core, one key at
+a time; `tests/core-draft-live.test.ts` executes every row against a probe:
+
+| What | Measured |
+|---|---|
+| The box | Between two rules of `─`; first line `❯` + **U+00A0 no-break space**, further lines indented by two ordinary spaces |
+| Empty box | A suggestion ("Try …") drawn entirely in SGR 2 (dim); as plain text it is indistinguishable from a draft |
+| Typed draft | No SGR at all |
+| A paste | Collapses to `[Pasted text #1 +11 lines]`, plain text; the content is not on screen |
+| `Ctrl+U` | Clears from the cursor to the start of the CURRENT line only |
+| One `Esc` | Nothing, plus "esc again to clear" |
+| `Esc Esc` in ONE `terminal.keys` call | Clears the whole box, multi-line, cursor anywhere |
+| `Esc Esc` on an EMPTY box | Opens **Rewind** ("Esc to cancel") |
+
+The traps, each of which a hand-written fixture hid:
+
+- **The no-break space.** `JSON.stringify` prints U+00A0 as a space, so every
+  dump of the probe looked like `❯ `, the parser matched `❯ `, every unit test
+  passed, and every real box read as unknown. The live test caught it.
+- **Read ANSI, never plain text**, or the empty box's suggestion is pulled as
+  a draft.
+- **A paste label is refused**, or pulling it would carry the label and the
+  clear would destroy the paste.
+- **Two separate key calls are not a double press**: they land outside Claude
+  Code's window. And the pair is sent only after the box was READ as holding
+  text, because on an empty box it opens Rewind. After it, the box is read
+  again; anything but empty sends one `Esc` (cancels a menu, harmless on an
+  idle input) and fails without sending.
+- **Only an idle or done agent**: `Esc` interrupts a working agent and answers
+  a dialog.
+- Not measured: whether herdr-core's own draft wait notices a draft cleared
+  by API keys. The probe typed its drafts as automatic input, which herdr
+  does not count as a person's draft, so a send after a real desk draft may
+  still wait out `draft_wait` before it is pasted (into the now-empty box).

@@ -156,6 +156,7 @@ export function demoActions(): HerdrActions {
     async sendChars(_target: string, _chars: string[]) { refuse(); },
     async sendNavKey(_target: string, _key: NavKey) { refuse(); },
     async sendReply(_target: string, _text: string) { refuse(); },
+    async clearDraft(_target: string, _expected: string) { refuse(); },
     async sendPaneText(_paneId: string, _text: string) { refuse(); },
     async sendPaneKey(_paneId: string, _key: NavKey) { refuse(); },
     async waitUntilUnblocked() { refuse(); },

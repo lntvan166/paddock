@@ -6,6 +6,7 @@ import {
 } from "@web/api";
 import { commandQuery, filterCommands, replaceCommandToken } from "@web/commands";
 import { fileHash } from "@shared/route";
+import { readClaudeDraft } from "@shared/draft";
 import { AskDialogView } from "@web/components/AskDialogView";
 import { CommandList } from "@web/components/CommandList";
 import { QuickActions, QuickToggle } from "@web/components/QuickActions";
@@ -112,6 +113,9 @@ export interface AgentTerminalProps {
   backLabel?: string;
 }
 
+/** After this long in flight, a reply says why it is still going. */
+const HELD_AFTER_MS = 3_000;
+
 export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) {
   const [busy, setBusy] = useState(false);
   /**
@@ -190,6 +194,21 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
   /** Whether the `/prompt` fetch below has settled — see its own note. */
   const [promptLoaded, setPromptLoaded] = useState(false);
   const [reply, setReply] = useState("");
+
+  /**
+   * Text typed into Claude Code's own input at the desk and not sent, read
+   * off the screen (`@shared/draft`). A reply sent without regard to it is
+   * appended to it by the terminal — two messages fused into one. So it is
+   * shown, and can be PULLED into this field: the reply then replaces it, the
+   * server clearing the box first and refusing if it changed meanwhile.
+   */
+  const [deskDraft, setDeskDraft] = useState<string | null>(null);
+  /** The draft as pulled in, and the field before the pull (for Undo). */
+  const [pulled, setPulled] = useState<{ draft: string; before: string } | null>(null);
+  const onScreen = useCallback((lines: string[]) => {
+    const r = readClaudeDraft(lines);
+    setDeskDraft(r.kind === "text" ? r.text : null);
+  }, []);
   /**
    * Whether the operator has opened the composer while an answer panel is up.
    *
@@ -200,6 +219,13 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
    */
   const [composerOpen, setComposerOpen] = useState(false);
   const [feedback, setFeedback] = useState<ActionResult | null>(null);
+  /**
+   * A reply still in flight after a few seconds. herdr-core holds a send for
+   * up to a minute after someone last typed at the desk (its draft wait), and
+   * a Send button that is simply busy for a minute reads as a hang — which is
+   * what made a retry, and a double send, look like the right move.
+   */
+  const [sendHeld, setSendHeld] = useState(false);
 
   /**
    * The commands this agent's project declares.
@@ -592,9 +618,15 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
     const composed = [...attached.map((a) => a.path ?? ""), text]
       .filter((p) => p !== "")
       .join(" ");
-    const res = await sendText(agent.agentId, composed);
+    // Only the field's own send replaces a pulled draft; a quick reply is a
+    // separate message and leaves the field (and the pull) as they were.
+    const replaceDraft = source === "field" && pulled ? pulled.draft : undefined;
+    const slow = setTimeout(() => setSendHeld(true), HELD_AFTER_MS);
+    const res = await sendText(agent.agentId, composed, fetch, { replaceDraft });
+    clearTimeout(slow);
+    setSendHeld(false);
     if (res.ok) {
-      if (source === "field") setReply("");
+      if (source === "field") { setReply(""); setPulled(null); }
       for (const a of attached) if (a.thumb) URL.revokeObjectURL(a.thumb);
       setAttached([]);
       pane.current?.apply(res.lines);
@@ -810,6 +842,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       onOpenPath={(path) => void openPath(path)}
       paneId={agent.agentId}
       streamId={agent.agentId}
+      onScreen={onScreen}
       title={agent.name}
       onBack={onBack}
       backLabel={backLabel}
@@ -863,6 +896,11 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       }
       beforeControls={
         <>
+          {sendHeld && (
+            <p className="term-note" role="status">
+              Waiting to send: someone typed at the desk in the last minute, so herdr holds it until they stop.
+            </p>
+          )}
           {feedback && (
             <p className={feedback.ok ? "term-note ok" : "term-note warn"} role="status">
               {feedback.ok ? "Sent." : (feedback.detail ?? "Failed.")}
@@ -1261,6 +1299,45 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
             />
           )}
 
+          {/* Only where the merge was measured and is safe: Claude Code, an
+              app agent (the clear runs through herdr-core), waiting for input
+              rather than working or asking. */}
+          {agent.harness === "claude" && agent.origin === "core" && prompt === null &&
+            (agent.state === "idle" || agent.state === "done") && (deskDraft !== null || pulled !== null) && (
+            <div className="term-draft" role="status" data-field="desk-draft">
+              {pulled === null ? (
+                <>
+                  <span className="term-draft-text">
+                    <span className="term-draft-label">Unsent at the desk:</span> {deskDraft}
+                  </span>
+                  <button
+                    type="button"
+                    className="tap term-draft-act"
+                    onPointerDown={(e) => { e.preventDefault(); }}
+                    onClick={() => {
+                      if (deskDraft === null) return;
+                      setPulled({ draft: deskDraft, before: reply });
+                      const next = reply.trim() ? `${deskDraft}\n${reply}` : deskDraft;
+                      setReply(next);
+                      setCaret(next.length);
+                      setPendingCaret(next.length);
+                    }}
+                  >Pull in</button>
+                </>
+              ) : (
+                <>
+                  <span className="term-draft-text">Replaces the desk draft on send.</span>
+                  <button
+                    type="button"
+                    className="tap term-draft-act"
+                    onPointerDown={(e) => { e.preventDefault(); }}
+                    onClick={() => { setReply(pulled.before); setPulled(null); }}
+                  >Undo</button>
+                </>
+              )}
+            </div>
+          )}
+
           <form
             className="term-reply"
             onSubmit={(e) => {
@@ -1298,6 +1375,9 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               <ImageIcon />
             </Button>
             <label className="sr-only" htmlFor="term-reply-input">Reply</label>
+            {/* The prompt mark, so the field reads as the terminal's own input
+                line rather than a second box under it. Decoration only. */}
+            <span className="term-prompt-mark" aria-hidden="true">❯</span>
             {/* A TEXTAREA, not an input, and grown from its own content.
 
                 A three-sentence instruction to an agent scrolled out of sight

@@ -309,14 +309,17 @@ export class CoreClient {
     }
   }
 
-  async request<T>(method: string, params: object = {}): Promise<T> {
+  /** `opts.timeoutMs` for the one call that may legitimately wait longer
+   *  than the default (`terminal.send`, held by the core's draft wait). */
+  async request<T>(method: string, params: object = {}, opts: { timeoutMs?: number } = {}): Promise<T> {
     const conn = await this.connect();
     const id = this.nextId++;
+    const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`herdr-core ${method} timed out after ${this.timeoutMs} ms (${this.path})`));
-      }, this.timeoutMs);
+        reject(new Error(`herdr-core ${method} timed out after ${timeoutMs} ms (${this.path})`));
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       try { conn.send({ id, method, params }); }
       catch (e) {
