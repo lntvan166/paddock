@@ -18,6 +18,12 @@ export interface HubSocketDeps {
   hostId: string;
   store: AgentStore;
   presence: PresenceStore;
+  /** Pushes the screen a client is showing (`screen-stream.ts`). Optional: a
+   *  hub without one still serves agents, and every pane polls. */
+  screens?: {
+    view(client: HubClient, agentId: string | null, resync?: boolean): void;
+    drop(client: HubClient): void;
+  };
 }
 
 /**
@@ -70,7 +76,9 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
   if (agentId !== null && typeof agentId !== "string") return null;
   if (deviceKey !== null && deviceKey.length > MAX_DEVICE_KEY) return null;
   if (agentId !== null && agentId.length > MAX_AGENT_ID) return null;
-  return { type: "viewing", deviceKey, agentId };
+  return m.resync === true
+    ? { type: "viewing", deviceKey, agentId, resync: true }
+    : { type: "viewing", deviceKey, agentId };
 }
 
 /**
@@ -155,6 +163,7 @@ export function hubWebSocket(deps: HubSocketDeps): WebSocketHandler<WsData> {
         // that release a viewer; the TTL in `presence.ts` covers the socket iOS
         // never closes.
         deps.presence.drop(held);
+        deps.screens?.drop(held);
       }
     },
     message(ws, raw) {
@@ -169,6 +178,10 @@ export function hubWebSocket(deps: HubSocketDeps): WebSocketHandler<WsData> {
       // The agentId is a Map key, compared against ids the store already holds.
       // It never reaches herdr, so there is nothing behind it to reach.
       deps.presence.set(client, { deviceKey: msg.deviceKey, agentId: msg.agentId });
+      // The same statement, read as "push me this agent's screen". Still not a
+      // request: it names what is already on this client's screen, and the
+      // stream checks the id against the store before reading anything.
+      deps.screens?.view(client, msg.agentId, msg.resync === true);
     },
   };
 }

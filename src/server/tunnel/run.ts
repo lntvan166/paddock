@@ -2,7 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import type { AgentStore } from "@server/state/store";
 import type { PresenceStore } from "@server/state/presence";
 import type { Hub } from "@server/ws/hub";
-import { hubWebSocket, tryUpgradeWs, type WsData } from "@server/ws/serve";
+import { hubWebSocket, tryUpgradeWs, type HubSocketDeps, type WsData } from "@server/ws/serve";
 import {
   startTunnel as realStartTunnel,
   terminate,
@@ -51,6 +51,8 @@ export interface TunnelDeps {
    * process's own listener is the one recording presence.
    */
   presence?: PresenceStore;
+  /** The same screen pusher the plain listener uses; see `ws/serve.ts`. */
+  screens?: HubSocketDeps["screens"];
   /**
    * Serve a paddock ALREADY RUNNING here rather than this process's own.
    *
@@ -155,6 +157,7 @@ export function serveGated(deps: TunnelDeps): { port: number; stop(): void } {
       },
       websocket: hubWebSocket({
         hub: deps.hub!, hostId: deps.hostId!, store: deps.store!, presence: deps.presence!,
+        screens: deps.screens,
       }),
     })
     /*

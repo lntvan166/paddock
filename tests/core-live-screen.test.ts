@@ -138,3 +138,60 @@ test("a terminal that never paints rejects within the timeout, and leaves no mir
   expect(text(lines[0]!)).toBe("paint of t7");
   screens.closeAll();
 });
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("a watcher hears new bytes once they are in the mirror, not the first paint", async () => {
+  const core = fakeCore();
+  const screens = new LiveScreens(quick);
+  let heard = 0;
+  const unwatch = screens.watch("t7", () => { heard++; });
+  await screens.read(core.client, "t7", false);
+  expect(heard).toBe(0);
+  core.views[0]!.push("\r\nnext line");
+  await wait(5);
+  expect(heard).toBe(1);
+  // What it is told about is already readable.
+  expect((await screens.read(core.client, "t7", false)).map(text)).toEqual(["paint of t7", "next line"]);
+  unwatch();
+  core.views[0]!.push("\r\nmore");
+  await wait(5);
+  expect(heard).toBe(1);
+  screens.closeAll();
+});
+
+test("a retired mirror tells its watcher, so the next read attaches again", async () => {
+  const core = fakeCore();
+  const screens = new LiveScreens(quick);
+  let heard = 0;
+  screens.watch("t7", () => { heard++; });
+  await screens.read(core.client, "t7", false);
+  core.views[0]!.lose("line lost");
+  expect(heard).toBe(1);
+  await screens.read(core.client, "t7", false);
+  expect(core.views).toHaveLength(2);
+  screens.closeAll();
+});
+
+test("a watched mirror is not closed for being idle; an unwatched one is", async () => {
+  const core = fakeCore();
+  const screens = new LiveScreens({ ...quick, idleMs: 20 });
+  const unwatch = screens.watch("t7", () => {});
+  await screens.read(core.client, "t7", false);
+  await wait(60);
+  expect(core.views[0]!.closed).toBe(false);
+  unwatch();
+  await wait(60);
+  expect(core.views[0]!.closed).toBe(true);
+  screens.closeAll();
+});
+
+test("closeAll tells nobody to read again", async () => {
+  const core = fakeCore();
+  const screens = new LiveScreens(quick);
+  let heard = 0;
+  screens.watch("t7", () => { heard++; });
+  await screens.read(core.client, "t7", false);
+  screens.closeAll();
+  expect(heard).toBe(0);
+});

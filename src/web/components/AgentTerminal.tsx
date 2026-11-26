@@ -809,6 +809,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       ref={pane}
       onOpenPath={(path) => void openPath(path)}
       paneId={agent.agentId}
+      streamId={agent.agentId}
       title={agent.name}
       onBack={onBack}
       backLabel={backLabel}

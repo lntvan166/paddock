@@ -450,9 +450,24 @@ sequenceDiagram
 
 ### 3. Opening a terminal, then keeping it live
 
-Output is **never** pushed — herdr has no subscribable output-changed event
-(27 subscribable types; `pane.output_matched` needs a match pattern), so the
-screen is always pulled.
+For a **terminal herdr** agent output is never pushed — herdr has no
+subscribable output-changed event (27 subscribable types;
+`pane.output_matched` needs a match pattern), so the screen is pulled as
+below.
+
+An **app (herdr-core) agent** is pushed instead. herdr-core's observer attach
+delivers every byte the program prints, and paddock already keeps one live
+mirror per open app terminal (`herdr-core/live-screen.ts`) to get colour. The
+mirror says when it changed (`LiveScreens.watch`), and `server/screen-stream.ts`
+reads it (at most every 250 ms, last state kept) and sends a `screen` frame on
+the socket to each client whose `viewing` frame names that agent. A frame is a
+`ScreenPatch` against the last pushed screen (`base`), one history shared by
+every viewer; a client holding something else sends `viewing` with
+`resync: true` and gets the last screen whole, from memory. While frames
+arrive the pane's poll drops to a 10 s safety read (`PUSH_FRESH_MS` in
+`PaneTerminal.tsx`); a stream that stops hands the pane back to the poll
+within 30 s. Nothing on the socket can ask for anything: a client only says
+what it is showing, as it already did for presence.
 
 ```mermaid
 sequenceDiagram
@@ -730,7 +745,8 @@ currently looking needs it; or it changes continuously while being watched.
 | Agent/pane goes away | **push** — `pane.closed`, `pane.exited` | event-backed, tiny, shared |
 | Liveness | **push** — `heartbeat` every 30s | nothing else proves a quiet link is alive |
 | `acknowledgedAt` | **push** — paddock's own state, rides the delta | shared: dismissing on a phone must clear the laptop |
-| Terminal output | **pull** — `POST /output` | **no herdr event exists**; large; only the viewer needs it; changes constantly |
+| Terminal output, terminal herdr | **pull** — `POST /output` | **no herdr event exists**; large; only the viewer needs it; changes constantly |
+| Terminal output, app agent | **push to its viewers only** — `screen` frames (`server/screen-stream.ts`) | herdr-core's observer stream IS the event; sent only to the clients showing it, as patches, throttled to 4/s |
 | Parsed prompt | **pull** — `POST /prompt` | derived from output, same reasoning |
 | Everything else | 30s reconcile | a healing net, not a discovery path |
 

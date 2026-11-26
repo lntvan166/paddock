@@ -16,7 +16,10 @@ import { readAgentCommands } from "@server/commands/read";
 import { claudeHomes } from "@server/journal/files";
 import { saveImage } from "@server/uploads/store";
 import { createFileStore } from "@server/files/store";
-import { createActions, type HerdrActions } from "@server/herdr/actions";
+import { createActions, HISTORY_LINES, resolveReadLines, type HerdrActions } from "@server/herdr/actions";
+import { LiveScreens } from "@server/herdr-core/live-screen";
+import { ScreenStream } from "@server/screen-stream";
+import { isCoreId, rawCoreId } from "@shared/origin";
 import { StreamKeeper } from "@server/herdr/keeper";
 import { toSpaceTree } from "@server/herdr/tree";
 import { AgentStore } from "@server/state/store";
@@ -821,6 +824,9 @@ let demo: DemoSource | null = null;
 // is FOR. The shim serves synthetic reads and REFUSES every write with a
 // message, which is the one shape that does not become a mislabelled control.
 let actions: HerdrActions | undefined;
+// The app terminals' live mirrors, shared by the core actions (which read
+// them) and the screen stream (which is told when they move).
+const coreScreens = new LiveScreens({ history: HISTORY_LINES });
 let readTree: (() => Promise<SpaceTree>) | undefined;
 // Health reads the stream itself rather than a cached boolean: a flag can go
 // stale (and did — a failed reopen left it saying `true` with no stream at
@@ -880,6 +886,7 @@ if (DEMO) {
     requireHerdr(createActions(socketPath), () => herdrStream.up),
     createCoreActions(requireCore(() => coreSupervisor?.connection() ?? null), appSocket!, {
       scope: () => settings.machines(),
+      screens: coreScreens,
     }),
   );
   const client = {
@@ -1178,6 +1185,18 @@ const demoJournal: JournalReader = {
   read: (session) => Promise.resolve(demoJournalPage(session)),
 };
 
+// Pushes the open pane's screen over the socket where the backend can say it
+// moved — app terminals, through their mirrors. Not in --demo: its actions
+// have no mirror, and its panes poll the demo's synthetic screens as before.
+const screenStream = new ScreenStream({
+  agent: (id) => store.snapshot().find((a) => a.agentId === id) ?? null,
+  watch: (id, onChange) => (!DEMO && isCoreId(id) ? coreScreens.watch(rawCoreId(id), onChange) : null),
+  read: (id, state) => {
+    if (!actions) return Promise.reject(new Error("no backend"));
+    return actions.readOutput(id, state, resolveReadLines(undefined), false);
+  },
+});
+
 const appDeps = {
   store,
   watch,
@@ -1269,7 +1288,7 @@ const app = createApp(appDeps);
 
 // One set of socket handlers for every listener in this process, so a socket
 // behaviour cannot land on one door and not the other (see ws/serve.ts).
-const hubSocket = hubWebSocket({ hub, hostId, store, presence });
+const hubSocket = hubWebSocket({ hub, hostId, store, presence, screens: screenStream });
 
 try {
   Bun.serve<WsData>({
@@ -1528,6 +1547,7 @@ if (command === "tunnel") {
       hostId,
       store,
       presence,
+      screens: screenStream,
       pairing,
       port: Number(process.env.PADDOCK_TUNNEL_PORT ?? 8788),
       bin: tunnelBin,

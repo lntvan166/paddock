@@ -110,3 +110,28 @@ test("a frame for one agent does not appear under another", () => {
   handler.message(ws, JSON.stringify({ type: "viewing", deviceKey: "dk-1", agentId: "w1:p1" }));
   expect(presence.viewers("w2:p9")).toEqual(new Set());
 });
+
+test("`resync` is carried only as `true`, and reaches the screen stream with the viewed agent", () => {
+  expect(parseClientMessage(JSON.stringify({ type: "viewing", deviceKey: null, agentId: "hc.t1", resync: true })))
+    .toEqual({ type: "viewing", deviceKey: null, agentId: "hc.t1", resync: true });
+  // Anything else is just a viewing frame, not a refusal.
+  expect(parseClientMessage(JSON.stringify({ type: "viewing", deviceKey: null, agentId: "hc.t1", resync: "yes" })))
+    .toEqual({ type: "viewing", deviceKey: null, agentId: "hc.t1" });
+
+  const seen: [string | null, boolean | undefined][] = [];
+  let dropped = 0;
+  const handler = hubWebSocket({
+    hub: { add() {}, remove() {}, sendSnapshot() {} } as unknown as Hub,
+    hostId: "dev-box",
+    store: { snapshot: () => [] } as unknown as AgentStore,
+    presence: new PresenceStore(),
+    screens: { view: (_c, id, resync) => { seen.push([id, resync]); }, drop: () => { dropped++; } },
+  });
+  const ws = { data: {} as any, send() {} } as any;
+  handler.open!(ws);
+  handler.message!(ws, JSON.stringify({ type: "viewing", deviceKey: null, agentId: "hc.t1" }));
+  handler.message!(ws, JSON.stringify({ type: "viewing", deviceKey: null, agentId: "hc.t1", resync: true }));
+  handler.close!(ws, 1000, "");
+  expect(seen).toEqual([["hc.t1", false], ["hc.t1", true]]);
+  expect(dropped).toBe(1);
+});

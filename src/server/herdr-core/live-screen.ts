@@ -51,6 +51,10 @@ interface View {
 
 export class LiveScreens {
   private views = new Map<string, View>();
+  /** Per terminal, who wants to hear that its screen moved. Kept apart from
+   *  `views`: a mirror is retired and re-opened (idle, resize, a dropped
+   *  stream) while the people watching it stay the same. */
+  private watchers = new Map<string, Set<() => void>>();
   private readonly idleMs: number;
   private readonly quietMs: number;
   private readonly maxPaintMs: number;
@@ -76,14 +80,50 @@ export class LiveScreens {
     return linesOf(view.term, scrollback ? "all" : "screen");
   }
 
+  /**
+   * Be told whenever `terminal`'s screen may have moved: after new bytes are
+   * in the mirror, and when the mirror is retired (so the watcher reads again,
+   * which attaches again). It does not open a mirror by itself; the first
+   * `read` does. Returns the unwatch.
+   *
+   * This is what lets the dashboard be pushed a screen instead of polling
+   * for one: the observer stream already delivers every byte the program
+   * prints, so the mirror knows the moment something changed.
+   */
+  watch(terminal: string, onChange: () => void): () => void {
+    let set = this.watchers.get(terminal);
+    if (!set) { set = new Set(); this.watchers.set(terminal, set); }
+    set.add(onChange);
+    return () => {
+      const s = this.watchers.get(terminal);
+      if (!s) return;
+      s.delete(onChange);
+      if (s.size === 0) this.watchers.delete(terminal);
+    };
+  }
+
+  private changed(terminal: string): void {
+    const set = this.watchers.get(terminal);
+    if (!set) return;
+    for (const fn of [...set]) {
+      try { fn(); } catch (e) {
+        console.info(`herdr-core: a screen watcher of ${terminal} failed (${(e as Error).message})`);
+      }
+    }
+  }
+
   closeAll(): void {
+    // Shutting down: nobody is to be told to read again.
+    this.watchers.clear();
     for (const v of [...this.views.values()]) this.retire(v);
   }
 
   private touch(view: View): void {
     view.lastRead = Date.now();
     if (view.idle) clearTimeout(view.idle);
-    view.idle = setTimeout(() => this.retire(view), this.idleMs);
+    // A watched mirror is not idle: its screen is being pushed, and a quiet
+    // screen sends nothing to read. Retiring it would only re-attach.
+    view.idle = setTimeout(() => (this.watchers.has(view.terminal) ? this.touch(view) : this.retire(view)), this.idleMs);
   }
 
   private retire(view: View): void {
@@ -94,6 +134,8 @@ export class LiveScreens {
     view.close();
     view.term?.dispose();
     view.term = null;
+    // A watched terminal is read again, which opens a fresh mirror.
+    this.changed(view.terminal);
   }
 
   private open(client: Observer, terminal: string): View {
@@ -137,6 +179,9 @@ export class LiveScreens {
           const term = view.term;
           if (!term || view.dead) return;
           view.written = new Promise<void>((resolve) => term.write(bytes, resolve));
+          // Only once the first paint has landed: before that, a read is
+          // already waiting on `ready` and nothing has "changed" yet.
+          if (painted) void view.written.then(() => this.changed(terminal));
           if (!painted) {
             if (!cap) cap = setTimeout(() => settle(), this.maxPaintMs);
             if (quiet) clearTimeout(quiet);

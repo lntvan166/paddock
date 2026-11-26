@@ -684,7 +684,19 @@ export type ServerMessage =
    * `heartbeat` is: a delta states "these agents changed", and a client is
    * entitled to believe it.
    */
-  | { type: "tree-stale"; serverTime: number };
+  | { type: "tree-stale"; serverTime: number }
+  /**
+   * The screen of the agent this client is showing, pushed because it moved
+   * (`src/server/screen-stream.ts`). Sent only to a client whose `viewing`
+   * frame names that agent, and only where the backend can say its screen
+   * moved (herdr-core agents); elsewhere the pane polls as before.
+   *
+   * `patch` is against the screen with digest `base`, or against an empty
+   * screen when `base` is null (a whole screen). A client holding a different
+   * screen reads once over HTTP instead of applying it; `patch.digest` is
+   * still checked after applying, like a route patch.
+   */
+  | { type: "screen"; agentId: string; base: string | null; patch: ScreenPatch; source: string };
 
 /**
  * The ONLY thing a browser may say on this socket, and the first thing it has
@@ -701,7 +713,16 @@ export type ServerMessage =
  * those routes already have.
  */
 export type ClientMessage =
-  | { type: "viewing"; deviceKey: string | null; agentId: string | null };
+  | {
+      type: "viewing"; deviceKey: string | null; agentId: string | null;
+      /**
+       * "The screen you pushed me does not line up with mine": answered with
+       * the last pushed screen whole (`screen-stream.ts`). Still a statement
+       * about this client's own screen, never a request to change anything.
+       * Its own flag because `viewing` already repeats on every heartbeat.
+       */
+      resync?: true;
+    };
 
 /**
  * A package manager that owns a paddock install and therefore owns its

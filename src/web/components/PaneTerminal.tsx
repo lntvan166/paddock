@@ -14,6 +14,7 @@ import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pan
 import { applyPatch, digestOf } from "@shared/screen";
 import { RATE_MS, readPrefs, type KeypadPref, type RatePref } from "@web/prefs";
 import { RequestFailed } from "@web/api";
+import { onScreen, requestScreenResync } from "@web/store";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
 import { CtrlCompose } from "@web/components/ui/CtrlCompose";
@@ -154,6 +155,13 @@ const TOP_THRESHOLD_PX = 24;
  * keeps the climb to the ceiling at six steps from the lower floor, so a pane
  * that goes quiet stops costing requests about as quickly as it did before.
  */
+/**
+ * How long after the last pushed frame a pane still counts as pushed. A quiet
+ * screen sends nothing, so past this the pane polls again (and its backoff
+ * makes a quiet poll cheap); longer than the safety read below, so a steady
+ * stream never falls back between two frames.
+ */
+export const PUSH_FRESH_MS = 30_000;
 export const MIN_REFRESH_MS = 250;
 export const MAX_REFRESH_MS = 10_000;
 const REFRESH_BACKOFF = 2;
@@ -319,6 +327,13 @@ export interface PaneTerminalProps {
    * nothing.
    */
   onOpenPath?: (path: string) => void;
+  /**
+   * The agent whose screens the server may PUSH for this pane (an agent pane
+   * only; a shell has none). While pushes arrive the poll drops to a slow
+   * safety read; where the backend cannot push, none arrive and the pane
+   * polls exactly as before.
+   */
+  streamId?: string;
   /** herdr's `pane_id`. The same string as an agent id, because they are the
    *  same thing at two moments. */
   paneId: string;
@@ -398,6 +413,7 @@ export function PaneTerminal({
   paused = false, minIntervalMs = 0,
   sendText: onSendText, sendKey: onSendKey,
   onOpenPath,
+  streamId,
   ref,
 }: PaneTerminalProps) {
   /**
@@ -754,6 +770,43 @@ export function PaneTerminal({
    * Skipped while `paused`, so a poll cannot land on top of the screen a key
    * press just returned.
    */
+  /**
+   * When the server last pushed this pane a screen (0: never). A push means
+   * the backend is watching the screen and will send the next change itself,
+   * so the poll can slow to a safety read. Measured from the LAST frame, so a
+   * stream that stops (socket dropped, backend gone) hands the pane back to
+   * the ordinary poll within `PUSH_FRESH_MS`.
+   */
+  const pushedAtRef = useRef(0);
+  const pushedRecently = () => Date.now() - pushedAtRef.current < PUSH_FRESH_MS;
+
+  useEffect(() => {
+    if (!streamId) return;
+    pushedAtRef.current = 0;
+    const off = onScreen(streamId, (f) => {
+      pushedAtRef.current = Date.now();
+      // Mid-action the route's own settled screen is about to land; a frame
+      // applied now would only be replaced, and its base may be stale.
+      if (pausedRef.current) return;
+      if (f.patch.digest === digestRef.current) return; // already showing it
+      // A frame applies only on top of the screen it was made against. Any
+      // other screen here (an HTTP read in between) asks the server for the
+      // screen whole, which costs it no read; without a socket, HTTP.
+      const base = f.base === null ? [] : f.base === digestRef.current ? screenFor(paneId)?.lines : undefined;
+      const catchUp = () => { if (!requestScreenResync()) void refresh(); };
+      if (base === undefined) { catchUp(); return; }
+      const next = applyPatch(base, f.patch);
+      if (digestOf(next) !== f.patch.digest) {
+        // A whole screen that fails its own check is not fixed by asking for
+        // it again: read it over HTTP.
+        if (f.base === null) void refresh(); else catchUp();
+        return;
+      }
+      apply(next, f.patch.digest);
+    });
+    return () => { off(); pushedAtRef.current = 0; };
+  }, [streamId, paneId, apply, refresh]);
+
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -766,7 +819,9 @@ export function PaneTerminal({
     const run = async () => {
       if (cancelled) return;
       if (!document.hidden && !pausedRef.current) await refresh();
-      if (!cancelled) timer = setTimeout(run, intervalRef.current);
+      // While the server is pushing this screen, the poll is only a safety
+      // net: a pushed frame arrives the moment the screen moves.
+      if (!cancelled) timer = setTimeout(run, pushedRecently() ? MAX_REFRESH_MS : intervalRef.current);
     };
     timer = setTimeout(run, intervalRef.current);
 

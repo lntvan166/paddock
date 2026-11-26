@@ -153,6 +153,47 @@ function trackSpaces(
   return { spacesAvailable: spaces };
 }
 
+/** A pushed screen frame (see `ServerMessage`'s `screen`). */
+export type ScreenFrame = Extract<ServerMessage, { type: "screen" }>;
+
+const screenListeners = new Map<string, Set<(f: ScreenFrame) => void>>();
+
+/**
+ * Hear the screens the server pushes for `agentId`. The open pane is the only
+ * listener; the frames never enter the store, because nothing else draws them
+ * and the store re-renders every subscriber on every change.
+ */
+export function onScreen(agentId: string, fn: (f: ScreenFrame) => void): () => void {
+  let set = screenListeners.get(agentId);
+  if (!set) { set = new Set(); screenListeners.set(agentId, set); }
+  set.add(fn);
+  return () => {
+    const s = screenListeners.get(agentId);
+    if (!s) return;
+    s.delete(fn);
+    if (s.size === 0) screenListeners.delete(agentId);
+  };
+}
+
+/** Set by the live connection; a no-op while there is none. */
+let resyncHook: () => boolean = () => false;
+
+/**
+ * Tell the server this pane's screen does not line up with the frames it is
+ * pushing, so it sends the screen whole. False when there is no open socket
+ * to say it on, and the caller should read over HTTP instead.
+ */
+export function requestScreenResync(): boolean {
+  return resyncHook();
+}
+
+/** Exported for tests: what `onmessage` does with a screen frame. */
+export function deliverScreen(f: ScreenFrame): void {
+  for (const fn of [...(screenListeners.get(f.agentId) ?? [])]) {
+    try { fn(f); } catch (err) { console.error("paddock: a screen listener failed", err); }
+  }
+}
+
 export function applyMessage(state: ClientState, msg: ServerMessage): ClientState {
   if (msg.type === "snapshot") {
     return {
@@ -185,6 +226,9 @@ export function applyMessage(state: ClientState, msg: ServerMessage): ClientStat
   if (msg.type === "tree-stale") {
     return { ...state, treeStaleAt: msg.serverTime, lastMessageAt: msg.serverTime };
   }
+  // Not store state: delivered to the open pane by `onScreen`. Returned by
+  // identity so a screen frame four times a second re-renders nothing else.
+  if (msg.type === "screen") return state;
   const byId = new Map(state.agents.map((a) => [a.agentId, a]));
   for (const a of msg.upserted) byId.set(a.agentId, a);
   for (const id of msg.removedIds) byId.delete(id);
@@ -238,14 +282,17 @@ export const useStore = create<Store>((set, get) => {
    */
   let key: string | null = null;
 
-  const sendViewing = () => {
-    if (ws === null || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify(viewingMessage({
+  const sendViewing = (resync = false): boolean => {
+    if (ws === null || ws.readyState !== WebSocket.OPEN) return false;
+    const msg = viewingMessage({
       deviceKey: key,
       hash: globalThis.location?.hash ?? "",
       hidden: typeof document !== "undefined" && document.visibilityState === "hidden",
-    })));
+    });
+    ws.send(JSON.stringify(resync ? { ...msg, resync: true } : msg));
+    return true;
   };
+  resyncHook = () => sendViewing(true);
 
   const open = () => {
     // Re-entrancy guard: a second connect() call (duplicate mount, a
@@ -268,6 +315,7 @@ export const useStore = create<Store>((set, get) => {
         console.error("paddock: unparseable server message", err);
         return;
       }
+      if (msg.type === "screen") { deliverScreen(msg); return; }
       set(applyMessage(get(), msg));
       // The reply to the hub's own 20s heartbeat IS presence's keep-alive, so
       // no timer of its own is needed on either side.
@@ -314,7 +362,7 @@ export const useStore = create<Store>((set, get) => {
       });
       // A pane opened or closed within an already-visible tab changes what
       // this device is viewing without touching `visibilitychange` at all.
-      addEventListener("hashchange", sendViewing);
+      addEventListener("hashchange", () => { sendViewing(); });
     }
     open();
   };
