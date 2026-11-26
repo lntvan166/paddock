@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readClaudeDraft, sameDraft } from "@shared/draft";
+import { claudeInputVisible, readClaudeDraft, sameDraft } from "@shared/draft";
 
 /*
  * Claude Code's input box, read off the ANSI screen. Every fixture line below
@@ -66,4 +66,21 @@ test("two reads of one draft agree despite what a screen cannot show", () => {
   expect(sameDraft("abc  ", "abc")).toBe(true);
   expect(sameDraft("a\nb\n\n", "a\nb")).toBe(true);
   expect(sameDraft("a b", "ab")).toBe(false);
+});
+
+// A `/btw` answer, as captured: it REPLACES the input box (its top edge is
+// `▔`, not a rule), and its footer lists single-letter keys.
+const BTW = [
+  "● earlier transcript", "", RULE, M + "earlier quoted prompt", RULE, "● reply",
+  "▔".repeat(60),
+  "  /btw trả lời đúng một chữ: ok",
+  "    ok",
+  "  ⇧←/→ to browse · c to copy · f to fork · x to clear history · Esc to close",
+];
+
+test("the input box is visible on an ordinary screen, and not while a /btw answer covers it", () => {
+  expect(claudeInputVisible(box(SUGGESTION))).toBe(true);
+  expect(claudeInputVisible(box(M + "a draft"))).toBe(true);
+  expect(claudeInputVisible(BTW)).toBe(false);
+  expect(readClaudeDraft(BTW)).toEqual({ kind: "unknown" });
 });

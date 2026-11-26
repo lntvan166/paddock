@@ -309,17 +309,14 @@ export class CoreClient {
     }
   }
 
-  /** `opts.timeoutMs` for the one call that may legitimately wait longer
-   *  than the default (`terminal.send`, held by the core's draft wait). */
-  async request<T>(method: string, params: object = {}, opts: { timeoutMs?: number } = {}): Promise<T> {
+  async request<T>(method: string, params: object = {}): Promise<T> {
     const conn = await this.connect();
     const id = this.nextId++;
-    const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`herdr-core ${method} timed out after ${timeoutMs} ms (${this.path})`));
-      }, timeoutMs);
+        reject(new Error(`herdr-core ${method} timed out after ${this.timeoutMs} ms (${this.path})`));
+      }, this.timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       try { conn.send({ id, method, params }); }
       catch (e) {
@@ -541,6 +538,27 @@ export class CoreClient {
     catch (e) { wantClose = true; conn.close(); throw e; }
     finally { clearTimeout(timer); }
     return () => { wantClose = true; conn.close(); };
+  }
+
+  /**
+   * One request on a plain connection of its OWN, closed when it settles.
+   *
+   * For `terminal.send`, which the core may HOLD (a person's fresh draft, a
+   * terminal still starting). Measured in herdr-core's `server.rs`: a plain
+   * connection serves one call at a time, so a held send on the shared
+   * connection stalled every read, label and list behind it, and the phone
+   * hung until the edge cut the request. On its own connection it holds
+   * nothing else up, and when it times out the close is what the core reads
+   * as "cancelled": a send still waiting to type is dropped rather than
+   * delivered after paddock has already said it failed.
+   */
+  async requestAlone<T>(method: string, params: object, timeoutMs = this.timeoutMs): Promise<T> {
+    const one = new CoreClient(this.path, timeoutMs);
+    try {
+      return await one.request<T>(method, params);
+    } finally {
+      one.close();
+    }
   }
 
   /** Close the request connection and any subscription; pending requests reject. */

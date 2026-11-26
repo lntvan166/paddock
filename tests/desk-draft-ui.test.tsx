@@ -81,3 +81,31 @@ test("nothing is offered for an empty box, another harness, a terminal herdr age
   await unmount();
   expect((await mount(DRAFT, { ...APP_AGENT, state: "working" })).strip()).toBeNull();
 });
+
+test("while a reply is in flight the box's text is not offered back as a desk draft", async () => {
+  // The core pastes a reply into the box before it presses Enter, and may
+  // hold the send; a phone offered the operator's own message back to pull.
+  let release!: () => void;
+  const { fn } = stubFetch({
+    "/output": () => screen(DRAFT),
+    "/commands": () => ({ ok: true, commands: [] }),
+  });
+  const slow = async (input: any, init?: any) => {
+    if (String(input).includes("/text")) {
+      await new Promise<void>((r) => { release = r; });
+      return new Response(JSON.stringify({ ok: true, lines: [], source: "visible" }), { headers: { "content-type": "application/json" } });
+    }
+    return fn(input, init);
+  };
+  globalThis.fetch = slow as typeof fetch;
+  const host = await render(<AgentTerminal agent={APP_AGENT} onBack={() => {}} />);
+  await settle();
+  expect(host.querySelector("[data-field=desk-draft]")).not.toBeNull();
+  const field = host.querySelector<HTMLTextAreaElement>("#term-reply-input")!;
+  await typeInto(field, "câu khác");
+  await fire(field, new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+  await settle();
+  expect(host.querySelector("[data-field=desk-draft]")).toBeNull();
+  release();
+  await settle();
+});

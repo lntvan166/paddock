@@ -64,17 +64,46 @@ function segments(line: string): { text: string; dim: boolean }[] | null {
   return out;
 }
 
-export function readClaudeDraft(screen: string[]): DraftRead {
-  // The LAST `❯` line that sits directly under a rule: the input box is the
-  // bottom-most such structure, and a `❯` higher up is transcript.
+/**
+ * Where the input box is: the LAST `❯` line that sits directly under a rule
+ * (a `❯` higher up is transcript), up to the rule that closes it. Null when
+ * there is none, which is what an overlay looks like: measured, a `/btw`
+ * answer and the Rewind menu both REPLACE the box rather than sit above it.
+ */
+function findBox(screen: string[]): { start: number; end: number } | null {
   let start = -1;
   for (let i = screen.length - 1; i > 0; i--) {
     if (MARK.test(plain(screen[i]!)) && RULE.test(plain(screen[i - 1]!).trim())) { start = i; break; }
   }
-  if (start === -1) return { kind: "unknown" };
+  if (start === -1) return null;
   let end = start + 1;
   while (end < screen.length && !RULE.test(plain(screen[end]!).trim())) end++;
-  if (end >= screen.length) return { kind: "unknown" }; // no closing rule
+  if (end >= screen.length) return null; // no closing rule
+  // The box is the bottom of the screen but for Claude Code's footer: a box
+  // with more rules under it is transcript echoed above something else.
+  // The same for an overlay's top edge (`▔`, measured on `/btw`) under it.
+  for (let i = end + 1; i < screen.length; i++) {
+    const p = plain(screen[i]!).trim();
+    if (RULE.test(p) || /^▔{3,}/.test(p)) return null;
+  }
+  return { start, end };
+}
+
+/**
+ * Whether Claude Code's input box is on screen, so typed text and Enter reach
+ * it. False while something covers it: measured on a `/btw` answer, which
+ * takes single letters as its own keys (`c` copy, `f` fork, `x` clear
+ * history) and swallowed a whole reply, Enter included, while the send
+ * reported success.
+ */
+export function claudeInputVisible(screen: string[]): boolean {
+  return findBox(screen) !== null;
+}
+
+export function readClaudeDraft(screen: string[]): DraftRead {
+  const found = findBox(screen);
+  if (!found) return { kind: "unknown" };
+  const { start, end } = found;
 
   const lines: string[] = [];
   let anyDim = false;

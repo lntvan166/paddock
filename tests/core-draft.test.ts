@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Unsupported } from "@server/action-errors";
 import {
-  createCoreActions, DRAFT_BUSY, DRAFT_CHANGED, DRAFT_NOT_CLAUDE, DRAFT_NOT_CLEARED,
+  createCoreActions, DRAFT_BUSY, DRAFT_CHANGED, DRAFT_NOT_CLAUDE, DRAFT_NOT_CLEARED, INPUT_COVERED, SEND_TIMEOUT_MS,
 } from "@server/herdr-core/actions";
 import type { AppSocket } from "@server/herdr-core/app-socket";
 import type { LiveScreens } from "@server/herdr-core/live-screen";
@@ -72,4 +72,58 @@ test("a box that is not empty afterwards is an error, and one Esc closes whateve
   const r = rig({ screens: [DRAFT, REWIND] });
   await expect(r.a.clearDraft("hc.t7", "sửa lỗi auth giúp mình")).rejects.toThrow(DRAFT_NOT_CLEARED);
   expect(r.keys).toEqual([["esc", "esc"], ["esc"]]);
+});
+
+// Sending a reply. Captured: a `/btw` answer replaces the box and takes
+// letters as its own keys, so a send into it vanished while reporting success.
+const BTW = ["● transcript", "▔".repeat(40), "  /btw anything", "    ok", "  c to copy · f to fork · x to clear history · Esc to close"];
+
+function sender(o: { app?: string; screen: string[] }) {
+  const sent: string[] = [];
+  const client = {
+    async request<T>(method: string, params: any = {}): Promise<T> {
+      if (method === "terminal.get") return { address: "t7", cols: 80, rows: 24, labels: {}, status: { state: "idle", app: o.app ?? "claude-code" } } as T;
+      if (method === "terminal.send") { sent.push(params.text); return {} as T; }
+      throw new Error(`unexpected ${method}`);
+    },
+    async observe() { return () => {}; },
+  };
+  const fake = { read: async () => o.screen, closeAll() {} };
+  const app: AppSocket = { async available() { return false; }, async renameSpace() {}, async renameTab() {} };
+  return { a: createCoreActions(() => client as never, app, { sleep: async () => {}, screens: fake as unknown as LiveScreens }), sent };
+}
+
+test("a reply is refused while something covers Claude Code's input, and sent when the box is there", async () => {
+  const covered = sender({ screen: BTW });
+  await expect(covered.a.sendReply("hc.t7", "xin chào")).rejects.toThrow(new Unsupported(INPUT_COVERED));
+  expect(covered.sent).toEqual([]);
+
+  const open = sender({ screen: EMPTY });
+  await open.a.sendReply("hc.t7", "xin chào");
+  expect(open.sent).toEqual(["xin chào"]);
+
+  // Another harness's screen was never measured: it is sent as before.
+  const codex = sender({ app: "codex", screen: BTW });
+  await codex.a.sendReply("hc.t7", "xin chào");
+  expect(codex.sent).toEqual(["xin chào"]);
+});
+
+test("a reply goes out on a connection of its own, with the long send timeout", async () => {
+  const alone: { method: string; params: any; timeoutMs: number }[] = [];
+  const client = {
+    async request<T>(method: string): Promise<T> {
+      if (method === "terminal.get") return { address: "t7", cols: 80, rows: 24, labels: {}, status: { state: "idle", app: "claude-code" } } as T;
+      throw new Error(`unexpected shared-connection ${method}`);
+    },
+    async requestAlone<T>(method: string, params: any, timeoutMs: number): Promise<T> {
+      alone.push({ method, params, timeoutMs });
+      return {} as T;
+    },
+    async observe() { return () => {}; },
+  };
+  const fake = { read: async () => EMPTY, closeAll() {} };
+  const app: AppSocket = { async available() { return false; }, async renameSpace() {}, async renameTab() {} };
+  const a = createCoreActions(() => client as never, app, { sleep: async () => {}, screens: fake as unknown as LiveScreens });
+  await a.sendReply("hc.t7", "xin chào");
+  expect(alone).toEqual([{ method: "terminal.send", params: { terminal: "t7", text: "xin chào" }, timeoutMs: SEND_TIMEOUT_MS }]);
 });

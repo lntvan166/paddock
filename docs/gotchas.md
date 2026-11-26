@@ -542,6 +542,7 @@ a time; `tests/core-draft-live.test.ts` executes every row against a probe:
 | One `Esc` | Nothing, plus "esc again to clear" |
 | `Esc Esc` in ONE `terminal.keys` call | Clears the whole box, multi-line, cursor anywhere |
 | `Esc Esc` on an EMPTY box | Opens **Rewind** ("Esc to cancel") |
+| A `/btw` answer open | REPLACES the box; its footer takes letters as keys (`c` copy, `f` fork, `x` clear history, `Esc` close). A reply sent into it vanished, Enter included, while the send reported success |
 
 The traps, each of which a hand-written fixture hid:
 
@@ -559,7 +560,30 @@ The traps, each of which a hand-written fixture hid:
   idle input) and fails without sending.
 - **Only an idle or done agent**: `Esc` interrupts a working agent and answers
   a dialog.
-- Not measured: whether herdr-core's own draft wait notices a draft cleared
-  by API keys. The probe typed its drafts as automatic input, which herdr
-  does not count as a person's draft, so a send after a real desk draft may
-  still wait out `draft_wait` before it is pasted (into the now-empty box).
+- **No input box, no send.** Before any reply to an app agent running Claude
+  Code, the coloured screen must show the box (`claudeInputVisible`);
+  otherwise the send is refused with "close it with Esc first". This guards
+  every sender, the Send button, quick replies and the MCP bridge's
+  `send_message`, not only a pulled draft. Terminal herdr agents reply through
+  `agent.prompt` and were not probed for this.
+- **A held send must not share a connection.** Measured in herdr-core's
+  `server.rs` and on a live core: a PLAIN connection serves one call at a
+  time, and `terminal.send` can be held (a person's draft for up to
+  `draft_wait`, 60 s after their last key; a terminal still starting). On
+  paddock's one shared connection that hold stalled every read, label and
+  list behind it, the phone's request outlived Cloudflare's ~100 s cut, and
+  Safari reported the edge's error page as "The string did not match the
+  expected pattern". `terminal.send` now runs on its own connection
+  (`CoreClient.requestAlone`): a concurrent `terminal.get` measured 1 ms
+  during a held send, against 4.7 s before.
+- **Giving up must cancel.** The core drops a send that is still waiting to
+  type when its caller's connection closes ("send cancelled before typing"),
+  but a send it has started typing always finishes. With the dedicated
+  connection, paddock's 75 s timeout closes it, so a send paddock reports as
+  failed was measured NOT to arrive later (watched for 75 s). On the shared
+  connection it had arrived a minute after the phone said "failed", and a
+  retry sent it twice.
+- Drafts typed with `AUTOMATIC_INPUT` (paddock's own typing) are not a
+  person's: only DATA frames move the core's draft counter, and only a
+  person's Enter, Ctrl+C or Ctrl+U reset it. paddock's Esc Esc therefore
+  clears the box without ending the core's wait; the send waits it out.

@@ -2619,7 +2619,11 @@ body {
 .term-reply input, .term-reply .term-reply-field {
   border: 0;
   background: transparent;
-  font-family: var(--mono);
+  /* The UI face, NOT mono. Mono was tried and reported from an iPhone as
+     "font type này hơi lạ nhỉ, cách khá xa": SF Mono at the 16px iOS needs
+     to not zoom wrapped a Vietnamese sentence every three or four words in
+     a phone-width field. The prompt mark and the dark ground carry the
+     terminal look; the words the operator writes are prose. */
   /* 16px stays: below it iOS zooms on focus. */
   font-size: 16px;
   /* Not 0: the shared focus ring draws 2px outside the field, and with no

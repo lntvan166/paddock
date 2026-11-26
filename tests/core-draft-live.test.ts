@@ -20,7 +20,8 @@ import { readClaudeDraft } from "@shared/draft";
  *
  * SAFETY. These tests TYPE INTO an input box and press Esc, so they run only
  * against a terminal named by `PADDOCK_CORE_DRAFT_PROBE`, and skip loudly
- * otherwise. They never submit. Set one up, unlabelled so the app never shows
+ * otherwise. They never submit a message; the last asks one small `/btw` side
+ * question, which is real usage. Set one up, unlabelled so the app never shows
  * it, idle and never prompted:
  *
  *     cd "$(mktemp -d)"
@@ -130,5 +131,19 @@ test.skipIf(!ready)("clearDraft clears a matching draft, and refuses one that ch
   await expect(actions!.clearDraft(ID, "sửa lỗi auth giúp mình")).rejects.toThrow(/changed/);
   expect(await box()).toEqual({ kind: "text", text: "bản nháp khác" });
   await keys("esc", "esc");
+  expect(await box()).toEqual({ kind: "empty" });
+});
+
+test.skipIf(!ready)("a reply is refused while a /btw answer covers the input, and goes through once it is closed", async () => {
+  // Costs one small side question. A `/btw` answer REPLACES the input box and
+  // takes letters as its own keys (c copy, f fork, x clear history): a reply
+  // sent into it vanished while the send reported success.
+  await type("/btw answer with one word: ok");
+  await settle();
+  await keys("enter");
+  for (let i = 0; i < 40 && !(await actions!.readPromptScreen(ID)).includes("Esc to close"); i++) await settle();
+  await expect(actions!.sendReply(ID, "this must not be typed")).rejects.toThrow(/showing something over its input/);
+  expect(await actions!.readPromptScreen(ID)).toContain("Esc to close");
+  await keys("esc");
   expect(await box()).toEqual({ kind: "empty" });
 });

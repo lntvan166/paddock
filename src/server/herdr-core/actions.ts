@@ -33,12 +33,12 @@ import { OPEN_HERDR_TO_RENAME, type AppSocket } from "./app-socket";
 import type { CoreClient } from "./socket";
 import { LiveScreens } from "./live-screen";
 import { inScope, toHarness } from "./adapter";
-import { readClaudeDraft, sameDraft } from "@shared/draft";
+import { claudeInputVisible, readClaudeDraft, sameDraft } from "@shared/draft";
 
 /** The slice of `CoreClient` these actions use, so a test can fake it. */
 /** `observe` is optional: without it, screens are read as plain text. */
 /** `typeText` too: without it, a dialog takes only the characters that have a key. */
-export type CoreRequester = Pick<CoreClient, "request"> & Partial<Pick<CoreClient, "observe" | "typeText">>;
+export type CoreRequester = Pick<CoreClient, "request"> & Partial<Pick<CoreClient, "observe" | "typeText" | "requestAlone">>;
 
 /**
  * paddock's key names to herdr-core's (`hc keys --help`: "enter, esc, tab, up,
@@ -74,6 +74,10 @@ const ONE_DIGIT = /^[1-9]$/;
 
 /** Shown when a typed reply would land in a blocked dialog. */
 /** The draft refusals, named so the route and the UI can say what happened. */
+/** A send refused because something covers Claude Code's input. */
+export const INPUT_COVERED =
+  "Claude Code is showing something over its input (a /btw answer or a menu), which would take the text as its own keys; nothing was sent. Close it with Esc first.";
+
 export const DRAFT_NOT_CLAUDE = "only Claude Code's input box can be read; the reply was not sent";
 export const DRAFT_BUSY = "the agent is not idle, so its input box was left alone; the reply was not sent";
 export const DRAFT_CHANGED = "the unsent text at the desk changed since it was pulled in; the reply was not sent";
@@ -278,24 +282,23 @@ export function createCoreActions(
     await call("terminal.keys", { terminal: rawCoreId(id), keys: [key] });
   }
 
-  /** Refuse typing into a blocked dialog, from the LIVE status, not the store. */
-  async function refuseIfBlocked(id: string): Promise<void> {
-    const t = await get(id);
-    if (t.status?.state === "blocked") throw new Unsupported(ANSWER_THE_OPTIONS);
-  }
 
   async function send(id: string, text: string): Promise<void> {
     // No `force`, ever: see the file header.
     //
-    // Its own, longer timeout. The core HOLDS a send while a person's draft
-    // is fresh (`draft_wait`, 60 s after their last key at the desk, then a
-    // 3 s quiet pause), and keeps holding it after the caller gives up: with
-    // the default 10 s the phone said "failed" and the message landed a
-    // minute later anyway, so a retry sent it twice. Measured on a live core;
-    // see docs/gotchas.md, "A draft in Claude Code's input". 75 s is past the
-    // default wait and under Cloudflare's ~100 s idle cut. A `draft_wait`
-    // configured above ~70 s still outlasts it.
-    await client().request("terminal.send", { terminal: rawCoreId(id), text }, { timeoutMs: SEND_TIMEOUT_MS });
+    // On a connection of its own, with its own, longer timeout. The core
+    // HOLDS a send while a person's draft is fresh (`draft_wait`, 60 s after
+    // their last key, then a 3 s quiet pause). On the shared connection that
+    // hold stalled every other request (a plain connection serves one call at
+    // a time), and a timed-out send was still delivered a minute later, so a
+    // retry sent it twice. Alone, it blocks nothing, and giving up closes the
+    // connection, which the core reads as a cancel. 75 s is past the default
+    // wait and under Cloudflare's ~100 s idle cut. See docs/gotchas.md, "A
+    // draft in Claude Code's input".
+    const c = client();
+    const params = { terminal: rawCoreId(id), text };
+    if (c.requestAlone) await c.requestAlone("terminal.send", params, SEND_TIMEOUT_MS);
+    else await c.request("terminal.send", params);
   }
 
   /** Live terminals carrying `key=value`. Filtered here too, so a core that
@@ -407,7 +410,18 @@ export function createCoreActions(
     },
 
     async sendReply(target, text) {
-      await refuseIfBlocked(target);
+      // Refuse typing into a blocked dialog, from the LIVE status, not the store.
+      const t = await get(target);
+      if (t.status?.state === "blocked") throw new Unsupported(ANSWER_THE_OPTIONS);
+      // Claude Code only, where the box was measured: an overlay (a `/btw`
+      // answer, Rewind) REPLACES its input and takes letters as hotkeys, so a
+      // paste plus Enter vanished into it while this reported success. When
+      // the coloured screen cannot be read, the send goes ahead as it always
+      // did; it is the check that is skipped, not the send.
+      if (toHarness(t.status?.app) === "claude") {
+        const coloured = await styled(target, false);
+        if (coloured && !claudeInputVisible(coloured)) throw new Unsupported(INPUT_COVERED);
+      }
       await send(target, text);
     },
 

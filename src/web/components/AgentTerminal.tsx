@@ -898,7 +898,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
         <>
           {sendHeld && (
             <p className="term-note" role="status">
-              Waiting to send: someone typed at the desk in the last minute, so herdr holds it until they stop.
+              Waiting to send: herdr holds a message until the terminal is ready for it (someone typing at the desk, or an agent that has only just started).
             </p>
           )}
           {feedback && (
@@ -1302,7 +1302,10 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
           {/* Only where the merge was measured and is safe: Claude Code, an
               app agent (the clear runs through herdr-core), waiting for input
               rather than working or asking. */}
-          {agent.harness === "claude" && agent.origin === "core" && prompt === null &&
+          {/* Never while a reply of ours is in flight: the core pastes it into
+              the same box before it presses Enter, and offering the operator's
+              own message back as "unsent at the desk" is what a phone showed. */}
+          {agent.harness === "claude" && agent.origin === "core" && prompt === null && !busy &&
             (agent.state === "idle" || agent.state === "done") && (deskDraft !== null || pulled !== null) && (
             <div className="term-draft" role="status" data-field="desk-draft">
               {pulled === null ? (

@@ -464,6 +464,10 @@ export async function sendDialogKey(id: string, key: string, f: Fetch = fetch): 
  * 409 once the agent stops being blocked. Pointing the terminal's reply box at
  * `/answer` is what made it fail in three states out of four.
  */
+/** What a send says when the answer never came back as paddock's own. */
+export const SEND_NO_ANSWER =
+  "No answer from paddock in time. Check the terminal before sending again: the message may or may not have arrived.";
+
 export async function sendText(
   id: string, text: string, f: Fetch = fetch,
   /** The desk draft this reply replaces (see `HerdrActions.clearDraft`). */
@@ -473,6 +477,13 @@ export async function sendText(
     const res = await request(url(id, "text"), opts.replaceDraft === undefined ? { text } : { text, replaceDraft: opts.replaceDraft }, f);
     return (await res.json()) as KeyResult;
   } catch (err) {
+    // A body that is not JSON is an error page from in front of paddock,
+    // most often the edge giving up on a long request. Safari words the
+    // parse failure "The string did not match the expected pattern", which
+    // says nothing about what happened to the message.
+    if (err instanceof SyntaxError) {
+      return { ok: false, detail: SEND_NO_ANSWER, lines: [], source: "" };
+    }
     return { ok: false, detail: String(err), lines: [], source: "" };
   }
 }

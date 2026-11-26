@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   answerWithKey, closeSpace, closeTab, fetchOutput, fetchPaneOutput, RequestFailed, renameAgent,
-  renameSpace, renameTab, sendPaneKey, sendPaneText, type Fetch,
+  renameSpace, renameTab, SEND_NO_ANSWER, sendPaneKey, sendPaneText, sendText, type Fetch,
 } from "@web/api";
 
 // Typed as the real `fetch`, so call sites need no `as any`.
@@ -249,4 +249,12 @@ test("closeSpace POSTs an empty body to the encoded space route", async () => {
 test("closeSpace rejects on a non-2xx with the server's detail", async () => {
   const { fn } = stubFetch(502, { ok: false, detail: "herdr socket unreachable" });
   await expect(closeSpace("w1", fn)).rejects.toThrow(/herdr socket unreachable/);
+});
+
+test("a reply answered by an error page (the edge giving up) says what that means, not a parse error", async () => {
+  // Safari words the parse failure "The string did not match the expected
+  // pattern", which is what a phone showed after a long held send.
+  const fn: Fetch = async () => new Response("<html>524: A timeout occurred</html>", { status: 524 });
+  const res = await sendText("hc.t7", "xin chào", fn);
+  expect(res).toEqual({ ok: false, detail: SEND_NO_ANSWER, lines: [], source: "" });
 });
