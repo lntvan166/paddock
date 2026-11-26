@@ -847,7 +847,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
               palette spends red once per agent, and the word is enough. The
               other states stay a dot because this header is width-starved
               and the agent's name is already truncated. */}
-          {agent.origin === "core" ? <OriginMark /> : null}
+          {agent.origin === "core" ? <OriginMark machine={agent.machine} /> : null}
           {agent.state === "blocked" || agent.state === "error"
             ? (
                 <span className="term-state">

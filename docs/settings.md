@@ -59,6 +59,34 @@ button to mint a code for another device — appears in Settings only while
 ordinary way, or a named-tunnel deployment behind it, has no tunnel to pair
 and does not show the section at all.
 
+## Machines
+
+`agents.machines` (default `all`) decides whose agents paddock lists when the
+Herdr app has added another machine over SSH. herdr-core then lists that
+machine's terminals beside this one's, addressed `machine/t7`, so a paddock on
+each machine would show both machines' agents.
+
+- `all` lists every machine's agents, which is what paddock did before the
+  setting existed.
+- `local` lists only this machine's. A terminal is "another machine's" when
+  herdr-core addresses it `machine/t7` (and names the machine on its events);
+  paddock never guesses from the working directory. Such a terminal never
+  reaches the agent store, so the Agents screen, push, Telegram and the MCP
+  tools (`list_agents`, `read_agent`, `send_message`, …) cannot see it; the
+  Spaces screen leaves it out; and every herdr-core action refuses its id, so
+  it cannot be read or prompted by a typed URL either.
+
+Set it in Settings → Machines and press Save. It applies at once, without
+restarting paddock, herdr or the Herdr app. `PADDOCK_MACHINES=local|all`
+overrides the stored value; while it is set the card says so instead of
+offering the choice. Terminal herdr has no added machines and is unaffected.
+
+Under `all`, another machine's agent carries a second pill with its machine's
+name beside the `app` mark. The Agents screen also has a quick
+This machine / All machines switch, shown only when it can matter (an agent from
+another machine is listed, or `local` is in force) and never while
+`PADDOCK_MACHINES` decides; it writes the setting at once, without Save.
+
 ## Not a setting: `tailscale.json`
 
 Who may reach paddock over Tailscale is not in `settings.json` and has no

@@ -1,4 +1,4 @@
-import { carryAcknowledged, type Agent, type AgentState } from "@shared/types";
+import { carryAcknowledged, type Agent, type AgentState, type MachineScope } from "@shared/types";
 import type { CoreEvent, CoreStatus, CoreTerminal } from "@shared/herdr-core-api";
 import { coreId } from "@shared/origin";
 
@@ -61,6 +61,29 @@ function nameOf(t: Pick<CoreTerminal, "name" | "address">, labels: Record<string
   return t.name ?? tabName(labels) ?? t.address;
 }
 
+/**
+ * Whether a terminal lives on a machine the Herdr app ADDED (over SSH), not
+ * on this one. herdr-core says so itself: it lists this machine's terminals by
+ * bare address (`t7`) and an added machine's as `machine/t7`, the machine
+ * being one of `terminal.list`'s `machines`; its events carry the same
+ * `machine/t7` in `terminal` and the name in `machine`. Never inferred from
+ * `cwd`: two machines can hold the same path, and one machine many.
+ */
+export function isRemoteTerminal(address: string, machine?: string | null): boolean {
+  return (machine !== undefined && machine !== null && machine !== "") || address.includes("/");
+}
+
+/** The added machine's name from a `machine/t7` address; null on this machine. */
+export function machineOf(address: string): string | null {
+  const i = address.indexOf("/");
+  return i === -1 ? null : address.slice(0, i);
+}
+
+/** Whether `scope` shows a terminal at `address` (on `machine`, if said). */
+export function inScope(scope: MachineScope, address: string, machine?: string | null): boolean {
+  return scope === "all" || !isRemoteTerminal(address, machine);
+}
+
 /** Raw space id for a terminal the app has not put in a space. */
 export const CORE_UNGROUPED = "ungrouped";
 
@@ -112,6 +135,7 @@ export function toCoreAgent(t: CoreTerminal, hostId: string): Agent | null {
     origin: "core",
     turn: t.turn ?? null,
     seen: toSeen(t.labels),
+    machine: machineOf(t.address),
   };
 }
 

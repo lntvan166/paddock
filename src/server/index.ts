@@ -878,7 +878,9 @@ if (DEMO) {
     // socket error per call. The stream is what knows whether it is up —
     // `up`, not `connected`, which is false during every routine resubscribe.
     requireHerdr(createActions(socketPath), () => herdrStream.up),
-    createCoreActions(requireCore(() => coreSupervisor?.connection() ?? null), appSocket!),
+    createCoreActions(requireCore(() => coreSupervisor?.connection() ?? null), appSocket!, {
+      scope: () => settings.machines(),
+    }),
   );
   const client = {
     request: <T,>(method: string, params?: object) => request<T>(socketPath, method, params),
@@ -896,7 +898,7 @@ if (DEMO) {
     },
     core: () => {
       const core = coreSupervisor?.connection() ?? null;
-      return core ? readCoreSpaces(core, process.env.HOME) : Promise.resolve(null);
+      return core ? readCoreSpaces(core, process.env.HOME, settings.machines()) : Promise.resolve(null);
     },
     merge: mergeTrees,
   });
@@ -1001,7 +1003,9 @@ if (DEMO) {
       },
       store,
       onDelta: deltaSink(hub, notifier, watch),
+      scope: () => settings.machines(),
     });
+    settings.onChange(() => coreSupervisor?.rescope());
     coreSupervisor.start();
     return coreSupervisor;
   };

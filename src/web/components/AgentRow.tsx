@@ -59,7 +59,7 @@ export function AgentRow({
             you read — see the two-voices block in styles.css. */}
         <div className="ident row-name truncate">{agent.name}</div>
         <div className="row-task truncate">
-          {agent.origin === "core" ? <OriginMark /> : null}
+          {agent.origin === "core" ? <OriginMark machine={agent.machine} /> : null}
           {agent.task}
         </div>
       </div>

@@ -8,6 +8,7 @@ import { AgentActions } from "@web/components/AgentActions";
 import { ConnectionBanner } from "@web/components/ConnectionBanner";
 import { Finding, HostHeader } from "@web/components/HostHeader";
 import { InstallHint } from "@web/components/InstallHint";
+import { MachineToggle } from "@web/components/MachineToggle";
 import { QuickAdd } from "@web/components/QuickAdd";
 import { ReleaseBanner } from "@web/components/ReleaseBanner";
 import { groupAgents, SECTION_ORDER, SECTION_TITLES, SectionHeader } from "@web/components/Section";
@@ -115,6 +116,7 @@ export function Dashboard({ active = true }: { active?: boolean }) {
           )}
           <InstallHint />
           {agents.length > 0 && <Finding agents={agents} now={now} />}
+          <MachineToggle agents={agents} />
 
           {SECTION_ORDER.map((key) => {
             const list = groups[key];

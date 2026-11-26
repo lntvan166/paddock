@@ -4819,5 +4819,7 @@ body {
 }
 /* In a flex row (a space row, the space screen's header) the mark keeps its
    size and the row's own gap spaces it; the long space name truncates first. */
+/* The Agents screen's machine switch: the list's own gutter, a little air. */
+.machine-toggle { margin: 0.5rem 0 0.75rem; }
 [data-space-row] .origin-mark,
 .space-screen-head .origin-mark { flex: none; margin-right: 0; }

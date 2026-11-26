@@ -53,6 +53,12 @@ export interface SettingsView {
   /** The MCP bridge at `/mcp`; see docs/settings.md. */
   bridge: { enabled: boolean };
   /**
+   * Which machines' agents paddock lists. `machines` is the value in force;
+   * `envOverride` is non-null when `PADDOCK_MACHINES` set it, in which case
+   * the stored value is ignored and the UI shows the control as locked.
+   */
+  agents: { machines: MachineScope; envOverride: MachineScope | null };
+  /**
    * Non-null only while `paddock tunnel` is running. The UI renders its
    * "add a device" control from this, so `null` means the section is absent
    * rather than empty — a paddock served the ordinary way has no tunnel to
@@ -79,6 +85,20 @@ export interface SettingsPatch {
   push?: { enabled?: boolean };
   publicUrl?: string | null;
   bridge?: { enabled?: boolean };
+  agents?: { machines?: MachineScope };
+}
+
+/**
+ * Which herdr-core machines' terminals paddock shows. The Herdr app can add
+ * another machine over SSH, and herdr-core then lists that machine's
+ * terminals (`build-box/t7`) beside this one's. `local` keeps only this
+ * machine's; `all` keeps both. Terminal herdr has no remote machines, so it
+ * is unaffected either way.
+ */
+export type MachineScope = "local" | "all";
+
+export function isMachineScope(v: unknown): v is MachineScope {
+  return v === "local" || v === "all";
 }
 
 /** A Telegram inline keyboard. Declared in the shared contract because the
@@ -175,6 +195,13 @@ export interface Agent {
    */
   turn: number | null;
   seen: number | null;
+  /**
+   * Core agents on a machine the Herdr app added over SSH: herdr-core's name
+   * for that machine (`build-box` in `build-box/t7`). Absent or null for an
+   * agent on this machine, and always for terminal herdr. Shown as a mark so
+   * `all` can tell two machines' agents apart; see `MachineScope`.
+   */
+  machine?: string | null;
 }
 
 /**

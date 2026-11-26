@@ -107,7 +107,7 @@ export function AgentCard({
         />
       </header>
       <p className="row-task card-indent">
-        {agent.origin === "core" ? <OriginMark /> : null}
+        {agent.origin === "core" ? <OriginMark machine={agent.machine} /> : null}
         {agent.task}
       </p>
       {children}

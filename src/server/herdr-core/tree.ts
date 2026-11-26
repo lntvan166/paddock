@@ -1,8 +1,8 @@
 import type { CoreListResult, CoreTerminal } from "@shared/herdr-core-api";
 import { coreId } from "@shared/origin";
-import type { Space, SpaceTree, Tab, TreePane } from "@shared/types";
+import type { MachineScope, Space, SpaceTree, Tab, TreePane } from "@shared/types";
 import { tildeise } from "@server/paths";
-import { spaceLabel, toHarness, toState } from "./adapter";
+import { inScope, spaceLabel, toHarness, toState } from "./adapter";
 import type { CoreClient } from "./socket";
 
 /**
@@ -174,7 +174,11 @@ function sayOnce(msg: string): void {
  * shows no app spaces (terminal herdr's tree must not fail with it); a failed
  * layout read is said and falls back to derived names.
  */
-export async function readCoreSpaces(client: Pick<CoreClient, "request">, home: string | undefined): Promise<Space[] | null> {
+export async function readCoreSpaces(
+  client: Pick<CoreClient, "request">,
+  home: string | undefined,
+  scope: MachineScope = "all",
+): Promise<Space[] | null> {
   const [list, doc] = await Promise.allSettled([
     client.request<CoreListResult>("terminal.list", {}),
     client.request<{ version: number; value: unknown }>("doc.get", { name: "herdr-app" }),
@@ -190,5 +194,8 @@ export async function readCoreSpaces(client: Pick<CoreClient, "request">, home: 
     layout = doc.value?.value;
     if (readLayout(layout) === null) sayOnce("herdr-core: the herdr-app layout has an unknown shape; naming app spaces by folder");
   }
-  return toCoreSpaceTree(list.value.terminals, layout, home);
+  // Another machine's terminals are left out under `local`, exactly as the
+  // supervisor leaves them out of the store.
+  const terminals = list.value.terminals.filter((t) => inScope(scope, t.address));
+  return toCoreSpaceTree(terminals, layout, home);
 }

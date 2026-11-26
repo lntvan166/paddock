@@ -9,9 +9,9 @@
  */
 import type { CoreEvent, CoreSubscribeResult, CoreTerminal, CoreUnknownEvent } from "@shared/herdr-core-api";
 import { coreId } from "@shared/origin";
-import type { Agent, HealthBody } from "@shared/types";
+import type { Agent, HealthBody, MachineScope } from "@shared/types";
 import type { AgentStore, Delta } from "@server/state/store";
-import { applyCoreEvent, toCoreAgent } from "./adapter";
+import { applyCoreEvent, inScope, toCoreAgent } from "./adapter";
 import type { CoreClient } from "./socket";
 
 /** The slice of CoreClient the supervisor uses, so a test can fake it. */
@@ -24,6 +24,14 @@ export interface CoreSupervisorOptions {
   onDelta: (d: Delta) => void;
   now?: () => number;
   retryMs?: number;
+  /**
+   * Which machines' terminals become agents (see `MachineScope`). Read on
+   * every snapshot and event; after it changes, call `rescope()`. A terminal
+   * out of scope never reaches the store, so nothing downstream of it — the
+   * Agents screen, push and Telegram, the MCP tools, every action route that
+   * looks an id up in the store — can see or reach it. Defaults to `all`.
+   */
+  scope?: () => MachineScope;
 }
 
 type CoreHealth = HealthBody["core"];
@@ -31,6 +39,9 @@ type CoreHealth = HealthBody["core"];
 export class CoreSupervisor {
   private readonly now: () => number;
   private readonly retryMs: number;
+  private readonly scope: () => MachineScope;
+  /** The scope the store's core agents were last built with. */
+  private applied: MachineScope;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private client: CoreClientLike | null = null;
   private closeStream: (() => void) | null = null;
@@ -54,6 +65,39 @@ export class CoreSupervisor {
   constructor(private readonly o: CoreSupervisorOptions) {
     this.now = o.now ?? Date.now;
     this.retryMs = o.retryMs ?? 5_000;
+    this.scope = o.scope ?? (() => "all");
+    this.applied = this.scope();
+  }
+
+  /**
+   * Re-apply the machine scope after it changed. Rebuilt from the terminal
+   * records the supervisor keeps (every terminal, in scope or not), so it
+   * needs no reconnect and the store changes in one delta. A no-op when the
+   * scope did not change or the core is not up (the next snapshot applies it).
+   */
+  rescope(): void {
+    const scope = this.scope();
+    if (scope === this.applied) return;
+    this.applied = scope;
+    console.info(`herdr-core: listing ${scope === "local" ? "this machine's agents only" : "agents on every machine"}`);
+    if (!this.up) return;
+    this.publish(this.o.store.replaceAll(this.agentsFrom([...this.records.values()]), this.now(), "core"));
+  }
+
+  /** The agents among `terms` that the current scope shows. */
+  private agentsFrom(terms: CoreTerminal[]): Agent[] {
+    const scope = this.scope();
+    const prev = new Map(this.o.store.snapshot().filter((a) => a.origin === "core").map((a) => [a.agentId, a]));
+    const agents: Agent[] = [];
+    for (const t of terms) {
+      if (!inScope(scope, t.address)) continue;
+      const a = toCoreAgent(t, this.o.store.hostId);
+      if (!a) continue;
+      // An agent already in the store keeps what the store knows of it.
+      const had = prev.get(a.agentId);
+      agents.push(had ?? a);
+    }
+    return agents;
   }
 
   start(): void {
@@ -166,8 +210,11 @@ export class CoreSupervisor {
     this.seq = s.seq;
     this.eventAt = this.now();
     this.records = new Map(s.terminals.map((t) => [t.address, t]));
+    this.applied = this.scope();
+    const scope = this.applied;
     const agents: Agent[] = [];
     for (const t of s.terminals) {
+      if (!inScope(scope, t.address)) continue;
       const a = toCoreAgent(t, this.o.store.hostId);
       if (a) agents.push(a);
     }
@@ -201,8 +248,15 @@ export class CoreSupervisor {
       record = ev.data.record ?? (record ? { ...record, labels: ev.data.labels } : record);
     }
     else if (ev.type === "status" && record) record = { ...record, status: ev.data.status, status_ms: this.now() };
+    // Kept so a terminal hidden by the machine scope comes back current when
+    // the scope widens (`rescope` builds agents from these records).
+    else if (ev.type === "turn" && record) record = { ...record, turn: ev.data.turn };
     if (ev.type === "removed") this.records.delete(term);
     else if (record) this.records.set(term, record);
+
+    // Recorded above either way, so a later change of scope can show it; but
+    // out of scope it never becomes an agent.
+    if (!inScope(this.applied, term, e.machine)) return;
 
     const next = applyCoreEvent(prev, ev, record, { hostId: store.hostId, now: this.now() });
     if (!next) {

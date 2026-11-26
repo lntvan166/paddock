@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { HealthBody, NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
+import type { HealthBody, MachineScope, NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
 import {
   readPrefs, themeAttr, writePref,
   type Prefs, type ThemePref,
@@ -12,6 +12,7 @@ import { NotifySection } from "@web/components/settings/NotifySection";
 import { PushSection } from "@web/components/settings/PushSection";
 import { HelpSection } from "@web/components/settings/HelpSection";
 import { InfoSection } from "@web/components/settings/InfoSection";
+import { MachinesSection } from "@web/components/settings/MachinesSection";
 import { SaveBar } from "@web/components/settings/SaveBar";
 import { Toast } from "@web/components/settings/Toast";
 import { BuildStamp } from "@web/components/BuildStamp";
@@ -59,6 +60,7 @@ export function Settings(_props: SettingsProps = {}) {
   // to its own routes.
   const [pushOn, setPushOn] = useState(false);
   const [skipWhileViewing, setSkipWhileViewing] = useState(false);
+  const [machines, setMachines] = useState<MachineScope>("all");
   const [triggers, setTriggers] = useState<NotifyTrigger[]>([]);
   const [cooldownMs, setCooldownMs] = useState(60_000);
   const [publicUrl, setPublicUrl] = useState("");
@@ -95,6 +97,7 @@ export function Settings(_props: SettingsProps = {}) {
       telegramOn !== baseline.notify.telegram ||
       pushOn !== (baseline.push?.enabled ?? false) ||
       skipWhileViewing !== baseline.notify.skipWhileViewing ||
+      machines !== (baseline.agents?.machines ?? "all") ||
       triggers.join(",") !== [...baseline.notify.triggers].join(",") ||
       cooldownMs !== baseline.notify.cooldownMs ||
       // Trimmed on BOTH sides, mirroring the transformation `save()` applies to
@@ -150,6 +153,9 @@ export function Settings(_props: SettingsProps = {}) {
         // push entirely.
         setPushOn(body.push?.enabled ?? false);
         setSkipWhileViewing(body.notify.skipWhileViewing);
+        // `?.` for the same reason as `push` above: an older server has no
+        // `agents` field, and it lists every machine, which is `all`.
+        setMachines(body.agents?.machines ?? "all");
         setTriggers(body.notify.triggers);
         setCooldownMs(body.notify.cooldownMs);
         setPublicUrl(body.publicUrl ?? "");
@@ -225,6 +231,9 @@ export function Settings(_props: SettingsProps = {}) {
       },
       push: { enabled: pushOn },
       publicUrl: publicUrl.trim() || null,
+      // Left out while the environment decides it: the stored value would be
+      // ignored anyway, and sending it would only rewrite the file.
+      ...(baseline?.agents?.envOverride ? {} : { agents: { machines } }),
     };
     try {
       const res = await fetch("/api/settings", {
@@ -412,6 +421,12 @@ export function Settings(_props: SettingsProps = {}) {
           serverNow={serverNow}
           onMute={(forMs) => void mute(forMs)}
           muting={muting}
+        />
+
+        <MachinesSection
+          machines={machines}
+          setMachines={setMachines}
+          envOverride={view?.agents?.envOverride ?? null}
         />
 
         {/* Per DEVICE, unlike everything above it: a subscription belongs to

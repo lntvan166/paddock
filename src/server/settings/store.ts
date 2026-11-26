@@ -1,7 +1,7 @@
 import { chmod, mkdir, open, readFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { NotifyTrigger, SettingsPatch, SettingsView } from "@shared/types";
+import { isMachineScope, type MachineScope, type NotifyTrigger, type SettingsPatch, type SettingsView } from "@shared/types";
 
 export interface Settings {
   version: 2;
@@ -23,6 +23,9 @@ export interface Settings {
   /** The MCP bridge at `/mcp`. Off until the operator turns it on: it is a
    *  door for another machine, and a door should not ship open. */
   bridge: { enabled: boolean };
+  /** Which herdr-core machines' agents are listed. `all` by default, which is
+   *  what paddock did before the setting existed. See `MachineScope`. */
+  agents: { machines: MachineScope };
 }
 
 /** 60s, not minutes: working → blocked → working → blocked is a real sequence
@@ -78,6 +81,7 @@ const defaults = (): Settings => ({
   push: { enabled: false },
   publicUrl: null,
   bridge: { enabled: false },
+  agents: { machines: "all" },
 });
 
 export function defaultConfigDir(): string {
@@ -222,6 +226,15 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
     );
   }
 
+  // Named, not dropped silently, same as bridge.enabled above.
+  const ag = obj(p.agents);
+  if ("machines" in ag && !isMachineScope(ag.machines)) {
+    log(
+      `[settings] agents.machines was ${JSON.stringify(ag.machines)}, not "local" or "all", ` +
+        `and has been reset to "${d.agents.machines}".`,
+    );
+  }
+
   return {
     version: 2,
     telegram: {
@@ -254,6 +267,7 @@ export function migrate(parsed: unknown, log: (m: string) => void = console.info
     push: { enabled: typeof obj(p.push).enabled === "boolean" ? obj(p.push).enabled as boolean : d.push.enabled },
     publicUrl: typeof p.publicUrl === "string" ? p.publicUrl : null,
     bridge: { enabled: typeof b.enabled === "boolean" ? b.enabled : d.bridge.enabled },
+    agents: { machines: isMachineScope(ag.machines) ? ag.machines : d.agents.machines },
   };
 }
 
@@ -263,11 +277,35 @@ export class SettingsStore {
    *  until an explicit save, which is an informed overwrite. */
   error: string | null = null;
 
+  /** Called after every successful patch, so a live consumer (the herdr-core
+   *  supervisor's machine filter) applies a change without a restart. */
+  #listeners: (() => void)[] = [];
+
   constructor(private dir: string, private env: Record<string, string | undefined> = process.env) {}
+
+  onChange(fn: () => void): void { this.#listeners.push(fn); }
+
+  /**
+   * `PADDOCK_MACHINES`, when it holds a valid scope. An invalid value is
+   * named once at load and ignored, never silently read as one or the other.
+   */
+  machinesOverride(): MachineScope | null {
+    const v = this.env.PADDOCK_MACHINES;
+    return isMachineScope(v) ? v : null;
+  }
+
+  /** The scope in force: the environment wins over the stored value. */
+  machines(): MachineScope {
+    return this.machinesOverride() ?? this.#s.agents.machines;
+  }
 
   private get file(): string { return join(this.dir, "settings.json"); }
 
   async load(): Promise<void> {
+    const envScope = this.env.PADDOCK_MACHINES;
+    if (envScope !== undefined && envScope !== "" && !isMachineScope(envScope)) {
+      console.info(`[settings] PADDOCK_MACHINES=${JSON.stringify(envScope)} is not "local" or "all"; ignoring it`);
+    }
     let raw: string | null = null;
     try {
       raw = await readFile(this.file, "utf8");
@@ -340,6 +378,7 @@ export class SettingsStore {
       push: { enabled: this.#s.push.enabled, ...push },
       publicUrl: this.#s.publicUrl,
       bridge: { ...this.#s.bridge },
+      agents: { machines: this.machines(), envOverride: this.machinesOverride() },
       // The store knows nothing about tunnels and must not learn — routes.ts
       // composes the real value in when `paddock tunnel` supplies deps.pairing.
       tunnel: null,
@@ -354,10 +393,12 @@ export class SettingsStore {
     if (p.push) this.#s.push = { ...this.#s.push, ...p.push };
     if (p.publicUrl !== undefined) this.#s.publicUrl = p.publicUrl;
     if (p.bridge) this.#s.bridge = { ...this.#s.bridge, ...p.bridge };
+    if (p.agents) this.#s.agents = { ...this.#s.agents, ...p.agents };
     // An explicit save clears a load fault: the operator has chosen to replace
     // whatever was unparseable.
     this.error = null;
     await this.persist();
+    for (const fn of this.#listeners) fn();
   }
 
   /** The only writer of `mutedUntil`. Narrow on purpose: it is the one

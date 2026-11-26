@@ -20,8 +20,8 @@
  *    `terminal.send` presses Enter, and that Enter would answer the dialog.
  */
 import type { CoreListResult, CoreReadResult, CoreTerminal } from "@shared/herdr-core-api";
-import { coreId, rawCoreId } from "@shared/origin";
-import type { NavKey } from "@shared/types";
+import { coreId, rawCoreId as baseRawCoreId } from "@shared/origin";
+import type { MachineScope, NavKey } from "@shared/types";
 import { BackendUnavailable, Unsupported } from "@server/action-errors";
 import {
   HISTORY_LINES,
@@ -32,6 +32,7 @@ import {
 import { OPEN_HERDR_TO_RENAME, type AppSocket } from "./app-socket";
 import type { CoreClient } from "./socket";
 import { LiveScreens } from "./live-screen";
+import { inScope } from "./adapter";
 
 /** The slice of `CoreClient` these actions use, so a test can fake it. */
 /** `observe` is optional: without it, screens are read as plain text. */
@@ -182,7 +183,14 @@ export interface CoreActionsOptions {
   now?: () => number;
   /** Injectable for tests; one per actions object otherwise. */
   screens?: LiveScreens;
+  /** Which machines' terminals may be reached (see `MachineScope`). Read per
+   *  call, so a change applies at once. Defaults to `all`. */
+  scope?: () => MachineScope;
 }
+
+/** The refusal for a terminal on another machine while `local` is in force. */
+export const NOT_ON_THIS_MACHINE =
+  "that terminal is on another machine, and paddock is set to show this machine's agents only";
 
 /**
  * `client` is asked for on every call, so the actions always use the
@@ -196,6 +204,19 @@ export function createCoreActions(
 ): HerdrActions {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = opts.now ?? Date.now;
+  const scope = opts.scope ?? ((): MachineScope => "all");
+
+  /**
+   * Every terminal id in this file goes through here, so a terminal on
+   * another machine is unreachable under `local` even by an id typed
+   * straight into a route — the store already hides it as an agent, and this
+   * covers the panes the Spaces screen would otherwise reach.
+   */
+  function rawCoreId(id: string): string {
+    const raw = baseRawCoreId(id);
+    if (!inScope(scope(), raw)) throw new Unsupported(NOT_ON_THIS_MACHINE);
+    return raw;
+  }
 
   async function call<T>(method: string, params: object): Promise<T> {
     return client().request<T>(method, params);
@@ -258,7 +279,7 @@ export function createCoreActions(
    *  ignored the filter could never cost the operator someone else's terminal. */
   async function labelled(key: string, value: string): Promise<CoreTerminal[]> {
     const res = await call<CoreListResult>("terminal.list", { labels: { [key]: value } });
-    return res.terminals.filter((t) => t.state === "live" && t.labels[key] === value);
+    return res.terminals.filter((t) => t.state === "live" && t.labels[key] === value && inScope(scope(), t.address));
   }
 
   async function killAll(key: string, id: string, what: string): Promise<void> {

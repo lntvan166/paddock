@@ -35,6 +35,7 @@ import { resolveOpenable } from "@server/files/path";
 import { errorCode } from "@server/startup-errors";
 import type { FileStore } from "@server/files/store";
 import {
+  isMachineScope,
   isNavKey,
   type Agent,
   type AgentCommand,
@@ -597,6 +598,23 @@ function validateSettingsPatch(
       out.enabled = bb.enabled;
     }
     patch.bridge = out;
+  }
+
+  // Same shape again: an object, and a refusal naming the field.
+  if ("agents" in body) {
+    const raw = body.agents;
+    if (typeof raw !== "object" || raw === null) {
+      return { ok: false, detail: "agents must be an object" };
+    }
+    const aa = raw as Record<string, unknown>;
+    const out: NonNullable<SettingsPatch["agents"]> = {};
+    if ("machines" in aa) {
+      if (!isMachineScope(aa.machines)) {
+        return { ok: false, detail: 'agents.machines must be "local" or "all"' };
+      }
+      out.machines = aa.machines;
+    }
+    patch.agents = out;
   }
 
   return { ok: true, patch };
