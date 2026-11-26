@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isNewer } from "@server/update";
+import { latestRelease } from "@server/latest-release";
 
 const REPO = "lntvan166/paddock";
 const EVERY_MS = 24 * 60 * 60 * 1000;
@@ -50,12 +51,7 @@ export async function checkForUpdate(o: CheckOpts): Promise<string | null> {
 
   let latest = "";
   try {
-    const res = await (o.fetchImpl ?? fetch)(
-      `https://api.github.com/repos/${REPO}/releases/latest`,
-      { headers: { accept: "application/vnd.github+json" } },
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    latest = String(((await res.json()) as { tag_name?: string }).tag_name ?? "").replace(/^v/, "");
+    latest = await latestRelease(REPO, (o.fetchImpl ?? fetch) as never);
   } catch (e) {
     // Logged, never surfaced in the UI: a version check that cannot reach
     // GitHub is not a reason to show an error about a dashboard that works.

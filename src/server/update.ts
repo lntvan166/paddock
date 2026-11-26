@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { upgradeCommand, type ManagedBy } from "@shared/types";
 import { say } from "@server/term";
 import { makeProgress, type Progress } from "@server/progress";
+import { latestRelease } from "@server/latest-release";
 
 const REPO = "lntvan166/paddock";
 
@@ -165,11 +166,7 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
 
   let latest: string;
   try {
-    const rel = await f(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { accept: "application/vnd.github+json" },
-    });
-    if (!rel.ok) { log(`paddock: could not reach the release API (HTTP ${rel.status})`); return 1; }
-    latest = String(((await rel.json()) as { tag_name?: string }).tag_name ?? "").replace(/^v/, "");
+    latest = await latestRelease(REPO, f as never);
   } catch (e) {
     // Offline, DNS failure, TLS error, a malformed JSON body — none of these
     // are exotic for an operator running this from a laptop. This function
