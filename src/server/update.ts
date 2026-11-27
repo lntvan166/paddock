@@ -257,7 +257,8 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
   // failure message named both halves at once.
   let expected: string | undefined;
   try {
-    const sumRes = await f(`${base}/SHA256SUMS`);
+    // Bounded like the lookup: a few hundred bytes have no business taking a minute.
+    const sumRes = await f(`${base}/SHA256SUMS`, { signal: AbortSignal.timeout(15_000) });
     if (!sumRes.ok) {
       log(`paddock: download failed (HTTP ${sumRes.status} for SHA256SUMS)`);
       return 1;

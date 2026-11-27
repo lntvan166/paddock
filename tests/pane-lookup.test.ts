@@ -47,3 +47,23 @@ test("a pane its backend does not know is an unknown pane", async () => {
   const res = await app.request(`/api/panes/${encodeURIComponent("hc.t9")}/output`, { method: "POST" });
   expect(res.status).toBe(404);
 });
+
+test("a tab or space route reads only its own backend's tree", async () => {
+  let whole = 0;
+  const asked: string[] = [];
+  const app = createApp({
+    store: new AgentStore("dev-box"), hub: new Hub(), health: () => ({}) as never,
+    readTree: async () => { whole++; return { readAt: 0, spaces: [] }; },
+    readTreeFor: async (id) => {
+      asked.push(id);
+      return { readAt: 0, spaces: [{ spaceId: "hc.spA", label: "api", origin: "core", tabCount: 1, paneCount: 0, tabs: [{ tabId: "hc.tbA", label: null, panes: [] }] }] };
+    },
+    actions: { async renameTab() {} } as never,
+  });
+  const res = await app.request(`/api/tabs/${encodeURIComponent("hc.tbA")}/name`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: "logs" }),
+  });
+  expect(res.status).toBe(200);
+  expect(asked).toEqual(["hc.tbA"]);
+  expect(whole).toBe(0);
+});

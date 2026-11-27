@@ -835,6 +835,7 @@ let actions: HerdrActions | undefined;
 const coreScreens = new LiveScreens({ history: HISTORY_LINES });
 let readTree: (() => Promise<SpaceTree>) | undefined;
 let lookupPane: ((id: string) => Promise<TreePane | undefined>) | undefined;
+let readTreeFor: ((id: string) => Promise<SpaceTree>) | undefined;
 // Health reads the stream itself rather than a cached boolean: a flag can go
 // stale (and did — a failed reopen left it saying `true` with no stream at
 // all), whereas `stream.connected` cannot disagree with reality.
@@ -926,18 +927,24 @@ if (DEMO) {
       throw err;
     }
   };
+  const coreSource = {
+    terminals: () => coreSupervisor?.terminals() ?? null,
+    docVersion: (name: string) => coreSupervisor?.docVersion(name) ?? null,
+  };
+  readTreeFor = async (id: string) => {
+    if (!isCoreId(id)) return herdrTree();
+    const core = coreSupervisor?.connection() ?? null;
+    if (!core) throw new BackendUnavailable("herdr-core is not running");
+    const spaces = await readCoreSpaces(core, process.env.HOME, settings.machines(), coreSource);
+    return { spaces: spaces ?? [], readAt: Date.now() };
+  };
   readTree = createSpacesReader({
     herdr: herdrTree,
     core: () => {
       const core = coreSupervisor?.connection() ?? null;
       // The supervisor's own copy of every terminal and the layout's
       // version, so a Spaces read asks the core only for a layout that moved.
-      return core
-        ? readCoreSpaces(core, process.env.HOME, settings.machines(), {
-          terminals: () => coreSupervisor?.terminals() ?? null,
-          docVersion: (name) => coreSupervisor?.docVersion(name) ?? null,
-        })
-        : Promise.resolve(null);
+      return core ? readCoreSpaces(core, process.env.HOME, settings.machines(), coreSource) : Promise.resolve(null);
     },
     merge: mergeTrees,
   });
@@ -1237,12 +1244,18 @@ const appDeps = {
   actions,
   readTree,
   lookupPane,
+  readTreeFor,
   // Not in --demo, for the reason `files` is absent there.
   remoteFiles: DEMO ? undefined : {
     read: async (machine: string, path: string, cwd: string | null) => {
       const core = coreSupervisor?.connection() ?? null;
       if (!core) throw new Error("herdr-core is not running");
-      const res = await core.request<{ text: string }>("file.read", { path, cwd, on: machine });
+      // Its own connection: up to 8 MB across another machine's line, which
+      // on the shared one would hold every other call behind it.
+      const params = { path, cwd, on: machine };
+      const res = core.requestAlone
+        ? await core.requestAlone<{ text: string }>("file.read", params, 60_000)
+        : await core.request<{ text: string }>("file.read", params);
       return res.text;
     },
     // A private folder per file, under the system temp dir: the original

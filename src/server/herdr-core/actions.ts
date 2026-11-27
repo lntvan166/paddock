@@ -108,6 +108,10 @@ export const MAX_PUT_BYTES = 8 * 1024 * 1024;
 /** A put to another machine crosses its SSH line; a screenshot takes seconds. */
 const PUT_TIMEOUT_MS = 60_000;
 
+/** A held call's own limit: past the core's ~3 s key gate and a slow start,
+ *  well under the edge's ~100 s cut. */
+const HELD_CALL_TIMEOUT_MS = 30_000;
+
 /** See `send`: past herdr-core's default draft wait, under the edge's idle cut. */
 export const SEND_TIMEOUT_MS = 75_000;
 
@@ -265,6 +269,19 @@ export function createCoreActions(
     return client().request<T>(method, params);
   }
 
+  /**
+   * A call the core may HOLD, on a connection of its own. Measured: a plain
+   * connection serves one call at a time, and `terminal.keys` waits ~3 s
+   * after a person's last key (2.7 s, against 34 ms with nobody typing);
+   * `terminal.run` waits for a program to start, `terminal.kill` for it to
+   * end. On the shared connection each held every read, label and list
+   * behind it.
+   */
+  async function callAlone<T>(method: string, params: object, timeoutMs = HELD_CALL_TIMEOUT_MS): Promise<T> {
+    const c = client();
+    return c.requestAlone ? c.requestAlone<T>(method, params, timeoutMs) : c.request<T>(method, params);
+  }
+
   async function read(id: string, lines: number): Promise<string> {
     // `lines` is history ABOVE the screen (schema: "Lines of history above the
     // screen", default 0). Zero is the live screen, like terminal herdr's
@@ -304,7 +321,7 @@ export function createCoreActions(
   }
 
   async function press(id: string, key: string): Promise<void> {
-    await call("terminal.keys", { terminal: rawCoreId(id), keys: [key] });
+    await callAlone("terminal.keys", { terminal: rawCoreId(id), keys: [key] });
   }
 
 
@@ -337,7 +354,7 @@ export function createCoreActions(
     const raw = rawCoreId(id);
     const terms = await labelled(key, raw);
     if (terms.length === 0) throw new Error(`no live terminal in that ${what}`);
-    for (const t of terms) await call("terminal.kill", { terminal: t.address });
+    for (const t of terms) await callAlone("terminal.kill", { terminal: t.address });
   }
 
   /** A named create needs the app; refuse BEFORE anything exists. */
@@ -377,7 +394,7 @@ export function createCoreActions(
   }
 
   async function run(labels: Record<string, string>, cwd: string | undefined, extra: object = {}): Promise<CoreTerminal> {
-    return call<CoreTerminal>("terminal.run", {
+    return callAlone<CoreTerminal>("terminal.run", {
       ...extra,
       ...(cwd !== undefined ? { cwd } : {}),
       keep: true,
@@ -539,7 +556,7 @@ export function createCoreActions(
       // clear"), and two separate calls land too far apart. Sent only after
       // the box was read as holding text, because the same pair on an EMPTY
       // box opens Rewind.
-      await call("terminal.keys", { terminal: rawCoreId(target), keys: ["esc", "esc"] });
+      await callAlone("terminal.keys", { terminal: rawCoreId(target), keys: ["esc", "esc"] });
 
       for (let i = 0; i < DRAFT_CLEAR_POLLS; i++) {
         await sleep(DRAFT_CLEAR_POLL_MS);
@@ -548,7 +565,7 @@ export function createCoreActions(
       }
       // Whatever is on screen now is not a cleared box. One Esc cancels a menu
       // the pair may have opened, and is harmless on an idle input.
-      await call("terminal.keys", { terminal: rawCoreId(target), keys: ["esc"] });
+      await callAlone("terminal.keys", { terminal: rawCoreId(target), keys: ["esc"] });
       throw new Error(DRAFT_NOT_CLEARED);
     },
 
@@ -568,7 +585,7 @@ export function createCoreActions(
       // pressed, `typeText` once its text is in.
       const raw = rawCoreId(target);
       for (const r of runs) {
-        if ("keys" in r) await c.request("terminal.keys", { terminal: raw, keys: r.keys });
+        if ("keys" in r) await callAlone("terminal.keys", { terminal: raw, keys: r.keys });
         else await c.typeText!(raw, r.text, { cols: t.cols, rows: t.rows });
       }
     },
@@ -581,7 +598,7 @@ export function createCoreActions(
       // character is checked before anything is sent: half a command typed
       // and then refused would leave a different command on the line.
       const keys = shellKeys(text);
-      await call("terminal.keys", { terminal: rawCoreId(paneId), keys });
+      await callAlone("terminal.keys", { terminal: rawCoreId(paneId), keys });
     },
 
     async waitUntilUnblocked(target, timeoutMs) {

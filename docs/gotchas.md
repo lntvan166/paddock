@@ -575,7 +575,17 @@ The traps, each of which a hand-written fixture hid:
   Safari reported the edge's error page as "The string did not match the
   expected pattern". `terminal.send` now runs on its own connection
   (`CoreClient.requestAlone`): a concurrent `terminal.get` measured 1 ms
-  during a held send, against 4.7 s before.
+  during a held send, against 4.7 s before. The same goes for every call the core
+  can hold: `terminal.keys` (held ~3 s after a person's last key: 2.7 s
+  against 34 ms with nobody typing), `terminal.run`, `terminal.kill`,
+  `terminal.put`, `terminal.interrupt` and `file.read` on another machine.
+  Only quick reads stay on the shared connection.
+- **A route that checks one id reads one backend.** Pane, tab and space
+  routes used to read the whole Spaces tree (terminal herdr's session, every
+  machine's terminals, the app's layout) to check a single id: 3–6 s per
+  call on a Mac with an added machine, paid on every refresh of an open
+  terminal. They ask that id's backend now (`lookupPane`, `readTreeFor`), and
+  the app's half of any tree comes from the supervisor's own records.
 - **Giving up must cancel.** The core drops a send that is still waiting to
   type when its caller's connection closes ("send cancelled before typing"),
   but a send it has started typing always finishes. With the dedicated

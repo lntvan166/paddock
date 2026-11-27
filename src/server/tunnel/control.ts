@@ -100,7 +100,7 @@ export async function askControl(
 ): Promise<Ask> {
   let res: Response;
   try {
-    res = await f(`http://localhost${CODE_PATH}`, { unix: socket } as RequestInit);
+    res = await f(`http://localhost${CODE_PATH}`, { unix: socket, signal: AbortSignal.timeout(5_000) } as RequestInit);
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : String(e) };
   }

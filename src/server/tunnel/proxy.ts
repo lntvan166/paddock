@@ -166,6 +166,9 @@ export async function upstreamAlive(u: Upstream, f: typeof fetch = fetch): Promi
   try {
     const res = await f(`${upstreamOrigin(u)}/api/health`, {
       headers: { origin: upstreamOrigin(u) },
+      // A paddock that accepted the connection and never answered would
+      // otherwise hold `paddock tunnel` before it decided anything.
+      signal: AbortSignal.timeout(3_000),
     });
     return res.ok;
   } catch {

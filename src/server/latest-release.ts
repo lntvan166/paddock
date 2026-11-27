@@ -1,3 +1,6 @@
+/** Each lookup's own limit. */
+export const LOOKUP_TIMEOUT_MS = 15_000;
+
 /**
  * The newest release's version ("0.17.0"), for `paddock update` and the
  * update check.
@@ -20,6 +23,9 @@ export async function latestRelease(
   try {
     const res = await f(`https://api.github.com/repos/${repo}/releases/latest`, {
       headers: { accept: "application/vnd.github+json" },
+      // Bounded: a request that never answers held `paddock update` before it
+      // had printed anything, the same class as the stalled download.
+      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     });
     if (res.ok) {
       const tag = String(((await res.json()) as { tag_name?: string }).tag_name ?? "").replace(/^v/, "");
@@ -35,7 +41,7 @@ export async function latestRelease(
 
   let webWhy: string;
   try {
-    const res = await f(`https://github.com/${repo}/releases/latest`, { redirect: "manual" });
+    const res = await f(`https://github.com/${repo}/releases/latest`, { redirect: "manual", signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) });
     const to = res.headers.get("location") ?? "";
     const m = /\/releases\/tag\/v?([^/?#]+)$/.exec(to);
     if (m) return decodeURIComponent(m[1]!);

@@ -752,6 +752,10 @@ export interface AppDeps {
    * `docs/decisions.md` rules out.
    */
   lookupPane?: (id: string) => Promise<TreePane | undefined>;
+  /** The tree of ONE id's backend: the app's spaces for an `hc.` id (from
+   *  the supervisor's records, no core call), terminal herdr's for its own.
+   *  Same reasoning as `lookupPane`, for the tab and space routes. */
+  readTreeFor?: (id: string) => Promise<SpaceTree>;
   /** The machines the Herdr app added (herdr-core `machine.list`), or null
    *  while no core is connected. Absent: the route 404s. */
   machines?: () => Promise<MachineInfo[] | null>;
@@ -1411,6 +1415,10 @@ export function createApp(deps: AppDeps) {
 
   if (deps.actions) {
     const actions = deps.actions;
+    /** One id's backend's tree alone when the server can read it so, else the
+     *  whole tree. For the tab and space routes, which check one id. */
+    const treeFor = async (id: string): Promise<SpaceTree> =>
+      deps.readTreeFor ? deps.readTreeFor(id) : deps.readTree!();
     /** One pane: its backend alone when the server can ask it, else the tree. */
     const paneById = async (id: string): Promise<TreePane | undefined> =>
       deps.lookupPane ? deps.lookupPane(id) : findPane(await deps.readTree!(), id);
@@ -2202,7 +2210,7 @@ export function createApp(deps: AppDeps) {
       }
 
       try {
-        const tree = await deps.readTree();
+        const tree = await treeFor(id);
         const tab = findTab(tree, id);
         if (!tab) return c.json({ ok: false, detail: "unknown tab" }, 404);
         await actions.renameTab(id, label);
@@ -2232,7 +2240,7 @@ export function createApp(deps: AppDeps) {
       }
 
       try {
-        const tree = await deps.readTree();
+        const tree = await treeFor(id);
         const space = findSpace(tree, id);
         if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
         await actions.renameSpace(id, label);
@@ -2274,7 +2282,7 @@ export function createApp(deps: AppDeps) {
       const id = c.req.param("id");
 
       try {
-        const tree = await deps.readTree();
+        const tree = await treeFor(id);
         const tab = findTab(tree, id);
         if (!tab) return c.json({ ok: false, detail: "unknown tab" }, 404);
         await actions.closeTab(id);
@@ -2310,7 +2318,7 @@ export function createApp(deps: AppDeps) {
       const id = c.req.param("id");
 
       try {
-        const tree = await deps.readTree();
+        const tree = await treeFor(id);
         const space = findSpace(tree, id);
         if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
         await actions.closeSpace(id);
@@ -2398,7 +2406,7 @@ export function createApp(deps: AppDeps) {
       if (harnessErr) return c.json({ ok: false, detail: harnessErr }, 400);
 
       try {
-        const tree = await deps.readTree();
+        const tree = await treeFor(id);
         const space = findSpace(tree, id);
         if (!space) return c.json({ ok: false, detail: "unknown space" }, 404);
         // The backend is the space's own; the id routes the create there.

@@ -15,7 +15,11 @@ import { applyCoreEvent, inScope, toCoreAgent } from "./adapter";
 import type { CoreClient } from "./socket";
 
 /** The slice of CoreClient the supervisor uses, so a test can fake it. */
-export type CoreClientLike = Pick<CoreClient, "hello" | "request" | "subscribe" | "close">;
+export type CoreClientLike = Pick<CoreClient, "hello" | "request" | "subscribe" | "close">
+  // Named, not left to the runtime object: the actions put held calls on a
+  // connection of their own through it, and a wrapper that dropped it would
+  // quietly put them back on the shared one.
+  & Partial<Pick<CoreClient, "requestAlone" | "observe" | "typeText">>;
 
 export interface CoreSupervisorOptions {
   /** A client for the core's socket, or null when none exists right now. */

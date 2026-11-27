@@ -1,3 +1,4 @@
+import { socketWriter } from "@server/socket-writer";
 import { HERDR_PROTOCOL, type HerdrEvent } from "@shared/herdr-api";
 
 // Which side is stale decides the whole message, and getting that wrong is
@@ -156,13 +157,19 @@ export function request<T>(
       fn();
     };
 
+    // The request goes through a writer that keeps what the kernel did not
+    // take yet: `socket.write` returns the count written, and a long prompt
+    // past the buffer was cut short (`@server/socket-writer`).
+    const out = socketWriter();
     Bun.connect({
       unix: path,
       socket: {
         open(socket) {
           live = socket;
-          socket.write(JSON.stringify({ id: "paddock", method, params }) + "\n");
+          out.attach(socket);
+          out.write(new TextEncoder().encode(JSON.stringify({ id: "paddock", method, params }) + "\n"));
         },
+        drain() { out.drain(); },
         data(socket, chunk) {
           buffer += chunk.toString();
           const newline = buffer.indexOf("\n");
