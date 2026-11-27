@@ -134,7 +134,15 @@ export interface UpdateOpts {
    * pty; defaults to a bar on a tty and one line under a pipe.
    */
   progress?: Progress;
+  /** No bytes for this long gives a download up (default `DOWNLOAD_STALL_MS`). */
+  stallMs?: number;
+  /** How many times the binary is downloaded before giving up. */
+  attempts?: number;
 }
+
+/** No bytes for 30 s: the connection is stalled, not slow. */
+export const DOWNLOAD_STALL_MS = 30_000;
+export const DOWNLOAD_ATTEMPTS = 3;
 
 /** Returns a process exit code. Never throws for an expected failure. */
 export async function runUpdate(o: UpdateOpts): Promise<number> {
@@ -268,62 +276,89 @@ export async function runUpdate(o: UpdateOpts): Promise<number> {
   // The "nothing is written" guarantee is UNCHANGED: only the temp file exists
   // during the download, the real binary is untouched until after the digest
   // is compared, and every failure path below removes the temp file.
-  const hasher = new Bun.CryptoHasher("sha256");
-  let actual: string;
-  try {
-    const binRes = await f(`${base}/${asset}`);
-    if (!binRes.ok) {
-      log(`paddock: download failed (HTTP ${binRes.status} for ${asset})`);
-      return 1;
-    }
-    if (binRes.body === null) {
-      log(`paddock: download failed: ${asset} arrived with no body`);
-      return 1;
-    }
-    // Absent or unparseable content-length means no denominator; the sink
-    // shows a byte counter rather than inventing a percentage.
-    const declared = Number(binRes.headers.get("content-length"));
-    const total = Number.isFinite(declared) && declared > 0 ? declared : null;
-    progress.start(asset, total);
-    const sink = Bun.file(tmp).writer();
-    let hashed = 0;
-    try {
-      for await (const chunk of binRes.body as ReadableStream<Uint8Array>) {
-        hasher.update(chunk);
-        // Awaited: write() returns a Promise when the write is pending, and a
-        // dropped promise is a dropped write error — the digest below would
-        // keep matching the bytes handed to the hasher even if some of them
-        // never reached disk.
-        await sink.write(chunk);
-        hashed += chunk.length;
-        progress.advance(chunk.length);
-      }
-    } finally {
-      await sink.end();
-      progress.done();
-    }
-    // Belt and braces on top of the awaited write() above: ask the
-    // filesystem, not the sink, how many bytes actually landed. FileSink's
-    // write()/end() resolve to Bun's internal buffering bookkeeping, not a
-    // per-chunk "bytes now on disk" count — measured directly (see the
-    // fix-round-1 section of the task report), summing successive write()
-    // results overcounts by nearly 2x and end() alone reports 0 once
-    // everything already flushed, so neither is a usable signal here. A
-    // stat() of the temp file is the honest way to catch a short write that
-    // the hasher never saw.
-    if ((await stat(tmp)).size !== hashed) {
-      log(`paddock: wrote a different number of bytes than were hashed for ${asset} — the download did not land intact`);
-      await removeTemp();
-      return 1;
-    }
-    actual = hasher.digest("hex");
-  } catch (e) {
-    // A body that ends mid-stream — a declared content-length the connection
-    // never delivers — throws here rather than resolving short.
-    progress.done();
-    log(`paddock: download failed: ${(e as Error).message}`);
+  // A download that stops arriving but never closes is given up after
+  // `stallMs` with no bytes, and tried again from the start, up to `attempts`
+  // times. Without this `paddock update` sat at "48% 30/62 MB" for minutes on
+  // a stalled CDN connection, with nothing to do but kill it.
+  const file: string = asset; // narrowed above; kept for the closure below
+  const stallMs = o.stallMs ?? DOWNLOAD_STALL_MS;
+  const attempts = o.attempts ?? DOWNLOAD_ATTEMPTS;
+  let actual: string | null = null;
+  for (let attempt = 1; attempt <= attempts && actual === null; attempt++) {
+    const got = await downloadOnce();
+    if (got.ok) { actual = got.digest; break; }
     await removeTemp();
-    return 1;
+    if (!got.retry || attempt === attempts) {
+      log(`paddock: download failed: ${got.why}${got.retry ? ` (tried ${attempts} times)` : ""}`);
+      return 1;
+    }
+    log(`paddock: ${got.why}; trying again (${attempt + 1} of ${attempts})`);
+  }
+  if (actual === null) return 1;
+
+  // Streamed to disk and hashed as it passes, rather than buffered whole by
+  // arrayBuffer(). The operator sees it move, and 83MB stays out of memory.
+  //
+  // The "nothing is written" guarantee is UNCHANGED: only the temp file exists
+  // during the download, the real binary is untouched until after the digest
+  // is compared, and every failure path removes the temp file.
+  async function downloadOnce(): Promise<{ ok: true; digest: string } | { ok: false; retry: boolean; why: string }> {
+    const hasher = new Bun.CryptoHasher("sha256");
+    const abort = new AbortController();
+    let stalled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { stalled = true; abort.abort(); }, stallMs);
+    };
+    try {
+      arm();
+      const binRes = await f(`${base}/${file}`, { signal: abort.signal });
+      if (!binRes.ok) return { ok: false, retry: binRes.status >= 500, why: `HTTP ${binRes.status} for ${file}` };
+      if (binRes.body === null) return { ok: false, retry: false, why: `${file} arrived with no body` };
+      // Absent or unparseable content-length means no denominator; the sink
+      // shows a byte counter rather than inventing a percentage.
+      const declared = Number(binRes.headers.get("content-length"));
+      const total = Number.isFinite(declared) && declared > 0 ? declared : null;
+      progress.start(file, total);
+      const sink = Bun.file(tmp).writer();
+      let hashed = 0;
+      try {
+        for await (const chunk of binRes.body as ReadableStream<Uint8Array>) {
+          arm();
+          hasher.update(chunk);
+          // Awaited: write() returns a Promise when the write is pending, and a
+          // dropped promise is a dropped write error — the digest below would
+          // keep matching the bytes handed to the hasher even if some of them
+          // never reached disk.
+          await sink.write(chunk);
+          hashed += chunk.length;
+          progress.advance(chunk.length);
+        }
+      } finally {
+        await sink.end();
+        progress.done();
+      }
+      // Belt and braces on top of the awaited write() above: ask the
+      // filesystem, not the sink, how many bytes actually landed. FileSink's
+      // write()/end() resolve to Bun's internal buffering bookkeeping, not a
+      // per-chunk "bytes now on disk" count, so neither is a usable signal
+      // here. A stat() of the temp file is the honest way to catch a short
+      // write that the hasher never saw.
+      if ((await stat(tmp)).size !== hashed) {
+        return { ok: false, retry: false, why: `wrote a different number of bytes than were hashed for ${file} — the download did not land intact` };
+      }
+      return { ok: true, digest: hasher.digest("hex") };
+    } catch (e) {
+      // A body that ends mid-stream (a declared content-length the connection
+      // never delivers) throws here rather than resolving short, and so does
+      // the abort of a stalled one. Both are worth another try.
+      progress.done();
+      if (stalled) return { ok: false, retry: true, why: `no data for ${Math.round(stallMs / 1000)} s` };
+      return { ok: false, retry: true, why: (e as Error).message };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   if (actual !== expected) {

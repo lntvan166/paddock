@@ -15,6 +15,7 @@ import { applyPatch, digestOf } from "@shared/screen";
 import { RATE_MS, readPrefs, type KeypadPref, type RatePref } from "@web/prefs";
 import { RequestFailed } from "@web/api";
 import { onScreen as onPushedScreen, requestScreenResync } from "@web/store";
+import { fitFontPx, widestColumns } from "@web/term-fit";
 import { Button } from "@web/components/shadcn/button";
 import { Input } from "@web/components/shadcn/input";
 import { CtrlCompose } from "@web/components/ui/CtrlCompose";
@@ -162,6 +163,9 @@ const TOP_THRESHOLD_PX = 24;
  * stream never falls back between two frames.
  */
 export const PUSH_FRESH_MS = 30_000;
+/** "Fit the terminal's width" never grows the text past this. */
+const FIT_MAX_PX = 24;
+
 export const MIN_REFRESH_MS = 250;
 export const MAX_REFRESH_MS = 10_000;
 const REFRESH_BACKOFF = 2;
@@ -459,6 +463,7 @@ export function PaneTerminal({
   // component to show it), so there is no live pref change to react to while
   // a pane stays open.
   const [fontPx] = useState(() => readPrefs().fontPx);
+  const [fit] = useState(() => readPrefs().fit);
   /**
    * Where the revealed scrollback STARTS: an index into `history.settled`, or
    * null for "nothing revealed".
@@ -502,6 +507,45 @@ export function PaneTerminal({
    */
   const [liveFrom] = useState(() => historyFor(paneId)?.settled.length ?? 0);
   const paneRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * "Fit the terminal's width" (Settings → Terminal): the size at which the
+   * terminal's columns fill the pane. The column count is the widest line
+   * this pane has shown, kept as a high-water mark so the text does not
+   * swell and shrink as short and long screens come and go.
+   */
+  const fitCols = useRef(0);
+  const [fitPx, setFitPx] = useState<number | null>(null);
+  const cols = fit ? Math.max(fitCols.current, widestColumns(output)) : 0;
+  fitCols.current = cols;
+  useEffect(() => {
+    if (!fit) return;
+    const el = paneRef.current;
+    if (!el) return;
+    // One cell's width as a fraction of the font size, measured in this
+    // pane's own font rather than assumed.
+    const probe = document.createElement("span");
+    probe.textContent = "0".repeat(50);
+    probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-size:100px";
+    el.appendChild(probe);
+    const charEm = probe.getBoundingClientRect().width / 50 / 100;
+    probe.remove();
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      const avail = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      // The automatic size, as styles.css computes it:
+      // clamp(0.75rem, 3.1vw, 0.85rem).
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const base = Math.min(Math.max(0.75 * rem, 0.031 * window.innerWidth), 0.85 * rem);
+      setFitPx(fitFontPx({ avail, cols, charEm, base, max: FIT_MAX_PX }));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fit, cols]);
+  const termPx = fit ? fitPx : fontPx;
   // Whether the operator is following the tail. Read BEFORE the DOM updates
   // and applied after, so replacing the screen does not yank someone who has
   // deliberately scrolled up to read earlier output.
@@ -1175,7 +1219,7 @@ export function PaneTerminal({
           // for `fontPx` made this do — means the clamp never applies to
           // anybody and the pane loses roughly a quarter of its columns on a
           // phone. `undefined` leaves the attribute off entirely.
-          style={fontPx === null ? undefined : ({ "--term-font-px": `${fontPx}px` } as CSSProperties)}
+          style={termPx === null ? undefined : ({ "--term-font-px": `${termPx}px` } as CSSProperties)}
         >
           {/* Spans, not raw text: the escapes carry the structure. Every span's
               content is a React child, so React escapes it — this is agent

@@ -32,7 +32,8 @@ test("defaults are returned when nothing is stored", () => {
   // here, which is what forces someone adding one to state its default
   // deliberately rather than inheriting whatever `readPrefs` happens to return.
   expect(readPrefs()).toEqual({
-    theme: "system", rate: "live", wrap: true, fontPx: null,
+    // `fit` off: a terminal's text grows to the pane only when asked for.
+    theme: "system", rate: "live", wrap: true, fontPx: null, fit: false,
     keypad: "hidden", keypadAuto: true,
   });
 });

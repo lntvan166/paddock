@@ -79,6 +79,17 @@ export interface Prefs {
    * when this is a number. Consumers: treat `null` as "write nothing".
    */
   fontPx: number | null;
+  /**
+   * Size the terminal's text so its columns fill the pane's width.
+   *
+   * An agent's terminal is as wide as wherever it was last shown at the desk
+   * (the core sizes it by its active viewer, and paddock only observes), so
+   * on a wide browser its ~140 columns left the right third of the pane
+   * empty, and "wrap" cannot help: wrap folds lines LONGER than the pane.
+   * Off by default; never smaller than the automatic size, so a phone is
+   * unchanged. When on it takes the place of `fontPx`.
+   */
+  fit: boolean;
   keypad: KeypadPref;
   /**
    * Whether a blocked agent may open a collapsed pad by itself.
@@ -118,7 +129,7 @@ export interface Prefs {
  * on a phone. The clamp stays in charge until someone chooses a size.
  */
 const DEFAULTS: Prefs = {
-  theme: "system", rate: "live", wrap: true, fontPx: null,
+  theme: "system", rate: "live", wrap: true, fontPx: null, fit: false,
   // HIDDEN by default, and this comment used to say "visible by default, for
   // the same reason `wrap` is" long after the value stopped agreeing with it.
   // The pad is 106px of a 390x844 phone and a parsed prompt answers in one tap
@@ -144,6 +155,7 @@ const KEYS = {
   rate: "paddock.rate",
   wrap: "paddock.term.wrap",
   fontPx: "paddock.term.fontpx",
+  fit: "paddock.term.fit",
   keypad: "paddock.term.keypad",
   keypadAuto: "paddock.term.keypad.auto",
 } as const;
@@ -182,6 +194,7 @@ export function readPrefs(): Prefs {
     rate: rate === "balanced" || rate === "frugal" ? rate : DEFAULTS.rate,
     wrap: wrapRaw === null ? DEFAULTS.wrap : wrapRaw === "1",
     fontPx: Number.isFinite(font) && font >= 10 && font <= 22 ? font : DEFAULTS.fontPx,
+    fit: raw(KEYS.fit) === "1",
     // An unrecognised or absent value falls back to the default. A value
     // stored by a build that only knew "full" | "compact" is still honoured —
     // an operator who chose to see the pad keeps seeing it.

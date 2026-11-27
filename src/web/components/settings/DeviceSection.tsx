@@ -75,6 +75,17 @@ export function DeviceSection({ prefs, setPref }: DeviceSectionProps) {
         </label>
 
         <div className="card-row">
+          {/* The other direction from wrap: a terminal NARROWER than the pane
+              (it is as wide as the desk shows it) gets larger text instead of
+              an empty right third. Takes the place of the size above. */}
+          <span>Fit the terminal's width</span>
+          <Toggle
+            label="Fit the terminal's width" checked={prefs.fit}
+            onChange={(v) => setPref("fit", v)}
+          />
+        </div>
+
+        <div className="card-row">
           <span>Wrap long lines</span>
           <Toggle
             label="Wrap long lines" checked={prefs.wrap}

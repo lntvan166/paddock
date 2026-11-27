@@ -630,3 +630,50 @@ test("detectManagedBy does not throw on a path that cannot be resolved", async (
   // things underneath a running process. Boot must not die for this.
   expect(await detectManagedBy("/nonexistent/paddock")).toBeNull();
 });
+
+// A download that stops arriving without closing. Measured on a Mac: `paddock
+// update` sat at "48% 30/62 MB" for minutes on a stalled connection.
+function stallingFetch(body: string, sum: string, stallFirst: number) {
+  let binaryAsks = 0;
+  return (async (url: string, init?: RequestInit) => {
+    if (String(url).includes("releases/latest")) return new Response(JSON.stringify({ tag_name: "v9.9.9" }));
+    if (String(url).endsWith("SHA256SUMS")) return new Response(`${sum}  paddock-linux-x86_64\n`);
+    binaryAsks++;
+    if (binaryAsks > stallFirst) return new Response(body);
+    // Half the bytes, then nothing, until the caller aborts.
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(body.slice(0, 3)));
+        init?.signal?.addEventListener("abort", () => c.error(new Error("aborted")));
+      },
+    });
+    return new Response(stream, { headers: { "content-length": String(body.length) } });
+  }) as unknown as typeof fetch;
+}
+
+test("a stalled download is given up and tried again, and the update still lands", async () => {
+  const body = "NEW BINARY";
+  const h = await harness(body, await sha(body));
+  const lines: string[] = [];
+  const code = await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl: stallingFetch(body, await sha(body), 1), log: (l) => lines.push(l), progress: silent(), stallMs: 50,
+  });
+  expect(code).toBe(0);
+  expect(await readFile(h.self, "utf8")).toBe("NEW BINARY");
+  expect(lines.some((l) => l.includes("no data for") && l.includes("trying again"))).toBe(true);
+});
+
+test("a download that keeps stalling stops after its attempts, leaving the old binary and no temp file", async () => {
+  const body = "NEW BINARY";
+  const h = await harness(body, await sha(body));
+  const lines: string[] = [];
+  const code = await runUpdate({
+    selfPath: h.self, platform: "linux", arch: "x64", current: "0.1.0",
+    fetchImpl: stallingFetch(body, await sha(body), 99), log: (l) => lines.push(l), progress: silent(), stallMs: 30, attempts: 2,
+  });
+  expect(code).toBe(1);
+  expect(await readFile(h.self, "utf8")).toBe("OLD BINARY");
+  expect(await readdir(h.dir)).toEqual(["paddock"]);
+  expect(lines.at(-1)).toContain("tried 2 times");
+});
