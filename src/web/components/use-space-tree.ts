@@ -49,14 +49,32 @@ export function useSpaceTree(
   const [tree, setTree] = useState<SpaceTree | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * One read at a time. The poll fires every few seconds whatever the last
+   * read is doing, and a read measured at 3–6 s on a Mac (its Herdr app had
+   * added another machine) meant reads piling up behind each other on the
+   * core's one-call-at-a-time connection, each slower than the last. A
+   * refresh asked for during a read is folded into ONE read after it.
+   */
+  const inFlight = useRef(false);
+  const again = useRef(false);
   const refresh = useCallback(async () => {
+    if (inFlight.current) { again.current = true; return; }
+    inFlight.current = true;
     try {
-      setTree(await load());
-      setError(null);
-    } catch (err) {
-      // The last good tree is KEPT. An empty screen and a broken herdr must
-      // never look alike — that is the same rule the 502 in the route serves.
-      setError(err instanceof Error ? err.message : String(err));
+      do {
+        again.current = false;
+        try {
+          setTree(await load());
+          setError(null);
+        } catch (err) {
+          // The last good tree is KEPT. An empty screen and a broken herdr must
+          // never look alike — that is the same rule the 502 in the route serves.
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      } while (again.current);
+    } finally {
+      inFlight.current = false;
     }
   }, [load]);
 

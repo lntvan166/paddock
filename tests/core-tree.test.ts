@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { CoreTerminal } from "@shared/herdr-core-api";
 import type { Space, SpaceTree } from "@shared/types";
-import { mergeTrees, readCoreSpaces, toCoreSpaceTree } from "@server/herdr-core/tree";
+import { forgetLayout, mergeTrees, readCoreSpaces, toCoreSpaceTree } from "@server/herdr-core/tree";
 
 /*
  * The app's spaces, as the Spaces screen shows them. Invented names and
@@ -144,4 +144,39 @@ test("a layout that cannot be read still shows the spaces, by fallback names", a
   };
   const spaces = await readCoreSpaces(client, HOME);
   expect(spaces?.length).toBe(2);
+});
+
+// From the supervisor's own records: no `terminal.list` (which crosses every
+// added machine's line), and the layout re-read only when a `doc` event says
+// it moved. Measured from a Mac: a Spaces read took 3–6 s.
+test("with the supervisor's records, a Spaces read lists nothing and re-reads the layout only when it moved", async () => {
+  forgetLayout();
+  const calls: string[] = [];
+  const client = {
+    async request<T>(method: string): Promise<T> {
+      calls.push(method);
+      if (method === "doc.get") return { version: 7, value: undefined } as T;
+      throw new Error(`unexpected ${method}`);
+    },
+  };
+  let version: number | null = null;
+  const source = { terminals: () => TERMINALS, docVersion: () => version };
+  let clock = 1_000;
+  const now = () => clock;
+
+  const first = await readCoreSpaces(client, HOME, "all", source, now);
+  expect(first?.map((s) => s.spaceId).sort()).toEqual(["hc.spA", "hc.spB"]);
+  expect(calls).toEqual(["doc.get"]);
+
+  await readCoreSpaces(client, HOME, "all", source, now);
+  expect(calls, "an unmoved layout is not read again").toEqual(["doc.get"]);
+
+  version = 8; // a `doc` event: the layout moved
+  await readCoreSpaces(client, HOME, "all", source, now);
+  expect(calls).toEqual(["doc.get", "doc.get"]);
+
+  clock += 31_000; // and in any case after 30 s, in case a core never says
+  version = null;
+  await readCoreSpaces(client, HOME, "all", source, now);
+  expect(calls).toEqual(["doc.get", "doc.get", "doc.get"]);
 });

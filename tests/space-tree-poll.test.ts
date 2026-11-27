@@ -58,3 +58,23 @@ test("becoming active catches up immediately", async () => {
   await settle();
   expect(loads, "arriving on the tab did not refresh it").toBeGreaterThan(before);
 });
+
+test("a slow read is never overlapped by the next poll: one read in flight, one after it", async () => {
+  // Measured on a Mac: a tree read took 3–6 s, and a 3 s poll that does not
+  // wait stacked reads behind each other on the core's one-call connection.
+  let started = 0;
+  let inFlight = 0;
+  let most = 0;
+  const load = async () => {
+    started += 1; inFlight += 1; most = Math.max(most, inFlight);
+    await Bun.sleep(4_000);
+    inFlight -= 1;
+    return TREE;
+  };
+  await renderHook(({ active }: { active: boolean }) => useSpaceTree(load, active), { active: true });
+  await Bun.sleep(7_000); // two poll ticks land during the first read
+  await settle();
+  expect(most, "two reads ran at once").toBe(1);
+  // The first read, then exactly one catch-up for the ticks that came meanwhile.
+  expect(started).toBe(2);
+}, 15_000);

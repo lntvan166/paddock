@@ -27,6 +27,10 @@ export interface SpacesReaderOptions {
   now?: () => number;
 }
 
+/** A half slower than this is said; at most this often per half. */
+const SLOW_READ_MS = 1_000;
+const SLOW_SAY_MS = 10 * 60_000;
+
 export function createSpacesReader(o: SpacesReaderOptions): () => Promise<SpaceTree> {
   const now = o.now ?? Date.now;
   const said = new Set<string>();
@@ -36,12 +40,32 @@ export function createSpacesReader(o: SpacesReaderOptions): () => Promise<SpaceT
     console.info(msg);
   };
 
+  /**
+   * Each half timed, and a slow one said, at most every `SLOW_SAY_MS` per
+   * half. Measured from a Mac: the whole read took 3–6 s with both backends
+   * up, and nothing said which one; the next report should not need a guess.
+   */
+  const saidSlow = new Map<string, number>();
+  const timed = async <T,>(what: string, read: () => Promise<T>): Promise<T> => {
+    const at = now();
+    try {
+      return await read();
+    } finally {
+      const took = now() - at;
+      const last = saidSlow.get(what) ?? -Infinity;
+      if (took > SLOW_READ_MS && now() - last > SLOW_SAY_MS) {
+        saidSlow.set(what, now());
+        console.info(`spaces: reading ${what}'s tree took ${(took / 1000).toFixed(1)} s`);
+      }
+    }
+  };
+
   return async () => {
     // `async () => o.core()` so a synchronous throw inside the core read lands
     // here as a rejection rather than escaping allSettled.
     const [herdr, core] = await Promise.allSettled([
-      o.herdr(),
-      o.core ? (async () => o.core!())() : Promise.resolve(null),
+      timed("terminal herdr", o.herdr),
+      o.core ? timed("herdr-core", async () => o.core!()) : Promise.resolve(null),
     ]);
     const at = now();
 

@@ -118,6 +118,17 @@ function ordered<T>(groups: Map<string, T>, wanted: string[]): string[] {
   return [...head, ...[...groups.keys()].filter((k) => !head.includes(k))];
 }
 
+/**
+ * One terminal as the Spaces screen would show it, or null when the screen
+ * would not show it (finished, or not in an app space and tab). For a pane
+ * route that has to check ONE id: `terminal.get` on that terminal instead of
+ * the whole tree, which lists every machine's terminals and reads the layout.
+ */
+export function corePaneOf(t: CoreTerminal, home: string | undefined): TreePane | null {
+  if (t.state !== "live" || !t.labels[SPACE] || !t.labels[TAB]) return null;
+  return toPane(t, home);
+}
+
 export function toCoreSpaceTree(terminals: CoreTerminal[], layout: unknown, home: string | undefined): Space[] {
   const labelled = terminals
     .filter((t) => t.state === "live" && !!t.labels[SPACE] && !!t.labels[TAB])
@@ -174,14 +185,48 @@ function sayOnce(msg: string): void {
  * shows no app spaces (terminal herdr's tree must not fail with it); a failed
  * layout read is said and falls back to derived names.
  */
+/**
+ * What the supervisor already knows, so a Spaces read need not ask the core:
+ * every terminal (kept current by the event stream) and the layout
+ * document's version (from its `doc` events).
+ *
+ * Measured from a Mac whose Herdr app had added another machine: a Spaces
+ * read took 3–6 s, and `terminal.list` crosses every added machine's line on
+ * every call. The event stream already carries every machine's terminals.
+ */
+export interface CoreSpacesSource {
+  terminals: () => CoreTerminal[] | null;
+  docVersion: (name: string) => number | null;
+}
+
+/** The app's layout as last read, and which version that was. Re-read when a
+ *  `doc` event says it moved, or after `LAYOUT_MAX_AGE_MS` in case a core
+ *  never says. */
+const LAYOUT_MAX_AGE_MS = 30_000;
+let layoutCache: { version: number; value: unknown; at: number } | null = null;
+
+/** Exported for tests only: forget the cached layout. */
+export function forgetLayout(): void {
+  layoutCache = null;
+}
+
 export async function readCoreSpaces(
   client: Pick<CoreClient, "request">,
   home: string | undefined,
   scope: MachineScope = "all",
+  source?: CoreSpacesSource,
+  now: () => number = Date.now,
 ): Promise<Space[] | null> {
+  const known = source?.terminals() ?? null;
+  const seen = source?.docVersion("herdr-app") ?? null;
+  // Cached only with a source: without one no `doc` event says it moved.
+  const fresh = source !== undefined && layoutCache !== null && now() - layoutCache.at < LAYOUT_MAX_AGE_MS &&
+    (seen === null || seen <= layoutCache.version);
   const [list, doc] = await Promise.allSettled([
-    client.request<CoreListResult>("terminal.list", {}),
-    client.request<{ version: number; value: unknown }>("doc.get", { name: "herdr-app" }),
+    known !== null ? Promise.resolve({ hidden_finished: 0, machines: [], terminals: known } as CoreListResult)
+      : client.request<CoreListResult>("terminal.list", {}),
+    fresh ? Promise.resolve({ version: layoutCache!.version, value: layoutCache!.value })
+      : client.request<{ version: number; value: unknown }>("doc.get", { name: "herdr-app" }),
   ]);
   if (list.status === "rejected") {
     sayOnce(`herdr-core: could not list terminals for the Spaces screen (${(list.reason as Error).message}); app spaces hidden`);
@@ -192,6 +237,7 @@ export async function readCoreSpaces(
     sayOnce(`herdr-core: no herdr-app layout (${(doc.reason as Error).message}); naming app spaces by folder`);
   } else {
     layout = doc.value?.value;
+    if (!fresh) layoutCache = { version: doc.value?.version ?? 0, value: layout, at: now() };
     if (readLayout(layout) === null) sayOnce("herdr-core: the herdr-app layout has an unknown shape; naming app spaces by folder");
   }
   // Another machine's terminals are left out under `local`, exactly as the

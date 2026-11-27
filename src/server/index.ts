@@ -73,7 +73,12 @@ import { noUpdateCheckRequested, scheduleUpdateChecks } from "@server/update-che
 import { say, warn } from "@server/term";
 import { createAppSocket } from "@server/herdr-core/app-socket";
 import { createCoreActions, requireCore } from "@server/herdr-core/actions";
-import { mergeTrees, readCoreSpaces } from "@server/herdr-core/tree";
+import { corePaneOf, mergeTrees, readCoreSpaces } from "@server/herdr-core/tree";
+import { inScope } from "@server/herdr-core/adapter";
+import { CoreError } from "@server/herdr-core/socket";
+import { BackendUnavailable } from "@server/action-errors";
+import type { TreePane } from "@shared/types";
+import type { CoreTerminal } from "@shared/herdr-core-api";
 import { actionsByOrigin, requireHerdr } from "@server/actions-by-origin";
 import { createSpacesReader } from "@server/spaces-read";
 import { BootLog } from "@server/boot-log";
@@ -829,6 +834,7 @@ let actions: HerdrActions | undefined;
 // them) and the screen stream (which is told when they move).
 const coreScreens = new LiveScreens({ history: HISTORY_LINES });
 let readTree: (() => Promise<SpaceTree>) | undefined;
+let lookupPane: ((id: string) => Promise<TreePane | undefined>) | undefined;
 // Health reads the stream itself rather than a cached boolean: a flag can go
 // stale (and did — a failed reopen left it saying `true` with no stream at
 // all), whereas `stream.connected` cannot disagree with reality.
@@ -899,14 +905,39 @@ if (DEMO) {
   // app's spaces, and a core that is not connected adds nothing, so a
   // TUI-only setup reads exactly what it read before.
   // The live core client is looked up per read, because the core comes and goes.
+  const herdrTree = async () => {
+    const snap = await client.request<{ snapshot: HerdrSessionSnapshot }>("session.snapshot", {});
+    return toSpaceTree(snap.snapshot, Date.now(), { home: process.env.HOME });
+  };
+  // A pane route checks ONE id, so it asks that id's backend alone: one
+  // `terminal.get` for an app terminal (an id names it forever, so a live
+  // read of it is the whole answer), terminal herdr's session for one of its
+  // own. See `AppDeps.lookupPane`.
+  lookupPane = async (id: string) => {
+    if (!isCoreId(id)) return (await herdrTree()).spaces.flatMap((s) => s.tabs).flatMap((t) => t.panes).find((p) => p.paneId === id);
+    const core = coreSupervisor?.connection() ?? null;
+    if (!core) throw new BackendUnavailable("herdr-core is not running");
+    const raw = rawCoreId(id);
+    if (!inScope(settings.machines(), raw)) return undefined;
+    try {
+      return corePaneOf(await core.request<CoreTerminal>("terminal.get", { terminal: raw }), process.env.HOME) ?? undefined;
+    } catch (err) {
+      if (err instanceof CoreError && err.kind === "not_found") return undefined;
+      throw err;
+    }
+  };
   readTree = createSpacesReader({
-    herdr: async () => {
-      const snap = await client.request<{ snapshot: HerdrSessionSnapshot }>("session.snapshot", {});
-      return toSpaceTree(snap.snapshot, Date.now(), { home: process.env.HOME });
-    },
+    herdr: herdrTree,
     core: () => {
       const core = coreSupervisor?.connection() ?? null;
-      return core ? readCoreSpaces(core, process.env.HOME, settings.machines()) : Promise.resolve(null);
+      // The supervisor's own copy of every terminal and the layout's
+      // version, so a Spaces read asks the core only for a layout that moved.
+      return core
+        ? readCoreSpaces(core, process.env.HOME, settings.machines(), {
+          terminals: () => coreSupervisor?.terminals() ?? null,
+          docVersion: (name) => coreSupervisor?.docVersion(name) ?? null,
+        })
+        : Promise.resolve(null);
     },
     merge: mergeTrees,
   });
@@ -1205,6 +1236,7 @@ const appDeps = {
   hub,
   actions,
   readTree,
+  lookupPane,
   // Not in --demo, for the reason `files` is absent there.
   remoteFiles: DEMO ? undefined : {
     read: async (machine: string, path: string, cwd: string | null) => {

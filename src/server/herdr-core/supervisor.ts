@@ -54,6 +54,8 @@ export class CoreSupervisor {
   private seq = -1;
   /** Terminals as last seen, so an event can turn a non-agent into an agent. */
   private records = new Map<string, CoreTerminal>();
+  /** Each document's version as its last `doc` event said. */
+  private docVersions = new Map<string, number>();
   private eventAt: number | null = null;
   private generation: number | null = null;
   private version: string | null = null;
@@ -145,6 +147,21 @@ export class CoreSupervisor {
    * after the snapshot: before it, the store holds no core agents, so no
    * route could have validated a core id against it anyway.
    */
+  /**
+   * Every terminal, as the subscription snapshot gave them and every event
+   * since kept them: a `terminal.list` without asking. Null while not up.
+   * `terminal.list` lists every added machine's terminals too, over its
+   * line; this costs nothing.
+   */
+  terminals(): CoreTerminal[] | null {
+    return this.up ? [...this.records.values()] : null;
+  }
+
+  /** A document's version as its last `doc` event said; null before one. */
+  docVersion(name: string): number | null {
+    return this.docVersions.get(name) ?? null;
+  }
+
   connection(): CoreClientLike | null {
     return this.up ? this.client : null;
   }
@@ -233,7 +250,15 @@ export class CoreSupervisor {
     this.seq = e.seq;
     this.eventAt = this.now();
     const term = e.terminal;
-    if (term === undefined) return; // a `doc` event: not about an agent
+    if (term === undefined) {
+      // A `doc` event: not about an agent, but it says a document moved, so
+      // a reader of it (the Spaces screen's layout) can tell when to re-read.
+      if (e.type === "doc") {
+        const d = (e as Extract<CoreEvent, { type: "doc" }>).data;
+        this.docVersions.set(d.name, d.version);
+      }
+      return;
+    }
     const id = coreId(term);
     const store = this.o.store;
     const prev = store.snapshot().find((a) => a.agentId === id) ?? null;
@@ -251,6 +276,13 @@ export class CoreSupervisor {
     // Kept so a terminal hidden by the machine scope comes back current when
     // the scope widens (`rescope` builds agents from these records).
     else if (ev.type === "turn" && record) record = { ...record, turn: ev.data.turn };
+    // The rest keep the records a faithful `terminal.list`, which is what the
+    // Spaces screen now reads instead of asking the core (`terminals()`).
+    else if (ev.type === "finished" && record) record = { ...record, state: "finished", ...ev.data };
+    else if (ev.type === "title" && record) record = { ...record, title: ev.data.title };
+    else if (ev.type === "foreground" && record) record = { ...record, foreground: ev.data };
+    else if (ev.type === "size" && record) record = { ...record, cols: ev.data.cols, rows: ev.data.rows };
+    else if (ev.type === "keep" && record) record = { ...record, keep: ev.data.keep };
     if (ev.type === "removed") this.records.delete(term);
     else if (record) this.records.set(term, record);
 

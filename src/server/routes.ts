@@ -742,6 +742,16 @@ export interface AppDeps {
    * from fake agents.
    */
   readTree?: () => Promise<SpaceTree>;
+  /**
+   * One pane, from ITS backend alone, for the pane routes. Without it they
+   * read the whole tree (`readTree`) to check one id, which on a Mac whose
+   * Herdr app had added another machine cost 3–6 s on every read of an open
+   * terminal: terminal herdr's session, every machine's terminals and the
+   * app's layout, to answer "is t7 a shell". Still a live read per request,
+   * never a cached tree: a stale tree validating a pane id is what
+   * `docs/decisions.md` rules out.
+   */
+  lookupPane?: (id: string) => Promise<TreePane | undefined>;
   /** The machines the Herdr app added (herdr-core `machine.list`), or null
    *  while no core is connected. Absent: the route 404s. */
   machines?: () => Promise<MachineInfo[] | null>;
@@ -1401,6 +1411,9 @@ export function createApp(deps: AppDeps) {
 
   if (deps.actions) {
     const actions = deps.actions;
+    /** One pane: its backend alone when the server can ask it, else the tree. */
+    const paneById = async (id: string): Promise<TreePane | undefined> =>
+      deps.lookupPane ? deps.lookupPane(id) : findPane(await deps.readTree!(), id);
 
     /**
      * The live permission gate for the dialog routes, asked BEFORE any key.
@@ -2012,8 +2025,7 @@ export function createApp(deps: AppDeps) {
       if (!deps.readTree) return c.json({ ok: false, detail: "herdr is not connected" }, 404);
       const id = c.req.param("id");
       try {
-        const tree = await deps.readTree();
-        const pane = findPane(tree, id);
+        const pane = await paneById(id);
         if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
         if (pane.harness !== null) {
           return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/output" }, 409);
@@ -2070,8 +2082,7 @@ export function createApp(deps: AppDeps) {
       const submit = body.submit === true;
 
       try {
-        const tree = await deps.readTree();
-        const pane = findPane(tree, id);
+        const pane = await paneById(id);
         if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
         if (pane.harness !== null) {
           return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/text" }, 409);
@@ -2134,8 +2145,7 @@ export function createApp(deps: AppDeps) {
       }
 
       try {
-        const tree = await deps.readTree();
-        const pane = findPane(tree, id);
+        const pane = await paneById(id);
         if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
         if (pane.harness !== null) {
           return c.json({ ok: false, detail: "this pane has an agent; use /api/agents/:id/key" }, 409);
@@ -2480,8 +2490,7 @@ export function createApp(deps: AppDeps) {
       }
 
       try {
-        const tree = await deps.readTree();
-        const pane = findPane(tree, id);
+        const pane = await paneById(id);
         if (!pane) return c.json({ ok: false, detail: "unknown pane" }, 404);
         // The same 409 `/api/panes/:id/output`, `/text` and `/key` give, for
         // the same reason and in the same words. This route used to validate

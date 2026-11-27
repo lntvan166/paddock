@@ -172,3 +172,23 @@ test("actions get the live client only while the core is connected", async () =>
   expect(sup.connection()).toBeNull();
   sup.stop();
 });
+
+test("its records stay a faithful terminal list, and it remembers each document's version", async () => {
+  // The Spaces screen reads these instead of asking the core (terminal.list
+  // crosses every added machine's line on every call).
+  const c = new FakeClient();
+  const { sup } = setup([c]);
+  expect(sup.terminals()).toBeNull(); // not up yet
+  sup.start(); await tick();
+  c.onSnapshot({ channel: null, seq: 1, terminals: [term("t1"), term("t2")] });
+  c.onEvent({ seq: 2, terminal: "t1", type: "title", data: { title: "building" } } as never);
+  c.onEvent({ seq: 3, terminal: "t1", type: "size", data: { cols: 120, rows: 40 } } as never);
+  c.onEvent({ seq: 4, terminal: "t2", type: "finished", data: { reason: "exited", exit_code: 0, signal: null, finished_ms: 9 } } as never);
+  c.onEvent({ seq: 5, type: "doc", data: { name: "herdr-app", version: 12 } } as never);
+  const byAddr = new Map(sup.terminals()!.map((t) => [t.address, t]));
+  expect(byAddr.get("t1")).toMatchObject({ title: "building", cols: 120, rows: 40, state: "live" });
+  expect(byAddr.get("t2")).toMatchObject({ state: "finished", exit_code: 0 });
+  expect(sup.docVersion("herdr-app")).toBe(12);
+  expect(sup.docVersion("other")).toBeNull();
+  sup.stop();
+});
