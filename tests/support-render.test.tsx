@@ -62,5 +62,13 @@ test("only one host is left in the document", async () => {
 
   // A host left behind is the visible half of the same leak: the tree under it
   // is still mounted, and `document.body` grows one node per test file.
-  expect(document.body.children.length).toBe(1);
+  //
+  // HOSTS, not every child of the body. Counting every child failed once on
+  // CI (2 for 1) and never locally, in CI's own file order: something a
+  // component appends to the body itself, on its own clock, is not a host
+  // this helper left. Named on failure, so the next one says what it was.
+  const hosts = document.querySelectorAll("body > [data-test-host]");
+  const others = [...document.body.children].filter((el) => !el.hasAttribute("data-test-host"))
+    .map((el) => el.outerHTML.slice(0, 120));
+  expect(hosts.length, `other children of the body: ${JSON.stringify(others)}`).toBe(1);
 });

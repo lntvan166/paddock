@@ -48,6 +48,10 @@ export async function render(node: React.ReactNode, into?: HTMLElement): Promise
   // a bill the author of the next file can read.
   await unmount();
   host = document.createElement("div");
+  // Marked, so a check for a LEFTOVER HOST counts hosts and not whatever a
+  // component put in the body itself (Radix's focus guards come and go there
+  // on their own schedule).
+  host.dataset.testHost = "";
   document.body.append(host);
   root = createRoot(host);
   // `act` flushes effects. Without it the component mounts but its effects —
