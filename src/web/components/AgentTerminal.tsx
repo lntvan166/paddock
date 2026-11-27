@@ -704,6 +704,16 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
   const useJournal = agent.hasJournal && !journal.fellBack;
 
   /**
+   * An app agent without a journal: its terminal's own scrollback, read once,
+   * so "Show earlier" has what the terminal printed before the pane opened.
+   * Terminal herdr's panes read theirs through `readPane` already.
+   */
+  const seedHistory = useCallback(async (): Promise<string[]> => {
+    const res = await fetchOutput(agent.agentId, undefined, true);
+    return "lines" in res ? res.lines : [];
+  }, [agent.agentId]);
+
+  /**
    * Whether the cursor is on this option, judged by `prompt.selected` and NOT
    * by the option's own `selected` flag.
    *
@@ -900,6 +910,7 @@ export function AgentTerminal({ agent, onBack, backLabel }: AgentTerminalProps) 
       onOpenPath={(path) => void openPath(path)}
       paneId={agent.agentId}
       streamId={agent.agentId}
+      seedHistory={agent.origin === "core" && !useJournal ? seedHistory : undefined}
       onScreen={onScreen}
       title={agent.name}
       onBack={onBack}

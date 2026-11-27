@@ -1,5 +1,6 @@
 import { carryAcknowledged, type Agent, type AgentState, type MachineScope } from "@shared/types";
 import type { CoreEvent, CoreStatus, CoreTerminal } from "@shared/herdr-core-api";
+import type { HerdrAgentSession } from "@shared/herdr-api";
 import { coreId } from "@shared/origin";
 
 /**
@@ -84,6 +85,29 @@ export function inScope(scope: MachineScope, address: string, machine?: string |
   return scope === "all" || !isRemoteTerminal(address, machine);
 }
 
+/**
+ * The label the Revive mod (herdr-app) writes with a Claude Code session's
+ * id, taken from Claude Code's own hook. herdr-core itself does not say which
+ * session a terminal holds, so this is the one place to learn it; a terminal
+ * without it keeps the screen's history, as every app agent did before.
+ */
+export const REVIVE_SESSION = "revive.session";
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The Claude Code session whose journal holds this terminal's conversation,
+ * or null. Only on THIS machine: a journal is a file on this disk, and an
+ * added machine's agent writes its own on its own disk.
+ */
+export function coreJournalSession(
+  address: string, labels: Record<string, string>, harness: string,
+): HerdrAgentSession | null {
+  if (harness !== "claude" || isRemoteTerminal(address)) return null;
+  const id = labels[REVIVE_SESSION];
+  if (!id || !SESSION_ID.test(id)) return null;
+  return { agent: "claude", kind: "id", source: "revive", value: id };
+}
+
 /** Raw space id for a terminal the app has not put in a space. */
 export const CORE_UNGROUPED = "ungrouped";
 
@@ -131,7 +155,7 @@ export function toCoreAgent(t: CoreTerminal, hostId: string): Agent | null {
     stateSinceExact: true,
     updatedAt: stateSince,
     acknowledgedAt: null,
-    hasJournal: false,
+    hasJournal: coreJournalSession(t.address, t.labels, toHarness(status.app)) !== null,
     origin: "core",
     turn: t.turn ?? null,
     seen: toSeen(t.labels),
@@ -210,6 +234,8 @@ export function applyCoreEvent(
         workspaceId: workspaceIdOf(labels),
         workspaceLabel: spaceLabel(labels),
         seen: toSeen(labels),
+        // Revive labels the session after the agent has started.
+        hasJournal: coreJournalSession(e.terminal ?? "", labels, prev.harness) !== null,
         updatedAt: now,
       };
     }

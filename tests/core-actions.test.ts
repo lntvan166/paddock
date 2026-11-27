@@ -190,8 +190,9 @@ test("reads drop the trailing CR and report an empty screen as no lines", async 
   expect(hist.source).toBe("recent_unwrapped");
   expect(await a.readPromptScreen("hc.t7")).toBe("one\r\ntwo\r\n");
   // `lines` is history ABOVE the screen: zero for the live read, the history
-  // budget for scrollback.
-  expect(calls.map((c) => c.params.lines)).toEqual([0, 0, 400, 0]);
+  // budget for scrollback (2000: a full-screen app's history is stitched by
+  // the core, and an app agent with no journal reads "Show earlier" from it).
+  expect(calls.map((c) => c.params.lines)).toEqual([0, 0, 2000, 0]);
   expect(calls.every((c) => c.method === "terminal.read")).toBe(true);
 });
 
@@ -485,9 +486,15 @@ test("polls after the first are answered from the live mirror, not a new attach"
   );
   await a.readOutput("hc.t7", "idle", 0);
   await a.readOutput("hc.t7", "idle", 0);
+  expect(observed).toHaveLength(1);
+  // The polls ask the core for nothing.
+  expect(calls.filter((c) => c.method === "terminal.read")).toHaveLength(0);
+  // A scrollback read of a mirror that holds no more than its screen (a
+  // full-screen app: no terminal scrollback) asks the core for the history
+  // it stitches; one that holds more is answered from the mirror alone.
   await a.readOutput("hc.t7", "idle", 0, true);
   expect(observed).toHaveLength(1);
-  expect(calls.filter((c) => c.method === "terminal.read")).toHaveLength(0);
+  expect(calls.filter((c) => c.method === "terminal.read").map((c) => c.params.lines)).toEqual([2000]);
   screens.closeAll();
 });
 

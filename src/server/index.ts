@@ -17,7 +17,7 @@ import { readAgentCommands } from "@server/commands/read";
 import { claudeHomes } from "@server/journal/files";
 import { saveImage } from "@server/uploads/store";
 import { createFileStore } from "@server/files/store";
-import { createActions, HISTORY_LINES, resolveReadLines, type HerdrActions } from "@server/herdr/actions";
+import { createActions, resolveReadLines, type HerdrActions } from "@server/herdr/actions";
 import { LiveScreens } from "@server/herdr-core/live-screen";
 import { ScreenStream } from "@server/screen-stream";
 import { isCoreId, rawCoreId } from "@shared/origin";
@@ -96,6 +96,8 @@ import {
 
 const { command, flags, values, verb, args } = parseArgs(Bun.argv.slice(2));
 const DEMO = flags.has("--demo");
+/** Scrollback kept for an open app terminal; see `coreScreens`. */
+const CORE_HISTORY_LINES = 2_000;
 const PORT = Number(process.env.PADDOCK_PORT ?? 8787);
 // The tailnet listener `tailscale serve` forwards to. Bound by the service only.
 const TAILNET_PORT = tailnetPortFrom(process.env);
@@ -832,7 +834,10 @@ let demo: DemoSource | null = null;
 let actions: HerdrActions | undefined;
 // The app terminals' live mirrors, shared by the core actions (which read
 // them) and the screen stream (which is told when they move).
-const coreScreens = new LiveScreens({ history: HISTORY_LINES });
+// 2000 lines of scrollback, not terminal herdr's 400: an app agent with no
+// journal reads its "Show earlier" from here, and it is one mirror per open
+// terminal (`maxViews` of them at most).
+const coreScreens = new LiveScreens({ history: CORE_HISTORY_LINES });
 let readTree: (() => Promise<SpaceTree>) | undefined;
 let lookupPane: ((id: string) => Promise<TreePane | undefined>) | undefined;
 let readTreeFor: ((id: string) => Promise<SpaceTree>) | undefined;
@@ -1320,7 +1325,9 @@ const appDeps = {
   // For expanding a `~` path the transcript linkified. Absent in DEMO, where
   // the file routes do not exist at all.
   homeDir: DEMO ? undefined : homedir(),
-  sessionFor: (id: string) => (DEMO ? demoSessionFor(id) : (supervisor?.sessionFor(id) ?? null)),
+  sessionFor: (id: string) => (DEMO ? demoSessionFor(id)
+    : isCoreId(id) ? (coreSupervisor?.sessionFor(id) ?? null)
+    : (supervisor?.sessionFor(id) ?? null)),
   health: () => ({
     ok: true,
     hostId,

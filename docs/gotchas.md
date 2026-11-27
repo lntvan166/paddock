@@ -633,3 +633,29 @@ What paddock does with it:
 - **A path from another machine's agent is read there**, staged locally, and
   served sandboxed like any file. Images and binaries cannot be read that way
   and are refused by name.
+
+## An app agent's history
+
+An app (herdr-core) agent's "Show earlier" used to have only the lines
+paddock happened to see scroll off while the pane was open: gaps, repeats,
+and nothing from before it opened. Two sources, measured on this box:
+
+- **Its Claude Code journal**, when the Revive mod (herdr-app) has labelled
+  the terminal `revive.session=<session id>`, which it takes from Claude
+  Code's own hook. herdr-core does not say which session a terminal holds;
+  this label is the one place to learn it. Only for a terminal on THIS
+  machine (a journal is a file on this disk), only for Claude Code, only for
+  a value shaped like a session id. `hasJournal` follows the label as it
+  comes and goes, which is why `differs()` in the store compares it.
+- **Otherwise, the terminal's own history.** Claude Code runs on the
+  alternate screen, so the TERMINAL has no scrollback: the coloured mirror
+  holds one screen. The core reads such an app's history by scrolling it
+  while it is idle (`terminal.read` with `lines`: `how: "stitched"`),
+  measured at 1043 and 607 lines on two idle agents against a 43-row screen;
+  plain text. A scrollback read takes that when the mirror holds no more
+  than its screen, and the pane seeds it once, BELOW `liveFrom`, so it waits
+  for "Show earlier". The boundary with the screen is found by matching
+  lines without colour, never by counting rows.
+- A terminal started straight into `claude` (no shell, a throwaway probe) was
+  not stitched (`how: "screen"`, `complete: false`); the app's own agents
+  were.

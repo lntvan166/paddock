@@ -9,7 +9,7 @@ import { parseAnsi, type AnsiSpan } from "@web/ansi";
 import { splitPaths, type PathSpan } from "@web/paths";
 import { groupLines } from "@web/lines";
 import { useKeyboardInset } from "@web/keyboard-inset";
-import { mergeSnapshot } from "@web/history";
+import { mergeSnapshot, scrollbackAbove } from "@web/history";
 import { historyFor, rememberHistory, rememberScreen, screenFor } from "@web/pane-cache";
 import { applyPatch, digestOf } from "@shared/screen";
 import { RATE_MS, readPrefs, type KeypadPref, type RatePref } from "@web/prefs";
@@ -338,6 +338,9 @@ export interface PaneTerminalProps {
    * polls exactly as before.
    */
   streamId?: string;
+  /** The terminal's whole scrollback (history, then screen), for an agent
+   *  whose history is the terminal's own rather than a journal. */
+  seedHistory?: () => Promise<string[]>;
   /** Told every screen the pane shows, whatever brought it (poll, push or an
    *  action's reply). For an owner that reads something off the screen. */
   onScreen?: (lines: string[]) => void;
@@ -421,6 +424,7 @@ export function PaneTerminal({
   sendText: onSendText, sendKey: onSendKey,
   onOpenPath,
   streamId,
+  seedHistory,
   onScreen,
   ref,
 }: PaneTerminalProps) {
@@ -505,7 +509,38 @@ export function PaneTerminal({
    * already watching, so this costs nothing they did not ask for; older ones
    * still wait for "Show earlier".
    */
-  const [liveFrom] = useState(() => historyFor(paneId)?.settled.length ?? 0);
+  const [liveFrom, setLiveFrom] = useState(() => historyFor(paneId)?.settled.length ?? 0);
+
+  /**
+   * The terminal's REAL scrollback, read once when the pane opens with no
+   * history yet, and laid in as what was before it. Without it an app
+   * agent's "Show earlier" had only the lines paddock happened to see scroll
+   * off while the pane was open: gaps, and nothing from before it opened.
+   * Seeded BELOW `liveFrom`'s mark (which moves to its end), so it waits for
+   * "Show earlier" like any older history instead of filling the page.
+   */
+  // Only once a screen is shown: the boundary is found by matching it.
+  const hasScreen = output.length > 0;
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!seedHistory || !hasScreen || seeded.current || (historyFor(paneId)?.settled.length ?? 0) > 0) return;
+    seeded.current = true;
+    let live = true;
+    void seedHistory().then((all) => {
+      // Not if lines settled meanwhile: seeding under them would leave a seam.
+      if (!live || (historyFor(paneId)?.settled.length ?? 0) > 0) return;
+      const screen = screenFor(paneId)?.lines;
+      if (!screen) return;
+      const above = scrollbackAbove(all, screen);
+      if (!above || above.length === 0) return;
+      rememberHistory(paneId, { settled: above, gaps: 0 });
+      setLiveFrom(above.length);
+    }, (err: unknown) => {
+      // The pane still works on its own history; said, not swallowed.
+      console.info(`paddock: scrollback for ${paneId} not loaded (${err instanceof Error ? err.message : String(err)})`);
+    });
+    return () => { live = false; };
+  }, [paneId, seedHistory, hasScreen]);
   const paneRef = useRef<HTMLDivElement>(null);
 
   /**

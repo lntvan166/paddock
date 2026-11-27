@@ -11,7 +11,8 @@ import type { CoreEvent, CoreSubscribeResult, CoreTerminal, CoreUnknownEvent } f
 import { coreId } from "@shared/origin";
 import type { Agent, HealthBody, MachineScope } from "@shared/types";
 import type { AgentStore, Delta } from "@server/state/store";
-import { applyCoreEvent, inScope, toCoreAgent } from "./adapter";
+import { applyCoreEvent, coreJournalSession, inScope, toCoreAgent, toHarness } from "./adapter";
+import type { HerdrAgentSession } from "@shared/herdr-api";
 import type { CoreClient } from "./socket";
 
 /** The slice of CoreClient the supervisor uses, so a test can fake it. */
@@ -159,6 +160,14 @@ export class CoreSupervisor {
    */
   terminals(): CoreTerminal[] | null {
     return this.up ? [...this.records.values()] : null;
+  }
+
+  /** The journal session of a core agent (`coreJournalSession`), if any. */
+  sessionFor(agentId: string): HerdrAgentSession | null {
+    const raw = agentId.startsWith("hc.") ? agentId.slice(3) : null;
+    const t = raw === null ? undefined : this.records.get(raw);
+    if (!t || !t.status) return null;
+    return coreJournalSession(t.address, t.labels, toHarness(t.status.app));
   }
 
   /** A document's version as its last `doc` event said; null before one. */

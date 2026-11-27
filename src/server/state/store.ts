@@ -35,7 +35,10 @@ function differs(a: Agent, b: Agent): boolean {
     a.cwd !== b.cwd ||
     // Core agents only (null for herdr): sectionFor reads `turn > seen`.
     a.turn !== b.turn ||
-    a.seen !== b.seen
+    a.seen !== b.seen ||
+    // Learned after the agent appears (an app agent's session label), and it
+    // decides how the client reads its history.
+    a.hasJournal !== b.hasJournal
   );
 }
 

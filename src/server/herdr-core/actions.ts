@@ -108,6 +108,9 @@ export const MAX_PUT_BYTES = 8 * 1024 * 1024;
 /** A put to another machine crosses its SSH line; a screenshot takes seconds. */
 const PUT_TIMEOUT_MS = 60_000;
 
+/** How far back a scrollback read asks the core to go. */
+const STITCH_LINES = 2_000;
+
 /** A held call's own limit: past the core's ~3 s key gate and a slow start,
  *  well under the edge's ~100 s cut. */
 const HELD_CALL_TIMEOUT_MS = 30_000;
@@ -406,11 +409,19 @@ export function createCoreActions(
     async readOutput(target, _state, _lines, scrollback = false) {
       // The core decides itself whether a full-screen app can be scrolled
       // (it is not, while working or blocked); the state is not needed here.
-      const history = scrollback ? HISTORY_LINES : 0;
       const source = scrollback ? "recent_unwrapped" : "visible";
       const coloured = await styled(target, scrollback);
-      if (coloured) return { lines: coloured, source };
-      return { lines: toLines(await read(target, history)), source };
+      if (!scrollback) return coloured ? { lines: coloured, source } : { lines: toLines(await read(target, 0)), source };
+      // A full-screen app (Claude Code runs on the alternate screen) leaves
+      // the TERMINAL no scrollback, so the mirror holds one screen and no
+      // more. The core reads such an app's history by scrolling it while it
+      // is idle ("stitched"): measured on two idle agents, 1043 and 607
+      // lines, against one 43-row screen from the mirror. Plain text, so it
+      // is taken only when it holds more than the coloured read.
+      const screen = coloured ? await styled(target, false) : null;
+      if (coloured && screen && coloured.length > screen.length) return { lines: coloured, source };
+      const plain = toLines(await read(target, STITCH_LINES));
+      return { lines: !coloured || plain.length > coloured.length ? plain : coloured, source };
     },
 
     async readPane(paneId) {

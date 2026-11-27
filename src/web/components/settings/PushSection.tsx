@@ -98,7 +98,13 @@ export function PushSection(p: PushSectionProps) {
         setFailure("Notifications were not allowed. Change it in your browser settings.");
         return;
       }
-      const reg = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.register("/sw.js");
+      // `register` resolves once the worker is REGISTERED, which can be
+      // before it is active; `subscribe` needs an active one. Reported from a
+      // desktop browser on a first enable: "Subscription failed - no active
+      // Service Worker". `ready` resolves with the registration once its
+      // worker is active, so the subscribe below always has one.
+      const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({
         // Required by every browser: a push that shows nothing is not allowed,
         // and paddock has no use for a silent one anyway.

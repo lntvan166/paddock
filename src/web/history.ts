@@ -127,3 +127,35 @@ export function mergeSnapshot(history: History, snapshot: string[]): History {
     last: snapshot,
   };
 }
+
+/**
+ * The part of a terminal's whole scrollback (`all`: history, then the screen)
+ * that is ABOVE the screen now shown (`screen`), found by matching rather than
+ * by counting rows: the two reads trim trailing blank lines on their own
+ * terms, and a boundary off by one would show a line twice or drop one.
+ * Null when the screen cannot be found in it (it moved between the reads),
+ * so the caller keeps what it had rather than seed a seam.
+ */
+export function scrollbackAbove(all: string[], screen: string[]): string[] | null {
+  const body = screen.slice(0, screen.length - trailingBlank(screen));
+  if (body.length === 0) return all.slice(0, all.length - trailingBlank(all));
+  // Compared without colour: an app's history can arrive as plain text (the
+  // core stitches it by scrolling the app) while the screen is coloured.
+  const bare = (l: string) => l.replace(SGR, "").trimEnd();
+  const head = body.slice(0, Math.min(3, body.length)).map(bare);
+  // Not a blank head: a run of blank lines matches anywhere.
+  if (head.every((l) => l === "")) return null;
+  // From the end: the screen is the last thing in the scrollback.
+  for (let at = all.length - head.length; at >= 0; at--) {
+    if (head.every((line, i) => bare(all[at + i] ?? "") === line)) return all.slice(0, at);
+  }
+  return null;
+}
+
+const SGR = /\x1b\[[0-9;]*m/g;
+
+function trailingBlank(lines: string[]): number {
+  let n = 0;
+  for (let i = lines.length - 1; i >= 0 && lines[i]!.replace(/\x1b\[[0-9;]*m/g, "").trim() === ""; i--) n++;
+  return n;
+}

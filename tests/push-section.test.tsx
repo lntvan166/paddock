@@ -166,7 +166,16 @@ test("enabling turns the SERVER switch on, not just this device's subscription",
   // and both have to be true.
   const undo = capabilities({ push: true, standalone: true });
   const nav = globalThis.navigator as unknown as Record<string, unknown>;
+  // As a real browser behaves on a FIRST enable: `register` resolves before
+  // the worker is active, and subscribing on that registration fails exactly
+  // as reported from a desktop browser. `ready` resolves once it is active.
   (nav.serviceWorker as Record<string, unknown>).register = () => Promise.resolve({
+    pushManager: {
+      getSubscription: () => Promise.resolve(null),
+      subscribe: () => Promise.reject(new Error("Failed to execute 'subscribe' on 'PushManager': Subscription failed - no active Service Worker")),
+    },
+  });
+  (nav.serviceWorker as Record<string, unknown>).ready = Promise.resolve({
     pushManager: {
       getSubscription: () => Promise.resolve(null),
       subscribe: () => Promise.resolve({
